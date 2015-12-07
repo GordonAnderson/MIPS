@@ -61,7 +61,7 @@ DialogBox ESIdialog = {
     2,0,0,300,220,
     B_DOUBLE,12
   },
-  M_SCROLLING,0,ESIentries
+  M_SCROLLING,0,0,ESIentries
 };
 
 MenuEntry MEESImonitor = {" ESI module", M_DIALOG,0,0,0,NULL,&ESIdialog,NULL,NULL};
@@ -191,10 +191,11 @@ void ESI_init(int8_t Board)
     AddMainMenuEntry(&MEESImonitor);
     if(ActiveDialog == NULL) DialogBoxDisplay(&ESIdialog);
     // Configure Threads
+    ESIthread.setName("ESI");
     ESIthread.onRun(ESI_loop);
     ESIthread.setInterval(100);
     // Add threads to the controller
-    controll.add(&ESIthread);
+    control.add(&ESIthread);
   }
   else
   {

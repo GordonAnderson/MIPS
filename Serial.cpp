@@ -20,7 +20,12 @@
 #include "ESI.h"
 #include "Twave.h"
 #include "FAIMS.h"
+#include "Filament.h"
+#include "WiFi.h"
+#include "Variants.h"
+#include <ThreadController.h>
 
+extern ThreadController control;
 
 //Serial_ *serial = &SerialUSB;
 Stream *serial = &SerialUSB;
@@ -32,7 +37,7 @@ extern bool SDcardPresent;
 File MacroFile;
 bool Recording = false;
 
-#define MaxToken 10
+#define MaxToken 20
 
 char Token[MaxToken];
 char Sarg1[MaxToken];
@@ -44,47 +49,55 @@ int ErrorCode = 0;   // Last communication error that was logged
 Ring_Buffer  RB;     // Receive ring buffer
 
 Commands  CmdArray[] = 	{
-// General commands
+  // General commands
   {"GVER",  CMDstr, 0, (char *)Version},	         // Report version
   {"GERR",  CMDint, 0, (char *)&ErrorCode},              // Report the last error code
   {"RESET", CMDfunction, 0, (char *)Software_Reset},     // Reset the Due
-  {"SAVE", CMDfunction, 0, (char *)SAVEparms},	         // Save MIPS configuration data to default.cfg on CD card 
+  {"SAVE", CMDfunction, 0, (char *)SAVEparms},	         // Save MIPS configuration data to default.cfg on CD card
   {"GCHAN", CMDfunctionStr, 1, (char *)GetNumChans},     // Report number for the selected system
   {"MUTE", CMDfunctionStr, 1, (char *)Mute},             // Turns on and off the serial response from the MIPS system
   {"TRIGOUT", CMDfunctionStr, 1, (char *)TriggerOut},    // Generates output trigger on rev 2 and higher controllers
                                                          // supports, HIGH,LOW,PULSE
-  {"DELAY", CMDfunctionStr, 1, (char *)DelayCommand},    // Generates a delay in milliseconds. This is used by the macro functions
+  {"DELAY", CMDfunction, 1, (char *)DelayCommand},       // Generates a delay in milliseconds. This is used by the macro functions
                                                          // to define delays in voltage ramp up etc.
-  {"GCMDS",CMDfunction,0,(char *)GetCommands},	         // Send a list of all commands
-// DC bias module commands
-  {"SDCB", CMDfunctionStr, 2, (char *)DCbiasSet},        // Set voltage value
-  {"GDCB", CMDfunction, 1, (char *)DCbiasRead},	         // Get Voltage value requested
+  {"GCMDS", CMDfunction, 0, (char *)GetCommands},	 // Send a list of all commands
+  {"GAENA", CMDbool, 0, (char *)&MIPSconfigData.UseAnalog}, // Print the UseAnalog flag, true or false
+  {"SAENA", CMDbool, 1, (char *)&MIPSconfigData.UseAnalog}, // Sets the UseAnalog flag, true or false
+  {"THREADS", CMDfunction, 0, (char *)ListThreads},      // List all threads, there IDs, and there last runtimes
+  {"STHRDENA", CMDfunctionStr, 2, (char *)SetThreadEnable}, // Set thread enable to true or false
+  {"SDEVADD", CMDfunctionStr, 2, (char *)DefineDeviceAddress}, // Set device board and address
+  {"RDEV", CMDfunction, 1, (char *)ReportAD7998}, // Read the ADC channel value
+  // DC bias module commands
+  {"SDCB", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&DCbiasSet))},      // Set voltage value
+  {"GDCB", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasRead))},// Get Voltage value requested
   {"GDCBV", CMDfunction, 1, (char *)DCbiasReadV},        // Get Voltage actual voltage value
   {"SDCBOF", CMDfunctionStr, 2, (char *)DCbiasSetFloat}, // Set float voltage for selected board
   {"GDCBOF", CMDfunction, 1, (char *)DCbiasReadFloat},   // Read float voltage for selected board
-  {"GDCMIN", CMDfunction, 1, (char *)DCbiasReadMin},     // Read float voltage for selected board
-  {"GDCMAX", CMDfunction, 1, (char *)DCbiasReadMax},     // Read float voltage for selected board
+  {"GDCMIN", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasReadMin))},// Read float voltage for selected board
+  {"GDCMAX", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasReadMax))},// Read float voltage for selected board
   {"SDCPWR", CMDfunctionStr, 1, (char *)DCbiasPowerSet}, // Sets the DC bias power, on or off
   {"GDCPWR", CMDfunction, 0, (char *)DCbiasPower},       // Get the DC bias power, on or off
-// RF generator module commands
+  {"SDCBCHNS", CMDfunction, 2, (char *)DCbiasSetNumBoardChans}, // Sets the number of channels on a DCbias board. Used for setup only.
+  // RF generator module commands
   {"SRFFRQ", CMDfunction, 2, (char *)RFfreq},		 // Set RF frequency
-  //  {"SRFAUTO", , 2, RFvoltage},	         // Set RF output voltage
-  {"SRFDRV", CMDfunctionStr, 2, (char *)RFdrive},        // Set RF drive level
+  {"SRFVLT", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&RFvoltage))},	 // Set RF output voltage
+  {"SRFDRV", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&RFdrive))},        // Set RF drive level
   {"GRFFRQ", CMDfunction, 1, (char *)RFfreqReport},	 // Report RF frequency
-  {"GRFPPVP",CMDfunction, 1, (char *)RFvoltageReportP},  // Report RF output voltage, positive phase
-  {"GRFPPVN",CMDfunction, 1, (char *)RFvoltageReportN},  // Report RF output voltage, negative phase
+  {"GRFPPVP", CMDfunction, 1, (char *)RFvoltageReportP}, // Report RF output voltage, positive phase
+  {"GRFPPVN", CMDfunction, 1, (char *)RFvoltageReportN}, // Report RF output voltage, negative phase
   {"GRFDRV", CMDfunction, 1, (char *)RFdriveReport},     // Report RF drive level in percentage
+  {"GRFVLT", CMDfunction, 1, (char *)RFvoltageReport},     // Report RF output voltage setpoint
   {"GRFPWR", CMDfunction, 1, (char *)RFheadPower},       // Report RF head power draw
   // DIO commands
   {"SDIO", CMDfunctionStr, 2, (char *)SDIO_Serial},	 // Set DIO output bit
   {"GDIO", CMDfunctionStr, 1, (char *)GDIO_Serial},	 // Get DIO output bit
-// ESI module commands
+  // ESI module commands
   {"SHV", CMDfunctionStr, 2, (char *)SetESIchannel},     // Set channel high voltage
   {"GHV", CMDfunction, 1, (char *)GetESIchannel},        // Returns the high voltage setpoint
-  {"GHVV",CMDfunction, 1, (char *)GetESIchannelV},       // Returns the actual high voltage output
-  {"GHVI",CMDfunction, 1, (char *)GetESIchannelI},       // Returns the output current in mA
-  {"GHVMAX",CMDfunction, 1, (char *)GetESIchannelMax},   // Returns the maximum high voltage outut value
-// Table commands, tables enable pulse sequence generation
+  {"GHVV", CMDfunction, 1, (char *)GetESIchannelV},      // Returns the actual high voltage output
+  {"GHVI", CMDfunction, 1, (char *)GetESIchannelI},      // Returns the output current in mA
+  {"GHVMAX", CMDfunction, 1, (char *)GetESIchannelMax},  // Returns the maximum high voltage outut value
+  // Table commands, tables enable pulse sequence generation
   {"STBLDAT", CMDfunction, 0, (char *)ParseTableCommand}, // Read the HVPS voltage table
   {"STBLCLK", CMDfunctionStr, 1, (char *)SetTableCLK},	  // Clock mode, EXT or INT
   {"STBLTRG", CMDfunctionStr, 1, (char *)SetTableTRG},	  // Trigger mode, EXT or SW
@@ -96,44 +109,110 @@ Commands  CmdArray[] = 	{
   {"GTBLNUM", CMDfunction, 0, (char *)GetTableNumber},    // Get the active table number
   {"STBLADV", CMDfunctionStr, 1, (char *)SetTableAdvance},// Set the table advance status, ON or OFF
   {"GTBLADV", CMDfunction, 0, (char *)GetTableAdvance},   // Get the table advance status, ON or OFF
-  {"STBLVLT", CMDfun2int1flt,3,(char *)SetTableEntryValue},// Set a value in a loaded table
+  {"STBLVLT", CMDfun2int1flt, 3, (char *)SetTableEntryValue}, // Set a value in a loaded table
   {"GTBLVLT", CMDfunction, 2, (char *)GetTableEntryValue},// Get a value from a loaded table
-// Macro commands
+  // Macro commands
   {"MRECORD", CMDfunctionStr, 1, (char *) MacroRecord},    // Turn on macro recording into the filename argument
   {"MSTOP", CMDfunction, 0, (char *) MacroStop},           // Stop macro recording and close the file
   {"MPLAY", CMDfunctionStr, 1, (char *) MacroPlay},        // Play a macro file
   {"MLIST", CMDfunction, 0, (char *) MacroList},           // Send a list of macro files
   {"MDELETE", CMDfunctionStr, 1, (char *) MacroDelete},    // Delete a macro file
-// TWAVE commands
+  // TWAVE commands
   {"GTWF",  CMDint, 0, (char *)&TD.Velocity},                  // Report the TWAVE frequency
   {"STWF",  CMDfunction, 1, (char *)setTWAVEfrequency},        // Set the TWAVE frequency
   {"GTWPV", CMDfloat, 0, (char *)&TD.TWCD[0].VoltageSetpoint}, // Report the TWAVE pulse voltage
   {"STWPV", CMDfunctionStr, 1, (char *)setTWAVEpulseVoltage},  // Set the TWAVE pulse voltage
-  {"GTWP1V",CMDfloat, 0, (char *)&TD.TWCD[2].VoltageSetpoint}, // Report the TWAVE Guard 1 voltage
-  {"STWP1V",CMDfunctionStr, 1, (char *)setTWAVEguard1Voltage}, // Set the TWAVE Guard 1 voltage
-  {"GTWP2V",CMDfloat, 0, (char *)&TD.TWCD[3].VoltageSetpoint}, // Report the TWAVE Guard 2 voltage
-  {"STWP2V",CMDfunctionStr, 1, (char *)setTWAVEguard2Voltage}, // Set the TWAVE Guard 2 voltage
-  {"GTWSEQ",CMDfunction, 0, (char *)sendTWAVEsequence},        // Report the TWAVE sequence
-  {"STWSEQ",CMDfunctionStr, 1, (char *)setTWAVEsequence},      // Set the TWAVE sequence
-  {"GTWDIR",CMDfunction, 0, (char *)getTWAVEdir},              // Report the TWAVE waveform direction, FWD or REV
-  {"STWDIR",CMDfunctionStr, 1, (char *)setTWAVEdir},           // Set the TWAVE waveform direction, FWD or REV
-// FAIMS commands
+  {"GTWP1V", CMDfloat, 0, (char *)&TD.TWCD[2].VoltageSetpoint},// Report the TWAVE Guard 1 voltage
+  {"STWP1V", CMDfunctionStr, 1, (char *)setTWAVEguard1Voltage},// Set the TWAVE Guard 1 voltage
+  {"GTWP2V", CMDfloat, 0, (char *)&TD.TWCD[3].VoltageSetpoint},// Report the TWAVE Guard 2 voltage
+  {"STWP2V", CMDfunctionStr, 1, (char *)setTWAVEguard2Voltage},// Set the TWAVE Guard 2 voltage
+  {"GTWSEQ", CMDfunction, 0, (char *)sendTWAVEsequence},       // Report the TWAVE sequence
+  {"STWSEQ", CMDfunctionStr, 1, (char *)setTWAVEsequence},     // Set the TWAVE sequence
+  {"GTWDIR", CMDfunction, 0, (char *)getTWAVEdir},             // Report the TWAVE waveform direction, FWD or REV
+  {"STWDIR", CMDfunctionStr, 1, (char *)setTWAVEdir},          // Set the TWAVE waveform direction, FWD or REV
+  // FAIMS commands
+  {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},  // Set FAIMS RF harmonic positive peak readback calibration
+  {"SRFHNCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharNcal},  // Set FAIMS RF harmonic negative peak readback calibration
 
-// End of table marker
+  // Filament commands
+  {"GFLENA", CMDfunction, 1, (char *)GetFilamentEnable},             // Get filament ON/OFF status
+  {"SFLENA", CMDfunctionStr, 2, (char *)SetFilamentEnable},          // Set filament ON/OFF status
+  {"GFLI", CMDfunction, 1, (char *)GetFilamentCurrent},              // Get filament channel current (setpoint)
+  {"GFLAI", CMDfunction, 1, (char *)GetFilamentActualCurrent},       // Get filament channel actual current
+  {"SFLI", CMDfunctionStr, 2, (char *)SetFilamentCurrent},           // Set filament channel current
+  {"GFLSV", CMDfunction, 1, (char *)GetFilamentSupplyVoltage},       // Get filament supply voltage (setpoint)
+  {"GFLASV", CMDfunction, 1, (char *)GetFilamentActualSupplyVoltage},// Get the actual supply side voltage
+  {"SFLSV", CMDfunctionStr, 2, (char *)SetFilamentSupplyVoltage},    // Set filament supply voltage
+  {"GFLV", CMDfunction, 1, (char *)GetFilamentVoltage},              // Get filament voltage (actual)
+  {"GFLPWR", CMDfunction, 1, (char *)GetFilamentPower},              // Get filament power (actual) 
+  // WiFi commands
+  {"GHOST",  CMDstr, 0, (char *)wifidata.Host},                      // Report this MIPS box host name
+  {"GSSID",  CMDstr, 0, (char *)wifidata.ssid},                      // Report the WiFi SSID to connect to
+  {"GPSWD",  CMDstr, 0, (char *)wifidata.password},                  // Report the WiFi network password
+  {"SHOST",  CMDfunctionStr, 1, (char *)SetHost},                    // Set this MIPS box host name
+  {"SSSID",  CMDfunctionStr, 1, (char *)SetSSID},                    // Set the WiFi SSID to connect to
+  {"SPSWD",  CMDfunctionStr, 1, (char *)SetPassword},                // Set the WiFi network password
+  
+  // End of table marker
   {0},
 };
+
+// This function lists all the current threads and there current state.
+void ListThreads(void)
+{
+  int    i = 0;
+  Thread *t;
+
+  // Loop through all the threads and report the Thread name, ID, Interval, enabled state, and last run time
+  SendACKonly;
+  serial->println("Thread name,ID,Interval,Enabled,Run time");
+  while (1)
+  {
+    t = control.get(i++);
+    if (t == NULL) break;
+    serial->print(t->getName()); serial->print(", ");
+    serial->print(t->getID()); serial->print(", ");
+    serial->print(t->getInterval()); serial->print(", ");
+    if (t->enabled) serial->print("Enabled,");
+    else serial->print("Disabled,");
+    serial->println(t->runTimeMs());
+  }
+}
+
+void SetThreadEnable(char *name, char *state)
+{
+  Thread *t;
+
+  if ((!strcmp(state, "TRUE")) && (!strcmp(state, "FALSE")))
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;
+  }
+  // Find thread by name
+  t = control.get(name);
+  if (t == NULL)
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;
+  }
+  SendACKonly;
+  if (strcmp(state, "TRUE")) t->enabled = true;
+  else t->enabled = false;
+}
 
 // Sends a list of all commands
 void GetCommands(void)
 {
-    int  i;
-    
-    SendACKonly;
-    // Loop through the commands array and send all the command tokens
-    for(i=0;CmdArray[i].Cmd != 0;i++)
-    {
-        serial->println((char *)CmdArray[i].Cmd);
-    }
+  int  i;
+
+  SendACKonly;
+  // Loop through the commands array and send all the command tokens
+  for (i = 0; CmdArray[i].Cmd != 0; i++)
+  {
+    serial->println((char *)CmdArray[i].Cmd);
+  }
 }
 
 // Delay command, delay is in millisecs
@@ -146,13 +225,13 @@ void DelayCommand(int dtime)
 // Turns on and off responses from the MIPS system
 void Mute(char *cmd)
 {
-  if(strcmp(cmd,"ON") == 0)
+  if (strcmp(cmd, "ON") == 0)
   {
     SerialMute = true;
     SendACK;
     return;
   }
-  else if(strcmp(cmd,"OFF") == 0)
+  else if (strcmp(cmd, "OFF") == 0)
   {
     SerialMute = false;
     SendACK;
@@ -166,9 +245,9 @@ void Mute(char *cmd)
 // RF = Number of RF channels
 // DCB = number of DC bias channels
 // ESI = number of HV ESI supplies
-// Add:
-//    FAIMS
-//    TWAVE
+// FAIMS = Number of FAIMS drivers
+// TWAVE = Number of TWAVE drivers
+// FIL = Number of filiment channels
 void GetNumChans(char *cmd)
 {
   if (strcmp(cmd, "RF") == 0) RFnumber();
@@ -176,6 +255,7 @@ void GetNumChans(char *cmd)
   else if (strcmp(cmd, "ESI") == 0) ESInumberOfChannels();
   else if (strcmp(cmd, "TWAVE") == 0) TWAVEnumberOfChannels();
   else if (strcmp(cmd, "FAIMS") == 0) FAIMSnumberOfChannels();
+  else if (strcmp(cmd, "FIL") == 0) FilamentChannels();
   else
   {
     SetErrorCode(ERR_BADARG);
@@ -189,7 +269,7 @@ void SerialInit(void)
   //  Serial.begin(9600);
   //Serial_ *serial = &SerialUSB;
   SerialUSB.begin(0);
-  serial->println("Initializing....");
+  //  serial->println("Initializing....");
   RB_Init(&RB);
 }
 
@@ -238,19 +318,42 @@ void ExecuteCommand(Commands *cmd, int arg1, int arg2, char *args1, char *args2,
 {
   switch (cmd->Type)
   {
+    case CMDbool:
+      if (cmd->NumArgs == 0)   // If true then write the value
+      {
+        SendACKonly;
+        if (!SerialMute)
+        {
+          if (*(cmd->pointers.boolPtr)) serial->println("TRUE");
+          else serial->println("FALSE");
+        }
+      }
+      if (cmd->NumArgs == 1)  // If true then read the value
+      {
+        if((strcmp(args1,"TRUE") == 0) || (strcmp(args1,"FALSE") == 0))
+        {
+          if(strcmp(args1,"TRUE") == 0) *(cmd->pointers.boolPtr) = true;
+          else *(cmd->pointers.boolPtr) = false;
+          SendACK;
+          break;
+        }
+        SetErrorCode(ERR_BADARG);
+        SendNAK;
+      }
+      break;
     case CMDstr:
       SendACKonly;
-      if(!SerialMute) serial->println(cmd->pointers.charPtr);
+      if (!SerialMute) serial->println(cmd->pointers.charPtr);
       break;
     case CMDint:
       // arg1 is a pointer to an int value to send out the serial port
       SendACKonly;
-      if(!SerialMute) serial->println(*(cmd->pointers.intPtr));
+      if (!SerialMute) serial->println(*(cmd->pointers.intPtr));
       break;
     case CMDfloat:
       // arg1 is a pointer to an float value to send out the serial port
       SendACKonly;
-      if(!SerialMute) serial->println(*(cmd->pointers.floatPtr));
+      if (!SerialMute) serial->println(*(cmd->pointers.floatPtr));
       break;
     case CMDfunction:
       if (cmd->NumArgs == 0) cmd->pointers.funcVoid();
@@ -283,8 +386,8 @@ int ProcessCommand(void)
   static int CmdNum;
 
   Token = GetToken(false);
-  if (Token == NULL) return(-1);
-  if (Token[0] == 0) return(-1);
+  if (Token == NULL) return (-1);
+  if (Token[0] == 0) return (-1);
   switch (state)
   {
     case PCcmd:
@@ -306,12 +409,14 @@ int ProcessCommand(void)
       else state = PCend;
       break;
     case PCarg1:
+      Sarg1[0]=0;
       sscanf(Token, "%d", &arg1);
       sscanf(Token, "%s", Sarg1);
       if (CmdArray[CmdNum].NumArgs > 1) state = PCarg2;
       else state = PCend;
       break;
     case PCarg2:
+      Sarg2[0]=0;
       sscanf(Token, "%d", &arg2);
       sscanf(Token, "%s", Sarg2);
       if (CmdArray[CmdNum].NumArgs > 2) state = PCarg3;
@@ -337,7 +442,7 @@ int ProcessCommand(void)
       state = PCcmd;
       break;
   }
-  return(0);
+  return (0);
 }
 
 void RB_Init(Ring_Buffer *rb)
@@ -345,11 +450,17 @@ void RB_Init(Ring_Buffer *rb)
   rb->Head = 0;
   rb->Tail = 0;
   rb->Count = 0;
+  rb->Commands = 0;
 }
 
 int RB_Size(Ring_Buffer *rb)
 {
   return (rb->Count);
+}
+
+int RB_Commands(Ring_Buffer *rb)
+{
+  return (rb->Commands);
 }
 
 // Put character in ring buffer, return 0xFF if buffer is full and can't take a character.
@@ -360,6 +471,9 @@ char RB_Put(Ring_Buffer *rb, char ch)
   rb->Buffer[rb->Tail] = ch;
   if (rb->Tail++ >= RB_BUF_SIZE - 1) rb->Tail = 0;
   rb->Count++;
+  if (ch == ';') rb->Commands++;
+  if (ch == '\r') rb->Commands++;
+  if (ch == '\n') rb->Commands++;
   return (0);
 }
 
@@ -368,13 +482,20 @@ char RB_Get(Ring_Buffer *rb)
 {
   char ch;
 
-  if (rb->Count == 0) return (0xFF);
+  if (rb->Count == 0)
+  {
+    rb->Commands = 0;  // This has to be true if the buffer is empty...
+    return (0xFF);
+  }
   ch = rb->Buffer[rb->Head];
   if (rb->Head++ >= RB_BUF_SIZE - 1) rb->Head = 0;
   rb->Count--;
   // Map \r to \n
-//  if(Recording) MacroFile.write(ch);
+  //  if(Recording) MacroFile.write(ch);
   if (ch == '\r') ch = '\n';
+  if (ch == ';') rb->Commands--;
+  if (ch == '\n') rb->Commands--;
+  if (rb->Commands < 0) rb->Commands = 0;
   return (ch);
 }
 
@@ -391,7 +512,7 @@ char RB_Next(Ring_Buffer *rb)
 
 void PutCh(char ch)
 {
-  RB_Put(&RB,ch);
+  RB_Put(&RB, ch);
 }
 
 //
@@ -405,8 +526,8 @@ void MacroRecord(char *filename)
   char fname[30];
   char ch;
   char *TK;
-  
-  if(!SDcardPresent)
+
+  if (!SDcardPresent)
   {
     SetErrorCode(ERR_NOSDCARD);
     SendNAK;
@@ -414,15 +535,15 @@ void MacroRecord(char *filename)
   }
   SD.begin(_sdcs);
   // NAK if file name is too long
-  if(strlen(filename) > 20) 
+  if (strlen(filename) > 20)
   {
     SetErrorCode(ERR_FILENAMETOOLONG);
     SendNAK;
     return;
   }
-  sprintf(fname,"%s.mac",filename);
+  sprintf(fname, "%s.mac", filename);
   // Open the file
-  if(!(MacroFile=SD.open(fname,FILE_WRITE))) 
+  if (!(MacroFile = SD.open(fname, FILE_WRITE)))
   {
     // Error opening file
     SetErrorCode(ERR_CANTOPENFILE);
@@ -433,25 +554,25 @@ void MacroRecord(char *filename)
   Recording = true;
   // Fall into a loop and record all received characters until the command
   // MSTOP<CR> is received.
-  while(1)
+  while (1)
   {
     if (serial->available() > 0)
     {
       ch = serial->read();
       MacroFile.write(ch);
-      // Put the character in the input ring buffer then pull tokens 
+      // Put the character in the input ring buffer then pull tokens
       // looking for MSTOP
-      RB_Put(&RB,ch);
-      while(RB_Size(&RB) != 0)  if((TK = GetToken(false)) != NULL) break;
-      if(TK != NULL)
+      RB_Put(&RB, ch);
+      while (RB_Size(&RB) != 0)  if ((TK = GetToken(false)) != NULL) break;
+      if (TK != NULL)
       {
-        if(strcmp(TK,"MSTOP") == 0)
+        if (strcmp(TK, "MSTOP") == 0)
         {
           Recording = false;
           break;
         }
       }
-    }  
+    }
   }
   MacroFile.close();
   SendACK;
@@ -472,20 +593,20 @@ char *MacroBuildList(char *current)
   File root, entry;
   String FileName;
   static String MacroList;
-  
-  if(!SDcardPresent) return NULL;
+
+  if (!SDcardPresent) return NULL;
   SD.begin(_sdcs);
-  root=SD.open("/",FILE_READ);
+  root = SD.open("/", FILE_READ);
   root.rewindDirectory();
   MacroList = current;
   MacroList.toUpperCase();
-  if(MacroList != "NONE") MacroList += ",NONE";
-  while(true)
+  if (MacroList != "NONE") MacroList += ",NONE";
+  while (true)
   {
-    if(!(entry = root.openNextFile())) break;
+    if (!(entry = root.openNextFile())) break;
     FileName = entry.name();
     FileName.toUpperCase();
-    if((FileName.endsWith(".MAC")) && (!FileName.startsWith("_")) && (!FileName.startsWith(".")))
+    if ((FileName.endsWith(".MAC")) && (!FileName.startsWith("_")) && (!FileName.startsWith(".")))
     {
       MacroList += ",";
       MacroList += entry.name();
@@ -501,29 +622,29 @@ void MacroList(void)
 {
   File root, entry;
   String FileName;
-  
-  if(!SDcardPresent)
+
+  if (!SDcardPresent)
   {
     SetErrorCode(ERR_NOSDCARD);
     SendNAK;
     return;
   }
   SD.begin(_sdcs);
-  root=SD.open("/",FILE_READ);
+  root = SD.open("/", FILE_READ);
   SendACKonly;
   root.rewindDirectory();
-  while(true)
+  while (true)
   {
-    if(!(entry = root.openNextFile())) break;
+    if (!(entry = root.openNextFile())) break;
     FileName = entry.name();
     FileName.toUpperCase();
-    if((FileName.endsWith(".MAC")) && (!FileName.startsWith("_")) && (!FileName.startsWith(".")))
+    if ((FileName.endsWith(".MAC")) && (!FileName.startsWith("_")) && (!FileName.startsWith(".")))
     {
       FileName.remove(FileName.lastIndexOf(".MAC"));
-      if(!SerialMute) serial->println(FileName);
+      if (!SerialMute) serial->println(FileName);
     }
   }
-  if(!SerialMute) serial->println("End of macro file list.");
+  if (!SerialMute) serial->println("End of macro file list.");
   root.close();
 }
 
@@ -532,7 +653,7 @@ void MacroDelete(char *filename)
 {
   char fname[30];
 
-  if(!SDcardPresent)
+  if (!SDcardPresent)
   {
     SetErrorCode(ERR_NOSDCARD);
     SendNAK;
@@ -540,14 +661,14 @@ void MacroDelete(char *filename)
   }
   SD.begin(_sdcs);
   // NAK if file name is too long
-  if(strlen(filename) > 20) 
+  if (strlen(filename) > 20)
   {
     SetErrorCode(ERR_FILENAMETOOLONG);
     SendNAK;
     return;
   }
-  sprintf(fname,"%s.mac",filename);
-  if(!SD.remove(fname))
+  sprintf(fname, "%s.mac", filename);
+  if (!SD.remove(fname))
   {
     SetErrorCode(ERR_CANTDELETEFILE);
     SendNAK;
@@ -570,10 +691,10 @@ void MacroPlay(char *filename, bool silent)
   char *unmute = "MUTE,OFF\n";
   File mfile;
   int  i;
-  
-  if(!SDcardPresent)
+
+  if (!SDcardPresent)
   {
-    if(!silent)
+    if (!silent)
     {
       SetErrorCode(ERR_NOSDCARD);
       SendNAK;
@@ -582,44 +703,44 @@ void MacroPlay(char *filename, bool silent)
   }
   SD.begin(_sdcs);
   // NAK if file name is too long
-  if(strlen(filename) > 20) 
+  if (strlen(filename) > 20)
   {
-    if(!silent)
+    if (!silent)
     {
       SetErrorCode(ERR_FILENAMETOOLONG);
       SendNAK;
     }
     return;
   }
-  sprintf(fname,"%s.mac",filename);
+  sprintf(fname, "%s.mac", filename);
   // Open the file
-  if(!(mfile=SD.open(fname,FILE_READ))) 
+  if (!(mfile = SD.open(fname, FILE_READ)))
   {
     // Error opening file
-    if(!silent)
+    if (!silent)
     {
       SetErrorCode(ERR_CANTOPENFILE);
       SendNAK;
     }
     return;
   }
-  if(!silent) SendACK;
+  if (!silent) SendACK;
   // Mute the serial response
-  for(i=0;i<strlen(mute);i++) RB_Put(&RB,mute[i]);
+  for (i = 0; i < strlen(mute); i++) RB_Put(&RB, mute[i]);
   // Fill the ring buffer with the macro file contents
-  while(true)
+  while (true)
   {
-    if((i = mfile.read()) == -1) break;
-    if(RB_Put(&RB,i) == 0xFF) 
+    if ((i = mfile.read()) == -1) break;
+    if (RB_Put(&RB, i) == 0xFF)
     {
       ProcessCommand();
-      RB_Put(&RB,i);
+      RB_Put(&RB, i);
     }
-//    serial->write(i);
+    //    serial->write(i);
   }
   mfile.close();
   // Unmute the serial system
-  for(i=0;i<strlen(unmute);i++) RB_Put(&RB,unmute[i]);
+  for (i = 0; i < strlen(unmute); i++) RB_Put(&RB, unmute[i]);
 }
 
 

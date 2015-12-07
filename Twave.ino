@@ -10,6 +10,8 @@
 // Timer channel 6 to output on pin 5, that is on connector EXT2 pin 9. Jumper EXT2 pin 9
 // to pin 14 and then this signal can be found on pin 14 of IC10.
 //
+// Support added for Twave driver card rev 2.0
+//
 //
 // Gordon Anderson
 //
@@ -27,6 +29,7 @@ extern bool NormalStartup;
 #define UseTimer
 
 // Use the timer channel 6 for a clock in rev 1.0 to get to lower frequencies
+// Also used on rev 2 due to issues with the clock chip
 MIPStimer TwaveClk(6);
 
 // DAC channel assignment
@@ -64,13 +67,25 @@ void SetVelocity(void)
 {
   if (TD.Rev == 2)
   {
+#ifdef UseTimer
+    // The 8 times multiplier is because the output toggles on each clock thus devides
+    // by two and the rev 2 hardware has a 4x division.
+    TwaveClk.setFrequency((double)(TD.Velocity * 8));
+    TwaveClk.setTIOAeffect(1, TC_CMR_ACPA_TOGGLE);
+    TwaveClk.start(-1, 0, true);
+    // Actual clock frequency is: (int)((VARIANT_MCK / 16) /  TD.Velocity). Set the actual value
+//    TD.Velocity = (VARIANT_MCK / (int)((VARIANT_MCK / 16) /  TD.Velocity))/16;
+#else
     SetRef(8000000);
     CY_Init(TD.CLOCKadr);
     SetPLL2freq(TD.CLOCKadr, TD.Velocity * 8);
+#endif
   }
   else
   {
 #ifdef UseTimer
+    // The 2 times multiplier is because the output toggles on each clock thus devides
+    // by two.
     TwaveClk.setFrequency((double)(TD.Velocity * 2));
     TwaveClk.setTIOAeffect(1, TC_CMR_ACPA_TOGGLE);
     TwaveClk.start(-1, 0, true);
@@ -99,12 +114,13 @@ void SetSequence(void)
 //    serial->println(TD.Sequence);
 //    serial->println(numTry);
     digitalWrite(TWclr, LOW);
+    delay(1);
     digitalWrite(TWclr, HIGH);
-    digitalWrite(TWclr, HIGH);
+    delay(1);
     digitalWrite(TWld, LOW);
-    digitalWrite(TWld, LOW);
-    digitalWrite(TWld, LOW);
+    delay(1);
     digitalWrite(TWld, HIGH);
+    delay(1);
     return; 
   }
   // Init the sequence generator pattern
@@ -224,12 +240,12 @@ DialogBoxEntry TwaveDialogEntries[] = {
 };
 
 DialogBox TwaveDialog = {{"Twave parameters", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0, TwaveDialogEntries
+  M_SCROLLING, 0,0, TwaveDialogEntries
 };
 
 // Rev 2.0 dialog options
 DialogBoxEntry TwaveDialogEntries2[] = {
-  {" Clock freq, Hz", 0, 1, D_INT, 32000, 400000, 1000, 16, false, "%7d", &TD.Velocity, NULL, SetVelocity},
+  {" Clock freq, Hz", 0, 1, D_INT, 1000, 400000, 1000, 16, false, "%7d", &TD.Velocity, NULL, SetVelocity},
   {" Sequence", 0, 2, D_BINARY8, 0, 255, 1, 15, false, NULL, &TD.Sequence, NULL, NULL},
   {" Pulse voltage", 0, 3, D_FLOAT, MinPulseVoltage, 100, 0.1, 18, false, "%5.1f", &TD.TWCD[0].VoltageSetpoint, NULL, SetPulseVoltage},
   {" Wave dir", 0, 4, D_FWDREV, 0, 1, 1, 19, false, NULL, &TD.Direction, NULL, NULL},
@@ -243,7 +259,7 @@ DialogBoxEntry TwaveDialogEntries2[] = {
 };
 
 DialogBox TwaveDialog2 = {{"Twave parameters", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0, TwaveDialogEntries2
+  M_SCROLLING, 0,0, TwaveDialogEntries2
 };
 
 DialogBoxEntry TwaveEntriesCalMenu[] = {
@@ -256,7 +272,7 @@ DialogBoxEntry TwaveEntriesCalMenu[] = {
 
 DialogBox TwaveCalMenu = {
   {"Twave cal menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0, TwaveEntriesCalMenu
+  M_SCROLLING, 0,0, TwaveEntriesCalMenu
 };
 
 void CalibratePulse(void)
@@ -264,6 +280,7 @@ void CalibratePulse(void)
   ChannelCal CC;
   char       Name[20];
 
+  SelectBoard(SelectedTwaveBoard);
   // Set up the calibration data structure
   CC.ADCpointer = &AD7998;
   CC.Min = 0;
@@ -283,6 +300,7 @@ void CalibrateGuard1(void)
   ChannelCal CC;
   char       Name[20];
 
+  SelectBoard(SelectedTwaveBoard);
   // Set up the calibration data structure
   CC.ADCpointer = &AD7998;
   CC.Min = 0;
@@ -302,6 +320,7 @@ void CalibrateGuard2(void)
   ChannelCal CC;
   char       Name[20];
 
+  SelectBoard(SelectedTwaveBoard);
   // Set up the calibration data structure
   CC.ADCpointer = &AD7998;
   CC.Min = 0;
@@ -360,10 +379,11 @@ void Twave_init(int8_t Board)
   if (TD.Rev == 2) AddMainMenuEntry(&METwaveMonitor2);
   if (TD.Rev == 2) DialogBoxDisplay(&TwaveDialog2);
   // Configure Threads
+  TwaveThread.setName("Twave");
   TwaveThread.onRun(Twave_loop);
   TwaveThread.setInterval(100);
   // Add threads to the controller
-  controll.add(&TwaveThread);
+  control.add(&TwaveThread);
   // Use trig input on pin 12 as a trigger to reset the sequence generator
   attachInterrupt(12, TwaveSyncISR, RISING);
 }
@@ -381,6 +401,7 @@ void Twave_loop(void)
   SetGuard1();
   SetGuard2();
   // Only set the velocity if its changed
+/*
   if (CurrentVelocity != TD.Velocity)
   {
 #ifdef UseTimer
@@ -393,6 +414,7 @@ void Twave_loop(void)
     SetPLL2freq(TD.CLOCKadr, TD.Velocity);
 #endif
   }
+*/
   if (TD.Rev == 2) 
   {
      if(TD.Direction) digitalWrite(TWdir, HIGH);
@@ -458,6 +480,7 @@ void setTWAVEfrequency(int freq)
   {
     // Set the frequency
     TD.Velocity = freq;
+    SetVelocity();
     // Update the display
     TWAVEdisplayUpdate;
     // Exit

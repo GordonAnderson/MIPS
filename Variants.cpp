@@ -14,7 +14,7 @@
 #include "Dialog.h"
 #include "Variants.h"
 
-MIPSconfigStruct MIPSconfigData = {sizeof(MIPSconfigStruct),"MIPS",1,0,0,10,false,true,1.0,""};
+MIPSconfigStruct MIPSconfigData = {sizeof(MIPSconfigStruct),"MIPS",1,0,0,10,false,true,1.0,"",false};
 
 TwaveData Twave_Rev1 = {sizeof(TwaveData),"Twave",1,1000000,03,0x10,0x20,0x27,0x69,
                         20.0, 0, 76.53, 905, 0, 1, 0,
@@ -34,11 +34,15 @@ TwaveData Twave_Rev2 = {sizeof(TwaveData),"Twave",2,100000,03,0x10,0x20,0x27,0x6
 RFdriverData  RFDD_A_Rev_1 = {sizeof(RFdriverData),"RFdriver", 1, 2, 0x20, 0x69, 0x50,
                               1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 5, 4, 32, 320, 5, 32, 320, 0, 2383.09, 0, 1, 2621.4, 0,
                               1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 7, 6, 32, 320, 7, 32, 320, 2, 2383.09, 0, 3, 2621.4, 0,
+                              0,0,
+                              -1,-1,
                              };
                              
 RFdriverData  RFDD_B_Rev_1 = {sizeof(RFdriverData),"RFdriver", 1, 2, 0x20, 0x69, 0x50,
                               1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 6, 4, 32, 320, 5, 32, 320, 0, 2383.09, 0, 1, 2621.4, 0,
                               1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 8, 6, 32, 320, 7, 32, 320, 2, 2383.09, 0, 3, 2621.4, 0,
+                              0,0,
+                              -1,-1,
                              };
 
 DCbiasData  DCbD_250_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 250, -250, true, 2, 0x23, 0x18, 0x52,
@@ -86,10 +90,11 @@ FAIMSdata  FAIMS_Rev_1 = {sizeof(FAIMSdata),"FAIMS", 1, 1000000, 25.0, false, 4,
                           7,30.0,true,50.0,2,2383.09,0,3,2621.4,0,         // Drive 2
                           6,25.0,true,50.0,4,2383.09,0,5,2621.4,0,         // Drive 3
                           0,100,0,                                         // RFpri
-                          1,6720,13088,                                    // RFharP
-                          2,16640,12530,                                   // RFharN
+                          2,6720,13088,                                    // RFharP
+                          1,16640,12530,                                   // RFharN
                           0x50,0x20,0x24,0x18,0x69,0x27,0x23,0x40,
                           false,0.001,0.01,10,
+                          1,
                           };
                          
 ESIdata  ESI_Rev_1 =   { sizeof(ESIdata),"ESI", 1,
@@ -104,12 +109,25 @@ ESIdata  ESI_Rev_1 =   { sizeof(ESIdata),"ESI", 1,
                          0x24,0x1F,0x52,
                        };
 
+FilamentData FILAMENT_Rev_1 = {sizeof(FilamentData),"Filament",1,2,
+                               0,5.0,false,0.1,FmodeI,10,14, 0,-3868,21206, 1,5392,13960, 0,13156,-137, 1,13050,-96, 2,2722,6421,
+                               0,5.0,false,0.1,FmodeI,10,48, 2,-3868,21206, 3,5392,13960, 3,13156,-137, 4,13050,-96, 5,2722,6421,
+                               0x24,0x12,0x52
+                              };
+
+ARBdata  ARB_Rev_1 = {sizeof(ARBdata),"ARB", 1, false, 1, false, 100, 0, true,20000,25,0,32,ARB_SIN,
+                      1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,
+                      0x32,0x50,
+                     };
+
+WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_IDLE,"MIPSnet","Linksys20476","","",0};
+
 
 // List of all posible board addresses. These addresses are those of the EEPROM on the modules
 char *BoardAddressList = "A 0x50,A 0x52,A 0x54,A 0x56,B 0x50,B 0x52,B 0x54,B 0x56";
-// List of board names used to allow user to select a board by name for inital setup of re-init
-char *BoardVariantsNames = "RFdrvA R1,RFdrvB R1,DC250V R1,DC750V R1,DC50V  R1,Twave R1,Twave R2,FAIMS R1,ESI  R1";
+// List of board names used to allow user to select a board by name for inital setup or re-init
+char *BoardVariantsNames = "RFdrvA R1,RFdrvB R1,DC250V R1,DC750V R1,DC50V  R1,Twave R1,Twave R2,FAIMS R1,ESI  R1,FIL R1,ARB R1";
 // List of variant board default data structure pointers with a one to one corespondence to list of board names
-void *BoardVariants[] = {(void *)&RFDD_A_Rev_1,(void *)&RFDD_B_Rev_1,(void *)&DCbD_250_Rev_1,(void *)&DCbD_750_Rev_1,(void *)&DCbD_50_Rev_1,(void *)&Twave_Rev1,(void *)&Twave_Rev2,(void *)&FAIMS_Rev_1,(void *)&ESI_Rev_1};
+void *BoardVariants[] = {(void *)&RFDD_A_Rev_1,(void *)&RFDD_B_Rev_1,(void *)&DCbD_250_Rev_1,(void *)&DCbD_750_Rev_1,(void *)&DCbD_50_Rev_1,(void *)&Twave_Rev1,(void *)&Twave_Rev2,(void *)&FAIMS_Rev_1,(void *)&ESI_Rev_1,(void *)&FILAMENT_Rev_1,(void *)&ARB_Rev_1};
 
 

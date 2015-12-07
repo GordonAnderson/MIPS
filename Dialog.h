@@ -1,6 +1,9 @@
 #ifndef Dialog_h
 #define Dialog_h
 
+extern char *DIlist;
+extern char *DITlist;
+
 enum DialogTypes
 {
   D_MENU,
@@ -14,7 +17,9 @@ enum DialogTypes
   D_FWDREV,
   D_FUNCTION,
   D_LIST,                       // Select from a list of options
-  D_OFF                         // This will turn an entry off, it will be ignored
+  D_PAGE,                       // Changes the display entry pointer and refreshes the dialog
+  D_OFF,                        // This will turn an entry off, it will be ignored
+  D_STRING                      // Displays and edits a string. 
 };
 
 typedef struct
@@ -38,6 +43,7 @@ typedef struct
   Window          w;
   MenuState       State;          // State of DialogBox 
   int8_t          Selected;       // Defines the selected enrty, -1 if not selection
+  int8_t          LastUpdated;    //
   DialogBoxEntry  *Entry;         // Array of Dialog box entries, terminated with NULL
 }DialogBox;
 

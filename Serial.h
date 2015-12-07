@@ -44,6 +44,7 @@ typedef struct
   int   Tail;
   int   Head;
   int   Count;
+  int   Commands;
 } Ring_Buffer;
 
 enum CmdTypes
@@ -51,6 +52,7 @@ enum CmdTypes
   CMDstr,		        // Sends a string
   CMDint,			// Sends an int
   CMDfloat,			// Sends an float
+  CMDbool,                      // Sends or receives a bool, TRUE or FALSE
   CMDfunction,		        // Calls a function with 0,1,or 2 int args
   CMDfunctionStr,		// Calls a function with pointer to str arg
   CMDfun2int1flt,		// Calls a function with 2 int args followed by 1 float arg
@@ -73,6 +75,7 @@ union functions
   char  *charPtr;
   int   *intPtr;
   float *floatPtr;
+  bool  *boolPtr;
   void  (*funcVoid)();
   void  (*func1int)(int);
   void  (*func2int)(int, int);
@@ -93,6 +96,8 @@ extern Ring_Buffer  RB;
 extern char Version[];
 
 // Function prototypes
+void SetThreadEnable(char *, char *);
+void ListThreads(void);
 void SerialInit(void);
 char *GetToken(bool ReturnComma);
 int  ProcessCommand(void);
@@ -102,6 +107,7 @@ int RB_Size(Ring_Buffer *);
 char RB_Put(Ring_Buffer *, char);
 char RB_Get(Ring_Buffer *);
 char RB_Next(Ring_Buffer *);
+int RB_Commands(Ring_Buffer *);
 void PutCh(char ch);
 void MacroRecord(char *filename);
 void MacroStop(void);
@@ -116,13 +122,6 @@ void DelayCommand(int dtime);
 // Prototypes for external functions called
 void SAVEparms(void);
 void RFnumber(void);
-void RFfreq(int channel, int freq);
-void RFfreqReport(int channel);
-void RFvoltageReportP(int channel);
-void RFvoltageReportN(int channel);
-void RFdriveReport(int channel);
-void RFheadPower(int channel);
-void RFdrive(char *Chan, char *Val);
 void DCbiasSet(char *chan, char *value);
 void DCbiasRead(int chan);
 void DCbiasReadV(int chan);

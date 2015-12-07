@@ -29,7 +29,13 @@
 //      5 and 7 for board A and 6 and 8 for board B. This can be changed my editing the
 //      variant.h file in the arduino source and changing two #defines:
 //            #define PWM_FREQUENCY		50000
-//            #define TC_FREQUENCY              50000
+//            #define TC_FREQUENCY    50000
+//      Also the PWM resolution is set to 10 bits by editing the following parameters in the
+//      same file:
+//            #define PWM_MAX_DUTY_CYCLE  1023
+//            #define PWM_RESOLUTION      10
+//            #define TC_MAX_DUTY_CYCLE   1023
+//            #define TC_RESOLUTION       10
 //      If the IDE is updated then these values need to also be updated. I am looking for
 //      a cleaner way to do this.
 //  4.) Use of Push button LEDs:
@@ -45,24 +51,14 @@
 //   2.) Add macro command to list a table out the serial port
 //   3.) Commands to add
 //        - Name, get and set MIPS box name
-//   4.) Update to support MIPS rev 2 controller
-//        - Rev 2 suports trigger output
-//        - Rev 2 new LDAC generation in table mode
-//        - Fix the end of table state error
-//   5.) Make the following updates to the RF driver
-//        a.) Allow user to select a digital input pin for gating the RF on and off.
-//            Allow user to select digital input and active high or low.
-//        b.) Add the mode option for open loop or closed loop.
-//        c.) Add the closed loop control.
-//   6.) Add the pressure and tempature control to the FAIMS high voltage
-//        a.) Detech the sensor on power up and add menu options if found. Need to understand
-//            the algorithm.
-//        b.) Add three point calibration to voltage levels, don't know how to do this yet??
-//   7.) Add the analog voltage input functions.
-//        a.) Detect the ADC on power up and treat it like a module.
-//            - Save its parameters to a dick file
-//            - Support options to display all the inputs
-//            - Allow "connecting" and ADC input to a selected channel with range control options
+//   4.) Add three point calibration to FAIMS high voltage levels 
+//   5.) Make the USB id text indicate GAACE
+//   6.) Add the FAIMS serial commands
+//   7.) Add watchdog timer to system. Read this page for important information: http://forum.arduino.cc/index.php?topic=314647.0
+//       will need to modify the arduino source code for this to work.
+//   8.) Change the PWM to 12 bit from 8 bit in RFdriver and the FAIMS driver. This requires editing variant.h
+//       in the arduino source code.
+//
 //     
 // Revision history and notes *********************************************************************************
 //
@@ -128,78 +124,39 @@
 //      1.) Added all the serial commands for the TWAVE module
 //      3.) Fixed the table issue with a count of zero, I still think there are a few issues to resolve
 //      2.) This verions was programmed into Matt Bush's system and Jim Bruce's system
-//    V1.13, in progress
-//      To do on this rev:
-//          a.) Make the USB id text indicate GAACE
-//          b.) Add the FAIMS serial commands
-//          c.) Add automatice control of RF level and support gating in software. Do this with an interrupt on an input. Set the
-//              interrupt for change and gate on and off. Also make it level sensitive
-//          d.) Add serial command to save with a parameter including all.
-//          e.) Add 3 point calibration for RF level detect on FAIMS, may also need on RF decks.
-//          f.) Add the analog input capability, allow mapping to functions?
-//          g.) Add the pressure and tempature sensor, integrate into FAIMS
-//    Code snipits for the analog input and presure sensors
-/*
-  // Pressure sensor to be used for FAIMS voltage correction
-  
-  // Init code
-  pinMode(A3,OUTPUT);
-  pinMode(A4,OUTPUT);    // Turns on pull ups for the TWI lines
-  if(!bmp.begin())
-  {
-    // There was a problem detecting the BMP085 ... check your connections 
-    SerialUSB.print("Ooops, no BMP085 detected ... Check your wiring or I2C ADDR!");
-    while(1);
-  }
-  
-  // Example read code 
-  
-  // Get a new sensor event 
-  sensors_event_t event;
-  bmp.getEvent(&event);
- 
-  // Display the results (barometric pressure is measure in hPa) 
-  if (event.pressure)
-  {
-    // Display atmospheric pressue in hPa 
-    SerialUSB.print("Pressure:    ");
-    SerialUSB.print(event.pressure);
-    SerialUSB.println(" hPa");
-    
-        float temperature;
-    bmp.getTemperature(&temperature);
-    SerialUSB.print("Temperature: ");
-    SerialUSB.print(temperature);
-    SerialUSB.println(" C");
-   
-    float seaLevelPressure = SENSORS_PRESSURE_SEALEVELHPA;
-    SerialUSB.print("Altitude:    "); 
-    SerialUSB.print(bmp.pressureToAltitude(seaLevelPressure,
-                                        event.pressure) * 3.28); 
-    SerialUSB.println(" feet");
-    SerialUSB.println("");
-
-  }  
-*/
-/*
-  // 16 bit ADC init code
-  pinMode(A3,OUTPUT);
-  pinMode(A4,OUTPUT);
-  ads.begin();
-
-  // Example 16 bit ADC access code
-  int16_t adc0, adc1, adc2, adc3;
-
-  adc0 = ads.readADC_SingleEnded(0);
-  adc1 = ads.readADC_SingleEnded(1);
-  adc2 = ads.readADC_SingleEnded(2);
-  adc3 = ads.readADC_SingleEnded(3);
-  SerialUSB.print("AIN0: "); SerialUSB.println(adc0);
-  SerialUSB.print("AIN1: "); SerialUSB.println(adc1);
-  SerialUSB.print("AIN2: "); SerialUSB.println(adc2);
-  SerialUSB.print("AIN3: "); SerialUSB.println(adc3);
-  SerialUSB.println(" ");
-*/
+//    V1.13, July 1, 2015
+//      1.) Fixed FAIMS timing bugs and added the support for temp and pressure sensor
+//      2.) Added the serial port reset function
+//    V1.14, July 7, 2015
+//      1.) Fixed a frequency bug with Twave rev 2 and added internal clock mode.
+//    V1.15, July 20, 2015
+//      1.) Added the analog input module based on the Adafruit ADS1115 boards, 8 channels max.
+//      2.) Updated the thread controller to support names.
+//      3.) Added the THREADS command to display the running threads and there last run times.
+//      4.) Updated the RFdriver and DCbias modules to improve the run time and screen updates.
+//      5.) Add the following new features to the RFdriver:
+//          a.) Gate input selection and logic level
+//          b.) Automatic control mode
+//          c.) Created DIhandler class to support a.)
+//      6.) Added the 750 volt DCbias board option
+//    V1.16, July 26, 2015
+//      1.) Added support for the 2 channel Filament module.
+//      2.) Added watchdog timer support
+//      3.) updated PWM to 12 bit operation
+//   V1.17, August 25, 2015
+//      1.) Fixed a number of minor bugs in the filament driver code
+//   V1.18, August 26, 2015
+//      1.) Fixed CV scan parameter limit bug in FAIMS code
+//   V1.19, September 6, 2015
+//      1.) Update The FAIMS module:
+//          -- Added output level locking
+//          -- Updated the display processing
+//          -- Added commands to support calibration
+//          -- Enabled the pressure and temp compensation
+//   V1.20, October 13, 2015
+//      1.) Added delay in the sequence loading function for Twave. The function failed at low frequencies.
+//   V1.21, November 6, 2015
+//      1.) Added support for ARB module
 //
 // Gordon Anderson
 // GAA Custom Engineering,LLC
@@ -226,17 +183,21 @@
 #include "DCbias.h"
 #include "FAIMS.h"
 #include "ESI.h"
+#include "ARB.h"
 #include "Variants.h"
 #include "Errors.h"
 #include "Serial.h"
 #include <Thread.h>
 #include <ThreadController.h>
 #include <MIPStimer.h>
+#include <DIhandler.h>
 
 #if defined(__SAM3X8E__)
 #undef __FlashStringHelper::F(string_literal)
 #define F(string_literal) string_literal
 #endif
+
+#define UseWDT
 
 // Define my names for the native USB driver
 #define  USB_PRODUCT
@@ -252,10 +213,10 @@
 bool NormalStartup = true;
 bool SDcardPresent = false;
 
-char Version[] = "Version 1.12, June 18, 2015";
+char Version[] = "Version 1.21, November 6, 2015";
 
 // ThreadController that will controll all threads
-ThreadController controll = ThreadController();
+ThreadController control = ThreadController();
 //MIPS Threads
 Thread MIPSsystemThread = Thread();
 Thread LEDThread        = Thread();
@@ -273,14 +234,15 @@ extern DialogBox MacroOptions;
 
 #define MaxMainMenuEntries  16
 
+void SerialPortReset(void);
+
 char BoardAddress[20] = "";
 char BoardName[20] = "";
-
-Adafruit_ADS1115 ads;
 
 // MIPS main menu
 MenuEntry MainMenuEntries[MaxMainMenuEntries] = {
   {" MIPS Configuration", M_DIALOG, 0, 0, 0, NULL, &MIPSconfig, NULL, NULL},
+  {" Reset serial port",  M_FUNCTION, 0, 0, 0, NULL, NULL, SerialPortReset, NULL},
   {""}};
   
 Menu MainMenu = {
@@ -305,7 +267,7 @@ DialogBoxEntry MIPSconfigEntries[] = {
 
 DialogBox MIPSconfig = {
   {"MIPS Configuration",ILI9340_BLACK,ILI9340_WHITE,2,0,0,300,220,B_DOUBLE,12},
-  M_SCROLLING,0,MIPSconfigEntries};
+  M_SCROLLING,0,0,MIPSconfigEntries};
   
 // MIPS module setup / config dialog box
 DialogBoxEntry ModuleConfigEntries[] = {
@@ -319,7 +281,7 @@ DialogBoxEntry ModuleConfigEntries[] = {
 
 DialogBox ModuleConfig = {
   {"Module Configuration",ILI9340_BLACK,ILI9340_WHITE,2,0,0,300,220,B_DOUBLE,12},
-  M_SCROLLING,0,ModuleConfigEntries};
+  M_SCROLLING,0,0,ModuleConfigEntries};
   
 // Macro dialog box supporting the following
 //  - Select and play a macro
@@ -337,7 +299,7 @@ DialogBoxEntry MacroEntries[] = {
 
 DialogBox MacroOptions = {
   {"Macro options",ILI9340_BLACK,ILI9340_WHITE,2,0,0,300,220,B_DOUBLE,12},
-  M_SCROLLING,0,MacroEntries};
+  M_SCROLLING,0,0,MacroEntries};
   
 // This function is called before the macro menu loads.
 void SetupMacroOptions(void)
@@ -345,6 +307,13 @@ void SetupMacroOptions(void)
   MacroNameList = MacroBuildList("NONE");
   MacroEntries[0].fmt = MacroNameList;
   MacroEntries[1].fmt = MacroNameList;
+}
+
+void SerialPortReset(void)
+{
+  SerialUSB.flush();
+  SerialUSB.end();
+  SerialInit();
 }
 
 // Called after macro is selected to play
@@ -436,6 +405,27 @@ void encPB(void)
   ButtonPressed = true;
 }
 
+// Watchdog timer setup routine, this function will enable the watchdog timer.
+// call WDT_Restart(WDT) at least every 2.5 sec to stop an automatic reset.
+// the setup routine runs once when you press reset:
+#ifdef UseWDT
+//double timeout = 5.0;  // number of seconds for timeout
+double timeout = 8.0;  // number of seconds for timeout
+int timeout2 = 0;
+void WDT_Setup (){ 
+
+  timeout2 =(int)( timeout * 227); 
+  
+  timeout2 = 0x0fff2000 + timeout2;
+  WDT_Enable(WDT,timeout2);  
+  
+  // number of loops:
+  // 0x0fff2000 0
+  // 0x0fff200f 231
+  // 0x0fff2fff 2981
+}  
+#endif      
+
 void Signon(void)
 {
   tft.fillScreen(ILI9340_BLACK);
@@ -474,8 +464,10 @@ void Signon(void)
     }
     PB_GREEN_ON;
     delay(500);
+    WDT_Restart(WDT);
     PB_GREEN_OFF;
     delay(500);
+    WDT_Restart(WDT);
     if(!MIPSconfigData.StartupHold) i++;
   }
   PB_GREEN_OFF;
@@ -541,9 +533,10 @@ void RealTimeISR()
 
 void setup()
 {
+  Reset_IOpins();
   Serial.begin(115200);
   Stream *stm = &Serial;
-  stm->println("MIPS!");
+//  stm->println("MIPS!");
   
   // Init the display and setup all the hardware
   tft.begin();
@@ -603,13 +596,15 @@ void setup()
   ScanHardware();
   DIO_init();
   // Configure Threads
+  MIPSsystemThread.setName("System");
   MIPSsystemThread.onRun(MIPSsystemLoop);
   MIPSsystemThread.setInterval(10);
+  LEDThread.setName("LED");
   LEDThread.onRun(ProcessLED);
   LEDThread.setInterval(500);
   // Add threads to the controller
-  controll.add(&MIPSsystemThread);
-  controll.add(&LEDThread);
+  control.add(&MIPSsystemThread);
+  control.add(&LEDThread);
   // If a startup masco is defined, play it now
   if(strlen(MIPSconfigData.StartupMacro) > 0)
   {
@@ -621,7 +616,7 @@ void setup()
 void MIPSsystemLoop(void)
 {
   float MaxVoltage;
-
+//WDT_Disable(WDT);
   // Process any serial commands
   while(ProcessCommand()==0);  // Process until flag that there is nothing to do
   // Determine the maximum output voltage and set the proper button color
@@ -658,7 +653,7 @@ void MIPSsystemLoop(void)
     tft.println("USB powering controller!");
     tft.println("Apply power to operate...");
     // Wait for power to appear and then reset the system.
-    while (ReadVin() < 10.0);
+    while (ReadVin() < 10.0) WDT_Restart(WDT);
     Software_Reset();
   }
 }
@@ -688,8 +683,9 @@ void ScanHardware(void)
       if (strcmp(&signature[2], "RFdriver") == 0) RFdriver_init(0);
       if (strcmp(&signature[2], "DCbias") == 0) DCbias_init(0);
       if (strcmp(&signature[2], "Twave") == 0) Twave_init(0);
-//      if (strcmp(&signature[2], "FAIMS") == 0) FAIMS_init(0);
       if (strcmp(&signature[2], "ESI") == 0) ESI_init(0);
+      if (strcmp(&signature[2], "Filament") == 0) Filament_init(0);
+      if (strcmp(&signature[2], "ARB") == 0) ARB_init(0);
     }
     // Set board select to B
     ENA_BRD_B;
@@ -698,8 +694,9 @@ void ScanHardware(void)
       // Test the signature and init the system if the signature is known
       if (strcmp(&signature[2], "RFdriver") == 0) RFdriver_init(1);
       if (strcmp(&signature[2], "DCbias") == 0) DCbias_init(1);
-//      if (strcmp(&signature[2], "FAIMS") == 0) FAIMS_init(1);
       if (strcmp(&signature[2], "ESI") == 0) ESI_init(1);
+      if (strcmp(&signature[2], "Filament") == 0) Filament_init(1);
+      if (strcmp(&signature[2], "ARB") == 0) ARB_init(1);
     }
   }
   // Now look for the FAIMS board...
@@ -720,15 +717,19 @@ void ScanHardware(void)
       if (strcmp(&signature[2], "FAIMS") == 0) FAIMS_init(1);
     }
   }
+  WiFi_init();
+  // The last thig we do is look for the analog input option
+  if(MIPSconfigData.UseAnalog) Analog_init();
 }
 
 // Main processing loop
 void loop()
 {
+  WDT_Restart(WDT);
   // run ThreadController
   // this will check every thread inside ThreadController,
   // if it should run. If yes, he will run it;
-  controll.run();
+  control.run();
   // Process any encoder event
   if (ButtonRotated)
   {
@@ -757,6 +758,8 @@ void loop()
     serial = &Serial;
     PutCh(Serial.read());
   }
+  // If there is a command in the input ring buffer, process it!
+  if(RB_Commands(&RB) > 0) while(ProcessCommand()==0);  // Process until flag that there is nothing to do
 //  if (serial->available() > 0) serial->print((char)serial->read());
 }
 
@@ -772,7 +775,7 @@ int SAVEparms(char *filename)
   if(!SDcardPresent) return(ERR_NOSDCARD);
   SD.begin(_sdcs);
   // Remove the existing default.cfg file
-  SD.remove("default.cfg");
+  SD.remove(filename);
   // Open file and write config structure to disk
   if(!(file=SD.open(filename,FILE_WRITE))) return(ERR_CANTCREATEFILE);
   MIPSconfigData.Size = sizeof(MIPSconfigStruct);
@@ -796,6 +799,9 @@ void SAVEparms(void)
 }
 
 // This function load the MIPS config structure from the filename passed.
+// The size of the struct on disk is used, this allows the struct to grow
+// and new additional (at the bottom of the struct) will use the default 
+// values.
 // Returns true if all went well!
 bool LOADparms(char *filename)
 {
@@ -808,7 +814,7 @@ bool LOADparms(char *filename)
   if(!SDcardPresent) return false;
   SD.begin(_sdcs);
   // Open the file
-  if(!(file=SD.open("default.cfg",FILE_READ))) return false;
+  if(!(file=SD.open(filename,FILE_READ))) return false;
   // read the data
   b = (byte *)&MCS;
   for(i=0;i<sizeof(MIPSconfigStruct);i++)

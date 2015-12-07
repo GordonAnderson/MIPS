@@ -25,7 +25,7 @@
 #include <ThreadController.h>
 
 extern Menu MainMenu;
-extern ThreadController controll;
+extern ThreadController control;
 extern DialogBox DODialog;
 extern DialogBox DIDialog;
 void AddMainMenuEntry(MenuEntry *);
@@ -39,27 +39,27 @@ int DigitialOutputs[16];
 void UpdateDigitialOutputArray(void)
 {
   int   i;
-  
+
   // Update the Digitial output array using the image registers
-  for(i=0;i<8;i++)
+  for (i = 0; i < 8; i++)
   {
-    if((MIPSconfigData.DOlsb & (1 << i)) != 0) DigitialOutputs[i] = 1;
+    if ((MIPSconfigData.DOlsb & (1 << i)) != 0) DigitialOutputs[i] = 1;
     else DigitialOutputs[i] = 0;
-    if((MIPSconfigData.DOmsb & (1 << i)) != 0) DigitialOutputs[i+8] = 1;
-    else DigitialOutputs[i+8] = 0;
+    if ((MIPSconfigData.DOmsb & (1 << i)) != 0) DigitialOutputs[i + 8] = 1;
+    else DigitialOutputs[i + 8] = 0;
   }
 }
 
 void SetImageRegs(void)
 {
   int   i;
-  
-  for(i=0;i<8;i++)
+
+  for (i = 0; i < 8; i++)
   {
-    if(DigitialOutputs[i] == 1) MIPSconfigData.DOlsb |= (1 << i);
+    if (DigitialOutputs[i] == 1) MIPSconfigData.DOlsb |= (1 << i);
     else MIPSconfigData.DOlsb &= ~(1 << i);
-    
-    if(DigitialOutputs[i+8] == 1) MIPSconfigData.DOmsb |= (1 << i);
+
+    if (DigitialOutputs[i + 8] == 1) MIPSconfigData.DOmsb |= (1 << i);
     else MIPSconfigData.DOmsb &= ~(1 << i);
   }
   // Send to the hardware
@@ -94,7 +94,7 @@ DialogBox DIDialog = {
     12
   },
   M_SCROLLING,
-  0,
+  0,0,
   DIDialogEntries
 };
 
@@ -132,11 +132,11 @@ DialogBox DODialog = {
     12
   },
   M_SCROLLING,
-  0,
+  0,0,
   DODialogEntries
 };
 
-MenuEntry MEDIOmonitor = {" DIO module", M_DIALOG,0,0,0,NULL,&DIDialog,NULL,NULL};
+MenuEntry MEDIOmonitor = {" DIO module", M_DIALOG, 0, 0, 0, NULL, &DIDialog, NULL, NULL};
 
 // This function is called at powerup to initiaize the RF driver.
 void DIO_init(void)
@@ -145,12 +145,13 @@ void DIO_init(void)
   UpdateDigitialOutputArray();
   // Setup the menu
   AddMainMenuEntry(&MEDIOmonitor);
-  if(ActiveDialog == NULL) DialogBoxDisplay(&DIDialog);
+  if (ActiveDialog == NULL) DialogBoxDisplay(&DIDialog);
   // Configure Threads
+  DIOThread.setName("DIO");
   DIOThread.onRun(DIO_loop);
   DIOThread.setInterval(100);
   // Add threads to the controller
-  controll.add(&DIOThread);
+  control.add(&DIOThread);
   // Init the output bits
   SetImageRegs();
 }
@@ -159,19 +160,26 @@ void DIO_init(void)
 void DIO_loop(void)
 {
   int  i;
-  
+  static int disIndex = 0;
+
   // Read input bits and set digitial input array for the display
-  for(i=0;i<8;i++) DigitialInputs[i] = 0;
-  if(digitalRead(DI0) == HIGH) DigitialInputs[0] = 1;
-  if(digitalRead(DI1) == HIGH) DigitialInputs[1] = 1;
-  if(digitalRead(DI2) == HIGH) DigitialInputs[2] = 1;
-  if(digitalRead(DI3) == HIGH) DigitialInputs[3] = 1;
-  if(digitalRead(DI4) == HIGH) DigitialInputs[4] = 1;
-  if(digitalRead(DI5) == HIGH) DigitialInputs[5] = 1;
-  if(digitalRead(DI6) == HIGH) DigitialInputs[6] = 1;
-  if(digitalRead(DI7) == HIGH) DigitialInputs[7] = 1;
+  for (i = 0; i < 8; i++) DigitialInputs[i] = 0;
+  if (digitalRead(DI0) == HIGH) DigitialInputs[0] = 1;
+  if (digitalRead(DI1) == HIGH) DigitialInputs[1] = 1;
+  if (digitalRead(DI2) == HIGH) DigitialInputs[2] = 1;
+  if (digitalRead(DI3) == HIGH) DigitialInputs[3] = 1;
+  if (digitalRead(DI4) == HIGH) DigitialInputs[4] = 1;
+  if (digitalRead(DI5) == HIGH) DigitialInputs[5] = 1;
+  if (digitalRead(DI6) == HIGH) DigitialInputs[6] = 1;
+  if (digitalRead(DI7) == HIGH) DigitialInputs[7] = 1;
   // If the digitial input dialog is displayed then update the data
-  if(ActiveDialog == &DIDialog) UpdateNoEditDialogEntries(&DIDialog);
+  // For performance reasons update 2 lines on each call to this function
+  if (ActiveDialog == &DIDialog)
+  {
+    DisplayDialogEntry(&DIDialog.w, &DIDialog.Entry[disIndex++], false);
+    DisplayDialogEntry(&DIDialog.w, &DIDialog.Entry[disIndex++], false);
+    if(disIndex >= 8) disIndex = 0;
+  }
 }
 
 // This function is called by the serial command processor to handle the GDIO command.
@@ -190,8 +198,12 @@ void GDIO_Serial(char *CH)
     {
       // Here is this is a digitial input channel. Read the input and respond
       DIbits = DigitalIn();
-      if (((1 << (CH[0] - 'Q')) & DIbits) != 0) {if(!SerialMute) serial->println("1");}
-      else {if(!SerialMute) serial->println("0");}
+      if (((1 << (CH[0] - 'Q')) & DIbits) != 0) {
+        if (!SerialMute) serial->println("1");
+      }
+      else {
+        if (!SerialMute) serial->println("0");
+      }
       return;
     }
     // Here if this is a digitial output. In this case read the image register
@@ -199,14 +211,22 @@ void GDIO_Serial(char *CH)
     BitNum = CH[0] - 'A';
     if (BitNum >= 8)
     {
-      if (((1 << (BitNum - 8)) & MIPSconfigData.DOmsb) != 0) {if(!SerialMute) serial->println("1");}
-      else {if(!SerialMute) serial->println("0");}
+      if (((1 << (BitNum - 8)) & MIPSconfigData.DOmsb) != 0) {
+        if (!SerialMute) serial->println("1");
+      }
+      else {
+        if (!SerialMute) serial->println("0");
+      }
       return;
     }
     else
     {
-      if (((1 << (BitNum)) & MIPSconfigData.DOlsb) != 0) {if(!SerialMute) serial->println("1");}
-      else {if(!SerialMute) serial->println("0");}
+      if (((1 << (BitNum)) & MIPSconfigData.DOlsb) != 0) {
+        if (!SerialMute) serial->println("1");
+      }
+      else {
+        if (!SerialMute) serial->println("0");
+      }
       return;
     }
   }
@@ -218,10 +238,10 @@ void GDIO_Serial(char *CH)
 // The passed parameters are not range tested, its assumed they are correct.
 // chan 'A' through 'P'
 // val '0' or '1'
-void SDIO_Set_Image(char chan,char val)
+void SDIO_Set_Image(char chan, char val)
 {
   uint8_t  BitMask;
-  
+
   BitMask = 1 << ((chan - 'A') & 7);
   if (chan >= 'I')
   {
@@ -257,13 +277,13 @@ void SDIO_Serial(char *CH, char *State)
   }
   SendACK;
   // Set the image bits
-  SDIO_Set_Image(CH[0],State[0]);
+  SDIO_Set_Image(CH[0], State[0]);
   // Send to the hardware
   DOrefresh;
   // Toggle LDAC
   PulseLDAC;
   // Update the display if the outputs are being shown
-  if(ActiveDialog == &DODialog)
+  if (ActiveDialog == &DODialog)
   {
     UpdateDigitialOutputArray();
     DisplayAllDialogEntries(&DODialog);
@@ -279,30 +299,30 @@ void SDIO_Serial(char *CH, char *State)
 //  PULSE, pulses the output from its current state for 1 milli sec
 void TriggerOut(char *cmd)
 {
-  if(MIPSconfigData.Rev < 2) 
+  if (MIPSconfigData.Rev < 2)
   {
     SetErrorCode(ERR_NOTSUPPORTINREV);
     SendNAK;
     return;
   }
-  if((strcmp(cmd,"HIGH")==0) || (strcmp(cmd,"LOW")==0) || (strcmp(cmd,"PULSE")==0))
+  if ((strcmp(cmd, "HIGH") == 0) || (strcmp(cmd, "LOW") == 0) || (strcmp(cmd, "PULSE") == 0))
   {
     SendACK;
-    if(strcmp(cmd,"HIGH")==0) digitalWrite(TRGOUT,LOW);
-    if(strcmp(cmd,"LOW")==0) digitalWrite(TRGOUT,HIGH);
-    if(strcmp(cmd,"PULSE")==0)
+    if (strcmp(cmd, "HIGH") == 0) digitalWrite(TRGOUT, LOW);
+    if (strcmp(cmd, "LOW") == 0) digitalWrite(TRGOUT, HIGH);
+    if (strcmp(cmd, "PULSE") == 0)
     {
-      if(digitalRead(TRGOUT) == HIGH)
+      if (digitalRead(TRGOUT) == HIGH)
       {
-        digitalWrite(TRGOUT,LOW);
+        digitalWrite(TRGOUT, LOW);
         delay(1);
-        digitalWrite(TRGOUT,HIGH);
+        digitalWrite(TRGOUT, HIGH);
       }
       else
       {
-        digitalWrite(TRGOUT,HIGH);
+        digitalWrite(TRGOUT, HIGH);
         delay(1);
-        digitalWrite(TRGOUT,LOW);
+        digitalWrite(TRGOUT, LOW);
       }
     }
     return;

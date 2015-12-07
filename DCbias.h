@@ -2,6 +2,7 @@
 #define DCBIAS_H_
 
 extern float MaxDCbiasVoltage;
+extern int   NumberOfDCChannels;
 
 typedef struct
 {
@@ -31,13 +32,23 @@ typedef struct
 } DCbiasData;
 
 // Prototypes
-int  DCbiasValue2Counts(int chan, float value);
+int   DCbiasValue2Counts(int chan, float value);
 float DCbiasCounts2Value(int chan, int counts);
-bool isDCbiasBoard(int Board);
-void DCbiasDACupdate(int chan, int counts);
-void DCbiasPowerSet(char *cmd);
-void DCbiasPower(void);
-void DelayMonitoring(void);
+bool  isDCbiasBoard(int Board);
+void  DCbiasDACupdate(int chan, int counts);
+void  DCbiasPowerSet(char *cmd);
+void  DCbiasPower(void);
+void  DelayMonitoring(void);
+
+void  DCbiasRead(int, float *);
+void  DCbiasRead(int);
+bool  DCbiasReadMax(int chan, float *fVal);
+void  DCbiasReadMax(int chan);
+bool  DCbiasReadMin(int chan, float *fVal);
+void  DCbiasReadMin(int chan);
+void  DCbiasSet(char *Chan, char *value);
+void  DCbiasSet(int Chan, float value);
+void  DCbiasSetNumBoardChans(int board, int num);
 
 #endif
 

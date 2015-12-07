@@ -2,6 +2,7 @@
 #define RFDRIVER_H_
 
 extern float MaxRFVoltage;
+extern int  NumberOfRFChannels;
 
 enum RFdriverMode
 {
@@ -37,7 +38,29 @@ typedef struct
   uint8_t CLOCKadr;
   uint8_t EEPROMadr;
   RFchannelData  RFCD[2];
+  // These parameters really below in RFchnnelData but there were added after release so placing at end of struct give backwards compatability
+  char   RFgateDI[2];       // Gate input, 0 if not used otherwise its the input P-X
+  int8_t RFgateTrig[2];     // Gate level, 0,CHANGE,RISING, or FALLING
 } RFdriverData;
+
+// Prototypes
+void RF_A1_ISR(void);
+void RF_A2_ISR(void);
+void RF_B1_ISR(void);
+void RF_B2_ISR(void);
+
+void RFfreq(int channel, int freq);
+void RFdrive(int channel, float Drive);
+void RFdrive(char *Chan, char *Val);
+void RFvoltage(int channel, float Voltage);
+void RFvoltage(char *Chan, char *Val);
+void RFfreqReport(int channel);
+void RFvoltageReportP(int channel);
+void RFvoltageReportN(int channel);
+void RFdriveReport(int channel);
+void RFvoltageReport(int channel);
+void RFheadPower(int channel);
+
 
 #endif
 

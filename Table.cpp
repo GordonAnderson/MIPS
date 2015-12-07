@@ -218,7 +218,7 @@
 //
 //
 // Testing pulse sequences
-// STBLDAT;0:[1:2,1000:1:25:A:1,3000:1:5:A:0];
+// STBLDAT;0:[1:10,1000:1:25:A:1,3000:1:5:A:0];
 // STBLDAT;0:[1:5,1000:9:25:A:1,3000:9:5:A:0];
 // STBLDAT;0:[1:4,1000:1:25:9:20:A:1,3000:1:5:9:6:A:0];
 // 
@@ -332,6 +332,7 @@ char *NextToken(void)
     timeout = millis();
     while(millis() < (timeout + 3000))
     {
+        WDT_Restart(WDT);
         if((tk=GetToken(true))!=NULL) 
         {
           return(tk);
@@ -995,6 +996,7 @@ void ProcessTables(void)
     // Setup the table mode and start timer
     while(1)
     {
+        WDT_Restart(WDT);
         // Setup the timer
 //        SetupTimer();
         // Fall into a processing loop and remain in this loop until the timer completes
@@ -1007,6 +1009,7 @@ void ProcessTables(void)
         SetupTimer();
         while(1)
         {
+            WDT_Restart(WDT);
             TimerStatus = MPT.getStatus();
             // If the timer has been triggered update the displayed status
             if(((TimerStatus & TC_SR_ETRGS)!=0) || SWtriggered)

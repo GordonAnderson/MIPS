@@ -9,8 +9,24 @@
 // populated. In this case the DC bias board has its board address set to B. On powerup the FAIMS
 // driver looks for a DC bias board at location B, if found the field driven mode is enerted.
 //
-// If the presure sensor if found using TWI wrire1 channel then the Envionrment menu is enabled.
-// This mune allows you to define adjustment limits and coefficents for presure and temp. 
+// Added output voltage level lock mode. Select this mode by pressing the control buttom when the
+// output voltage level is selected. The main menu will turn green in this mode. The drive is adjusted to
+// hold the output with in +- 20 volts. This only adjusts for slow drifts in output voltage.
+//
+// If the presure sensor is found using TWI wrire1 channel then the Envionrment menu is enabled.
+// This menu allows you to define adjustment limits and coefficents for presure and temp. 
+//      Here is how this works:
+//        - When the RF is enabled the base pressure and temp are recorded
+//        - Measure pressure and temp and calculate the difference from the base values
+//        - Multiply this difference by the coefficents
+//        - Apply the limts
+//        - Adjust the output voltage level only if we are in lock mode
+//      Added enviornment menu to the tune menu
+//        - Display the current press
+//        - Display the current temp
+//        - Enable
+//        - Temp and tress coeef and limts
+//
 //
 // To Dos:
 //  1.) Add all the serial commands to support FAIMS.List of commands to add:
@@ -26,21 +42,8 @@
 //      - Peak neg voltage
 //      - Lots more to add!
 //  2.) Consider adding DC bias power supply ON/OFF and tie the bias to RF on/off??
-//  3.) Add the pressure and tempature sensor, need algorith details from Alex
-//      Here is how this works:
-//        - When the RF is enabled the base pressure and temp are recorded
-//        - Measure pressure and temp and calculate the difference from the base values
-//        - Multiply this difference by the coefficents
-//        - Apply the limts
-//        - Adjust the drive level
-//      Add enviornment menu to the turn menu
-//        - Display the current press
-//        - Display the current temp
-//        - Enable
-//        - Temp and tress coeef and limts
-//  4.) Add calibration procedure for RF amplitude. This needs to be a three point
+//  3.) Add calibration procedure for RF amplitude. This needs to be a three point
 //      second order calibration function.
-//  5.) Disable arc detection when tuning.
 //
 // Gordon Anderson
 //
@@ -60,11 +63,11 @@ extern DialogBox FAIMSDCMenu;
 extern DialogBox FAIMScalMenu;
 extern DialogBox FAIMSEnvMenu;
 
-#define  PWMFS  255          // Full scale PWM output value
+#define  PWMFS  4095          // Full scale PWM output value
 #define  FreqMultiplier 32
 // Filter time constant is:
 // TC in seconds = 1/(sample rate is samples per sec * filter value) * 2 * pi
-#define  Filter 0.10               // Strong filter coefficent
+#define  Filter 0.05               // Strong filter coefficent
 #define  EnvFilter 0.03            // Pressure and temp filter coefficent
 
 FAIMSdata  faims = FAIMS_Rev_1;    // FAIMS main data structure
@@ -100,6 +103,13 @@ bool   FAIMSscanning = false;  // True when the system is scanning
 bool   FieldDriven = false;    // This flag is set if this is a field driven FAIMS system
 float  ScanTime = 0;           // This is how long the system has been scanning
 float  ScanCV;
+int    Loops = 1;
+
+// Output level control variables
+bool   Lock = false;          // This flag is true when in the output level lock mode
+float  LockSetpoint = 0;      // Output lock level setpoint
+float  MaxDriveChange = 10;   // Maximum about of drive level adjustment posible by the level control code
+float  DriveChange=0;         // The abount of drive level changed from the level control code
 
 bool    FAIMSpresent = false; // Set to true if FAIMS system is detected
 int8_t  FAIMSBoardAddress;    // Board address for FAIMS
@@ -107,10 +117,14 @@ unsigned long OnMillis;       // Millisecond timer value at system startup
 int     OnTime = 0;
 int     FAIMSclockChange;
 
+int    DiableArcDetectTimer = 0;  // If this value is non zero then the arc detected is disabled until it reaches 0.
+                                  // it is decremented in the main loop.
 // DC output readback values
 float  DCoffsetRB = 0;
 float  DCbiasRB   = 0;
 float  DCcvRB     = 0;
+
+void DelayArcDetect(void);
 
 //MIPS Threads
 Thread FAIMSThread  = Thread();
@@ -118,7 +132,7 @@ Thread FAIMSThread  = Thread();
 DialogBoxEntry FAIMSentriesMainMenu[] = {
   {" Enable"             , 0, 1, D_ONOFF   , 0, 1, 1, 19, false, NULL, &faims.Enable, NULL, NULL},
   {" Drive"              , 0, 2, D_FLOAT   , 5, 100, 0.1, 17, false, "%5.1f", &faims.Drv, NULL, NULL},
-  {" RF, KV"             , 0, 3, D_FLOAT   , 0, 1, 1, 10, true, "%4.2f", &KVoutP, NULL, NULL},
+  {" RF, KV"             , 0, 3, D_FLOAT   , 0, 1, 1, 10, true, "%4.2f", &KVoutP, LockLevel, NULL},
   {""                    , 0, 3, D_FLOAT   , 0, 1, 1, 18, true, "%4.2f", &KVoutN, NULL, NULL},
   {" Power"              , 0, 4, D_FLOAT   , 0, 0, 0, 19, true, "%3.0f", &TotalPower, NULL, NULL},
   {" Tune menu"          , 0, 5, D_DIALOG  , 0, 0, 0, 0,  false, NULL, &FAIMSTuneMenu, NULL, NULL},
@@ -133,15 +147,15 @@ DialogBoxEntry FAIMSentriesMainMenu[] = {
 
 DialogBox FAIMSMainMenu = {
   {"FAIMS main menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0, FAIMSentriesMainMenu
+  M_SCROLLING, 0,0, FAIMSentriesMainMenu
 };
 
 DialogBoxEntry FAIMSentriesTuneMenu[] = {
   {" Frequency"              , 0, 1, D_INT     , 500000, 2000000, 1000, 16, false, "%7d", &faims.Freq, NULL, NULL},
   {" Coarse phase"           , 0, 2, D_INT     , 0, 7, 1, 22, false, "%1d", &faims.PhaseC, NULL, NULL},
   {" Fine phase"             , 0, 3, D_INT     , 0, 255, 1, 20, false, "%3d", &faims.PhaseF, NULL, NULL},
-  {" Pri capacitance"        , 0, 4, D_FLOAT   , 0, 100, 0.1, 18, false, "%5.1f", &faims.Pcap, NULL, NULL},
-  {" Har capacitance"        , 0, 5, D_FLOAT   , 0, 100, 0.1, 18, false, "%5.1f", &faims.Hcap, NULL, NULL},
+  {" Pri capacitance"        , 0, 4, D_FLOAT   , 0, 100, 0.1, 18, false, "%5.1f", &faims.Pcap, NULL, DelayArcDetect},
+  {" Har capacitance"        , 0, 5, D_FLOAT   , 0, 100, 0.1, 18, false, "%5.1f", &faims.Hcap, NULL, DelayArcDetect},
   {" Environment menu"       , 0, 7, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSEnvMenu, NULL, NULL},
   {" Drive menu"             , 0, 8, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSDriveMenu, NULL, NULL},
   {" Power menu"             , 0, 9, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSPowerMenu, NULL, NULL},
@@ -151,7 +165,7 @@ DialogBoxEntry FAIMSentriesTuneMenu[] = {
 
 DialogBox FAIMSTuneMenu = {
   {"FAIMS tune menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0, FAIMSentriesTuneMenu
+  M_SCROLLING, 0,0, FAIMSentriesTuneMenu
 };
 
 DialogBoxEntry FAIMSentriesEnvMenu[] = {
@@ -170,17 +184,17 @@ DialogBoxEntry FAIMSentriesEnvMenu[] = {
 
 DialogBox FAIMSEnvMenu = {
   {"FAIMS enviornment menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0, FAIMSentriesEnvMenu
+  M_SCROLLING, 0,0, FAIMSentriesEnvMenu
 };
 
 DialogBoxEntry FAIMSentriesDriveMenu[] = {
-  {" Enable Drv1"            , 0, 1, D_ONOFF   , 0, 1, 1, 19, false, NULL, &faims.Drv1.Enable, NULL, NULL},
+  {" Enable Drv1"            , 0, 1, D_ONOFF   , 0, 1, 1, 19, false, NULL, &faims.Drv1.Enable, NULL, DelayArcDetect},
   {" Drv1 level"             , 0, 2, D_FLOAT   , 5, 100, 0.1, 17, false, "%5.1f", &faims.Drv1.Drv, NULL, NULL},
   {" Drv1 power"             , 0, 3, D_FLOAT   , 0, 1, 1, 19, true, "%3.0f", &Drv1Power, NULL, NULL},
-  {" Enable Drv2"            , 0, 4, D_ONOFF   , 0, 1, 1, 19, false, NULL, &faims.Drv2.Enable, NULL, NULL},
+  {" Enable Drv2"            , 0, 4, D_ONOFF   , 0, 1, 1, 19, false, NULL, &faims.Drv2.Enable, NULL, DelayArcDetect},
   {" Drv2 level"             , 0, 5, D_FLOAT   , 5, 100, 0.1, 17, false, "%5.1f", &faims.Drv2.Drv, NULL, NULL},
   {" Drv2 power"             , 0, 6, D_FLOAT   , 0, 1, 1, 19, true, "%3.0f", &Drv2Power, NULL, NULL},
-  {" Enable Drv3"            , 0, 7, D_ONOFF   , 0, 1, 1, 19, false, NULL, &faims.Drv3.Enable, NULL, NULL},
+  {" Enable Drv3"            , 0, 7, D_ONOFF   , 0, 1, 1, 19, false, NULL, &faims.Drv3.Enable, NULL, DelayArcDetect},
   {" Drv3 level"             , 0, 8, D_FLOAT   , 5, 100, 0.1, 17, false, "%5.1f", &faims.Drv3.Drv, NULL, NULL},
   {" Drv3 power"             , 0, 9, D_FLOAT   , 0, 1, 1, 19, true, "%3.0f", &Drv3Power, NULL, NULL},
   {" Tune menu"              , 0, 10, D_DIALOG  , 0, 0, 0, 0,  false, NULL, &FAIMSTuneMenu, NULL, NULL},
@@ -190,7 +204,7 @@ DialogBoxEntry FAIMSentriesDriveMenu[] = {
 
 DialogBox FAIMSDriveMenu = {
   {"FAIMS drive menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0, FAIMSentriesDriveMenu
+  M_SCROLLING, 0,0, FAIMSentriesDriveMenu
 };
 
 DialogBoxEntry FAIMSentriesPowerMenu[] = {
@@ -206,7 +220,7 @@ DialogBoxEntry FAIMSentriesPowerMenu[] = {
 
 DialogBox FAIMSPowerMenu = {
   {"FAIMS power menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0, FAIMSentriesPowerMenu
+  M_SCROLLING, 0,0, FAIMSentriesPowerMenu
 };
 
 DialogBoxEntry FAIMSentriesDCMenu[] = {
@@ -219,8 +233,9 @@ DialogBoxEntry FAIMSentriesDCMenu[] = {
   {""                        , 0, 3, D_FLOAT   , 0, 0, 0, 18, true, "%5.1f", &DCoffsetRB, NULL, NULL},
   {" CV start"               , 0, 5, D_FLOAT   , -250, 250, 0.1, 18, false, "%5.1f", &faims.CVstart, NULL, NULL},
   {" CV end"                 , 0, 6, D_FLOAT   , -250, 250, 0.1, 18, false, "%5.1f", &faims.CVend, NULL, NULL},
-  {" Duration"               , 0, 7, D_FLOAT   , 0, 10000, 1, 15, false, "%8.1f", &faims.Duration, NULL, NULL},
+  {" Duration"               , 0, 7, D_FLOAT   , 1, 10000, 1, 15, false, "%8.1f", &faims.Duration, NULL, NULL},
   {" Scan"                   , 0, 8, D_ONOFF   , 0, 1, 1, 20, false, NULL, &FAIMSscan, NULL, NULL},
+  {" Loops"                  , 0, 9, D_INT     , 1, 100, 1, 20, false, "%3d", &Loops, NULL, NULL},
   {" Calibration menu"       , 0, 10, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMScalMenu, NULL, NULL},
   {" Return to FAIMS menu"   , 0, 11, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSMainMenu, NULL, NULL},
   {NULL},
@@ -242,12 +257,39 @@ DialogBoxEntry FAIMSentriesDCMenuFD[] = {
   {NULL},
 };
 
+// This function is called when the user selects the RF voltage. This button will toggle output level 
+// control on and off.
+void LockLevel(void)
+{
+  if(!faims.Enable) return;
+  if(!Lock)
+  {
+    Lock = true;
+    // Initalize all the control parameters
+    LockSetpoint = KVoutP;
+    DriveChange = 0;
+    FAIMSMainMenu.w.Fcolor = ILI9340_GREEN;
+    DisplayMessage("Voltage Lock Enabled", 2000);
+  }
+  else
+  {
+    Lock = false;
+    FAIMSMainMenu.w.Fcolor = ILI9340_WHITE;
+    DisplayMessage("Voltage Lock Disabled", 2000);
+  }
+}
+
+void DelayArcDetect(void)
+{
+  DiableArcDetectTimer=50;
+}
+
 // This functions sets up the dialog box entry structure based on the DCbias card range.
 void SetupFDEntry(DCbiasData *dc)
 {
   int   i;
   
-  // Setup the min and max values for the user interface
+// Setup the min and max values for the user interface
   for(i=0;i<4;i++)
   {
     FAIMSentriesDCMenuFD[i].Min = dc->MinVoltage+dc->DCoffset.VoltageSetpoint;
@@ -255,6 +297,11 @@ void SetupFDEntry(DCbiasData *dc)
   }
   FAIMSentriesDCMenuFD[4].Min = dc->MinVoltage;
   FAIMSentriesDCMenuFD[4].Max = dc->MaxVoltage;
+// Set the CV scan limits based on offset
+  FAIMSentriesDCMenuFD[6].Min = dc->MinVoltage+dc->DCoffset.VoltageSetpoint;
+  FAIMSentriesDCMenuFD[6].Max = dc->MaxVoltage+dc->DCoffset.VoltageSetpoint;
+  FAIMSentriesDCMenuFD[7].Min = dc->MinVoltage+dc->DCoffset.VoltageSetpoint;
+  FAIMSentriesDCMenuFD[7].Max = dc->MaxVoltage+dc->DCoffset.VoltageSetpoint;
 }
 
 void UpdateFDlimits(void)
@@ -264,7 +311,7 @@ void UpdateFDlimits(void)
 
 DialogBox FAIMSDCMenu = {
   {"FAIMS DC menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0, FAIMSentriesDCMenu
+  M_SCROLLING, 0,0, FAIMSentriesDCMenu
 };
 
 DialogBoxEntry FAIMSentriesDCcalMenu[] = {
@@ -277,7 +324,7 @@ DialogBoxEntry FAIMSentriesDCcalMenu[] = {
 
 DialogBox FAIMScalMenu = {
   {"FAIMS DC cal menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0, FAIMSentriesDCcalMenu
+  M_SCROLLING, 0,0, FAIMSentriesDCcalMenu
 };
 
 MenuEntry MEFAIMSMonitor = {" FAIMS module", M_DIALOG, 0, 0, 0, NULL, &FAIMSMainMenu, NULL, NULL};
@@ -369,7 +416,7 @@ void RestoreFAIMSSettings(bool NoDisplay)
 {
   FAIMSdata faimsT;
 
-  if (FieldDriven)
+  if (FieldDriven)  // Read the DC bias card parameters as well for the field driven version.
   {
     RestoreDCbiasSettings(true);
     SelectBoard(0);
@@ -381,6 +428,7 @@ void RestoreFAIMSSettings(bool NoDisplay)
       // Here if the name matches so copy the data to the operating data structure
       memcpy(&faims, &faimsT, faimsT.Size);
       faims.Size = sizeof(FAIMSdata);
+      Loops = faims.Loops;
       if (!NoDisplay) DisplayMessage("Parameters Restored!", 2000);
     }
     else if (!NoDisplay) DisplayMessage("Corrupted EEPROM data!", 2000);
@@ -433,6 +481,7 @@ void FAIMS_init(int8_t Board)
 {
   // Flag the board as present
   FAIMSpresent = true;
+  NumberOfFAIMS = 1;
   // Set active board to board being inited
   FAIMSBoardAddress = Board;
   SelectBoard(Board);
@@ -441,6 +490,7 @@ void FAIMS_init(int8_t Board)
   {
     RestoreFAIMSSettings(true);
   }
+  Loops = faims.Loops;
   // Force global enable to false and set global drive to highest driver channel value
   faims.Enable = false;
   faims.Drv = faims.Drv1.Drv;
@@ -456,6 +506,7 @@ void FAIMS_init(int8_t Board)
   CY_Init(faims.CLOCKadr);
   SetPLL2freq(faims.CLOCKadr, faims.Freq * FreqMultiplier);
   // Setup the PWM outputs and set levels
+  analogWriteResolution(12);
   if(faims.Enable == false)
   {
     pinMode(faims.Drv1.PWMchan, OUTPUT);
@@ -490,13 +541,13 @@ void FAIMS_init(int8_t Board)
   }
   // Setup the menu and the loop processing thread
   AddMainMenuEntry(&MEFAIMSMonitor);
-//  if (ActiveDialog == NULL) DialogBoxDisplay(&FAIMSMainMenu);
   DialogBoxDisplay(&FAIMSMainMenu);
   // Configure Threads
+  FAIMSThread.setName("FAIMS");
   FAIMSThread.onRun(FAIMS_loop);
   FAIMSThread.setInterval(100);
   // Add threads to the controller
-  controll.add(&FAIMSThread);
+  control.add(&FAIMSThread);
   // Use trig input on pin 12 as a trigger to start a scan
   attachInterrupt(12, FAIMSscanISR, RISING);
   // Turn DC power supply on
@@ -507,6 +558,7 @@ void FAIMS_init(int8_t Board)
   bmpSensor = false;
   if(bmp.begin())
   {
+    Wire1.setClock(100000);
     // Here if the pressure / temp sensor is found. Set flag that its present
     bmpSensor = true;
     bmp.getPressure(&basePressure);
@@ -520,10 +572,26 @@ void FAIMS_init(int8_t Board)
     FAIMSentriesTuneMenu[5].Type = D_OFF;
   }
   
+// Alex's FAIMS calibratoin update
+/*
+  faims.RFharP.m = 8038;
+  faims.RFharP.b = 13088;
+  faims.RFharP.Chan = 2;
+
+  faims.RFharN.m = 13961;
+  faims.RFharN.b = 12530;
+  faims.RFharN.Chan = 1;
+*/
+/*  
 // Keqi's field driven FAINMS calibration update
-//  faims.RFharP.m = 7862;
-//  faims.RFharP.b = 11759;
-//  faims.RFharN.b = 11652;
+  faims.RFharP.m = 8576;
+  faims.RFharP.b = 12145;
+  faims.RFharP.Chan = 2;
+
+  faims.RFharN.b = 8495;
+  faims.RFharN.b = 12000;
+  faims.RFharN.Chan = 1;
+*/
 }
 
 // Monitor power limits and reduce drive if over the limit. First reduce DriveChange until
@@ -555,8 +623,8 @@ void FAIMSpowerMonitor(void)
 }
 
 // This function tests the clock and returns true if its runninng and near the correct frequency.
-// Use DUE input on pin 2 as a clock detector, this will have the fundimental divided by 16.
-// This function truns on the pin 2 interrupt and counts edges for 10 millisec.
+// Use DUE input on pin 2 as a clock detector, this will have the fundamental divided by 16.
+// This function turns on the pin 2 interrupt and counts edges for 10 millisec.
 bool TestClock(void)
 {
   unsigned int mt;
@@ -582,7 +650,7 @@ void FAIMSDCbiasControl(void)
   // Monitor power on output bit. If power comes on hold all output at zero until power is stable, short delay.
   if (digitalRead(PWR_ON) != 0)
   {
-    // Here is power is off, set supply off flag and delay loop counter
+    // Here if power is off, set supply off flag and delay loop counter
     SuppliesOff = true;
     SuppliesStableCount = 10;
   }
@@ -591,8 +659,6 @@ void FAIMSDCbiasControl(void)
     // Here when supplies are on
     if (--SuppliesStableCount <= 0) SuppliesOff = false;
   }
-
-
   // Output the DC supply voltages. Set all to 0 if power supply is off.
   // If the system is scanning then calculate the next value and output.
   if (SuppliesOff)
@@ -614,7 +680,7 @@ void FAIMSDCbiasControl(void)
     else
     {
       // Here if FAIMS scan flag is true.
-      // Check if we are currently scanning and update the voltage is true.
+      // Check if we are currently scanning and update the voltage if true.
       // If we are not currently scanning then init the scan mode and start.
       if (!FAIMSscanning)
       {
@@ -638,15 +704,24 @@ void FAIMSDCbiasControl(void)
         ScanTime = (millis() - StartTime)/1000;
         if (ScanTime > faims.Duration)
         {
-          // Stop scanning and clear all the scanning flags
-          FAIMSscan = false;
-          FAIMSscanning = false;
-          DCcvRB = faims.DCcv.VoltageSetpoint;
-          // Refresh the menu
-          if (ActiveDialog == &FAIMSDCMenu) 
+          // Stop scanning and clear all the scanning flags if all loops are done
+          if(--Loops <= 0)
           {
-            DisplayAllDialogEntries(&FAIMSDCMenu);
-            FAIMSDCMenu.State = M_SCROLLING;         }
+             FAIMSscan = false;
+             FAIMSscanning = false;
+             DCcvRB = faims.DCcv.VoltageSetpoint;
+             Loops = faims.Loops;
+             // Refresh the menu
+             if (ActiveDialog == &FAIMSDCMenu) 
+             {
+               DisplayAllDialogEntries(&FAIMSDCMenu);
+               FAIMSDCMenu.State = M_SCROLLING;
+             }
+          }
+          else
+          {
+            FAIMSscanning = false;
+          }
         }
         else
         {
@@ -744,6 +819,7 @@ void ProcessEnvionment(void)
   float fVal;
 
   if(!bmpSensor) return;  // Exit if no sensor was found
+  if(!bmp.begin()) bmpSensor = false;
   // Read and filter the current pressure and temp
   bmp.getPressure(&fVal);
   currentPressure = EnvFilter * fVal + (1 - EnvFilter) * currentPressure;
@@ -757,7 +833,7 @@ void ProcessEnvionment(void)
   if(EnvCorrection > faims.PressTempLimit) EnvCorrection = faims.PressTempLimit;
   if(EnvCorrection < -faims.PressTempLimit) EnvCorrection = -faims.PressTempLimit;
   // If the env dialogbox is displayed update the displayed values
-  if (ActiveDialog == &FAIMSEnvMenu) UpdateNoEditDialogEntries(&FAIMSEnvMenu);
+  if (ActiveDialog == &FAIMSEnvMenu) RefreshAllDialogEntries(&FAIMSEnvMenu);
 }
 
 // This function is called every 100 mS to process the FAIMS module.
@@ -767,13 +843,14 @@ void FAIMS_loop(void)
   int   i;
   float MaxDrv;
   uint16_t ADCvals[8];
-  float V, Vp, Vn, I;
+  float V, Vp, Vn, I, SP;
   static int  LastFreq = -1;
   static int  LastGPIO = -1;
   static int  LastDelay = -1;
   static int  LastDrv  = -1;
   static bool LastEnable = false;
 
+  if(DiableArcDetectTimer > 0) DiableArcDetectTimer--;
   // Select the board
   SelectBoard(FAIMSBoardAddress);
   MaxFAIMSVoltage = 0;
@@ -911,7 +988,7 @@ void FAIMS_loop(void)
     // Arc detection
     // Compare the unfiltered value to the filtered value and if there is a sudden drop it
     // could indicate an ark so turn off the system. (add this code! here)
-    if (faims.Enable) if (((KVoutP + KVoutN) - (Vp + Vn)) > (KVoutP + KVoutN) / 3)
+    if(DiableArcDetectTimer == 0) if (faims.Enable) if (((KVoutP + KVoutN) - (Vp + Vn)) > (KVoutP + KVoutN) / 3)
     {
       if((KVoutP + KVoutN) > 0.5)
       {
@@ -931,9 +1008,9 @@ void FAIMS_loop(void)
     if (DCcvRB > MaxFAIMSVoltage) MaxFAIMSVoltage = DCcvRB;
   }
   // Display the monitored values based on the dialog box curently being displayed
-  if (ActiveDialog == &FAIMSMainMenu) UpdateNoEditDialogEntries(&FAIMSMainMenu);
-  if (ActiveDialog == &FAIMSDriveMenu) UpdateNoEditDialogEntries(&FAIMSDriveMenu);
-  if (ActiveDialog == &FAIMSDCMenu) UpdateNoEditDialogEntries(&FAIMSDCMenu);
+  if (ActiveDialog == &FAIMSMainMenu) RefreshAllDialogEntries(&FAIMSMainMenu);
+  if (ActiveDialog == &FAIMSDriveMenu) RefreshAllDialogEntries(&FAIMSDriveMenu);
+  if (ActiveDialog == &FAIMSDCMenu) RefreshAllDialogEntries(&FAIMSDCMenu);
   // Process the Estop input, if pressed then set global enable to false
   if (faims.Enable)
   {
@@ -961,6 +1038,38 @@ void FAIMS_loop(void)
     FAIMSDCbiasControl();
   }
   ProcessEnvionment();
+  // Output level control
+  if(Lock)
+  {
+    SP = LockSetpoint;
+    if(faims.Compensation) SP *= (1+EnvCorrection/100);
+    if(!faims.Enable)
+    {
+      Lock = false;
+      DriveChange = 0;
+      FAIMSMainMenu.w.Fcolor = ILI9340_WHITE;
+      if (ActiveDialog == &FAIMSMainMenu) 
+      {
+        FAIMSMainMenu.State = M_SCROLLING;
+        DialogBoxDisplay(&FAIMSMainMenu);
+      }
+    }
+    else if(fabs(LockSetpoint - KVoutP) > 0.02)
+    {
+       if(LockSetpoint < KVoutP) 
+       {
+         DriveChange -= 0.01;
+         if(DriveChange < -MaxDriveChange) DriveChange = -MaxDriveChange;
+         else faims.Drv -= 0.01;
+       }
+       else 
+       {
+         DriveChange += 0.01;
+         if(DriveChange > MaxDriveChange) DriveChange = MaxDriveChange;
+         else faims.Drv += 0.01;
+       }
+    }
+  }
 }
 
 //
@@ -972,6 +1081,26 @@ void FAIMSnumberOfChannels(void)
 {
   SendACKonly;
   if(!SerialMute) serial->println(NumberOfFAIMS);
+}
+
+void FAIMSsetRFharPcal(char *m, char *b)
+{
+  String res;
+  
+  res = m;
+  faims.RFharP.m = res.toFloat();
+  res = b;
+  faims.RFharP.b = res.toFloat();
+}
+
+void FAIMSsetRFharNcal(char *m, char *b)
+{
+  String res;
+  
+  res = m;
+  faims.RFharN.m = res.toFloat();
+  res = b;
+  faims.RFharN.b = res.toFloat();
 }
 
 

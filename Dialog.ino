@@ -7,6 +7,9 @@
 #include "Dialog.h"
 #include "Menu.h"
 
+char *DIlist = "NA,Q,R,S,T,U,V,W,X";
+char *DITlist = "NA,BOTH,HIGH,LOW,POS,NEG";
+
 DialogBox *ActiveDialog = NULL;
 
 // This function is called when an encoder position change is detected.
@@ -69,15 +72,24 @@ void DialogButtonPress(DialogBox *d)
           d->State = M_ENTRYSELECTED;
         }
         break;
+      case D_PAGE:
+        // Update the entries page and refresh the dialog
+        d->Entry = (DialogBoxEntry *)d->Entry[d->Selected].Value;
+        d->Selected = 0;
+        d->State = M_SCROLLING;
+        DialogBoxDisplay(d);
+        break;
       default:
         break;
     }
   }
   else if(d->State == M_ENTRYSELECTED)
   {
-    // Deselect call post function and return to scrolling
-    DisplayDialogEntry(&d->w,&d->Entry[d->Selected],false);
+    // Deselect, call post function, and return to scrolling
+    // Changed order to: Call post function, deselect, and return to scorlling. This allows post
+    // function to change displayed value. GAA July 7, 2015
     if(d->Entry[d->Selected].PostFunction != NULL) d->Entry[d->Selected].PostFunction();
+    DisplayDialogEntry(&d->w,&d->Entry[d->Selected],false);
     d->State = M_SCROLLING;
   }
 }
@@ -177,6 +189,9 @@ void DisplayDialogEntry(Window *w, DialogBoxEntry *de, bool HighLight)
   else tft.setTextColor(w->Fcolor, w->Bcolor);
   switch (de->Type)
   {
+    case D_STRING:
+      p(de->fmt,(char *)de->Value);
+      break;
     case D_INT:
       p(de->fmt,*(int *)de->Value);
       break;
@@ -247,6 +262,27 @@ void DisplayAllDialogEntries(DialogBox *d)
 //    if(i==d->Selected) DisplayDialogEntry(&d->w, &d->Entry[i++], true);
 //    else DisplayDialogEntry(&d->w, &d->Entry[i++], false);
     DisplayDialogEntry(&d->w, &d->Entry[i++], false);
+  }
+}
+
+// This function will refresh one entry value per call and then advance to the next
+// entry. The idea is to call this function in the polling loop to refesh the display in the
+// event of any changes. If an entry is selected it will not be updated.
+void RefreshAllDialogEntries(DialogBox *d)
+{
+  DialogTypes Type;
+  
+  while(1)
+  {
+     if(d->Entry[d->LastUpdated].Name == NULL) 
+     {
+       d->LastUpdated=0;
+       return; 
+     }
+     if((d->LastUpdated != d->Selected) || (d->State != M_ENTRYSELECTED)) DisplayDialogEntry(&d->w, &d->Entry[d->LastUpdated], false);
+     Type = d->Entry[d->LastUpdated++].Type;
+     // Exit if its not a type that has no display
+     if((Type != D_MENU) && (Type != D_DIALOG) && (Type != D_TITLE) && (Type != D_FUNCTION)) return;
   }
 }
 

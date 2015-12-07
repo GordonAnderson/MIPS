@@ -11,6 +11,9 @@
 #include "Twave.h"
 #include "FAIMS.h"
 #include "ESI.h"
+#include "Filament.h"
+#include "ARB.h"
+#include "WiFi.h"
 
 #define TestMode
 
@@ -18,15 +21,16 @@
 typedef struct
 {
   int16_t  Size;
-  char     Name[20];      // Holds the MIPS box name
-  int      Rev;           // Holds the hardware rev level
-  uint8_t  DOlsb;         // Digitial output image registers, LSB
-  uint8_t  DOmsb;         // Digitial output image registers, MSB
-  int      StartupDelay;  // Startup delay in seconds
-  bool     StartupHold;   // If this flag is true then MIPS will hold for button press before startup
-  bool     PowerEnable;   // Enables the power supply for the DCbias board if true 
-  float    VerrorThreshold; // Trip threshold for the DCbias supply output monitor
-  char     StartupMacro[20]; // This macro is played when the system powers up
+  char     Name[20];          // Holds the MIPS box name
+  int      Rev;               // Holds the hardware rev level
+  uint8_t  DOlsb;             // Digitial output image registers, LSB
+  uint8_t  DOmsb;             // Digitial output image registers, MSB
+  int      StartupDelay;      // Startup delay in seconds
+  bool     StartupHold;       // If this flag is true then MIPS will hold for button press before startup
+  bool     PowerEnable;       // Enables the power supply for the DCbias board if true 
+  float    VerrorThreshold;   // Trip threshold for the DCbias supply output monitor
+  char     StartupMacro[20];  // This macro is played when the system powers up
+  bool     UseAnalog;         // If true that the analog module is tested for on power up
 } MIPSconfigStruct;
 
 extern MIPSconfigStruct MIPSconfigData;
@@ -44,6 +48,12 @@ extern DCbiasData  DCbD_50_Rev_1;
 extern FAIMSdata  FAIMS_Rev_1;
 
 extern ESIdata  ESI_Rev_1;
+
+extern FilamentData FILAMENT_Rev_1;
+
+extern ARBdata  ARB_Rev_1;
+
+extern WiFiData  WiFi_Rev_1;
 
 // List of all posible board addresses. These addresses are those of the EEPROM on the modules
 extern char *BoardAddressList;

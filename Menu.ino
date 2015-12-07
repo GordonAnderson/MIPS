@@ -344,7 +344,7 @@ void DismissMessageThread(void)
 {
   if(NumCalls++ == 0) return;
   DismissMessage();
-  controll.remove(&DisplayDismissThread);
+  control.remove(&DisplayDismissThread);
 }
 
 // This function displays a message for a defined length of time in millisec
@@ -357,7 +357,7 @@ void DisplayMessage(char *message, int DisplayTime)
   DisplayDismissThread.onRun(DismissMessageThread);
   DisplayDismissThread.setInterval(DisplayTime);
   // Add threads to the controller
-  controll.add(&DisplayDismissThread);
+  control.add(&DisplayDismissThread);
   NumCalls=0;
 }
 

@@ -122,6 +122,8 @@ extern PBledStates  PBledMode;
 #define RFON_ON        digitalWrite(RFON,HIGH);
 
 // Prototypes
+void DefineDeviceAddress(char *board, char *addr);
+void ReportAD7998(int chan);
 void Init_IOpins(void);
 void Reset_IOpins(void);
 void Software_Reset();

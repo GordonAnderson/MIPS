@@ -82,6 +82,8 @@ typedef struct
   float  PressureCoeff;        // Pressure coefficent
   float  TempCoeff;            // Temp coefficent
   float  PressTempLimit;       // Pressure & Temp adjustment limit in % of drive
+  // Loop scan value
+  int    Loops;
 } FAIMSdata;
 
 // Prototypes
@@ -93,6 +95,8 @@ void CalibrateDCoffset(void);
 
 // Serial command prototypes
 void FAIMSnumberOfChannels(void);
+void FAIMSsetRFharPcal(char *m, char *b);
+void FAIMSsetRFharNcal(char *m, char *b);
 
 #endif
 
