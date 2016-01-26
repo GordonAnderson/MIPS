@@ -7,6 +7,14 @@ extern DialogBox TwaveDialog;
 extern DialogBox TwaveDialog2;
 extern DialogBox TwaveCalMenu;
 
+enum CompressorState
+{
+  CS_TRIG,
+  CS_NONCOMPRESS,
+  CS_COMPRESS,
+  CS_NORMAL
+};
+
 typedef struct
 {
   float  VoltageSetpoint;      // Twave channel setpoint voltage
@@ -31,9 +39,30 @@ typedef struct
   TwaveChannellData  TWCD[4]; // 4 total channels, Pulse, Resting, Guard 1, Guard 2
   // The following paraneters were added for rev 2.0 and above
   bool    Direction;          // Twave direction, forward or reverse, true = forward
+  // The following parameters were add for rev 3 and above
+  char   TWdirDI;             // External input for direction control
+  int8_t TWdirLevel;          // External input direction control level
+  char   TWsyncDI;            // External input for sync control
+  int8_t TWsyncLevel;         // External input sync control level
+  //
+  bool    UseCommonClock;     // Flag set to true to use a common clock, this will cause both modules is set each others value
+  // The following variable support the Twave compressor mode of operation
+  bool   CompressorEnabled;   // True if the compressor mode has been enabled
+  int8_t Corder;              // Compressor order, 1 to 20
+  int8_t NumPasses;           // Total number of passes through device
+  int8_t CNth;                // Compress every Nth pass
+  float  Tdelay;              // Delay from trigger to start of compressor or pass, in millisec
+  float  Tcompress;           // Time in compress mode, in millisec
+  float  Tnormal;             // Time in normal mode, in millisec
+  float  TnoC;                // Time for non compressed pass, in millisec
+  char   Ctrig;               // External input for compressor start trigger
+  int8_t CtrigLevel;          // External input triggerl level
+  char   Cswitch;             // Digitial output to control output switch to relead ions to mass spec
+  int8_t CswitchLevel;        // Digital output level control
 } TwaveData;
 
 extern TwaveData TD;
+extern TwaveData TDarray[2];
 
 // Prototypes
 void SetPulseVoltage(void);
@@ -42,19 +71,28 @@ void SetSequence(void);
 void SetRestingVoltage(void);
 void SetGuard1(void);
 void SetGuard2(void);
-void Twave_init(void);
+void Twave_init(int8_t Board, uint8_t addr);
 void Twave_loop(void);
+
+// Compressor prototypes
+void ConfigureTrig(void);
+void ConfigureSwitch(void);
+void SetSwitch(void);
 
 // Serial command prototypes
 void TWAVEnumberOfChannels(void);
-void sendTWAVEsequence(void);
-void setTWAVEfrequency(int freq);
-void setTWAVEsequence(char *value);
-void setTWAVEpulseVoltage(char *voltage);
-void setTWAVEguard1Voltage(char *voltage);
-void setTWAVEguard2Voltage(char *voltage);
-void getTWAVEdir(void);
-void setTWAVEdir(char *dirstr);
+void sendTWAVEsequence(int channel);
+void sendTWAVEfrequency(int channel);
+void setTWAVEfrequency(int channe, int freq);
+void setTWAVEsequence(char *chan, char *value);
+void sendTWAVEpulseVoltage(int channel);
+void setTWAVEpulseVoltage(char *chan, char *voltage);
+void sendTWAVEguard1Voltage(int channel);
+void setTWAVEguard1Voltage(char *chan, char *voltage);
+void sendTWAVEguard2Voltage(int channel);
+void setTWAVEguard2Voltage(char *chan, char *voltage);
+void getTWAVEdir(int channe);
+void setTWAVEdir(char *chan, char *dirstr);
 
 #endif
 

@@ -23,6 +23,7 @@ typedef struct
   int            Status;            // Connection status
 } WiFiData;
 
+
 extern WiFiData wifidata;
 
 // Prototypes

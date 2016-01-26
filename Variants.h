@@ -15,7 +15,9 @@
 #include "ARB.h"
 #include "WiFi.h"
 
-#define TestMode
+//#define TestMode
+//#define TestFilament
+//#define TestTwave
 
 // MIPS system level confirguration data structure
 typedef struct
@@ -36,6 +38,10 @@ typedef struct
 extern MIPSconfigStruct MIPSconfigData;
 
 extern TwaveData Twave_Rev1;
+
+extern TwaveData Twave_Rev2;
+
+extern TwaveData Twave_Rev3;
 
 extern RFdriverData  RFDD_A_Rev_1;
                              

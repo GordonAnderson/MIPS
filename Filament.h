@@ -8,6 +8,14 @@ enum FilamentModes
                             // reduce power disapation in MOSFET
 };
 
+enum FilamentCyclingStates
+{
+  FC_START,               // Cycling started
+  FC_WAIT_PT1,            // Waiting to reach point 1
+  FC_WAIT_PT2,            // Waiting to reach point 2
+  FC_STOP                 // Cyclying stopped
+};
+
 typedef struct
 {
   float    CurrentSetpoint;    // Current setpoint
@@ -25,6 +33,14 @@ typedef struct
   ADCchan  FcurrentMon;        // Filament current monitor
 } FilamentChannel;
 
+typedef struct
+{
+  bool    FCenable;            // Enable the cycling mode
+  float   FCpoint1;            // Current point 1
+  float   FCpoint2;            // Current point 2
+  int     FCnumCyl;            // Number of cycles
+} FilamentCycling;
+
 // One struct for each Filament board
 typedef struct
 {
@@ -37,6 +53,7 @@ typedef struct
   uint8_t ADCadr;            // 8 channel ADC used for readback
   uint8_t DACadr;            // 4 channel DAC, channel used for output control
   uint8_t EEPROMadr;
+  FilamentCycling FCyl[2];   // Data structures supporting the cycling function
 } FilamentData;
 
 // Function prototypes
@@ -52,6 +69,19 @@ void SetFilamentSupplyVoltage(char *Chan, char *Voltage);
 void GetFilamentActualSupplyVoltage(int channel);
 void GetFilamentVoltage(int channel);
 void GetFilamentPower(int channel);
+void GetCurrentRampRate(int channel);
+void SetCurrentRampRate(char *chan, char *RampRate);
+
+void GetFilamentCycleCurrent1(int channel);
+void SetFilamentCycleCurrent1(char *chan, char *current);
+void GetFilamentCycleCurrent2(int channel);
+void SetFilamentCycleCurrent2(char *chan, char *current);
+void GetFilamentCycleCount(int channel);
+void SetFilamentCycleCount(char *chan, char *count);
+void GetFilamentStatus(int channel);
+void SetFilamentStatus(char *chan, char *Status);
+
+void SetFilamentReporting(int channel, int period);
 
 #endif
 

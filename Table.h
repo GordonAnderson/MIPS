@@ -117,6 +117,7 @@ void AdvanceEntryPointer(void);
 void SetupNextEntry(void);
 
 // Call backs
+void Dummy_ISR(void);
 void Trigger_ISR(void);
 void RAmatch_Handler(void);
 void RCmatch_Handler(void);

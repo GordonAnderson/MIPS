@@ -50,10 +50,10 @@ typedef struct
 enum CmdTypes
 {
   CMDstr,		        // Sends a string
-  CMDint,			// Sends an int
-  CMDfloat,			// Sends an float
-  CMDbool,                      // Sends or receives a bool, TRUE or FALSE
-  CMDfunction,		        // Calls a function with 0,1,or 2 int args
+  CMDint,			      // Sends an int
+  CMDfloat,			    // Sends an float
+  CMDbool,          // Sends or receives a bool, TRUE or FALSE
+  CMDfunction,		  // Calls a function with 0,1,or 2 int args
   CMDfunctionStr,		// Calls a function with pointer to str arg
   CMDfun2int1flt,		// Calls a function with 2 int args followed by 1 float arg
   CMDna

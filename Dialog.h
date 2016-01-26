@@ -2,7 +2,11 @@
 #define Dialog_h
 
 extern char *DIlist;
-extern char *DITlist;
+extern char *DILlist;
+
+extern char *DOlist;
+extern char *DOLlist;
+
 
 enum DialogTypes
 {
@@ -10,6 +14,7 @@ enum DialogTypes
   D_DIALOG,
   D_TITLE,                      // Display only the title
   D_INT,
+  D_INT8,
   D_FLOAT,
   D_BINARY8,
   D_YESNO,
@@ -19,7 +24,11 @@ enum DialogTypes
   D_LIST,                       // Select from a list of options
   D_PAGE,                       // Changes the display entry pointer and refreshes the dialog
   D_OFF,                        // This will turn an entry off, it will be ignored
-  D_STRING                      // Displays and edits a string. 
+  D_STRING,                     // Displays and edits a string. 
+  D_DI,                         // Select the Digital input from the list of options, 0 = NA
+  D_DILEVEL,
+  D_DO,                         // Select the digital output from the list o options, 0 = NA
+  D_DOLEVEL
 };
 
 typedef struct
@@ -61,6 +70,7 @@ void DisplayAllDialogEntries(DialogBox *d);
 void DisplayDialogEntryNames(Window *w, DialogBoxEntry *de, bool HighLight);
 void DisplayAllDialogEntryNames(DialogBox *d);
 void DialogBoxDisplay(DialogBox *d);
+DialogBoxEntry *GetDialogEntries(DialogBoxEntry *de, char *rname);
 
 #endif
 

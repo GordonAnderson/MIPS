@@ -309,6 +309,7 @@ volatile bool StopRequest;            // Used by the realtime processing to stop
 volatile bool TableAdv = false;       // If this flag is true then the table number will be advanced to the next table
                                       // after every trigger
 volatile bool SWtriggered = false;
+volatile bool TableOnce = false;      // If true the table will play one time then the mode will return to local
 
 enum TriggerModes TriggerMode = SW;
 enum ClockModes   ClockMode   = MCK128;
@@ -471,7 +472,7 @@ void SetTableMode(char *cmd)
         LOCrequest = true;
         return;
     }
-    else if(strcmp(cmd,"TBL") == 0)
+    else if((strcmp(cmd,"TBL") == 0) || (strcmp(cmd,"ONCE") == 0))
     {
         if(TableMode == TBL)
         {
@@ -485,6 +486,8 @@ void SetTableMode(char *cmd)
             SendNAK;
             return;
         }
+        if(strcmp(cmd,"TBL") == 0) TableOnce = false;
+        else TableOnce = true;
         SendACK;
         ProcessTables();
         return;
@@ -1059,6 +1062,7 @@ void ProcessTables(void)
             StopTimer();
             break;
         }
+        if(TableOnce) break;
         StopTimer();  // not sure about this, testing
         // Advance to next table if advance mode is enabled
         AdvanceTableNumber();
@@ -1100,7 +1104,13 @@ void SetupTimer(void)
         NS.Ptr++;
     }
     // Setup counter, use MPT
-    MPT.begin();
+    MPT.begin();  
+    // Need to make sure the any pending interrupts are cleared on TRIGGER. So if we are in a hardware
+    // triggered mode we will first enable the trigger to a dummy ISR and then detach and reattached to the
+    // real ISR. We will wait a few microseconds for the interrupt to clear.
+    if(TriggerMode == EDGE) {attachInterrupt(TRIGGER, Dummy_ISR, CHANGE); delayMicroseconds(10); detachInterrupt(TRIGGER);}
+    if(TriggerMode == POS)  {attachInterrupt(TRIGGER, Dummy_ISR, RISING); delayMicroseconds(10); detachInterrupt(TRIGGER);}
+    if(TriggerMode == NEG)  {attachInterrupt(TRIGGER, Dummy_ISR, FALLING); delayMicroseconds(10); detachInterrupt(TRIGGER);}
     if(TriggerMode == SW)   {detachInterrupt(TRIGGER) ;MPT.setTrigger(TC_CMR_EEVTEDG_NONE);}
     if(TriggerMode == EDGE) {attachInterrupt(TRIGGER, Trigger_ISR, CHANGE); MPT.setTrigger(TC_CMR_EEVTEDG_EDGE);}
     if(TriggerMode == POS)  {attachInterrupt(TRIGGER, Trigger_ISR, RISING); MPT.setTrigger(TC_CMR_EEVTEDG_RISING);}
@@ -1294,6 +1304,10 @@ void SetupNextEntry(void)
 //
 //**************************************************************************************************
 
+void Dummy_ISR(void)
+{
+}
+
 void Trigger_ISR(void)
 {
    if(MPT.getRAcounter() == 0)
@@ -1307,6 +1321,8 @@ void Trigger_ISR(void)
    }
   // Set trigger to software, this prevents hardware retriggering. Added Jan 14, 2015 GAA
   MPT.setTrigger(TC_CMR_EEVTEDG_NONE);
+  detachInterrupt(TRIGGER);
+//  serial->print(".");
 }
 
 // This interrupt happens when the compare register matches the timer value. At this time the

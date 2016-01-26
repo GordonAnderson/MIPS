@@ -85,7 +85,7 @@ DialogBoxEntry RFdriverDialogEntriesPage2[] = {
   {" Power limit, W", 0, 2, D_FLOAT, 0, 50, 1, 18, false, "%5.1f", &RFCD.MaxPower, NULL, NULL},
   {" Mode"          , 0, 3, D_LIST, 0, 0, 7, 16, false, ModeList, RFmode, NULL, RFmodeChange},
   {" Gate input"    , 0, 4, D_LIST, 0, 0, 5, 18, false, DIlist, RFgateDI, NULL, RFgateChange},
-  {" Gate level"    , 0, 5, D_LIST, 0, 0, 5, 18, false, DITlist, RFgateTrig, NULL, RFgateChange},
+  {" Gate level"    , 0, 5, D_LIST, 0, 0, 5, 18, false, DILlist, RFgateTrig, NULL, RFgateChange},
   {" Save settings", 0, 7, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SaveRFdriverSettings, NULL},
   {" Restore settings", 0, 8, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RestoreRFdriverSettings, NULL},
   {" First page"         , 0, 9, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SetFirstRFPage, NULL},

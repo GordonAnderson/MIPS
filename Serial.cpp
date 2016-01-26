@@ -52,6 +52,8 @@ Commands  CmdArray[] = 	{
   // General commands
   {"GVER",  CMDstr, 0, (char *)Version},	         // Report version
   {"GERR",  CMDint, 0, (char *)&ErrorCode},              // Report the last error code
+  {"GNAME", CMDstr, 0, (char *)MIPSconfigData.Name},	 // Report MIPS system name
+  {"SNAME", CMDstr, 1, (char *)MIPSconfigData.Name},	 // Set MIPS system name
   {"RESET", CMDfunction, 0, (char *)Software_Reset},     // Reset the Due
   {"SAVE", CMDfunction, 0, (char *)SAVEparms},	         // Save MIPS configuration data to default.cfg on CD card
   {"GCHAN", CMDfunctionStr, 1, (char *)GetNumChans},     // Report number for the selected system
@@ -118,18 +120,20 @@ Commands  CmdArray[] = 	{
   {"MLIST", CMDfunction, 0, (char *) MacroList},           // Send a list of macro files
   {"MDELETE", CMDfunctionStr, 1, (char *) MacroDelete},    // Delete a macro file
   // TWAVE commands
-  {"GTWF",  CMDint, 0, (char *)&TD.Velocity},                  // Report the TWAVE frequency
-  {"STWF",  CMDfunction, 1, (char *)setTWAVEfrequency},        // Set the TWAVE frequency
-  {"GTWPV", CMDfloat, 0, (char *)&TD.TWCD[0].VoltageSetpoint}, // Report the TWAVE pulse voltage
-  {"STWPV", CMDfunctionStr, 1, (char *)setTWAVEpulseVoltage},  // Set the TWAVE pulse voltage
-  {"GTWP1V", CMDfloat, 0, (char *)&TD.TWCD[2].VoltageSetpoint},// Report the TWAVE Guard 1 voltage
-  {"STWP1V", CMDfunctionStr, 1, (char *)setTWAVEguard1Voltage},// Set the TWAVE Guard 1 voltage
-  {"GTWP2V", CMDfloat, 0, (char *)&TD.TWCD[3].VoltageSetpoint},// Report the TWAVE Guard 2 voltage
-  {"STWP2V", CMDfunctionStr, 1, (char *)setTWAVEguard2Voltage},// Set the TWAVE Guard 2 voltage
-  {"GTWSEQ", CMDfunction, 0, (char *)sendTWAVEsequence},       // Report the TWAVE sequence
-  {"STWSEQ", CMDfunctionStr, 1, (char *)setTWAVEsequence},     // Set the TWAVE sequence
-  {"GTWDIR", CMDfunction, 0, (char *)getTWAVEdir},             // Report the TWAVE waveform direction, FWD or REV
-  {"STWDIR", CMDfunctionStr, 1, (char *)setTWAVEdir},          // Set the TWAVE waveform direction, FWD or REV
+  {"GTWF",  CMDfunction, 1, (char *)sendTWAVEfrequency},       // Report the TWAVE frequency
+  {"STWF",  CMDfunction, 2, (char *)setTWAVEfrequency},        // Set the TWAVE frequency
+  {"GTWPV", CMDfunction, 1, (char *)sendTWAVEpulseVoltage},    // Report the TWAVE pulse voltage
+  {"STWPV", CMDfunctionStr, 2, (char *)setTWAVEpulseVoltage},  // Set the TWAVE pulse voltage
+  {"GTWG1V", CMDfunction, 1, (char *)sendTWAVEguard1Voltage},  // Report the TWAVE Guard 1 voltage
+  {"STWG1V", CMDfunctionStr, 2, (char *)setTWAVEguard1Voltage},// Set the TWAVE Guard 1 voltage
+  {"GTWG2V", CMDfunction, 1, (char *)sendTWAVEguard2Voltage},  // Report the TWAVE Guard 2 voltage
+  {"STWG2V", CMDfunctionStr, 2, (char *)setTWAVEguard2Voltage},// Set the TWAVE Guard 2 voltage
+  {"GTWSEQ", CMDfunction, 1, (char *)sendTWAVEsequence},       // Report the TWAVE sequence
+  {"STWSEQ", CMDfunctionStr, 2, (char *)setTWAVEsequence},     // Set the TWAVE sequence
+  {"GTWDIR", CMDfunction, 1, (char *)getTWAVEdir},             // Report the TWAVE waveform direction, FWD or REV
+  {"STWDIR", CMDfunctionStr, 2, (char *)setTWAVEdir},          // Set the TWAVE waveform direction, FWD or REV
+  {"STWCCLK", CMDbool, 1, (char *)&TDarray[0].UseCommonClock}, // Flag to indicate common clock mode for two Twave modules.
+  {"STWCMP", CMDbool, 1, (char *)&TDarray[0].CompressorEnabled}, // Flag to indicate Twave compressor mode is enabled.
   // FAIMS commands
   {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},  // Set FAIMS RF harmonic positive peak readback calibration
   {"SRFHNCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharNcal},  // Set FAIMS RF harmonic negative peak readback calibration
@@ -145,6 +149,17 @@ Commands  CmdArray[] = 	{
   {"SFLSV", CMDfunctionStr, 2, (char *)SetFilamentSupplyVoltage},    // Set filament supply voltage
   {"GFLV", CMDfunction, 1, (char *)GetFilamentVoltage},              // Get filament voltage (actual)
   {"GFLPWR", CMDfunction, 1, (char *)GetFilamentPower},              // Get filament power (actual) 
+  {"GFLRT", CMDfunction, 1, (char *)GetCurrentRampRate},             // Get filament current ramp rate in amps per second
+  {"SFLRT", CMDfunctionStr, 2, (char *)SetCurrentRampRate},          // Set filament current ramp rate in amps per second
+  {"GFLP1", CMDfunction, 1, (char *)GetFilamentCycleCurrent1},       // Get filament cycle current 1 (setpoint)
+  {"SFLP1", CMDfunctionStr, 2, (char *)SetFilamentCycleCurrent1},    // Set filament cycle current 1 (setpoint)
+  {"GFLP2", CMDfunction, 1, (char *)GetFilamentCycleCurrent2},       // Get filament cycle current 2 (setpoint)
+  {"SFLP2", CMDfunctionStr, 2, (char *)SetFilamentCycleCurrent2},    // Set filament cycle current 2 (setpoint)
+  {"GFLCY", CMDfunction, 1, (char *)GetFilamentCycleCount},          // Get filament cycle count
+  {"SFLCY", CMDfunctionStr, 2, (char *)SetFilamentCycleCount},       // Set filament cycle count
+  {"GFLENAR", CMDfunction, 1, (char *)GetFilamentStatus},            // Get filament cycle status, OFF, or the number of cycles remaining
+  {"SFLENAR", CMDfunctionStr, 2, (char *)SetFilamentStatus},         // Set filament cycle status, ON or OFF
+  {"RFLPARMS", CMDfunction, 2, (char *)SetFilamentReporting},        // Sets a filament channel reporting rate, 0 = off. Rate is in seconds
   // WiFi commands
   {"GHOST",  CMDstr, 0, (char *)wifidata.Host},                      // Report this MIPS box host name
   {"GSSID",  CMDstr, 0, (char *)wifidata.ssid},                      // Report the WiFi SSID to connect to
@@ -342,8 +357,18 @@ void ExecuteCommand(Commands *cmd, int arg1, int arg2, char *args1, char *args2,
       }
       break;
     case CMDstr:
-      SendACKonly;
-      if (!SerialMute) serial->println(cmd->pointers.charPtr);
+      if (cmd->NumArgs == 0)   // If true then write the value
+      {
+        SendACKonly;
+        if (!SerialMute) serial->println(cmd->pointers.charPtr);
+        break;
+      }
+      if (cmd->NumArgs == 1)  // If true then read the value
+      {
+          strcpy(cmd->pointers.charPtr,args1);
+          SendACK;
+          break;
+      }
       break;
     case CMDint:
       // arg1 is a pointer to an int value to send out the serial port

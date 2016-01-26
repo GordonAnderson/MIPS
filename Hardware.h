@@ -128,6 +128,8 @@ void Init_IOpins(void);
 void Reset_IOpins(void);
 void Software_Reset();
 float ReadVin(void);
+void SetOutput(char chan, int8_t active);
+void ClearOutput(char chan, int8_t active);
 void DigitalOut(int8_t MSB, int8_t LSB);
 uint8_t DigitalIn(void);
 int ReadEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count);

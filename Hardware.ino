@@ -131,8 +131,6 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
   MidCalValue = MidPoint;
   // Setup the calibration dialog structure
   CalibrationDialogEntries[3].Name = Name;
-//  ZeroCalValue = CC->Min + (CC->Max - CC->Min) / 2;
-//  MidCalValue = ZeroCalValue + (CC->Max - ZeroCalValue) / 2;
   if (CC->DACout != NULL)
   {
     DACZeroCounts = Value2Counts((float)ZeroCalValue, CC->DACout);
@@ -343,6 +341,39 @@ void ClearDOshiftRegs(void)
 {
   digitalWrite(SCL, LOW);
   digitalWrite(SCL, HIGH);
+}
+
+// This function sets the selected output where chan is the output, 'A' through 'P'.
+// active is HIGH or LOW, HIGH indicates active high output.
+void SetOutput(char chan, int8_t active)
+{
+  int bn;
+
+  // Make sure inputs are valid
+  if((chan < 'A') || (chan > 'P')) return;
+  if((active != HIGH) && (active != LOW)) return;
+  // calculate bit number
+  bn = chan - 'A';
+  if(bn < 8)
+  {
+    if(active == HIGH) MIPSconfigData.DOlsb |= (1 << bn);
+    else MIPSconfigData.DOlsb &= ~(1 << bn);
+  }
+  else
+  {
+    if(active == HIGH) MIPSconfigData.DOmsb |= (1 << (bn & 7));
+    else MIPSconfigData.DOmsb &= ~(1 << (bn & 7));    
+  }
+  DigitalOut(MIPSconfigData.DOmsb,MIPSconfigData.DOlsb);
+  PulseLDAC;
+}
+
+// This function clears the selected output where chan is the output, 'A' through 'P'.
+// active is HIGH or LOW, HIGH indicates active high output.
+void ClearOutput(char chan, int8_t active)
+{
+  if(active == HIGH) SetOutput(chan, LOW);
+  else SetOutput(chan, HIGH);
 }
 
 // This function sends 16 bits to the digital IO using the SPI. Its assumes the SPI interface has been

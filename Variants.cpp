@@ -21,6 +21,9 @@ TwaveData Twave_Rev1 = {sizeof(TwaveData),"Twave",1,1000000,03,0x10,0x20,0x27,0x
                          0.0, 1, 76.53, 0, 1, 1, 0,
                         10.0, 2, 76.53, 905, 2, 1, 0,
                         10.0, 3, 76.53, 874, 3, 1, 0,
+                        true,0,-1,0,-1,
+                        false,
+                        false,2,10,1,1.0,1.0,1.0,1.0,0,-1,0,-1,
                         };
 
 TwaveData Twave_Rev2 = {sizeof(TwaveData),"Twave",2,100000,03,0x10,0x20,0x27,0x69,
@@ -28,7 +31,19 @@ TwaveData Twave_Rev2 = {sizeof(TwaveData),"Twave",2,100000,03,0x10,0x20,0x27,0x6
                          0.0, 1, 520, 0, 1, 520, 0,
                         10.0, 2, 520, 0, 2, 520, 0,
                         10.0, 3, 520, 0, 3, 520, 0,
-                        true,
+                        true,0,-1,0,-1,
+                        false,
+                        false,2,10,1,1.0,1.0,1.0,1.0,0,-1,0,-1,
+                        };
+                        
+TwaveData Twave_Rev3 = {sizeof(TwaveData),"Twave",3,100000,03,0x1F,0x24,0x27,0x58,
+                        20.0, 0, 520, 0, 0, 520, 0,
+                         0.0, 1, 520, 0, 1, 520, 0,
+                        10.0, 2, 520, 0, 2, 520, 0,
+                        10.0, 3, 520, 0, 3, 520, 0,
+                        true,0,-1,0,-1,
+                        false,
+                        false,2,10,1,1.0,1.0,1.0,1.0,0,-1,0,-1,
                         };
 
 RFdriverData  RFDD_A_Rev_1 = {sizeof(RFdriverData),"RFdriver", 1, 2, 0x20, 0x69, 0x50,
@@ -112,7 +127,9 @@ ESIdata  ESI_Rev_1 =   { sizeof(ESIdata),"ESI", 1,
 FilamentData FILAMENT_Rev_1 = {sizeof(FilamentData),"Filament",1,2,
                                0,5.0,false,0.1,FmodeI,10,14, 0,-3868,21206, 1,5392,13960, 0,13156,-137, 1,13050,-96, 2,2722,6421,
                                0,5.0,false,0.1,FmodeI,10,48, 2,-3868,21206, 3,5392,13960, 3,13156,-137, 4,13050,-96, 5,2722,6421,
-                               0x24,0x12,0x52
+                               0x24,0x12,0x52,
+                               false,1.0,4.0,20,
+                               false,1.0,4.0,20
                               };
 
 ARBdata  ARB_Rev_1 = {sizeof(ARBdata),"ARB", 1, false, 1, false, 100, 0, true,20000,25,0,32,ARB_SIN,
@@ -120,14 +137,18 @@ ARBdata  ARB_Rev_1 = {sizeof(ARBdata),"ARB", 1, false, 1, false, 100, 0, true,20
                       0x32,0x50,
                      };
 
-WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_IDLE,"MIPSnet","Linksys20476","","",0};
+#ifdef TestMode
+WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_AP,"MIPSnet","MIPS","MIPS1234","",0};
+#else
+WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_IDLE,"MIPSnet","MIPS","MIPS1234","",0};
+#endif
 
 
 // List of all posible board addresses. These addresses are those of the EEPROM on the modules
 char *BoardAddressList = "A 0x50,A 0x52,A 0x54,A 0x56,B 0x50,B 0x52,B 0x54,B 0x56";
 // List of board names used to allow user to select a board by name for inital setup or re-init
-char *BoardVariantsNames = "RFdrvA R1,RFdrvB R1,DC250V R1,DC750V R1,DC50V  R1,Twave R1,Twave R2,FAIMS R1,ESI  R1,FIL R1,ARB R1";
+char *BoardVariantsNames = "RFdrvA R1,RFdrvB R1,DC250V R1,DC750V R1,DC50V  R1,Twave R1,Twave R2,Twave R3,FAIMS R1,ESI  R1,FIL R1,ARB R1";
 // List of variant board default data structure pointers with a one to one corespondence to list of board names
-void *BoardVariants[] = {(void *)&RFDD_A_Rev_1,(void *)&RFDD_B_Rev_1,(void *)&DCbD_250_Rev_1,(void *)&DCbD_750_Rev_1,(void *)&DCbD_50_Rev_1,(void *)&Twave_Rev1,(void *)&Twave_Rev2,(void *)&FAIMS_Rev_1,(void *)&ESI_Rev_1,(void *)&FILAMENT_Rev_1,(void *)&ARB_Rev_1};
+void *BoardVariants[] = {(void *)&RFDD_A_Rev_1,(void *)&RFDD_B_Rev_1,(void *)&DCbD_250_Rev_1,(void *)&DCbD_750_Rev_1,(void *)&DCbD_50_Rev_1,(void *)&Twave_Rev1,(void *)&Twave_Rev2,(void *)&Twave_Rev3,(void *)&FAIMS_Rev_1,(void *)&ESI_Rev_1,(void *)&FILAMENT_Rev_1,(void *)&ARB_Rev_1};
 
 

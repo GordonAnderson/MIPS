@@ -157,6 +157,26 @@
 //      1.) Added delay in the sequence loading function for Twave. The function failed at low frequencies.
 //   V1.21, November 6, 2015
 //      1.) Added support for ARB module
+//   V1.22, December 19,2015
+//      1.) Added WiFi support with ESP8266 module from Adafruit
+//      2.) Added support for Rev 3 of Twave module
+//   V1.23, December 31, 2015
+//      1.) Updated WiFi interface
+//      2.) Fixes Twave serial command errors
+//      3.) Updated the test mode to support Twave
+//      4.) Allow and valid EEPROM address for the Twave board, this ability will be migrated to all modules
+//   V1.24, January 3, 2016
+//      1.) Fixed a number of Twave module bugs and added support for two Twave modules
+//      2.) Added the GNAME and SNAME commands.
+//   V1.25, January 4, 2016
+//      1.) Removed delay from the ISR function in Twave, this was causing it to crash.
+//   V1.26. January 6, 2016
+//      1.) Fixed a table bug that was allowing a table to be retriggered.
+//      2.) Added a ONCe option to the SMOD command so that a table will only play one time them the table mode will exit
+//   V1.27. January 22, 2016
+//      1.) Added the cycling feaature to the Filament control module.
+//      2.) Started the Compressor function for Twave, not yet finished or tested.
+//
 //
 // Gordon Anderson
 // GAA Custom Engineering,LLC
@@ -208,12 +228,12 @@
 // frequency set to 50KHz for its adjustable power supply. Not sure if this overrides
 // the values in the .h file?
 #define PWM_FREQUENCY	    50000
-#define TC_FREQUENCY        50000
+#define TC_FREQUENCY      50000
 
 bool NormalStartup = true;
 bool SDcardPresent = false;
 
-char Version[] = "Version 1.21, November 6, 2015";
+char Version[] = "Version 1.27, January 22, 2016";
 
 // ThreadController that will controll all threads
 ThreadController control = ThreadController();
@@ -610,6 +630,7 @@ void setup()
   {
     MacroPlay(MIPSconfigData.StartupMacro,true);
   }
+//  CompressorInit();  // For testing only! Make sure and remove
 }
 
 // This task is called every 10 milliseconds and handels a number of tasks.
@@ -672,6 +693,12 @@ void ScanHardware(void)
   uint8_t addr;
   char    signature[100];
 
+  #ifdef TestFilament
+  Filament_init(0);
+  #endif
+  #ifdef TestTwave
+  Twave_init(0,0x52);
+  #endif
   // Loop through all the addresses looking for signatures
   for (addr = 0x50; addr <= 0x56; addr  += 2)
   {
@@ -680,9 +707,9 @@ void ScanHardware(void)
     if (ReadEEPROM(signature, addr, 0, 100) == 0)
     {
       // Test the signature and init the system if the signature is known
+      if (strcmp(&signature[2], "Twave") == 0) Twave_init(0,addr);
       if (strcmp(&signature[2], "RFdriver") == 0) RFdriver_init(0);
       if (strcmp(&signature[2], "DCbias") == 0) DCbias_init(0);
-      if (strcmp(&signature[2], "Twave") == 0) Twave_init(0);
       if (strcmp(&signature[2], "ESI") == 0) ESI_init(0);
       if (strcmp(&signature[2], "Filament") == 0) Filament_init(0);
       if (strcmp(&signature[2], "ARB") == 0) ARB_init(0);
@@ -692,6 +719,7 @@ void ScanHardware(void)
     if (ReadEEPROM(signature, addr, 0, 100) == 0)
     {
       // Test the signature and init the system if the signature is known
+      if (strcmp(&signature[2], "Twave") == 0) Twave_init(1,addr);
       if (strcmp(&signature[2], "RFdriver") == 0) RFdriver_init(1);
       if (strcmp(&signature[2], "DCbias") == 0) DCbias_init(1);
       if (strcmp(&signature[2], "ESI") == 0) ESI_init(1);
