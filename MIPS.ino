@@ -50,14 +50,10 @@
 //            - Save all, saves all the boards and the MIPS config data
 //   2.) Add macro command to list a table out the serial port
 //   3.) Commands to add
-//        - Name, get and set MIPS box name
+//        - Add report all voltages to the DCbias module.
 //   4.) Add three point calibration to FAIMS high voltage levels 
 //   5.) Make the USB id text indicate GAACE
 //   6.) Add the FAIMS serial commands
-//   7.) Add watchdog timer to system. Read this page for important information: http://forum.arduino.cc/index.php?topic=314647.0
-//       will need to modify the arduino source code for this to work.
-//   8.) Change the PWM to 12 bit from 8 bit in RFdriver and the FAIMS driver. This requires editing variant.h
-//       in the arduino source code.
 //
 //     
 // Revision history and notes *********************************************************************************
@@ -170,12 +166,125 @@
 //      2.) Added the GNAME and SNAME commands.
 //   V1.25, January 4, 2016
 //      1.) Removed delay from the ISR function in Twave, this was causing it to crash.
-//   V1.26. January 6, 2016
+//   V1.26, January 6, 2016
 //      1.) Fixed a table bug that was allowing a table to be retriggered.
 //      2.) Added a ONCe option to the SMOD command so that a table will only play one time them the table mode will exit
-//   V1.27. January 22, 2016
+//   V1.27, January 22, 2016
 //      1.) Added the cycling feaature to the Filament control module.
-//      2.) Started the Compressor function for Twave, not yet finished or tested.
+//      2.) Started the Compressor function for Twave.
+//   V1.28, February 2, 2016
+//      1.) Updated the compressor code, increased the max delay times to 90 mS.
+//   V1.29, Feruary 11, 2016
+//      1.) Updated startup code to require holding the button to enable default parameter startup.
+//      2.) Updated DCbias moudule to support one offset parameter for both modules.
+//      3.) Performed a lot of performance optomization on the DAC SPI for DC bias module,
+//          performance increased to about 5 to 7 uS per channel for update. Discoverted the 
+//          digital IO is very slow on DUE so I used diret register access.
+//      4.) All DAC and DIO SPI are now interrupt safe with SPI in an interrupt
+//      5.) Added FAIMS arc detection sensitvity adjustment
+//      6.) Improved the logic of DIO TWI re-talking in the event of error
+//      7.0 Fixed FAIMS DC bias offset error.
+//  V1.30, February 17, 2016
+//      1.) Added the DCbias report all functions for setpoints and readbacks. GDCBALL and GDCBALLV.
+//      2.) Added the RF driver report all function. It reports, freq, VPP+, VPP- for each rf channel.
+//      3.) Added the TWI acquire and release system with queued function calling, or post use calling.
+//      4.) Made display SPI interrupt safe, so all SPI should now me interrupt safe.
+//  V1.31, February 22, 2016
+//      1.) Fixed a table bug, this caused an error "xx]" where "xx:]" was ok, now both are ok.
+//  V1.32, February 25, 2016
+//      1.) Added echo mode to host communications.
+//      2.) Added WiFi enable command.
+//  V1.33, March 3, 2016
+//      1.) The dual Twave in compressor mode is not compatiable with the RF driver. If the RF driver is installed
+//          it must be at board address A. If the drive values are not adjusted then it seems to exsit but its values
+//          must not be changed. The Twave compressor uses a software generated clock using a ISR and taxes the system.
+//      2.) Removed the interrupt masking in the display driver because in caused compressor mode time jitter.
+//      3.) Moved timers to resolve conflict with compressor
+//  V1.34, March 11, 2016
+//      1.) FAIMS updates to disable tune above 30% drive
+//      2.) Cleaned up a few minor issues in the FAIMS code
+//      3.) Only update the Twave DACs if the values change
+//  V1.35, March 13, 2016
+//      1.) Updated DCbias to only update on change and to update independed of LDAC
+//      2.) Updated DCbias to only test for readback error in Local mode
+//      3.) Enabled tasks in table mode, TBLTSKENA,TRUE command enables
+//      4.) Increased the number of DIhandelers, was running out and causing issues with dual Twave compressor
+//      5.) Updated the TWI queued function routine to allow up to 5 functions to be queued
+//      6.) Fixed the USB isolator problem by changing the USB driver source code. The buffer size parameter
+//          was changed from 512 to 64 in function _cdcinterface in file CDC.cpp.
+//  V1.36, March 27, 2016
+//      1.) Added the ADC command to read and report ADC inputs
+//      2.) Updated Trigger output to support width in uS
+//      3.) Added trigger out to signal table systax, is lower case t and the parameter is width in uS
+//  V1.37, April 8, 2016
+//      1.) Added RF driver rev 2 to support the new smaller RF heads with the linear tech level sensors.
+//      2.) Updated command processor to allow int data input
+//      3.) Allow user to set inter table delay in mS. Set default from 10 to 4
+//  V1.38, April 13, 2016
+//      1.) Fixed a table bug in external trigger mode where the system would stop accepting trigger, this was a very random event.
+//      2.) Fixed a false voltgae error problem when exiting table mode and exiting calibration mode.
+//  V1.39, April 18, 2016
+//      1.) Initial support for rev 3.0 controller. This version has the second output port on its own strobe or LDAC, this is jumper selectable.
+//          Initial support allows back compatibility but does not exploied the capability. Need additional upgrates, this was a quick fix.
+//  V1.40, April 20, 2016
+//      1.) Moved the WiFi enable to the MIPS data structure. 
+//      2.) Added command to allow changing a time point count value in a loaded and executing table.
+//      3.) LED control on button, OFF, and select a colors for ON, and flashing
+//                LEDOVRD,<TRUE or FALSE> this will override the default LED driver
+//                LED,<value> this is a bit mask (integer) with the following bit definitions:
+//                bit       function
+//                 0          RED,   1=ON
+//                 1          BLUE,  1=ON
+//                 2          GREEN, 1=ON
+//                 3          Blink if set to 1
+//      - Need the following:
+//          a.) Clean up the code for the Rev 3.0 controller and add the Rev 3.0 specifics.
+//          b.) Figure out why the SSRs all flash on when first powered up. Need resistor to ground on strobe line, 1K
+//          c.) Don't update the working data structures if the display is not selecting the module.
+//          d.) Change RF frequency update logic to reduce the drive to 0 before changing the frequency.
+//  V1.41, April, 27 2016
+//      1.) Worked at Mike's lab and fixed a number of issues
+//          - added flag to avoid reading ADCs if the tables values just changed, noise is induced in this case.
+//          - Used the same flag for RF level readback
+//          - needed a small delay in the table processing loop when the tasks are enabled.
+//      2.) When the power supply is off the system returns the offset voltage, fixed this bug.
+//      3.) Added a clock generation mode, supported commands:
+//              SWIDTH      Set pulse width in microseconds
+//              GWIDTH      Get pulse width in microseconds
+//              SFREQ       Set frequency in Hz
+//              GFREQ       Get frequency in Hz
+//              BURST,num   num = number of clocks to generate. num=-1 to run forever and 0 to stop without changing stored num
+//          Also able to trigger from the table. Add b command where parameter is the number of pulses
+//      4.) Need to add support for offset readback and checking. This needs to be an option and only used in cases where a channel is 
+//          avaliable for readback. An output channel can be repurposed for offset readback.
+//          - To enable this capability move the offset HV opamp to the second board and 
+//            also add a readback module in channel 8 slot. Jumper the optput for this channel 8 (actuall 16) 
+//            to the float input pin.
+//          - Need to add a flag for this mode, use DCBOFFRBENA,TRUE or FALSE. This is DCbias offset readback enable.
+//            Always used last channel for readback.
+//      5.) Need to connect output enable to Arduino output pin to keep outputs disabled during initalization. Two options for this 
+//          depending on MIPS controller hardware revision.
+//          - For revsion 2.2 and older there is a hardware bug that connects the buffered input in Arduino pin 46 (input W on MIPS)
+//            to the output buffer enable. On these version cut the trace from IC6 pin 9 and program pin 46 as output, also remove R16
+//            pull down. After initial set up drive 46 low.
+//          - For revision 3.0, there are two pull downs, R16 for IC5 and R20 for IC4. To remove power up glitching remove the pull down(s)
+//          - and jumper Arduino pin 44 to the output enable you wish to deglitch.
+//      6.) Added Table stop command, TBLSTOP.
+//  V1.42, April, 29 2016
+//      1.) Fixed bug that came from the ADC resolution increase to 12 bit. This caused the power off detection to fail.
+//      2.) Added power up and power down output reset logic
+//
+// Couple of issues to resolve
+//    1.) External trigger lockup / missing trigger setup
+//    2.) Exit table mode and its hold its last voltage as well as not alarming!
+//
+// Next version to dos:
+//      1.) Update the display code to make it interupt safe when ISR uses SPI, done but turned off for compressor
+//      2.) Fix the DIO to allow command processing in table mode, this will require a pening update flag for
+//          the DIO, only update if no pending update
+//      3.) Consider re-implementing the table mode dialog box code. This should work after the SPI upgrades to 
+//          display driver from step 3.
+//      4.) Need a way to fource update after calibration
 //
 //
 // Gordon Anderson
@@ -220,7 +329,6 @@
 #define UseWDT
 
 // Define my names for the native USB driver
-#define  USB_PRODUCT
 #define  USB_PRODUCT      "MIPS, native USB"
 #define  USB_MANUFACTURER "GAA Custom Engineering, LLC"
 
@@ -233,7 +341,10 @@
 bool NormalStartup = true;
 bool SDcardPresent = false;
 
-char Version[] = "Version 1.27, January 22, 2016";
+bool LEDoverride = false;
+int  LEDstate = 0;
+
+char Version[] = "Version 1.42, April 29, 2016";
 
 // ThreadController that will controll all threads
 ThreadController control = ThreadController();
@@ -434,6 +545,10 @@ double timeout = 8.0;  // number of seconds for timeout
 int timeout2 = 0;
 void WDT_Setup (){ 
 
+  #ifdef TestMode
+  return;
+  #endif
+
   timeout2 =(int)( timeout * 227); 
   
   timeout2 = 0x0fff2000 + timeout2;
@@ -448,6 +563,15 @@ void WDT_Setup (){
 
 void Signon(void)
 {
+  bool PBwasPressed = false;
+  
+  // If the controll push button is pressed then wait for it to be released before
+  // proceeding.
+  #ifndef TestMode
+  while(digitalRead(PB) == HIGH) PBwasPressed = true;
+  #endif
+  delay(100); // bounce delay
+  //
   tft.fillScreen(ILI9340_BLACK);
   tft.setCursor(0, 0);
   tft.setTextColor(ILI9340_YELLOW, ILI9340_BLACK); tft.setTextSize(8);
@@ -470,7 +594,7 @@ void Signon(void)
   else
   {
     tft.println("\nPress knob to startup");
-    tft.println("using default parameters.");
+    if(PBwasPressed) tft.println("using default parameters.");
   }
   ButtonPressed = false;
   int i = 0;
@@ -479,7 +603,7 @@ void Signon(void)
     if(i >= MIPSconfigData.StartupDelay) break;
     if (ButtonPressed) 
     {
-      if(!MIPSconfigData.StartupHold) NormalStartup = false; // if false don't load from EEPROM on cards, use defaults!
+      if(!MIPSconfigData.StartupHold) if(PBwasPressed) NormalStartup = false; // if false don't load from EEPROM on cards, use defaults!
       break;
     }
     PB_GREEN_ON;
@@ -499,6 +623,28 @@ void Signon(void)
 // PBledStates  PBledMode;
 void ProcessLED()
 {
+  static int i=0;
+
+  i ^= 1;   // Toggle i between 0 and 1
+  if(LEDoverride)
+  {
+    if((i==1) && ((LEDstate & 8) !=0))
+    {
+      // Blinking and this is off time!
+      PB_RED_OFF;
+      PB_GREEN_OFF;
+      PB_BLUE_OFF;
+      return;
+    }
+    // Here if the LED override flag is set
+    if((LEDstate & 1) != 0) PB_RED_ON;
+    else PB_RED_OFF;
+    if((LEDstate & 2) != 0) PB_BLUE_ON;
+    else PB_BLUE_OFF;
+    if((LEDstate & 4) != 0) PB_GREEN_ON;
+    else PB_GREEN_OFF;
+    return;
+  }
   if (PBledMode == NOTHING) return;
   if (PBledMode == ON)
   {
@@ -545,15 +691,11 @@ void yield(void)
 
 //int sysTickHook(void) __attribute__ ((weak, alias("__mysysTickHook")));
 
-// This function is called 10 times each second and is used
-// for real time control and monitoring
-void RealTimeISR()
-{
-}
-
 void setup()
 {
+  analogReadResolution(12);
   Reset_IOpins();
+  ClearDOshiftRegs();
   Serial.begin(115200);
   Stream *stm = &Serial;
 //  stm->println("MIPS!");
@@ -573,6 +715,7 @@ void setup()
 
   MIPSsystemLoop();
 
+  SPI.setClockDivider(21);
   if (!SD.begin(_sdcs))
   {
     tft.println("SD disk failed to initalize!");
@@ -605,9 +748,8 @@ void setup()
 
   Wire.begin();
   Wire.setClock(100000);
-  // Start the real time interrupt
-  Timer3.attachInterrupt(RealTimeISR);
-  Timer3.start(100000); // Calls every 100ms
+//  Timer3.attachInterrupt(RealTimeISR);
+//  Timer3.start(100000); // Calls every 100ms
   // Initial splash screen
   Signon();
   ButtonPressed = false;
@@ -630,7 +772,6 @@ void setup()
   {
     MacroPlay(MIPSconfigData.StartupMacro,true);
   }
-//  CompressorInit();  // For testing only! Make sure and remove
 }
 
 // This task is called every 10 milliseconds and handels a number of tasks.
@@ -662,6 +803,7 @@ void MIPSsystemLoop(void)
   {
     // Set all control lines to input, this will keep the systems from souring power to
     // the boards through driven outputs.
+    ClearDOshiftRegs();
     Reset_IOpins();
     // Display a message on the screen that MIPS power is off.
     tft.fillScreen(ILI9340_BLACK);
@@ -750,6 +892,24 @@ void ScanHardware(void)
   if(MIPSconfigData.UseAnalog) Analog_init();
 }
 
+// This function process all the serial IO and commands
+void ProcessSerial(void)
+{
+  // Put serial received characters in the input ring buffer
+  if (SerialUSB.available() > 0) 
+  {
+    serial = &SerialUSB;
+    PutCh(SerialUSB.read());
+  }
+  if (Serial.available() > 0) 
+  {
+    serial = &Serial;
+    PutCh(Serial.read());
+  }
+  // If there is a command in the input ring buffer, process it!
+  if(RB_Commands(&RB) > 0) while(ProcessCommand()==0);  // Process until flag that there is nothing to do
+}
+
 // Main processing loop
 void loop()
 {
@@ -775,20 +935,7 @@ void loop()
     else if (ActiveDialog != NULL) DialogButtonPress(ActiveDialog);
     DismissMessageIfButton();
   }
-  // Put serial received characters in the input ring buffer
-  if (SerialUSB.available() > 0) 
-  {
-    serial = &SerialUSB;
-    PutCh(SerialUSB.read());
-  }
-  if (Serial.available() > 0) 
-  {
-    serial = &Serial;
-    PutCh(Serial.read());
-  }
-  // If there is a command in the input ring buffer, process it!
-  if(RB_Commands(&RB) > 0) while(ProcessCommand()==0);  // Process until flag that there is nothing to do
-//  if (serial->available() > 0) serial->print((char)serial->read());
+  ProcessSerial();
 }
 
 

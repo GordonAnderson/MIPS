@@ -32,6 +32,9 @@
 //            - External input for enable
 //        - ISR to support the clock function
 //        - Timer ISR used to generate the multi-pass timing.
+// Add gate function and gate serial command. Then gated off all outputs will go low and no change
+// when gated back on the bit pattern will reload and start. Maybe we can just set the pulse voltage 
+// to zero, this would be the simple thing to do but still needs TWI interface.
 //
 // Gordon Anderson
 //
@@ -52,6 +55,7 @@ extern bool NormalStartup;
 // Also used on rev 2 due to issues with the clock chip.
 // This timer is also used to generate the software clock in the compressor mode.
 MIPStimer TwaveClk(6);
+//MIPStimer TwaveClk(4);
 
 // DAC channel assignment
 #define  DAC_PulseVoltage    0
@@ -91,8 +95,167 @@ DIhandler *DIdirTW[2];
 void (*TWdirISRs[2])(void) = {TW_1_DIR_ISR, TW_2_DIR_ISR};
 DIhandler *DIsyncTW[2];
 void (*TWsyncISRs[2])(void) = {TW_1_SYNC_ISR, TW_2_SYNC_ISR};
+DIhandler *DIgateTW[2];
+void (*TWgateISRs[2])(void) = {TW_1_GATE_ISR, TW_2_GATE_ISR};
 
-// ISR function
+// ISR functions
+
+void TW_1_GateOn(void)
+{
+  int brd,mSdelay;
+  
+  // Read and save board select then select the board and update the sequence to 0xFF
+  brd = digitalRead(BRDSEL);
+  ENA_BRD_A;
+  MCP2300(TDarray[0].GPIOadr, ~TDarray[0].Sequence);
+  // Restore the board
+  digitalWrite(BRDSEL,brd);
+  // Pulse the load line
+  digitalWrite(TWld, LOW);
+  // Hold this long enough for a clock to happen, if used on board clock this is 
+  // 1/(clock freq *4). If software clock used in compressor then generate an edge
+  if(TDarray[0].CompressorEnabled)
+  {
+    // Force a clock edge with software
+    CompressorClockCycle();
+    CompressorClockCycle();
+  }
+  else
+  {
+    mSdelay = 1000000 / (TDarray[0].Velocity * 4);
+    if(mSdelay <= 10) mSdelay = 25;
+    delayMicroseconds(mSdelay);
+  }
+  digitalWrite(TWld, HIGH);
+}
+
+void TW_1_GateOff(void)
+{
+  int brd,mSdelay;
+  
+//  digitalWrite(TWld, LOW);  // Hold load line actice, this will stop the clocking
+  // Read and save board select then select the board and update the sequence to 0xFF
+  brd = digitalRead(BRDSEL);
+  ENA_BRD_A;
+  MCP2300(TDarray[0].GPIOadr, 0xFF);
+  // Restore the board
+  digitalWrite(BRDSEL,brd);
+  digitalWrite(TWld, LOW);
+  // Hold this long enough for a clock to happen, if used on board clock this is 
+  // 1/(clock freq *4). If software clock used in compressor then generate an edge
+  if(TDarray[0].CompressorEnabled)
+  {
+    // Force a clock edge with software
+    CompressorClockCycle();
+    CompressorClockCycle();
+  }
+  else
+  {
+    mSdelay = 1000000 / (TDarray[0].Velocity * 4);
+    if(mSdelay <= 10) mSdelay = 25;
+    delayMicroseconds(mSdelay);
+  }
+  digitalWrite(TWld, HIGH);
+}
+
+// This function will gate on or gate off the Twave signal. Its called when every a
+// level change is detected on the gate input. 
+void TW_1_GATE_ISR(void)
+{
+  bool level;
+
+  level = DIgateTW[0]->activeLevel();  // Read input
+  if(((level) && (TDarray[0].TWgateLevel == HIGH)) || ((!level) && (TDarray[0].TWgateLevel == LOW)))
+  {
+    // Gate Twave off, Hold load line active and set sequence to 0xFF
+    if(AcquireTWI()) TW_1_GateOff();
+    else TWIqueue(TW_1_GateOff);
+  }
+  else
+  {
+    // Gate Twave on, Set the sequence and pulse the load line
+    if(AcquireTWI()) TW_1_GateOn();
+    else TWIqueue(TW_1_GateOn);
+  }
+}
+
+void TW_2_GateOn(void)
+{
+  int brd,mSdelay;
+  
+  // Read and save board select then select the board and update the sequence to 0xFF
+  brd = digitalRead(BRDSEL);
+  ENA_BRD_B;
+  MCP2300(TDarray[1].GPIOadr, ~TDarray[1].Sequence);
+  // Restore the board
+  digitalWrite(BRDSEL,brd);
+  // Pulse the load line
+  digitalWrite(TWld, LOW);
+  // Hold this long enough for a clock to happen, if used on board clock this is 
+  // 1/(clock freq *4). If software clock used in compressor then generate an edge
+  if(TDarray[0].CompressorEnabled)
+  {
+    // Force a clock edge with software
+    CompressorClockCycle();
+    CompressorClockCycle();
+  }
+  else
+  {
+    mSdelay = 1000000 / (TDarray[1].Velocity * 4);
+    if(mSdelay <= 10) mSdelay = 25;
+    delayMicroseconds(mSdelay);
+  }
+  digitalWrite(TWld, HIGH);
+}
+
+void TW_2_GateOff(void)
+{
+  int brd,mSdelay;
+  
+//  digitalWrite(TWld, LOW);  // Hold load line actice, this will stop the clocking
+  // Read and save board select then select the board and update the sequence to 0xFF
+  brd = digitalRead(BRDSEL);
+  ENA_BRD_B;
+  MCP2300(TDarray[1].GPIOadr, 0xFF);
+  // Restore the board
+  digitalWrite(BRDSEL,brd);
+  digitalWrite(TWld, LOW);
+  // Hold this long enough for a clock to happen, if used on board clock this is 
+  // 1/(clock freq *4). If software clock used in compressor then generate an edge
+  if(TDarray[0].CompressorEnabled)
+  {
+    // Force a clock edge with software
+    CompressorClockCycle();
+    CompressorClockCycle();
+  }
+  else
+  {
+    mSdelay = 1000000 / (TDarray[1].Velocity * 4);
+    if(mSdelay <= 10) mSdelay = 25;
+    delayMicroseconds(mSdelay);
+  }
+  digitalWrite(TWld, HIGH);
+}
+
+void TW_2_GATE_ISR(void)
+{
+  bool level;
+
+  level = DIgateTW[1]->activeLevel();  // Read input
+  if(((level) && (TDarray[1].TWgateLevel == HIGH)) || ((!level) && (TDarray[1].TWgateLevel == LOW)))
+  {
+    // Gate Twave off, Hold load line active and set sequence to 0xFF
+    if(AcquireTWI()) TW_2_GateOff();
+    else TWIqueue(TW_2_GateOff);
+  }
+  else
+  {
+    // Gate Twave on, Set the sequence and pulse the load line
+    if(AcquireTWI()) TW_2_GateOn();
+    else TWIqueue(TW_2_GateOn);
+  }
+}
+
 void TW_1_DIR_ISR(void)
 {
   if (DIdirTW[0]->activeLevel()) TDarray[0].Direction = true;
@@ -206,7 +369,6 @@ void SetSequence(int ModuleIndex)
   int   i;
   int   numTry = 0;
 
-  //  SelectBoard(TWboardAddress[SelectedTwaveBoard]);
   if ((TDarray[ModuleIndex].Rev == 2) || (TDarray[ModuleIndex].Rev == 3))
   {
     // Retry if the GPIO fails, this is needed!
@@ -377,13 +539,12 @@ DialogBoxEntry TwaveDialogEntries2page2[] = {
   {" Cal Pulse V"   , 0, 1, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalibratePulse, NULL},
   {" Cal Guard 1"   , 0, 2, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalibrateGuard1, NULL},
   {" Cal Guard 2"   , 0, 3, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalibrateGuard2, NULL},
-
-  {" Sync input"    , 0, 5, D_DI     , 0, 0, 2, 21, false, DIlist, &TD.TWsyncDI, NULL, NULL},
-  {" Sync level"    , 0, 6, D_DILEVEL, 0, 0, 4, 19, false, DILlist, &TD.TWsyncLevel, NULL, NULL},
-
-  {" Dir input"     , 0, 8, D_DI     , 0, 0, 2, 21, false, NULL, &TD.TWdirDI, NULL, NULL},
-  {" Dir level"     , 0, 9, D_DILEVEL, 0, 0, 4, 19, false, NULL, &TD.TWdirLevel, NULL, NULL},
-
+  {" Sync input"    , 0, 4, D_DI     , 0, 0, 2, 21, false, DIlist, &TD.TWsyncDI, NULL, NULL},
+  {" Sync level"    , 0, 5, D_DILEVEL, 0, 0, 4, 19, false, DILlist, &TD.TWsyncLevel, NULL, NULL},
+  {" Dir input"     , 0, 6, D_DI     , 0, 0, 2, 21, false, NULL, &TD.TWdirDI, NULL, NULL},
+  {" Dir level"     , 0, 7, D_DILEVEL, 0, 0, 4, 19, false, NULL, &TD.TWdirLevel, NULL, NULL},
+  {" Gate input"    , 0, 8, D_DI     , 0, 0, 2, 21, false, NULL, &TD.TWgateDI, NULL, NULL},
+  {" Gate level"    , 0, 9, D_DILEVEL, 0, 0, 4, 19, false, NULL, &TD.TWgateLevel, NULL, NULL},
   {" Compressor"    , 0, 10, D_OFF , 0, 0, 0, 0, false, NULL, &CompressorDialog, NULL,NULL},
   {" Return to first page", 0, 11, D_PAGE , 0, 0, 0, 0, false, NULL, &TwaveDialogEntries2, NULL, NULL},
   {NULL},
@@ -486,6 +647,7 @@ void Twave_init(int8_t Board, uint8_t addr)
   // Create digital input dir and sync objects
   DIdirTW[Board] = new DIhandler;
   DIsyncTW[Board] = new DIhandler;
+  DIgateTW[Board] = new DIhandler;
   // Set active board board being inited
   SelectedTwaveModule = Board;
   SelectBoard(Board);
@@ -523,6 +685,15 @@ void Twave_init(int8_t Board, uint8_t addr)
   digitalWrite(TWreset, HIGH);
   SetSequence(Board);
   TWboardAddress[NumberOfTwaveModules] = Board;
+  // Init the gate state
+  DIgateTW[Board]->detach();
+  DIgateTW[Board]->attached(TDarray[Board].TWgateDI, CHANGE, TWgateISRs[Board]);
+  if(TDarray[Board].TWgateDI != -1)
+  {
+    if(Board == 0) TW_1_GATE_ISR();
+    else TW_2_GATE_ISR();
+  }
+  //
   if (NumberOfTwaveModules == 0)
   {
     // Setup the menu
@@ -563,20 +734,36 @@ void Twave_loop(void)
   static uint8_t CurrentSequence[2] = {0, 0};
   static int     CurrentVelocity[2] = {0, 0};
   static int     CurrentDirection[2] = { -2, -2};
+  static int     LastGateLevel[2] = {-1,-1};
+  static float   CurrentPulseVoltage[2] = {-1,-1};
+  static float   CurrentGuard1Voltage[2] = {-1,-1};
+  static float   CurrentGuard2Voltage[2] = {-1,-1};
   int i;
 
-  TDarray[SelectedTwaveModule] = TD;   // Store any changes
+  TDarray[SelectedTwaveModule] = TD;   // Store any changes, if dialog is selected
   CompressorLoop();
   for (i = 0; i < 2; i++)
   {
     if (TwaveBoards[i])
     {
       SelectBoard(TWboardAddress[i]);
-      // Update the output parameters
-      SetPulseVoltage(i);
-      SetRestingVoltage();
-      SetGuard1(i);
-      SetGuard2(i);
+      // Update the output parameters only if they have changed
+      if(TDarray[i].TWCD[DAC_PulseVoltage].VoltageSetpoint != CurrentPulseVoltage[i])
+      {
+         CurrentPulseVoltage[i] = TDarray[i].TWCD[DAC_PulseVoltage].VoltageSetpoint;
+         SetPulseVoltage(i);
+      }
+      if (TDarray[i].Rev == 1) SetRestingVoltage();
+      if(TDarray[i].TWCD[DAC_Guard1].VoltageSetpoint != CurrentGuard1Voltage[i])
+      {
+         CurrentGuard1Voltage[i] = TDarray[i].TWCD[DAC_Guard1].VoltageSetpoint;
+         SetGuard1(i);
+      }
+      if(TDarray[i].TWCD[DAC_Guard2].VoltageSetpoint != CurrentGuard2Voltage[i])
+      {
+         CurrentGuard2Voltage[i] = TDarray[i].TWCD[DAC_Guard2].VoltageSetpoint;
+         SetGuard2(i);
+      }
       if (TDarray[i].Rev == 2)
       {
         if (TDarray[i].Direction) digitalWrite(TWdirA, HIGH);
@@ -614,6 +801,18 @@ void Twave_loop(void)
           DIsyncTW[i]->detach();
           DIsyncTW[i]->attached(TDarray[i].TWsyncDI, TDarray[i].TWsyncLevel, TWsyncISRs[i]);
         }
+        if ((TDarray[i].TWgateDI != DIgateTW[i]->di) || (CHANGE != DIgateTW[i]->mode))
+        {
+          DIgateTW[i]->detach();
+          DIgateTW[i]->attached(TDarray[i].TWgateDI, CHANGE, TWgateISRs[i]);
+        }
+        // If the level changes for the gate then update the gate state by calling the proper ISR function
+          if((TDarray[i].TWgateDI != -1) && (TDarray[i].TWgateLevel != LastGateLevel[i]))
+          {
+            LastGateLevel[i] = TDarray[i].TWgateLevel;
+            if(i == 0) TW_1_GATE_ISR();
+            else TW_2_GATE_ISR();
+          }
       }
       // Only update the output sequence if its changed
       if (CurrentSequence[i] != TDarray[i].Sequence)
@@ -924,12 +1123,12 @@ void setTWAVEdir(char *chan, char *dirstr)
 
 //
 // The following code supports the compressor mode of operation. This mode requires
-// two Twave board in one MIPS system.
-// The coke is generated in software for the compressor mode
+// two Twave boards in one MIPS system.
+// The clock is generated in software for the compressor mode
 //  Primary Twave module clock is DUE pin 9, c.21
 //  Secondary Twave module clock is DUE pin 8, c.22
 //
-// Variables add to the Twave structure
+// Variables in the Twave structure
 //    int    Corder;            // Compressor order
 //    int    NumPasses;
 //    int    CNth;
@@ -968,10 +1167,10 @@ DialogBoxEntry CompressorEntries[] = {
   {" Order"               , 0, 2, D_INT8   , 1, 20, 1, 21, false, "%2d", &TD.Corder, NULL, UpdateMode},
   {" Num passes"          , 0, 3, D_INT8   , 1, 50, 1, 21, false, "%2d", &TD.NumPasses, NULL, NULL},
   {" Compress Nth"        , 0, 4, D_INT8   , 1, 20, 1, 21, false, "%2d", &TD.CNth, NULL, NULL},
-  {" Trig delay, mS"      , 0, 5, D_FLOAT  , 0.1, 10, 0.1, 18, false, "%5.1f", &TD.Tdelay, NULL, NULL},
-  {" Compress t, mS"      , 0, 6, D_FLOAT  , 0.1, 10, 0.1, 18, false, "%5.1f", &TD.Tcompress, NULL, NULL},
-  {" Normal t, mS"        , 0, 7, D_FLOAT  , 0.1, 10, 0.1, 18, false, "%5.1f", &TD.Tnormal, NULL, NULL},
-  {" Non Comp t, mS"      , 0, 8, D_FLOAT  , 0.1, 10, 0.1, 18, false, "%5.1f", &TD.TnoC, NULL, NULL},
+  {" Trig delay, mS"      , 0, 5, D_FLOAT  , 0.1, 900, 0.1, 18, false, "%5.1f", &TD.Tdelay, NULL, NULL},
+  {" Compress t, mS"      , 0, 6, D_FLOAT  , 0.1, 900, 0.1, 18, false, "%5.1f", &TD.Tcompress, NULL, NULL},
+  {" Normal t, mS"        , 0, 7, D_FLOAT  , 0.1, 900, 0.1, 18, false, "%5.1f", &TD.Tnormal, NULL, NULL},
+  {" Non Comp t, mS"      , 0, 8, D_FLOAT  , 0.1, 900, 0.1, 18, false, "%5.1f", &TD.TnoC, NULL, NULL},
   {" Next page"           , 0, 10, D_PAGE  , 0, 0, 0, 0, false, NULL, &CompressorEntries2, NULL, NULL},
   {" Return to Twave menu", 0, 11, D_DIALOG, 0, 0, 0, 0, false, NULL, &TwaveDialog2, NULL, NULL},
   {NULL},
@@ -1003,12 +1202,12 @@ DialogBox CompressorDialog = {{"Compressor params", ILI9340_BLACK, ILI9340_WHITE
 
 MIPStimer CompressorTimer(4);
 
-uint32_t  ClockArray[MaxOrder * 8];
-int       ClockReset = 16;
-int       ClockIndex = 0;
-int       CR = 16;
+volatile uint32_t  ClockArray[MaxOrder * 8];
+volatile int       ClockReset = 16;
+volatile int       ClockIndex = 0;
+volatile int       CR = 16;
 
-Pio *pio;
+volatile Pio *pio;
 
 // Time delay parameters. All the time values in milli secs are converted into timer counts and saved in these 
 // variables.
@@ -1049,17 +1248,6 @@ void SetSwitch(void)
 // This function will update the state
 void CompressorTimerISR(void)
 {
-  // Test if all passes are complete, if so stop the timer and exit
-  if(CurrentPass >= TDarray[0].NumPasses)
-  {
-    // Stop the timer
-    CompressorTimer.stop();
-    // Restore the mode
-    UpdateMode();
-    // Turn off the switch
-    ClearOutput(TD.Cswitch,TD.CswitchLevel);
-    return;
-  }
   // This interrupt occurs when the current state has timed out so advance to the next
   switch (CState)
   {
@@ -1097,6 +1285,18 @@ void CompressorTimerISR(void)
   {
     SetOutput(TD.Cswitch,TD.CswitchLevel);
   }
+  // Test if all passes are complete, if so stop the timer and exit
+  if(CurrentPass > TDarray[0].NumPasses)
+  {
+    // Stop the timer
+    CompressorTimer.stop();
+    // Restore the mode
+    UpdateMode();
+    // Turn off the switch
+    ClearOutput(TD.Cswitch,TD.CswitchLevel);
+    return;
+  }
+
 }
 
 // Called when we are going to start a compression cycle
@@ -1139,15 +1339,20 @@ void CompressorTriggerISR(void)
 // This interrupt service routine generates the two clocks of each Twave module
 void CompressorClockISR(void)
 {
+  uint32_t i;
+  
+  AtomicBlock< Atomic_RestoreState > a_Block;
   // Generate 4 clock pulses
-  pio->PIO_SODR = ClockArray[ClockIndex];    // Set bit high
-  pio->PIO_CODR = ClockArray[ClockIndex];    // Set bit low
-  pio->PIO_SODR = ClockArray[ClockIndex];    // Set bit high
-  pio->PIO_CODR = ClockArray[ClockIndex];    // Set bit low
-  pio->PIO_SODR = ClockArray[ClockIndex];    // Set bit high
-  pio->PIO_CODR = ClockArray[ClockIndex];    // Set bit low
-  pio->PIO_SODR = ClockArray[ClockIndex];    // Set bit high
-  pio->PIO_CODR = ClockArray[ClockIndex++];  // Set bit low
+  i = ClockArray[ClockIndex];
+  pio->PIO_SODR = i;    // Set bit high
+  pio->PIO_CODR = i;    // Set bit low
+  pio->PIO_SODR = i;    // Set bit high
+  pio->PIO_CODR = i;    // Set bit low
+  pio->PIO_SODR = i;    // Set bit high
+  pio->PIO_CODR = i;    // Set bit low
+  pio->PIO_SODR = i;    // Set bit high
+  pio->PIO_CODR = i;    // Set bit low
+  ClockIndex++;
   if(ClockIndex >= CR) 
   {
     ClockIndex = 0;
@@ -1223,5 +1428,6 @@ void CompressorLoop(void)
 }
 
 // End of compressor code
+
 
 

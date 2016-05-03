@@ -318,7 +318,7 @@ void RFdriver_loop(void)
 {
   int i;
   uint16_t ADCvals[8];
-  float V, I;
+  float V, I, Pv, Nv;
   static int LastFreq[2][2] = { -1, -1, -1, -1};
   static  int disIndex = 0;
 
@@ -330,20 +330,33 @@ void RFdriver_loop(void)
   RFdriverDialogEntriesPage1[2].Max = RFCD.MaxDrive;
   // Update the clock generator and set the frequencies for
   // all boards that are present in system. Only update if the freq
-  // has actually changed
+  // has actually changed.
+  // This logic needs to be updated to lower the drive level to 0 then wait a couple milli seconds
+  // before changing the frequency and then reset the drive level. This will prevent the noise from
+  // causing the PLL to lock up.
   if (LastFreq[SelectedRFBoard][0] != RFDD.RFCD[0].Freq)
   {
+    // Lower drive level to 0 then delay
+    analogWrite(RFDD.RFCD[0].PWMchan, 0);
+    delay(2);
     for (i = 0; i < 5; i++) if (SetPLL2freq(RFDD.CLOCKadr, RFDD.RFCD[0].Freq) == 0) break;
     LastFreq[SelectedRFBoard][0] = RFDD.RFCD[0].Freq;
+    // Reset drive level
+    if (DIh[SelectedRFBoard][0]->activeLevel()) analogWrite(RFDD.RFCD[0].PWMchan, (RFDD.RFCD[0].DriveLevel * PWMFS) / 100);
   }
   if (LastFreq[SelectedRFBoard][1] != RFDD.RFCD[1].Freq)
   {
+    // Lower drive level to 0 then delay
+    analogWrite(RFDD.RFCD[1].PWMchan, 0);
+    delay(2);
     for (i = 0; i < 5; i++) if (SetPLL3freq(RFDD.CLOCKadr, RFDD.RFCD[1].Freq) == 0) break;
     LastFreq[SelectedRFBoard][1] = RFDD.RFCD[1].Freq;
+    // Reset drive level
+    if (DIh[SelectedRFBoard][1]->activeLevel()) analogWrite(RFDD.RFCD[1].PWMchan, (RFDD.RFCD[1].DriveLevel * PWMFS) / 100);
   }
   // Update the PWM outputs and set levels
   {
-    AtomicBlock< Atomic_RestoreState > 	a_Block;
+//    AtomicBlock< Atomic_RestoreState > 	a_Block;
     if (DIh[SelectedRFBoard][0]->activeLevel()) analogWrite(RFDD.RFCD[0].PWMchan, (RFDD.RFCD[0].DriveLevel * PWMFS) / 100);
     else analogWrite(RFDD.RFCD[0].PWMchan, 0);
     if (DIh[SelectedRFBoard][1]->activeLevel()) analogWrite(RFDD.RFCD[1].PWMchan, (RFDD.RFCD[1].DriveLevel * PWMFS) / 100);
@@ -366,18 +379,39 @@ void RFdriver_loop(void)
     SelectedRFBoard = BoardFromSelectedChannel(i);
     SelectBoard(SelectedRFBoard);
     // Read the ADC monitor values for the selected channels.
-    if ((i == 0) || (i == 2)) if (AD7998(RFDD.ADCadr, ADCvals) != 0)  // this logic is not correct!
+    ValueChange = false;
+    delay(1);
+    if ((i == 0) || (i == 2)) if ((AD7998(RFDD.ADCadr, ADCvals) != 0) || (ValueChange))  // this logic is not correct!
       {
         i++;
         continue;
       }
     if (DIh[SelectedRFBoard][i]->activeLevel())
     {
-      if (RFpVpps[SelectedRFBoard][i] == 0) RFpVpps[SelectedRFBoard][i] = Counts2Value(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan], &RFDD.RFCD[i].RFpADCchan);
-      if (RFnVpps[SelectedRFBoard][i] == 0) RFnVpps[SelectedRFBoard][i] = Counts2Value(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan], &RFDD.RFCD[i].RFnADCchan);
+      if(RFDD.Rev > 1)
+      {
+        // Convert to engineering units for the Linear tech level sensors. Need 2nd order correction, y = 2x10^6 X^2 + 0.0145 X + 28.33
+        Pv = ((float)(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan]) * (float)(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan])) * 2e-6 - (float)(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan]) * 0.0145 + 28.33;
+        Nv = ((float)(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan]) * (float)(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan])) * 2e-6 - (float)(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan]) * 0.0145 + 28.33;
+        if (RFpVpps[SelectedRFBoard][i] == 0) RFpVpps[SelectedRFBoard][i] = Pv;
+        if (RFnVpps[SelectedRFBoard][i] == 0) RFnVpps[SelectedRFBoard][i] = Nv;
+      }
+      else
+      {
+        if (RFpVpps[SelectedRFBoard][i] == 0) RFpVpps[SelectedRFBoard][i] = Counts2Value(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan], &RFDD.RFCD[i].RFpADCchan);
+        if (RFnVpps[SelectedRFBoard][i] == 0) RFnVpps[SelectedRFBoard][i] = Counts2Value(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan], &RFDD.RFCD[i].RFnADCchan);
+      }
       // Filter with 1st order difference equation
-      RFpVpps[SelectedRFBoard][i] = Filter * Counts2Value(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan], &RFDD.RFCD[i].RFpADCchan) + (1 - Filter) * RFpVpps[SelectedRFBoard][i];
-      RFnVpps[SelectedRFBoard][i] = Filter * Counts2Value(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan], &RFDD.RFCD[i].RFnADCchan) + (1 - Filter) * RFnVpps[SelectedRFBoard][i];
+      if(RFDD.Rev > 1)
+      {
+        RFpVpps[SelectedRFBoard][i] = Filter * Pv + (1 - Filter) * RFpVpps[SelectedRFBoard][i];
+        RFnVpps[SelectedRFBoard][i] = Filter * Nv + (1 - Filter) * RFnVpps[SelectedRFBoard][i];
+      }
+      else
+      {
+        RFpVpps[SelectedRFBoard][i] = Filter * Counts2Value(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan], &RFDD.RFCD[i].RFpADCchan) + (1 - Filter) * RFpVpps[SelectedRFBoard][i];
+        RFnVpps[SelectedRFBoard][i] = Filter * Counts2Value(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan], &RFDD.RFCD[i].RFnADCchan) + (1 - Filter) * RFnVpps[SelectedRFBoard][i];
+      }
       // Limit test
       if (RFpVpps[SelectedRFBoard][i] < 0) RFpVpps[SelectedRFBoard][i] = 0;
       if (RFnVpps[SelectedRFBoard][i] < 0) RFnVpps[SelectedRFBoard][i] = 0;
@@ -466,7 +500,7 @@ void RFfreq(int channel, int freq)
   // If here ACK the command and set the frequency
   SendACK;
   i = BoardFromSelectedChannel(channel - 1);
-  RFDDarray[i].RFCD[channel - 1].Freq = freq;
+  RFDDarray[i].RFCD[(channel - 1) & 1].Freq = freq;
   if (channel - 1 == SelectedRFChan) RFCD.Freq = freq;
 }
 
@@ -478,8 +512,8 @@ void RFdrive(int channel, float Drive)
   if (!IsChannelValid(channel,false)) return;
   i = BoardFromSelectedChannel(channel - 1);
   // If Drive value is invalid exit
-  if ((Drive < 0) || (Drive > RFDDarray[i].RFCD[channel - 1].MaxDrive)) return;
-  RFDDarray[i].RFCD[channel - 1].DriveLevel = Drive;
+  if ((Drive < 0) || (Drive > RFDDarray[i].RFCD[(channel - 1) & 1].MaxDrive)) return;
+  RFDDarray[i].RFCD[(channel - 1) & 1].DriveLevel = Drive;
   if (channel - 1 == SelectedRFChan) RFCD.DriveLevel = Drive;
 }
 
@@ -494,7 +528,7 @@ void RFdrive(char *Chan, char *Val)
   if (!IsChannelValid(channel)) return;
   i = BoardFromSelectedChannel(channel - 1);
   // If Drive value is invalid send NAK and exit
-  if ((Drive < 0) || (Drive > RFDDarray[i].RFCD[channel - 1].MaxDrive))
+  if ((Drive < 0) || (Drive > RFDDarray[i].RFCD[(channel - 1) & 1].MaxDrive))
   {
     SetErrorCode(ERR_BADARG);
     SendNAK;
@@ -502,7 +536,7 @@ void RFdrive(char *Chan, char *Val)
   }
   // If here ACK the command and set the drive level
   SendACK;
-  RFDDarray[i].RFCD[channel - 1].DriveLevel = Drive;
+  RFDDarray[i].RFCD[(channel - 1) & 1].DriveLevel = Drive;
   if (channel - 1 == SelectedRFChan) RFCD.DriveLevel = Drive;
 }
 
@@ -515,7 +549,7 @@ void RFvoltage(int channel, float Voltage)
   // If Drive value is invalid exit
   if ((Voltage < 0) || (Voltage > 400.0)) return;
   i = BoardFromSelectedChannel(channel - 1);
-  RFDDarray[i].RFCD[channel - 1].Setpoint = Voltage;
+  RFDDarray[i].RFCD[(channel - 1) & 1].Setpoint = Voltage;
   if (channel - 1 == SelectedRFChan) RFCD.Setpoint = Voltage;
 }
 
@@ -538,7 +572,7 @@ void RFvoltage(char *Chan, char *Val)
   // If here ACK the command and set the drive level
   SendACK;
   i = BoardFromSelectedChannel(channel - 1);
-  RFDDarray[i].RFCD[channel - 1].Setpoint = Voltage;
+  RFDDarray[i].RFCD[(channel - 1) & 1].Setpoint = Voltage;
   if (channel - 1 == SelectedRFChan) RFCD.Setpoint = Voltage;
 }
 
@@ -552,7 +586,7 @@ void RFfreqReport(int channel)
   // Report the channels frequency
   SendACKonly;
   i = BoardFromSelectedChannel(channel - 1);
-  if (!SerialMute) serial->println(RFDDarray[i].RFCD[channel - 1].Freq);
+  if (!SerialMute) serial->println(RFDDarray[i].RFCD[(channel - 1) & 1].Freq);
 }
 
 void RFvoltageReportP(int channel)
@@ -563,7 +597,7 @@ void RFvoltageReportP(int channel)
   if (!IsChannelValid(channel)) return;
   SendACKonly;
   i = BoardFromSelectedChannel(channel - 1);
-  if (!SerialMute) serial->println(RFpVpps[i][channel - 1]);
+  if (!SerialMute) serial->println(RFpVpps[i][(channel - 1) & 1]);
 }
 
 void RFvoltageReportN(int channel)
@@ -574,7 +608,7 @@ void RFvoltageReportN(int channel)
   if (!IsChannelValid(channel)) return;
   SendACKonly;
   i = BoardFromSelectedChannel(channel - 1);
-  if (!SerialMute) serial->println(RFnVpps[i][channel - 1]);
+  if (!SerialMute) serial->println(RFnVpps[i][(channel - 1) & 1]);
 }
 
 void RFdriveReport(int channel)
@@ -585,7 +619,7 @@ void RFdriveReport(int channel)
   if (!IsChannelValid(channel)) return;
   SendACKonly;
   i = BoardFromSelectedChannel(channel - 1);
-  if (!SerialMute) serial->println(RFDDarray[i].RFCD[channel - 1].DriveLevel);
+  if (!SerialMute) serial->println(RFDDarray[i].RFCD[(channel - 1) & 1].DriveLevel);
 }
 
 // Reports the voltage setpoint
@@ -597,7 +631,7 @@ void RFvoltageReport(int channel)
   if (!IsChannelValid(channel)) return;
   SendACKonly;
   i = BoardFromSelectedChannel(channel - 1);
-  if (!SerialMute) serial->println(RFDDarray[i].RFCD[channel - 1].Setpoint);
+  if (!SerialMute) serial->println(RFDDarray[i].RFCD[(channel - 1) & 1].Setpoint);
 }
 
 void RFheadPower(int channel)
@@ -608,8 +642,33 @@ void RFheadPower(int channel)
   if (!IsChannelValid(channel)) return;
   SendACKonly;
   i = BoardFromSelectedChannel(channel - 1);
-  if (!SerialMute) serial->println(Powers[i][channel - 1]);
+  if (!SerialMute) serial->println(Powers[i][(channel - 1) & 1]);
 }
+
+// Reports the frequency and Vpp for + and - channels for each RF channel in system.
+void RFreportAll(void)
+{
+  int  i,brd;
+
+  if (SerialMute) return;
+  SendACKonly;
+  for(i=1;i<=4;i++)
+  {
+    if (!IsChannelValid(i,false)) break;
+    brd = BoardFromSelectedChannel(i - 1);
+    if(i > 1) serial->print(",");
+    serial->print(RFDDarray[brd].RFCD[(i - 1) & 1].Freq);
+    serial->print(",");
+    serial->print(RFDDarray[brd].RFCD[(i - 1) & 1].DriveLevel);
+    serial->print(",");
+    serial->print(RFpVpps[brd][(i - 1) & 1]);
+    serial->print(",");
+    serial->print(RFnVpps[brd][(i - 1) & 1]);
+  }
+  serial->println("");
+}
+
+
 
 
 

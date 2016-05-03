@@ -84,6 +84,8 @@ typedef struct
   float  PressTempLimit;       // Pressure & Temp adjustment limit in % of drive
   // Loop scan value
   int    Loops;
+  // Arc detector sensitivity
+  float  ArcSens;
 } FAIMSdata;
 
 // Prototypes
@@ -99,4 +101,6 @@ void FAIMSsetRFharPcal(char *m, char *b);
 void FAIMSsetRFharNcal(char *m, char *b);
 
 #endif
+
+
 

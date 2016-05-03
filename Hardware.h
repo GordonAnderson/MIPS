@@ -4,6 +4,10 @@
 #ifndef Hardware_h
 #define Hardware_h
 
+extern int PulseWidth;
+extern int PulseFreq;
+extern int BurstCount;
+
 typedef struct
 {
   int8_t  Chan;              // ADC channel number 0 through max channels for chip
@@ -120,33 +124,52 @@ extern PBledStates  PBledMode;
 #define PulseLDAC      {LDAChigh; LDAClow;}
 #define RFON_OFF       digitalWrite(RFON,LOW);
 #define RFON_ON        digitalWrite(RFON,HIGH);
+#define SetTRGOUT      digitalWrite(TRGOUT, LOW);
+#define ResetTRGOUT    digitalWrite(TRGOUT, HIGH);
 
 // Prototypes
-void DefineDeviceAddress(char *board, char *addr);
-void ReportAD7998(int chan);
-void Init_IOpins(void);
-void Reset_IOpins(void);
-void Software_Reset();
+void  GenerateBurst(int num);
+void  QueueBurst(int num);
+void  ProcessBurst(void);
+void  DefineDeviceAddress(char *board, char *addr);
+void  ReportAD7998(int chan);
+void  Init_IOpins(void);
+void  Reset_IOpins(void);
+void  Software_Reset();
 float ReadVin(void);
-void SetOutput(char chan, int8_t active);
-void ClearOutput(char chan, int8_t active);
-void DigitalOut(int8_t MSB, int8_t LSB);
+void  SetOutput(char chan, int8_t active);
+void  ClearOutput(char chan, int8_t active);
+void  DigitalOut(int8_t MSB, int8_t LSB);
 uint8_t DigitalIn(void);
-int ReadEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count);
-int WriteEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count);
+int  ReadEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count);
+int  WriteEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count);
 void TWI_RESET(void);
 void TWI_START(void);
 void TWI_STOP(void);
 bool TWI_WRITE(int8_t val);
 int8_t TWI_READ(bool Reply);
-int AD7998(int8_t adr, uint16_t *vals);
-int AD7994(int8_t adr, uint16_t *vals);
-int AD5625(int8_t adr, uint8_t chan, uint16_t val);
-int AD5625_EnableRef(int8_t adr);
-void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t val);
-int MCP2300(int8_t adr, uint8_t bits);
-int MCP2300(int8_t adr, uint8_t reg, uint8_t bits);
-int MCP2300(int8_t adr, uint8_t reg, uint8_t *data);
+int  AD7998(int8_t adr, uint16_t *vals);
+int  AD7994(int8_t adr, uint16_t *vals);
+int  AD5625(int8_t adr, uint8_t chan, uint16_t val);
+int  AD5625(int8_t adr, uint8_t chan, uint16_t val, int8_t Cmd);
+int  AD5625_EnableRef(int8_t adr);
+void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali);
+void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali, int8_t Cmd);
+int  MCP2300(int8_t adr, uint8_t bits);
+int  MCP2300(int8_t adr, uint8_t reg, uint8_t bits);
+int  MCP2300(int8_t adr, uint8_t reg, uint8_t *data);
+
+bool AcquireTWI(void);
+void ReleaseTWI(void);
+void TWIqueue(void (*TWIfunction)());
+
+void TriggerOut(char *cmd);
+void TriggerOut(int microSec);
+void QueueTriggerOut(int microSec);
+void ProcessTriggerOut(void);
+void ADCread(int chan);
+
 
 #endif
+
 

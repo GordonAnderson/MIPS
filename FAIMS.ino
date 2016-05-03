@@ -156,6 +156,7 @@ DialogBoxEntry FAIMSentriesTuneMenu[] = {
   {" Fine phase"             , 0, 3, D_INT     , 0, 255, 1, 20, false, "%3d", &faims.PhaseF, NULL, NULL},
   {" Pri capacitance"        , 0, 4, D_FLOAT   , 0, 100, 0.1, 18, false, "%5.1f", &faims.Pcap, NULL, DelayArcDetect},
   {" Har capacitance"        , 0, 5, D_FLOAT   , 0, 100, 0.1, 18, false, "%5.1f", &faims.Hcap, NULL, DelayArcDetect},
+  {" Arc Det Level"          , 0, 6, D_FLOAT   , 0, 100, 1, 19, false, "%4.0f", &faims.ArcSens, NULL, NULL},
   {" Environment menu"       , 0, 7, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSEnvMenu, NULL, NULL},
   {" Drive menu"             , 0, 8, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSDriveMenu, NULL, NULL},
   {" Power menu"             , 0, 9, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSPowerMenu, NULL, NULL},
@@ -226,7 +227,7 @@ DialogBox FAIMSPowerMenu = {
 DialogBoxEntry FAIMSentriesDCMenu[] = {
   {" DC bias"                , 0, 1, D_FLOAT   , -250, 250, 0.1, 11, false, "%5.1f", &faims.DCbias.VoltageSetpoint, NULL, NULL},
   {" DC CV"                  , 0, 2, D_FLOAT   , -250, 250, 0.1, 11, false, "%5.1f", &faims.DCcv.VoltageSetpoint, NULL, NULL},
-  {" Offset"                 , 0, 3, D_FLOAT   , -250, 250, 0.1, 11, false, "%5.1f", &faims.DCoffset.VoltageSetpoint, NULL, NULL},
+  {" Offset"                 , 0, 3, D_FLOAT   , -250, 250, 0.1, 11, false, "%5.1f", &faims.DCoffset.VoltageSetpoint, NULL, UpdateNFDlimits},
   {"         Request Actual" , 0, 0, D_TITLE   , 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
   {""                        , 0, 1, D_FLOAT   , 0, 0, 0, 18, true, "%5.1f", &DCbiasRB, NULL, NULL},
   {""                        , 0, 2, D_FLOAT   , 0, 0, 0, 18, true, "%5.1f", &DCcvRB, NULL, NULL},
@@ -304,9 +305,28 @@ void SetupFDEntry(DCbiasData *dc)
   FAIMSentriesDCMenuFD[7].Max = dc->MaxVoltage+dc->DCoffset.VoltageSetpoint;
 }
 
+void SetupNFDEntry(DCbiasData *dc)
+{
+  int   i;
+  
+// Setup the min and max values for the user interface
+  for(i=0;i<2;i++)
+  {
+    FAIMSentriesDCMenu[i].Min = -250.0 + faims.DCoffset.VoltageSetpoint;
+    FAIMSentriesDCMenu[i].Max =  250.0 + faims.DCoffset.VoltageSetpoint;
+    FAIMSentriesDCMenu[7+i].Min = -250.0 + faims.DCoffset.VoltageSetpoint;
+    FAIMSentriesDCMenu[7+i].Max =  250.0 + faims.DCoffset.VoltageSetpoint;
+  }
+}
+
 void UpdateFDlimits(void)
 {
   SetupFDEntry(&dcbd);
+}
+
+void UpdateNFDlimits(void)
+{
+  SetupNFDEntry(&dcbd);
 }
 
 DialogBox FAIMSDCMenu = {
@@ -479,6 +499,8 @@ void FAIMSclockDetechISR(void)
 // This function is called at powerup to initiaize the FAIMS board.
 void FAIMS_init(int8_t Board)
 {
+  DialogBoxEntry *de = GetDialogEntries(FAIMSentriesTuneMenu, " Environment menu");
+
   // Flag the board as present
   FAIMSpresent = true;
   NumberOfFAIMS = 1;
@@ -539,6 +561,7 @@ void FAIMS_init(int8_t Board)
     FAIMSDCMenu.Entry = FAIMSentriesDCMenuFD;
     SetupFDEntry(&dcbd);
   }
+  else SetupNFDEntry(&dcbd);
   // Setup the menu and the loop processing thread
   AddMainMenuEntry(&MEFAIMSMonitor);
   DialogBoxDisplay(&FAIMSMainMenu);
@@ -569,29 +592,8 @@ void FAIMS_init(int8_t Board)
   }
   else
   {
-    FAIMSentriesTuneMenu[5].Type = D_OFF;
+    de->Type = D_OFF;
   }
-  
-// Alex's FAIMS calibratoin update
-/*
-  faims.RFharP.m = 8038;
-  faims.RFharP.b = 13088;
-  faims.RFharP.Chan = 2;
-
-  faims.RFharN.m = 13961;
-  faims.RFharN.b = 12530;
-  faims.RFharN.Chan = 1;
-*/
-/*  
-// Keqi's field driven FAINMS calibration update
-  faims.RFharP.m = 8576;
-  faims.RFharP.b = 12145;
-  faims.RFharP.Chan = 2;
-
-  faims.RFharN.b = 8495;
-  faims.RFharN.b = 12000;
-  faims.RFharN.Chan = 1;
-*/
 }
 
 // Monitor power limits and reduce drive if over the limit. First reduce DriveChange until
@@ -849,6 +851,9 @@ void FAIMS_loop(void)
   static int  LastDelay = -1;
   static int  LastDrv  = -1;
   static bool LastEnable = false;
+  static DialogBoxEntry *TMde = GetDialogEntries(FAIMSentriesTuneMenu, " Frequency");
+  static DialogBoxEntry *PCde = GetDialogEntries(FAIMSentriesTuneMenu, " Pri capacitance");
+  static DialogBoxEntry *HCde = GetDialogEntries(FAIMSentriesTuneMenu, " Har capacitance");
 
   if(DiableArcDetectTimer > 0) DiableArcDetectTimer--;
   // Select the board
@@ -860,8 +865,19 @@ void FAIMS_loop(void)
   if (faims.Drv2.Drv > faims.MaxDrive) faims.Drv2.Drv = faims.MaxDrive;
   if (faims.Drv3.Drv > faims.MaxDrive) faims.Drv3.Drv = faims.MaxDrive;
   // If enabled then disable frequency changing, only allow if drives are off
-  if (faims.Enable) FAIMSentriesTuneMenu[0].NoEdit = true;
-  else FAIMSentriesTuneMenu[0].NoEdit = false;
+  if (faims.Enable) TMde->NoEdit = true;
+  else TMde->NoEdit = false;
+  // If drive is enabled and over 30% then disable the capacitance adjustment.
+  if ((faims.Enable) && (faims.Drv > 30))
+  {
+    PCde->NoEdit = true;
+    HCde->NoEdit = true;
+  }
+  else
+  {
+    PCde->NoEdit = false;
+    HCde->NoEdit = false;
+  }
   // If the global enable has just changed state to on, then check the clock to
   // make sure its running and correct. If not do not enable and issue a warning.
   if ((!LastEnable) && (faims.Enable))
@@ -942,7 +958,7 @@ void FAIMS_loop(void)
   {
     LastGPIO = BuildGPIOimage();
     // Retry if the GPIO fails
-    while (1) if (MCP2300(faims.GPIOadr, 0x0A, LastGPIO) == 0) break;
+    for(int j=0;j<100;j++) if (MCP2300(faims.GPIOadr, 0x0A, LastGPIO) == 0) break;
     //    MCP2300(faims.GPIOadr, 0x0A, LastGPIO);
   }
   // Update the delay GPIO if needed
@@ -990,7 +1006,7 @@ void FAIMS_loop(void)
     // could indicate an ark so turn off the system. (add this code! here)
     if(DiableArcDetectTimer == 0) if (faims.Enable) if (((KVoutP + KVoutN) - (Vp + Vn)) > (KVoutP + KVoutN) / 3)
     {
-      if((KVoutP + KVoutN) > 0.5)
+      if((KVoutP + KVoutN) > (100 - faims.ArcSens)/100)
       {
         // Arc detected! Shutdown
         // Disable the drivers and display a estop warning
@@ -1014,7 +1030,7 @@ void FAIMS_loop(void)
   // Process the Estop input, if pressed then set global enable to false
   if (faims.Enable)
   {
-    while (1) if (MCP2300(faims.GPIOadr, 0x09, &GPIOreg) == 0) break;
+    for(int j=0;j<100;j++) if (MCP2300(faims.GPIOadr, 0x09, &GPIOreg) == 0) break;
     //    MCP2300(faims.GPIOadr, 0x09, &GPIOreg);
     if ((GPIOreg & 0x80) != 0)
     {
@@ -1102,5 +1118,7 @@ void FAIMSsetRFharNcal(char *m, char *b)
   res = b;
   faims.RFharN.b = res.toFloat();
 }
+
+
 
 

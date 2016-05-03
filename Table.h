@@ -21,16 +21,16 @@ enum TriggerModes
 	SW,     // Software
 	EDGE,   // External any edge
 	POS,    // External positive edge
-        NEG     // External negative edge
+  NEG     // External negative edge
 };
 
 enum ClockModes
 {
 	EXT,     // External
 	MCK2,    // Internal, options are MCK / (2 or 8 or 32 or 128)
-        MCK8,
-        MCK32,
-        MCK128
+  MCK8,
+  MCK32,
+  MCK128
 };
 
 enum TableModes
@@ -76,6 +76,11 @@ typedef struct
     volatile int         Count[MaxNesting];
 } NestingStack;
 
+extern enum TableModes  TableMode;
+extern bool TasksEnabled;
+extern int InterTableDelay;
+extern bool ValueChange;
+
 // ProcessEntry return codes
 #define PEprocessed 1
 #define PENewNamedTable 2
@@ -83,6 +88,8 @@ typedef struct
 #define PEEndTables 4
 #define PEerror 0
 
+void SetImageRegs(void);
+void ProcessSerial(void);
 // Function prototypes
 
 // Serial IO routines
@@ -96,6 +103,7 @@ void SetTableTRG(char *cmd);
 void SetTableAbort(void);
 void SWTableTrg(void);
 void TableFreq(void);
+void StopTable(void);
 void ParseTableCommand(void);
 int  ParseEntry(int Count, char *TK);
 void ReportTable(int count);
@@ -105,6 +113,7 @@ void GetTableAdvance(void);
 void SetTableAdvance(char *cmd);
 void GetTableEntryValue(int Count, int Chan);
 void SetTableEntryValue(int Count, int Chan, float fval);
+void SetTableEntryCount(int Count, int Chan, float NewCount);
 
 // Real time processing routines
 void UserSetAbort(void);
@@ -123,5 +132,7 @@ void RAmatch_Handler(void);
 void RCmatch_Handler(void);
 
 #endif
+
+
 
 

@@ -20,14 +20,20 @@ extern Stream *serial;
 
 extern bool SerialMute;
 
+extern bool LEDoverride;
+extern int  LEDstate;
+
 //extern HardwareSerial *serial;
 
 // Ring buffer size
 #define RB_BUF_SIZE		4096
 
+extern char *SelectedACKonlyString;
+
 #define SendNAK {if(!SerialMute) serial->write("\x15?\n\r");}
 #define SendACK {if(!SerialMute) serial->write("\x06\n\r");}
-#define SendACKonly {if(!SerialMute) serial->write("\x06");}
+//#define SendACKonly {if(!SerialMute) serial->write("\x06");}
+#define SendACKonly {if(!SerialMute) serial->write(SelectedACKonlyString);}
 #define SendERR {if(!SerialMute) serial->write("\x15?\n\r");}
 #define SendBSY {if(!SerialMute) serial->write("\x15?\n\r");}
 
@@ -132,4 +138,6 @@ void DCbiasReadMax(int chan);
 void DCbiasNumber(void);
 
 #endif /* SERIAL_H_ */
+
+
 

@@ -10,6 +10,7 @@
   Created by Gordon Anderson, November, 2013.
 */
 #include "Encoder.h"
+#include "AtomicBlock.h"
 
 int Encoder::ENC_A;
 int Encoder::ENC_B;
@@ -110,6 +111,7 @@ void encoderISR(void)
   // the actual bit status when we are sitting on a detent.  
 //    {0,-1,1,0,1,0,0,-1,-1,0,0,1,0,1,-1,0};  //encoder lookup table
 
+  AtomicBlock< Atomic_RestoreState > a_Block;
   // The encoder has 24 detents, 24 pulses per revolution
   //
   // bits
@@ -167,5 +169,7 @@ void encoderPBISR(void)
   }
   pt = millis();
 }
+
+
 
 

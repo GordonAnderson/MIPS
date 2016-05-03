@@ -21,6 +21,7 @@ typedef struct
   char           password[20];      // Wireless network password
   char           IP[20];            // Hold the actual IP, system uses DHCP only for IP determination
   int            Status;            // Connection status
+  bool           Enable;            // If false the WiFi interface is ignored, this is the default
 } WiFiData;
 
 
@@ -32,5 +33,7 @@ void SetSSID(char *ssid);
 void SetPassword(char *pswd);
 
 #endif
+
+
 
 

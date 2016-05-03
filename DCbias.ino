@@ -9,6 +9,7 @@
 #include "DCbias.h"
 #include "Variants.h"
 #include "Hardware.h"
+#include "Table.h"
 #include "Errors.h"
 
 extern DialogBox DCbiasDialog;
@@ -24,9 +25,9 @@ extern bool NormalStartup;
 Thread DCbiasThread  = Thread();
 
 #ifdef TestMode
-int  NumberOfDCChannels = 8; // Defines the number of DC channels supported. Set during intaliztion.
+int  NumberOfDCChannels = 16; // Defines the number of DC channels supported. Set during intaliztion.
                              // valid values are 0, 8, or 16
-bool  DCbiasBoards[2] = {true,false};  // Defines the boards that are present in the system
+bool  DCbiasBoards[2] = {true,true};  // Defines the boards that are present in the system
 #else
 int  NumberOfDCChannels = 0;
 bool  DCbiasBoards[2] = {false,false};  
@@ -39,6 +40,8 @@ float MaxDCbiasVoltage=0;    // This value is set to the highest DC bias voltage
 float Verror = 0;            // Used to detect if the DC bias supply is "stressed"
 float VerrorFiltered = 0;    // Used to trip supply is error level is exceeded
 int   MonitorDelay;          // Delay a number of loop interations before monitoring voltages for tripping PS
+
+bool  DCbiasUpdate = true;   // Flag set to update all DCbias channels
 
 #define DCbD DCbDarray[SelectedDCBoard]
 
@@ -232,6 +235,7 @@ void DCbiasChanCal(void)
   // Calibrate this channel
   ChannelCalibrate(&CC, Name);
   dcbd = DCbD;
+  DCbiasUpdate = true;
 }
 
 void DCbiasOffsetInitChan(void)
@@ -257,12 +261,15 @@ void DCbiasOffsetCal(void)
   CC.ADCaddr=DCbDarray[b].ADCadr;
   CC.DACout=&DCbDarray[b].DCoffset.DCctrl;
   CC.ADCreadback=NULL;
+  if((NumberOfDCChannels > 8) && (DCbDarray[0].OffsetReadback) && (b == 1)) CC.ADCreadback=&DCbDarray[b].DCCD[7].DCmon;
+  if((NumberOfDCChannels < 8) && (DCbDarray[0].OffsetReadback) && (b == 0)) CC.ADCreadback=&DCbDarray[b].DCCD[7].DCmon;
   // Define this channels name
   if(CalChannel <= 8) sprintf(Name," Offset for channel 1-8");
   else sprintf(Name,"Offset for channel 9-16");
   // Calibrate this channel
   ChannelCalibrate(&CC, Name);
-  dcbd = DCbD;      
+  dcbd = DCbD; 
+  DCbiasUpdate = true;     
 }
 
 void SaveDCbiasSettings(void)
@@ -432,10 +439,10 @@ void DCbias_init(int8_t Board)
     RestoreDCbiasSettings(true);
     DCbD = dcbd;        // Copy back into the configuration data structure array
   }
-  // Setup the min and max values in the user interface
-  SetupEntry(&dcbd, DCDialogEntriesPage1);
   if(NumberOfDCChannels == 0)
   {
+    // Setup the min and max values in the user interface
+    SetupEntry(&dcbd, DCDialogEntriesPage1);
     // Setup the menu
     AddMainMenuEntry(&MEDCbiasMonitor);
     if(ActiveDialog == NULL) DialogBoxDisplay(&DCbiasDialog);
@@ -460,12 +467,16 @@ void DCbias_init(int8_t Board)
 }
 
 // This function is called every 100 mS to process the DC bias board(s).
+// Updated March 13, 2016: Only update the DACs when the values have changed.
 void DCbias_loop(void)
 {
   float   errorPercentage,V;
+  static  float offsetV;
   static  int disIndex = 0;
   static  bool SuppliesOff = true;
   static  int  SuppliesStableCount = 10;
+  static  float DCbiasV[2][8] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+  static  float DCbiasO[2] = {0,0};
   int     i,b;
   uint16_t ADCvals[8];
 
@@ -484,7 +495,8 @@ void DCbias_loop(void)
   // Copy any UI updates, first look to see if any setpoints have changed, if so delay monitoring
   for(i=0;i<DCbD.NumChannels;i++) if(abs(DCbD.DCCD[i].VoltageSetpoint - dcbd.DCCD[i].VoltageSetpoint) > 1.0) DelayMonitoring();
   if(abs(DCbD.DCoffset.VoltageSetpoint - dcbd.DCoffset.VoltageSetpoint) > 1.0) DelayMonitoring();
-  DCbD = dcbd;      
+  if(ActiveDialog == &DCbiasDialog) DCbD = dcbd;   // This writes any changes to the DCbias array  
+  if(DCbDarray[0].UseOneOffset) DCbDarray[SelectedDCBoard ^ 1].DCoffset.VoltageSetpoint = DCbDarray[SelectedDCBoard].DCoffset.VoltageSetpoint;
   MaxDCbiasVoltage = 0;
   Verror = 0;
   for(b=0;b<2;b++)
@@ -494,14 +506,20 @@ void DCbias_loop(void)
     // Update the offset output, its TWI not SPI!
     if(SuppliesOff == false)
     {
-      AD5625(DCbDarray[b].DACadr,DCbDarray[b].DCoffset.DCctrl.Chan,Value2Counts(DCbDarray[b].DCoffset.VoltageSetpoint,&DCbDarray[b].DCoffset.DCctrl));
+      if((DCbDarray[b].DCoffset.VoltageSetpoint != DCbiasO[b]) || DCbiasUpdate)
+      {
+        DCbiasO[b] = DCbDarray[b].DCoffset.VoltageSetpoint;
+        AD5625(DCbDarray[b].DACadr,DCbDarray[b].DCoffset.DCctrl.Chan,Value2Counts(DCbDarray[b].DCoffset.VoltageSetpoint,&DCbDarray[b].DCoffset.DCctrl),3);
+      }
     }
     else
     {
       // Set to zero if power is off
-      AD5625(DCbDarray[b].DACadr,DCbDarray[b].DCoffset.DCctrl.Chan,Value2Counts(0,&DCbDarray[b].DCoffset.DCctrl));      
+      DCbiasO[b] = 0;
+      AD5625(DCbDarray[b].DACadr,DCbDarray[b].DCoffset.DCctrl.Chan,Value2Counts(0,&DCbDarray[b].DCoffset.DCctrl),3);      
     }
     // Update all output channels. SPI interface for speed
+    if(DCbiasUpdate) DelayMonitoring();
     for(i=0;i<DCbDarray[b].NumChannels;i++)
     {
       if(SuppliesOff == false)
@@ -510,29 +528,50 @@ void DCbias_loop(void)
         if(V > DCbDarray[b].MaxVoltage) V = DCbDarray[b].MaxVoltage;
         if(V < DCbDarray[b].MinVoltage) V = DCbDarray[b].MinVoltage;
         DCbDarray[b].DCCD[i].VoltageSetpoint = V + DCbDarray[b].DCoffset.VoltageSetpoint;
-        AD5668(DCbDarray[b].DACspi,DCbDarray[b].DCCD[i].DCctrl.Chan,Value2Counts(V,&DCbDarray[b].DCCD[i].DCctrl));
+        if((V != DCbiasV[b][i]) || DCbiasUpdate)
+        {
+          DCbiasV[b][i] = V;
+          AD5668(DCbDarray[b].DACspi,DCbDarray[b].DCCD[i].DCctrl.Chan,Value2Counts(V,&DCbDarray[b].DCCD[i].DCctrl),3);
+        }
       }
       else
       {
         // Set to zero if power is off
-        AD5668(DCbDarray[b].DACspi,DCbDarray[b].DCCD[i].DCctrl.Chan,Value2Counts(0,&DCbDarray[b].DCCD[i].DCctrl));
+        AD5668(DCbDarray[b].DACspi,DCbDarray[b].DCCD[i].DCctrl.Chan,Value2Counts(0,&DCbDarray[b].DCCD[i].DCctrl), 3);
+        DCbiasV[b][i] = 0;
       }
     }
     // Read the monitor inputs and update the display buffer
+    ValueChange = false;
+    delay(1);
     if(AD7998(DCbDarray[b].ADCadr, ADCvals)==0) for(i=0;i<DCbDarray[b].NumChannels;i++)
     {
-      Readbacks[b][i] = Filter * (Counts2Value(ADCvals[i],&DCbDarray[b].DCCD[i].DCmon) + DCbDarray[b].DCoffset.VoltageSetpoint) + (1-Filter) * Readbacks[b][i];
-      if(abs(Readbacks[b][i]) > MaxDCbiasVoltage) MaxDCbiasVoltage = abs(Readbacks[b][i]);
-      if(b == SelectedDCBoard) Readback[i] = Readbacks[b][i];
+      if(!ValueChange)
+      {
+         if(DCbDarray[0].OffsetReadback)
+         {
+           if((NumberOfDCChannels > 8) && (b == 1)) offsetV = Counts2Value(ADCvals[7],&DCbDarray[b].DCCD[7].DCmon); 
+           if((NumberOfDCChannels < 8) && (b == 0)) offsetV = Counts2Value(ADCvals[7],&DCbDarray[b].DCCD[7].DCmon); 
+         }
+         else offsetV = DCbDarray[b].DCoffset.VoltageSetpoint;
+         if(SuppliesOff) offsetV = 0;
+         Readbacks[b][i] = Filter * (Counts2Value(ADCvals[i],&DCbDarray[b].DCCD[i].DCmon) + offsetV) + (1-Filter) * Readbacks[b][i];
+         if(abs(Readbacks[b][i]) > MaxDCbiasVoltage) MaxDCbiasVoltage = abs(Readbacks[b][i]);
+         if(b == SelectedDCBoard) Readback[i] = Readbacks[b][i];
+      }
     }
     // Determine the largest error between the output setpoint and the actual value, scan all channels
     // only do this test if the power supply is on and its a 250 volt or higher board
     if(IsPowerON() && (DCbDarray[b].MaxVoltage >= 250)) for(i=0;i<DCbDarray[b].NumChannels;i++)
     {
+      if(TableMode == LOC)
+      {
        errorPercentage = (abs(Readbacks[b][i] - DCbDarray[b].DCCD[i].VoltageSetpoint) / DCbDarray[b].MaxVoltage) * 100.0;
        if(errorPercentage > Verror) Verror = errorPercentage;
+      }
     }
   }
+  DCbiasUpdate = false;
   dcbd = DCbD;
   VerrorFiltered = StrongFilter * Verror + (1-StrongFilter) * VerrorFiltered;
   // If the VerrorFiltered value exceeds the threshold then turn off the DC bias power supply and popup a message
@@ -564,26 +603,35 @@ void DCbias_loop(void)
 // This function returns the board number for the channel number passed in.
 // chan range is 1 to 16
 // returns - 1 on error
-int GetDCbiasBoard(int chan)
+int GetDCbiasBoard(int chan, bool Response = true)
 {
   if((chan < 1) || (chan > 16))
   {
-    SetErrorCode(ERR_INVALIDCHAN);
-    SendNAK;
+    if(Response)
+    {
+      SetErrorCode(ERR_INVALIDCHAN);
+      SendNAK;
+    }
     return(-1);
   }
   if(chan > 8)
   { 
     if(DCbiasBoards[1]) return 1;
-    SetErrorCode(ERR_INVALIDCHAN);
-    SendNAK;
+    if(Response)
+    {
+      SetErrorCode(ERR_INVALIDCHAN);
+      SendNAK;
+    }
     return -1;
   }
   // If here the channel is 1 through 8
   if(DCbiasBoards[0]) return 0;
   if(DCbiasBoards[1]) return 1;
-  SetErrorCode(ERR_INVALIDCHAN);
-  SendNAK;
+  if(Response)
+  {
+    SetErrorCode(ERR_INVALIDCHAN);
+    SendNAK;
+  }
   return(-1);  
 }
 
@@ -596,7 +644,7 @@ DCbiasData *GetDCbiasDataPtr(int chan, bool Response = true)
 {
   int board;
   
-  board = GetDCbiasBoard(chan);
+  board = GetDCbiasBoard(chan,false);
   if(board == -1)
   {
     if(Response)
@@ -734,6 +782,7 @@ void DCbiasSetFloat(char *Chan, char *Value)
   // loop update the outputs.
   DelayMonitoring();
   DCbData->DCoffset.VoltageSetpoint = value;
+  if(DCbDarray[0].UseOneOffset) DCbDarray[0].DCoffset.VoltageSetpoint = DCbDarray[1].DCoffset.VoltageSetpoint = value;
   // If this channel is being displayed in a dialog then refresh the display
   if(GetDCbiasBoard(chan) == SelectedDCBoard)
   {
@@ -849,4 +898,48 @@ void DCbiasSetNumBoardChans(int board, int num)
   SetErrorCode(ERR_BADARG);
   SendNAK;
 }
+
+// Report all the DC bias channels voltage setpoints
+void DCbiasReportAllSetpoints(void)
+{
+  DCbiasData *DCbData;
+  int i;
+
+  if(SerialMute) return;
+  SendACKonly;
+  for (i=1;i<=16;i++)
+  {
+    if((DCbData = GetDCbiasDataPtr(i,false)) == NULL) break;
+    if((DCbData->NumChannels - 1) >= ((i-1) & 0x07)) 
+    {
+      if(i > 1) serial->print(",");
+      serial->print(DCbData->DCCD[(i-1) & 0x07].VoltageSetpoint);
+    }
+  }
+  serial->println("");
+}
+
+// Report all the DC bias channels readback voltages
+void DCbiasReportAllValues(void)
+{
+  DCbiasData *DCbData;
+  int brd;
+  int i;
+
+  if(SerialMute) return;
+  SendACKonly;
+  for (i=1;i<=16;i++)
+  {
+    if((DCbData = GetDCbiasDataPtr(i,false)) == NULL) break;
+    if((brd = GetDCbiasBoard(i, false)) == -1) break;
+    if((DCbData->NumChannels - 1) >= ((i-1) & 0x07)) 
+    {
+      if(i > 1) serial->print(",");
+      serial->print(Readbacks[brd][(i-1) & 0x07]);
+    }
+  }
+  serial->println("");
+}
+
+
 

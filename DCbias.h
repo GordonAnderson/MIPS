@@ -3,6 +3,7 @@
 
 extern float MaxDCbiasVoltage;
 extern int   NumberOfDCChannels;
+extern bool  DCbiasUpdate;
 
 typedef struct
 {
@@ -29,7 +30,11 @@ typedef struct
   uint8_t EEPROMadr;
   DCbiasChannellData  DCCD[8];   // 8 channel maximum
   DCbiasChannellData  DCoffset;  // Offset channel data
+  bool    UseOneOffset;          // If true only one offset is used for both boards
+  bool    OffsetReadback;        // True if the offset channel has readback. This is always on the last ADC channel
 } DCbiasData;
+
+extern DCbiasData  DCbDarray[2]; 
 
 // Prototypes
 int   DCbiasValue2Counts(int chan, float value);
@@ -49,7 +54,10 @@ void  DCbiasReadMin(int chan);
 void  DCbiasSet(char *Chan, char *value);
 void  DCbiasSet(int Chan, float value);
 void  DCbiasSetNumBoardChans(int board, int num);
+void  DCbiasReportAllSetpoints(void);
+void  DCbiasReportAllValues(void);
 
 #endif
+
 
 

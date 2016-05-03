@@ -160,7 +160,6 @@ void DIO_init(void)
 void DIO_loop(void)
 {
   int  i;
-  static int disIndex = 0;
 
   // Read input bits and set digitial input array for the display
   for (i = 0; i < 8; i++) DigitialInputs[i] = 0;
@@ -174,12 +173,8 @@ void DIO_loop(void)
   if (digitalRead(DI7) == HIGH) DigitialInputs[7] = 1;
   // If the digitial input dialog is displayed then update the data
   // For performance reasons update 2 lines on each call to this function
-  if (ActiveDialog == &DIDialog)
-  {
-    DisplayDialogEntry(&DIDialog.w, &DIDialog.Entry[disIndex++], false);
-    DisplayDialogEntry(&DIDialog.w, &DIDialog.Entry[disIndex++], false);
-    if(disIndex >= 8) disIndex = 0;
-  }
+  if (ActiveDialog == &DIDialog)  RefreshAllDialogEntries(&DIDialog);
+  if (ActiveDialog == &DODialog)  RefreshAllDialogEntries(&DODialog);
 }
 
 // This function is called by the serial command processor to handle the GDIO command.
@@ -282,54 +277,11 @@ void SDIO_Serial(char *CH, char *State)
   DOrefresh;
   // Toggle LDAC
   PulseLDAC;
-  // Update the display if the outputs are being shown
-  if (ActiveDialog == &DODialog)
-  {
-    UpdateDigitialOutputArray();
-    DisplayAllDialogEntries(&DODialog);
-    DODialog.State = M_SCROLLING;
-  }
+  UpdateDigitialOutputArray();
 }
 
-// This function is valid for rev 2.0 and above controllers. This command
-// will generate a output trigger pulse. The following commands are
-// supported:
-//  HIGH, sets the output high
-//  LOW, sets the output low
-//  PULSE, pulses the output from its current state for 1 milli sec
-void TriggerOut(char *cmd)
-{
-  if (MIPSconfigData.Rev < 2)
-  {
-    SetErrorCode(ERR_NOTSUPPORTINREV);
-    SendNAK;
-    return;
-  }
-  if ((strcmp(cmd, "HIGH") == 0) || (strcmp(cmd, "LOW") == 0) || (strcmp(cmd, "PULSE") == 0))
-  {
-    SendACK;
-    if (strcmp(cmd, "HIGH") == 0) digitalWrite(TRGOUT, LOW);
-    if (strcmp(cmd, "LOW") == 0) digitalWrite(TRGOUT, HIGH);
-    if (strcmp(cmd, "PULSE") == 0)
-    {
-      if (digitalRead(TRGOUT) == HIGH)
-      {
-        digitalWrite(TRGOUT, LOW);
-        delay(1);
-        digitalWrite(TRGOUT, HIGH);
-      }
-      else
-      {
-        digitalWrite(TRGOUT, HIGH);
-        delay(1);
-        digitalWrite(TRGOUT, LOW);
-      }
-    }
-    return;
-  }
-  SetErrorCode(ERR_BADARG);
-  SendNAK;
-}
+
+
 
 
 

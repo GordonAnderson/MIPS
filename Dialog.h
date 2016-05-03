@@ -71,7 +71,9 @@ void DisplayDialogEntryNames(Window *w, DialogBoxEntry *de, bool HighLight);
 void DisplayAllDialogEntryNames(DialogBox *d);
 void DialogBoxDisplay(DialogBox *d);
 DialogBoxEntry *GetDialogEntries(DialogBoxEntry *de, char *rname);
+void RefreshAllDialogEntries(DialogBox *d);
 
 #endif
+
 
 

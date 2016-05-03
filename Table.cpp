@@ -188,6 +188,7 @@
 // STBLDAT;100:1:15:3:123,150:2:33,400:[3:5,0:1:30:2:10,100:1:10:2:30,150:];
 // STBLDAT;100:1:15:3:123,150:2:33,400:[3:5,0:1:30:2:10,100:1:10:2:30,150:],0:1:15,50:1:5;
 // STBLDAT;0:[3:5,0:1:30:2:10,100:1:10:2:30,150:];
+// STBLDAT;0:[A:1000,0:1:0,1000:1:5,1000:];
 //
 // Examples to be tested
 //
@@ -277,12 +278,17 @@
 #include "DCbias.h"
 #include "Dialog.h"
 #include "Variants.h"
+#include <Thread.h>
+#include <ThreadController.h>
 #include <MIPStimer.h>
+#include "AtomicBlock.h"
 
 #if defined(__SAM3X8E__)
     #undef __FlashStringHelper::F(string_literal)
     #define F(string_literal) string_literal
 #endif
+
+extern ThreadController control;
 
 MIPStimer MPT(8);
 
@@ -306,10 +312,18 @@ volatile bool TableReady = false;     // This flag tells the system the tables a
 volatile bool Aborted = false;        // Set when an abort command is received
 volatile bool LOCrequest = false;     // Set when requested to enter local mode
 volatile bool StopRequest;            // Used by the realtime processing to stop the timer at the end of its cycle
+volatile bool StopCommanded;          // Flag set by the serial command TBLSTOP, stops the table and remains in table mode
+//volatile bool TableStopped = false;   // Set to true when the table completes
 volatile bool TableAdv = false;       // If this flag is true then the table number will be advanced to the next table
                                       // after every trigger
 volatile bool SWtriggered = false;
 volatile bool TableOnce = false;      // If true the table will play one time then the mode will return to local
+
+bool ValueChange = false;
+
+bool TasksEnabled = false;            // Setting this flag to tue will enable all tasks in table mode
+
+int InterTableDelay = 3;
 
 enum TriggerModes TriggerMode = SW;
 enum ClockModes   ClockMode   = MCK128;
@@ -570,6 +584,19 @@ void SetTableAbort(void)
     SendACK;
 }
 
+// This function stops the current table if its running and in table mode
+void StopTable(void)
+{
+    if(TableMode != TBL)
+    {
+        SetErrorCode(ERR_NOTBLMODE);
+        SendNAK;
+        return;
+    }
+    StopCommanded = true;
+    SendACK;
+}
+
 // Software trigger
 void SWTableTrg(void)
 {
@@ -656,6 +683,44 @@ TableEntry *FindTableEntry(int Count,int Chan)
    }
 }
 
+// This function will look through the loaded table buffer and attempt to find the Table header
+// entry at the time count and channel specified in the call. If the table header entry is found its pointer
+// is returned. If its not found NULL is returned.
+// Table name == 0 at the end of all tables.
+TableEntryHeader *FindTableEntryHeader(int Count,int Chan)
+{
+   int   i=0;
+   int   j,k;
+   TableHeader  *TH;
+   TableEntryHeader *TEH;
+   TableEntry *TE;
+   char LastChan;
+    
+   TH = (TableHeader *) &(VoltageTable[CT][i]); i += sizeof(TableHeader);
+   while(1)
+   {
+       if(i >= MaxTable) return NULL;
+       // Make sure there is a table header
+       if(TH->TableName == 0) return NULL;
+       // Loop thhrough all the entries in the table
+       for(k=0;k<TH->NumEntries;k++)
+       {
+           TEH = (TableEntryHeader *) &(VoltageTable[CT][i]); i += sizeof(TableEntryHeader);
+           TE = (TableEntry *) &(VoltageTable[CT][i]);
+           for(j=0;j<TEH->NumChans;j++)
+           {
+               LastChan = TE[j].Chan;
+               if((TEH->Count == Count) && (TE[j].Chan == (Chan-1))) return(TEH);
+           }
+           // Advance to next Table entry
+           i += sizeof(TableEntry) * TEH->NumChans;
+       }
+       // Advance to next table
+       TH = (TableHeader *) &(VoltageTable[CT][i]); i += sizeof(TableHeader);
+   }
+}
+
+// Returns the voltage value at a selected time point and channel number.
 void GetTableEntryValue(int Count, int Chan)
 {
     float fval;
@@ -674,6 +739,7 @@ void GetTableEntryValue(int Count, int Chan)
     if(!SerialMute) serial->println(fval);
 }
 
+// Set a voltage level at a time point channel point.
 void SetTableEntryValue(int Count, int Chan, float fval)
 {
     
@@ -688,6 +754,24 @@ void SetTableEntryValue(int Count, int Chan, float fval)
     }
     // Convert to engineering units and write to table
     TE->Value = DCbiasValue2Counts(TE->Chan, fval);
+    SendACK;
+}
+
+// Set a voltage level at a time point channel point.
+void SetTableEntryCount(int Count, int Chan, float NewCount)
+{
+    
+    TableEntryHeader *TEH;
+    
+    TEH = FindTableEntryHeader(Count, Chan);
+    if(TEH==NULL)
+    {
+        SetErrorCode(ERR_CANTFINDENTRY);
+        SendNAK;
+        return;
+    }
+    // Write new time count value
+    TEH->Count = (int)NewCount;
     SendACK;
 }
 
@@ -797,8 +881,13 @@ void ParseTableCommand(void)
                 TH->NumEntries++;
                 iStat = PEerror;    // in case we break!
                 if(!Token2int(&i)) break;
-                if(!ExpectColon()) break;
+                // Get the next token, if its a ] then process else it better be a :
                 if((TK = NextToken()) == NULL) break;
+                if(TK[0] != ']')
+                {
+                  if(TK[0] != ':') break;
+                  if((TK = NextToken()) == NULL) break;                  
+                }
                 TH->MaxCount = InitialOffset+i;
             }
             else if(iStat == PENewNamedTable)
@@ -868,7 +957,7 @@ int ParseEntry(int Count, char *TK)
         // Process each entry, TK has token for first channel.
         // This token could be on of the following:
         //   - A DCB channel number 1 through 16
-        //   - A DIO channel number, A through P
+        //   - A DIO channel number, A through P or t for Trigger output
         //   - A 'W', if this is true do nothing because all we do is set max count with time point
         //   - A ']', This will define the end of the table.
         //   - A '[', Defines a new named table
@@ -915,13 +1004,18 @@ int ParseEntry(int Count, char *TK)
             if(TK[0] == ';') return PEEndTables;
             return PENewTable;
         }
-        else if((TK[0] >= 'A') && (TK[0] <= 'P'))
+        else if(((TK[0] >= 'A') && (TK[0] <= 'P')) || (TK[0] == 't') || (TK[0] == 'b'))
         {
             // DIO channel number
             TE->Chan = TK[0];
             if(!ExpectColon()) break;
-            if((TK = NextToken()) == NULL) break;
-            TE->Value = TK[0];
+            if((TE->Chan == 't') || (TE->Chan == 'b')) Token2int(&TE->Value);
+            else
+            {
+               if((TK = NextToken()) == NULL) break;
+               TE->Value = TK[0];
+               if(TK[0] == 't') Token2int(&TE->Value);
+            }
         }
         else
         {
@@ -996,6 +1090,7 @@ void ProcessTables(void)
     // Takeover the display and print message that we are in the table
     // mode. Allow pressing the button to cause an abort
     DisplayMessage("Table Mode Enabled");
+    StopCommanded = false;
     // Setup the table mode and start timer
     while(1)
     {
@@ -1008,11 +1103,18 @@ void ProcessTables(void)
         if(!SerialMute) serial->write("TBLRDY\n");
         TableReady = true;
         StopRequest=false;
+//        TableStopped = false;
         // Setup the timer
         SetupTimer();
         while(1)
         {
             WDT_Restart(WDT);
+            // Restart table if reqested by user
+            if(StopCommanded)
+            {
+                if(!SerialMute) serial->write("Table stoped by user\n");
+                break;
+            }
             TimerStatus = MPT.getStatus();
             // If the timer has been triggered update the displayed status
             if(((TimerStatus & TC_SR_ETRGS)!=0) || SWtriggered)
@@ -1020,9 +1122,11 @@ void ProcessTables(void)
               SWtriggered = false;
               // Here when triggered
                if(!SerialMute) serial->write("TBLTRIG\n");
+//               if(StopRequest == true) serial->write("+");
+               if(StopRequest == true) break;
             }
             // Exit this loop when the timer is stoped.
-            if(((TimerStatus & TC_SR_CLKSTA)==0))
+            if(((TimerStatus & TC_SR_CLKSTA)==0)) // || TableStopped)
             {
                 // Issue the table complete message
                 if(!SerialMute) serial->write("TBLCMPLT\n");
@@ -1046,11 +1150,18 @@ void ProcessTables(void)
                 break;
             }
             #endif
-            // Put serial received characters in the input ring buffer
-            if(serial->available() > 0) PutCh(serial->read());
             // Process any serial commands
-            ProcessCommand();
-            delay(10);
+            ProcessSerial();
+            // If full command processing in table mode is enabled then run tasks.
+            if(TasksEnabled)
+            {
+               delayMicroseconds(100);
+               control.run();
+            }
+            else
+            {
+              delay(InterTableDelay);
+            }
         }
         if(Aborted)
         {
@@ -1066,8 +1177,10 @@ void ProcessTables(void)
         StopTimer();  // not sure about this, testing
         // Advance to next table if advance mode is enabled
         AdvanceTableNumber();
+        if(StopCommanded) StopCommanded = false;
     }
     // Clean up and exit
+    StopCommanded = false;
     TableReady = false;
     LOCrequest = false;
     Aborted = false;
@@ -1076,8 +1189,11 @@ void ProcessTables(void)
     LDACcapture;
     pinMode(LDAC,OUTPUT);
     LDAClow;
+    // Reset all the digital outputs to there pre-table states
+    SetImageRegs();
     DismissMessage();
     CT = InitialTableNum;
+    DCbiasUpdate = true;
 }
 
 // This function is called after all the table parameters are defined. This function will setup timer 3
@@ -1135,8 +1251,9 @@ void SetupTimer(void)
     // Define the initial max counter value based on first table
     MPT.setRC(Theader->MaxCount);
     // Setup table variables
-    MPT.enableTrigger();
+//    MPT.enableTrigger();
     SetupNextEntry();
+    MPT.enableTrigger();
 }
 
 // Called by hardware ISR or command to start the table processing
@@ -1153,9 +1270,11 @@ void StopTimer(void)
 {
     // Exit and do nothing if no tables are loaded
     if(TablesLoaded[CT] <= 0) return;
+//    serial->print("-");
     detachInterrupt(TRIGGER);
     // Stop the timer
     MPT.stop();
+//    TableStopped = true;
 }
 
 // Advance table pointer, this function assumes that the current table is pointing at the
@@ -1275,6 +1394,9 @@ void SetupNextEntry(void)
             // if Chan is A through P its a DIO to process
             if((Tentry[i].Chan >= 'A') &&(Tentry[i].Chan <= 'P'))
                 SDIO_Set_Image(Tentry[i].Chan,Tentry[i].Value);
+            // if Chan is t then this is a trigger out pulse so queue it up for next ISR
+            if(Tentry[i].Chan == 't') QueueTriggerOut(Tentry[i].Value);
+            if(Tentry[i].Chan == 'b') QueueBurst(Tentry[i].Value);
         }
         break;
     }
@@ -1312,6 +1434,7 @@ void Trigger_ISR(void)
 {
    if(MPT.getRAcounter() == 0)
    {
+//   serial->print("*");
      if(MIPSconfigData.Rev <= 1) // Rev 1 used software control of LDAC
      {
        LDAClow;
@@ -1320,8 +1443,8 @@ void Trigger_ISR(void)
      SetupNextEntry();
    }
   // Set trigger to software, this prevents hardware retriggering. Added Jan 14, 2015 GAA
-  MPT.setTrigger(TC_CMR_EEVTEDG_NONE);
-  detachInterrupt(TRIGGER);
+//  MPT.setTrigger(TC_CMR_EEVTEDG_NONE);
+//  detachInterrupt(TRIGGER);
 //  serial->print(".");
 }
 
@@ -1329,6 +1452,9 @@ void Trigger_ISR(void)
 // data is latched and the next values are written.
 void RAmatch_Handler(void)
 {
+  ValueChange = true;
+  ProcessTriggerOut();
+  ProcessBurst();
   if(MIPSconfigData.Rev <= 1) // Rev 1 used software control of LDAC
   {
     LDAClow;
@@ -1342,6 +1468,7 @@ void RAmatch_Handler(void)
 // max count.
 void RCmatch_Handler(void)
 {
+    ValueChange = true;
     if(StopRequest == true)
     {
         StopTimer();
@@ -1352,6 +1479,8 @@ void RCmatch_Handler(void)
     // also if rev 1 pulse LDAC as well
     if(MPT.getRAcounter() == 0)
     {
+      ProcessTriggerOut();
+      ProcessBurst();
       if(MIPSconfigData.Rev <= 1) // Rev 1 used software control of LDAC
       {
         LDAClow;
@@ -1360,5 +1489,7 @@ void RCmatch_Handler(void)
       SetupNextEntry();
     }
 }
+
+
 
 

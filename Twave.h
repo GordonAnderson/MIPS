@@ -59,6 +59,9 @@ typedef struct
   int8_t CtrigLevel;          // External input triggerl level
   char   Cswitch;             // Digitial output to control output switch to relead ions to mass spec
   int8_t CswitchLevel;        // Digital output level control
+  // Added Feb 20, 2016
+  char   TWgateDI;            // External gate for Twave output
+  int8_t TWgateLevel;         // External gate for Twave outlut level
 } TwaveData;
 
 extern TwaveData TD;
@@ -95,5 +98,7 @@ void getTWAVEdir(int channe);
 void setTWAVEdir(char *chan, char *dirstr);
 
 #endif
+
+
 
 

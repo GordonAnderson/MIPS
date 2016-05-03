@@ -278,6 +278,9 @@ void WiFi_init(void)
 {
   String res;
 
+  RestorWiFiSettings(false);
+//  if(!wifidata.Enable) return;   // Exit if disabled
+  if(!MIPSconfigData.UseWiFi) return;
   // Setup ther serial port.
   Serial.begin(115200);
   Serial.flush();
@@ -290,7 +293,7 @@ void WiFi_init(void)
   Serial.setTimeout(100);
   res = Serial.readStringUntil('\n');
   if (!res.startsWith("MIPSnet Version ")) return;
-  RestorWiFiSettings(false);
+//  RestorWiFiSettings(false);
   // If found and a SSID is defined try to connect and setup the interface, only if enabled
   if (wifidata.WFstartMode == WS_CONNECT) if (strlen(wifidata.ssid) > 0) Connect();
   if (wifidata.WFstartMode == WS_AP) if (strlen(wifidata.ssid) > 0) AccessPoint();
@@ -348,4 +351,6 @@ void SetPassword(char *pswd)
   else strcpy(wifidata.password,pswd);     
   SendACK;
 }
+
+
 

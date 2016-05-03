@@ -17,8 +17,9 @@ void DIO_loop(void);
 void GDIO_Serial(char *CH);
 void SDIO_Set_Image(char chan,char val);
 void SDIO_Serial(char *CH, char *State);
-void TriggerOut(char *cmd);
 
 #endif
+
+
 
 

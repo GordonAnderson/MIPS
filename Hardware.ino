@@ -29,6 +29,56 @@ extern Menu MainMenu;
 int BoardSelect = 0;
 int DeviceAddr = 0;
 
+// This is used for the clock generation on the trigger output line
+int PulseWidth = 5;
+int PulseFreq  = 200;
+int BurstCount = 100;
+int CurrentCount;
+bool BurstQueued = false;
+
+MIPStimer FreqBurst(3);
+
+void FreqBurstISR()
+{
+  TriggerOut(PulseWidth);
+  if(BurstCount < 0) return;
+  CurrentCount++;
+  if(CurrentCount >= BurstCount) FreqBurst.stop();
+}
+
+// This function will generate a burst of clock pulses defined by PulseWidth and PulseFreq
+void GenerateBurst(int num)
+{
+  SendACK;
+  if(num == 0)
+  {
+    FreqBurst.stop();
+    return;
+  }
+  BurstCount = num;
+  // Start the real time interrupt
+  CurrentCount=0;
+  FreqBurst.attachInterrupt(FreqBurstISR);
+  FreqBurst.setFrequency((double)PulseFreq);
+  FreqBurst.start(-1, 0, false);
+}
+
+void QueueBurst(int num)
+{
+  BurstCount = num;
+  BurstQueued = true;
+}
+
+void ProcessBurst(void)
+{
+  if(!BurstQueued) return;
+  BurstQueued = false;
+  CurrentCount=0;
+  FreqBurst.attachInterrupt(FreqBurstISR);
+  FreqBurst.setFrequency((double)PulseFreq);
+  FreqBurst.start(-1, 0, false);
+}
+
 // This function is called by the serial command processor and saves the TWI device address and board address.
 // These parameters are used for the low level device interface commands.
 // There is no error checking of ack/nak logic in this function.
@@ -231,8 +281,17 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
 // This function sets the board select bit based on the board value
 void SelectBoard(int8_t Board)
 {
-  if (Board == 1) ENA_BRD_B;
-  else ENA_BRD_A;
+  static Pio *pio = NULL;
+  static uint32_t pin;
+
+  if(pio==NULL)  
+  {
+    pio = g_APinDescription[BRDSEL].pPort;
+    pin = g_APinDescription[BRDSEL].ulPin;
+  }
+  AtomicBlock< Atomic_RestoreState > a_Block;
+  if (Board == 1) pio->PIO_CODR = pin;    // Set pin low;
+  else pio->PIO_SODR = pin;    // Set pin high;
 }
 
 // This function sets all the IO lines as needed by MIPS.
@@ -275,6 +334,7 @@ void Reset_IOpins(void)
   // On PCB red LED
   pinMode(RED_LED, INPUT);
   // Misc control lines
+  pinMode(DAC0,INPUT);
   pinMode(ADDR0, INPUT);
   pinMode(ADDR1, INPUT);
   pinMode(ADDR2, INPUT);
@@ -321,26 +381,47 @@ float ReadVin(void)
   ADCvalue = 0;
   for (i = 0; i < 100; i++) ADCvalue += analogRead(62);
   ADCvalue = ADCvalue / 100;
-  return ((((float)ADCvalue * 3.3) / 1024.0) * 11.0);
+  return ((((float)ADCvalue * 3.3) / 4096.0) * 11.0);
 }
 
 // This function will set the three address lines used for the SPI device selection. It is assumed
 // the bit directions have already been set.
 void SetAddress(int8_t addr)
 {
+  static Pio *pio = NULL;
+  /*
   if ((addr & 4) != 0) digitalWrite(ADDR2, HIGH);
   else digitalWrite(ADDR2, LOW);
   if ((addr & 2) != 0) digitalWrite(ADDR1, HIGH);
   else digitalWrite(ADDR1, LOW);
   if ((addr & 1) != 0) digitalWrite(ADDR0, HIGH);
   else digitalWrite(ADDR0, LOW);
+  */
+  // The above commented out code takes 10uS to execute! The code below
+  // is much faster (3uS) and assumes ADDR0-ADDR2 are D.0-D.2
+  if(pio==NULL)  pio = g_APinDescription[ADDR0].pPort;
+  pio->PIO_CODR = 7;    // Set all bits low
+  pio->PIO_SODR = addr & 7;    // Set bit high
+
 }
 
 // Clears the digitial output shift registers.
 void ClearDOshiftRegs(void)
 {
+  pinMode(SCL,OUTPUT);
   digitalWrite(SCL, LOW);
   digitalWrite(SCL, HIGH);
+  // Pulse the latch lines
+  pinMode(DAC0,OUTPUT);
+  digitalWrite(DAC0,LOW);
+  digitalWrite(DAC0,HIGH);
+  PulseLDAC;
+  // This is used on REV 3.0 controller to disable output during boot
+  pinMode(44,OUTPUT);
+  digitalWrite(44,LOW);
+  // This is DI6 used to drive the enable after its cut free from the buffer.
+  pinMode(46,OUTPUT);
+  digitalWrite(46,LOW);
 }
 
 // This function sets the selected output where chan is the output, 'A' through 'P'.
@@ -381,6 +462,7 @@ void ClearOutput(char chan, int8_t active)
 // JP1 position 2 jumper needs to be installed on the MIPS controller hardware.
 void DigitalOut(int8_t MSB, int8_t LSB)
 {
+  AtomicBlock< Atomic_RestoreState > a_Block;
   // Set the address to 6
   SetAddress(6);
   // Set mode
@@ -388,6 +470,13 @@ void DigitalOut(int8_t MSB, int8_t LSB)
   // Set the data
   SPI.transfer(SPI_CS, MSB, SPI_CONTINUE);
   SPI.transfer(SPI_CS, LSB);
+  // For rev 3.0 controller output using address 7 and stobe with output A12.
+  SetAddress(7);
+  SPI.setDataMode(SPI_CS, SPI_MODE1);
+  SPI.transfer(SPI_CS, MSB);
+  pinMode(DAC0,OUTPUT);
+  digitalWrite(DAC0,LOW);
+  digitalWrite(DAC0,HIGH);
   SetAddress(0);
 }
 
@@ -441,20 +530,32 @@ int ReadEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count)
     Wire.beginTransmission(dadr | ((address >> 8) & 1));
     Wire.write(address & 0xFF);
     iStat = Wire.endTransmission(true);
-    if (iStat != 0) return (iStat);
+    if (iStat != 0) 
+    {
+      ReleaseTWI();
+      return (iStat);
+    }
     if (num > 32) Wire.requestFrom(dadr | ((address >> 8) & 1), 32);
     else Wire.requestFrom(dadr | ((address >> 8) & 1), num);
     while (Wire.available())
     {
       *(bval++) = Wire.read();
       i++;
-      if (i > count) return (-1);
+      if (i > count) 
+      {
+        ReleaseTWI();
+        return (-1);
+      }
     }
     if (num <= 32) break;
     num -= 32;
     address += 32;
   }
-  if (i != count) return (-1);
+  if (i != count) 
+  {
+    ReleaseTWI();
+    return (-1);
+  }
   return (0);
 }
 
@@ -469,6 +570,7 @@ int WriteEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count)
   byte  *bval;
   int   iStat, i = 0, num;
 
+  AcquireTWI();
   num = count;
   bval = (byte *)src;
   delay(10);
@@ -484,21 +586,34 @@ int WriteEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count)
       i++;
     }
     iStat = Wire.endTransmission(true);
-    if (iStat != 0) return (iStat);
+    if (iStat != 0) 
+    {
+      ReleaseTWI();
+      return (iStat);
+    }
     // wait for it to finish writting 16 bytes or timeout
     for (int k = 0; k < 21; k++)
     {
       Wire.beginTransmission(dadr);
       Wire.write(0);
       if (Wire.endTransmission(true) == 0) break;
-      if (k == 20) return (-1); // Timeout!
+      if (k == 20)
+      {
+        ReleaseTWI();
+        return (-1); // Timeout!
+      }
     }
     // Setup for the next loop
     if (num <= 16) break;
     num -= 16;
     address += 16;
   }
-  if (i != count) return (-1);
+  if (i != count) 
+  {
+    ReleaseTWI();
+    return (-1);
+  }
+  ReleaseTWI();
   return (0);
 }
 
@@ -515,8 +630,27 @@ int WriteEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count)
 #define TWI_SDA_data           digitalRead(TWI_SDA)
 
 // TWI bus reset function.
+// The bus recovery procedure is as follows
+//  1.) Master tries to assert logic 1 on SDA line
+//  2.) Master still sees a logig 0 then generate a clock pulse on SLC (1,0,1 transistion)
+//  3.) Master examines SDA. If SDA = 0 goto step 2 if SDA = 1 goto step 4
+//  4.) Generate a STOP condition
 void TWI_RESET(void)
 {
+  /*
+  // Set SDA as input, clock as output
+  TWI_SDA_IN;
+  TWI_SCL_OUT;
+  for(int i = 0; i < 10; i++)
+  {
+    if(TWI_SDA_data == HIGH) break;
+    TWI_SCL_HI;
+    TWI_SCL_LOW;
+    TWI_SCL_HI;
+  }
+  TWI_STOP();
+  return;
+  */
   TWI_START();
   TWI_STOP();
   // Generate a bunch of clocks
@@ -550,11 +684,12 @@ void TWI_STOP(void)
   TWI_SDA_HI;
 }
 
-// Write a byte to the TWI bus, this function returns true is acked and false f naked
+// Write a byte to the TWI bus, this function returns true if acked and false if naked
 bool TWI_WRITE(int8_t val)
 {
   int8_t Response;
 
+//  AtomicBlock< Atomic_RestoreState > a_Block;
   TWI_SDA_OUT;
   for (int i = 0; i < 8; i++)
   {
@@ -579,6 +714,7 @@ int8_t TWI_READ(bool Reply)
 {
   int8_t val, r;
 
+//  AtomicBlock< Atomic_RestoreState > a_Block;
   val = 0;
   TWI_SDA_IN;
   for (int i = 0; i < 8; i++)
@@ -627,6 +763,7 @@ int AD7998(int8_t adr, uint16_t *vals)
   }
   return (0);
 
+  AcquireTWI();
   bvals = (byte *)vals;
   while (1)
   {
@@ -651,6 +788,7 @@ int AD7998(int8_t adr, uint16_t *vals)
     break;
   }
   Wire.begin();  // Release control of clock and data lines
+  ReleaseTWI();
   return (iStat);
 }
 
@@ -673,6 +811,7 @@ int AD7994(int8_t adr, int8_t chan)
   int   iStat, i;
   unsigned int val;
 
+  AcquireTWI();
   while (1)
   {
     chan++;
@@ -692,7 +831,30 @@ int AD7994(int8_t adr, int8_t chan)
     break;
   }
   Wire.begin();  // Release control of clock and data lines
+  ReleaseTWI();
   return (val);
+}
+
+// This function reads one channel from the AD7998 ADC
+int AD7998_b(int8_t adr, int8_t chan)
+{
+  unsigned int val;
+  
+  AcquireTWI();
+  Wire.beginTransmission(adr);
+  Wire.endTransmission(false);
+
+  Wire.requestFrom(adr, 2, 0x80 | chan << 4, 1);
+
+  while (Wire.available() < 2);
+
+  val = (Wire.read() << 8) & 0xFF00;
+  val |= (Wire.read()) & 0xFF;
+  val &= 0xFFF;
+  val <<= 4;
+  Wire.endTransmission();
+  ReleaseTWI();
+  return(val);
 }
 
 // This function reads one channel from the AD7998 ADC
@@ -701,8 +863,11 @@ int AD7998(int8_t adr, int8_t chan)
   int   iStat, i;
   unsigned int val;
 
+//  AtomicBlock< Atomic_RestoreState > a_Block;
+  AcquireTWI();
   while (1)
   {
+//    AtomicBlock< Atomic_RestoreState > a_Block;
     TWI_START();
     if ((iStat = TWI_WRITE(adr << 1)) == false) break;
     if ((iStat = TWI_WRITE(0x80 | chan << 4)) == false) break;
@@ -717,6 +882,7 @@ int AD7998(int8_t adr, int8_t chan)
     break;
   }
   Wire.begin();  // Release control of clock and data lines
+  ReleaseTWI();
   return (val);
 }
 
@@ -749,32 +915,68 @@ int AD7994(int8_t adr, int8_t chan, int8_t num)
 // Return the status of the TWI transaction, 0 if no errors.
 int AD5625(int8_t adr, uint8_t chan, uint16_t val)
 {
+  AD5625(adr, chan, val, 0);
+}
+
+int AD5625(int8_t adr, uint8_t chan, uint16_t val,int8_t Cmd)
+{
+  int iStat;
+
+  AcquireTWI();
   Wire.beginTransmission(adr);
-  Wire.write(chan);
+  Wire.write((Cmd << 3) | chan);
   //    if(chan <= 3) val <<= 4;
   Wire.write((val >> 8) & 0xFF);
   Wire.write(val & 0xFF);
-  return (Wire.endTransmission());
+  {
+    //AtomicBlock< Atomic_RestoreState > a_Block;
+    iStat = Wire.endTransmission();
+  }
+  ReleaseTWI();
+  return (iStat);
 }
 
 // This function enables the internal voltage reference in the
 // AD5625
 int AD5625_EnableRef(int8_t adr)
 {
+  int iStat;
+
+  AcquireTWI();
   Wire.beginTransmission(adr);
   Wire.write(0x38);
   Wire.write(0);
   Wire.write(1);
-  return (Wire.endTransmission());
+  iStat = Wire.endTransmission();
+  ReleaseTWI();
+  return (iStat);
 }
 
 // This function writes the value to the selected channel on the selected SPI
 // address to the 8 channel DAC.
+// Feb 11, 2016. Working to speed up this transfer
+//  - about 2uS between bytes
+//  - 1 byte sent is about 800nS
+// Buffering ans using the black transfer cut byte transfer to a little over 1 uS
+// About 25uS between channel updates
+// This whole routine takes 25uS!
+// SetAddress takes 10uS!
+// After all updates for performance this routine takes about 5uS
+// March 13, 2016: Added command parameter.
+// Cmd = 0 for update on LDAC
+// Cmd = 3 to update when written reguardless of LDAC
 void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali)
 {
-  uint16_t val;
+  AD5668(spiAdr, DACchan, vali, 0);
+}
+
+void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali, int8_t Cmd)
+{
+  uint8_t     buf[4];
+  uint16_t    val;
   static bool inited = false;
 
+  AtomicBlock< Atomic_RestoreState > a_Block;
   if (!inited)
   {
     inited = true;
@@ -792,11 +994,13 @@ void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali)
   SPI.setDataMode(SPI_CS, SPI_MODE1);
   // Set the address
   SetAddress(spiAdr);
-  // Set the data
-  SPI.transfer(SPI_CS, 0, SPI_CONTINUE);
-  SPI.transfer(SPI_CS, (DACchan << 4) | (val >> 12), SPI_CONTINUE);
-  SPI.transfer(SPI_CS, (val >> 4), SPI_CONTINUE);
-  SPI.transfer(SPI_CS, (val << 4));
+  // Fill buffer with data
+  buf[0] = Cmd;
+  buf[1] = (DACchan << 4) | (val >> 12);
+  buf[2] = (val >> 4);
+  buf[3] = (val << 4);
+  // Send the data
+  SPI.transfer(SPI_CS, buf, 4);
   SetAddress(0);
 }
 
@@ -807,25 +1011,36 @@ int MCP2300(int8_t adr, uint8_t bits)
 {
   int iStat;
 
+  AcquireTWI();
   Wire.beginTransmission(adr);
   Wire.write(0);    // IO direction register
   Wire.write(0);    // Set all bits to output
-  if ((iStat = Wire.endTransmission()) != 0 ) return (iStat);
-
+  if ((iStat = Wire.endTransmission()) != 0 ) 
+  {
+    ReleaseTWI();
+    return (iStat);
+  }
   Wire.beginTransmission(adr);
   Wire.write(0x0A);  // Read the output latch command
   Wire.write(bits);
-  return (Wire.endTransmission());
+  iStat = Wire.endTransmission();
+  ReleaseTWI();
+  return (iStat);
 }
 
 // This function writes a byte to the selected register in the
 // MCP2300 GPIO TWI device.
 int MCP2300(int8_t adr, uint8_t reg, uint8_t bits)
 {
+  int iStat;
+
+  AcquireTWI();
   Wire.beginTransmission(adr);
   Wire.write(reg);     // Register
   Wire.write(bits);    // Set bits
-  return (Wire.endTransmission());
+  iStat = Wire.endTransmission();
+  ReleaseTWI();
+  return (iStat);
 }
 
 // This function reads a byte from the selected register in the
@@ -834,13 +1049,192 @@ int MCP2300(int8_t adr, uint8_t reg, uint8_t *data)
 {
   int iStat;
 
+  AcquireTWI();
   Wire.beginTransmission(adr);
   Wire.write(reg);     // Register
-  if ((iStat = Wire.endTransmission()) != 0 ) return (iStat);
-
+  if ((iStat = Wire.endTransmission()) != 0 )
+  {
+    ReleaseTWI();
+    return (iStat);
+  }
   Wire.requestFrom(adr, 1);
   if (Wire.available()) *data = Wire.read();
+  ReleaseTWI();
   return (0);
 }
 
+//
+// Routines used to allow TWI use in ISR. 
+//
+#define MaxQueued 5
+
+bool TWIbusy=false;
+void  (*TWIqueued[MaxQueued])(void) = {NULL,NULL,NULL,NULL,NULL};
+// This functoin acquires the TWI interface.
+// Returns false if it was busy.
+bool AcquireTWI(void)
+{
+  AtomicBlock< Atomic_RestoreState > a_Block;
+  if(TWIbusy) return(false);
+  TWIbusy = true;
+  return(true);
+}
+
+// This routine releases the TWI interface and if there are any queued functions they are called
+// and then the queued pointer it set to NULL. This allows an ISR to use this function
+// and queue up its io if the TWI interface is busy.
+void ReleaseTWI(void)
+{
+  static void (*function)();
+  int i;
+  
+  AtomicBlock< Atomic_RestoreState > a_Block;
+  if(TWIbusy)
+  {
+    for(i=0;i<MaxQueued;i++)
+    {
+      if(TWIqueued[i] != NULL) 
+      {
+        function = TWIqueued[i];
+        TWIqueued[i] = NULL;
+        function();
+        TWIqueued[i] = NULL;
+      }
+    }
+    TWIbusy=false;
+  }
+}
+
+// This queues up a function to call when the currect TWI operation finishes.
+void TWIqueue(void (*TWIfunction)())
+{
+  int i;
+
+  for(i=0;i<MaxQueued;i++)
+  {
+     if(TWIqueued[i] == NULL) 
+     {
+      TWIqueued[i] = TWIfunction;
+      break;
+     }
+  }
+}
+
+// Trigger output functions. These functions support pulsing the output in micro second units as
+// well as queueing up the function for later execution, this support using the trigger outlut
+// in a signal table.
+
+// This function is valid for rev 2.0 and above controllers. This command
+// will generate a output trigger pulse. The following commands are
+// supported:
+//  HIGH, sets the output high
+//  LOW, sets the output low
+//  PULSE, pulses the output from its current state for 1 milli sec
+//  If an integer value is passed then we pulse in micro seconds
+void TriggerOut(char *cmd)
+{
+  String Cmd;
+  int uS;
+  
+  if (MIPSconfigData.Rev < 2)
+  {
+    SetErrorCode(ERR_NOTSUPPORTINREV);
+    SendNAK;
+    return;
+  }
+  Cmd = cmd;
+  uS = Cmd.toInt();
+  if(uS >0)
+  {
+     SendACK;
+     TriggerOut(uS);
+     return;
+  }
+  if ((strcmp(cmd, "HIGH") == 0) || (strcmp(cmd, "LOW") == 0) || (strcmp(cmd, "PULSE") == 0))
+  {
+    SendACK;
+    if (strcmp(cmd, "HIGH") == 0) digitalWrite(TRGOUT, LOW);
+    if (strcmp(cmd, "LOW") == 0) digitalWrite(TRGOUT, HIGH);
+    if (strcmp(cmd, "PULSE") == 0)
+    {
+      if (digitalRead(TRGOUT) == HIGH)
+      {
+        digitalWrite(TRGOUT, LOW);
+        delay(1);
+        digitalWrite(TRGOUT, HIGH);
+      }
+      else
+      {
+        digitalWrite(TRGOUT, HIGH);
+        delay(1);
+        digitalWrite(TRGOUT, LOW);
+      }
+    }
+    return;
+  }
+  SetErrorCode(ERR_BADARG);
+  SendNAK;
+}
+
+// This function will pulse the trigger output 
+void TriggerOut(int microSec)
+{
+  static Pio *pio = pio = g_APinDescription[TRGOUT].pPort;
+  static uint32_t pin = pin = g_APinDescription[TRGOUT].ulPin;
+  static uint32_t dwReg;
+
+  AtomicBlock< Atomic_RestoreState > a_Block;
+  dwReg = pio->PIO_ODSR;       // Get output state
+  if((dwReg & pin) == 0)
+  {
+    pio->PIO_SODR = pin;         // Set output high
+    delayMicroseconds(microSec);
+    pio->PIO_CODR = pin;         // Set output low
+  }
+  else
+  {
+    pio->PIO_CODR = pin;         // Set output low
+    delayMicroseconds(microSec);
+    pio->PIO_SODR = pin;         // Set output high
+  }
+}
+
+bool TriggerOutQueued = false;
+int  TriggerOutmicroSec = 0;
+
+// Call to queue the trigger out function for later used
+void QueueTriggerOut(int microSec)
+{
+  TriggerOutQueued = true;
+  TriggerOutmicroSec = microSec;
+}
+
+// If queued call it and clear the flag
+void ProcessTriggerOut(void)
+{
+  if(TriggerOutQueued)
+  {
+    TriggerOutQueued = false;
+    TriggerOut(TriggerOutmicroSec);
+  }
+}
+
+// ADC output function to support the ADC command. This function takes an integer values and returns the 
+// Counts for the channel selected.
+// Valid channels numbers are 0 through 3.
+
+void ADCread(int chan)
+{
+   int i;
+  
+   if((chan >= 0) && (chan <=3))
+   {
+     SendACKonly;
+     i = analogRead(chan);
+     if(!SerialMute) serial->println(i);
+     return;
+   }
+   SetErrorCode(ERR_BADARG);
+   SendNAK;
+}
 

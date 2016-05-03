@@ -4,6 +4,7 @@
 // This file contains all the posible board data structues and there default values. This allows a user
 // to setup a board to initial conditions.
 //
+//
 #ifndef Variants_h
 #define Variants_h
 #include "DCbias.h"
@@ -32,7 +33,8 @@ typedef struct
   bool     PowerEnable;       // Enables the power supply for the DCbias board if true 
   float    VerrorThreshold;   // Trip threshold for the DCbias supply output monitor
   char     StartupMacro[20];  // This macro is played when the system powers up
-  bool     UseAnalog;         // If true that the analog module is tested for on power up
+  bool     UseAnalog;         // If true then the analog module is tested for on power up
+  bool     UseWiFi;           // If true then the WiFi module is tested for on power up
 } MIPSconfigStruct;
 
 extern MIPSconfigStruct MIPSconfigData;
@@ -71,4 +73,6 @@ extern char *BoardVariantsNames;
 extern void *BoardVariants[];
 
 #endif
+
+
 

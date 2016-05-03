@@ -14,7 +14,7 @@
 #include "Dialog.h"
 #include "Variants.h"
 
-MIPSconfigStruct MIPSconfigData = {sizeof(MIPSconfigStruct),"MIPS",1,0,0,10,false,true,1.0,"",false};
+MIPSconfigStruct MIPSconfigData = {sizeof(MIPSconfigStruct),"MIPS",2,0,0,10,false,true,1.0,"",false,false};
 
 TwaveData Twave_Rev1 = {sizeof(TwaveData),"Twave",1,1000000,03,0x10,0x20,0x27,0x69,
                         20.0, 0, 76.53, 905, 0, 1, 0,
@@ -24,6 +24,7 @@ TwaveData Twave_Rev1 = {sizeof(TwaveData),"Twave",1,1000000,03,0x10,0x20,0x27,0x
                         true,0,-1,0,-1,
                         false,
                         false,2,10,1,1.0,1.0,1.0,1.0,0,-1,0,-1,
+                        0,-1,
                         };
 
 TwaveData Twave_Rev2 = {sizeof(TwaveData),"Twave",2,100000,03,0x10,0x20,0x27,0x69,
@@ -34,6 +35,7 @@ TwaveData Twave_Rev2 = {sizeof(TwaveData),"Twave",2,100000,03,0x10,0x20,0x27,0x6
                         true,0,-1,0,-1,
                         false,
                         false,2,10,1,1.0,1.0,1.0,1.0,0,-1,0,-1,
+                        0,-1,
                         };
                         
 TwaveData Twave_Rev3 = {sizeof(TwaveData),"Twave",3,100000,03,0x1F,0x24,0x27,0x58,
@@ -44,6 +46,7 @@ TwaveData Twave_Rev3 = {sizeof(TwaveData),"Twave",3,100000,03,0x1F,0x24,0x27,0x5
                         true,0,-1,0,-1,
                         false,
                         false,2,10,1,1.0,1.0,1.0,1.0,0,-1,0,-1,
+                        0,-1,
                         };
 
 RFdriverData  RFDD_A_Rev_1 = {sizeof(RFdriverData),"RFdriver", 1, 2, 0x20, 0x69, 0x50,
@@ -60,6 +63,21 @@ RFdriverData  RFDD_B_Rev_1 = {sizeof(RFdriverData),"RFdriver", 1, 2, 0x20, 0x69,
                               -1,-1,
                              };
 
+// Rev 2 uses the new linear tech level sensors and thus needs a different engineering unit conversion.
+RFdriverData  RFDD_A_Rev_2 = {sizeof(RFdriverData),"RFdriver", 2, 2, 0x20, 0x69, 0x50,
+                              1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 5, 4, 32, 320, 5, 32, 320, 0, 2383.09, 0, 1, 2621.4, 0,
+                              1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 7, 6, 32, 320, 7, 32, 320, 2, 2383.09, 0, 3, 2621.4, 0,
+                              0,0,
+                              -1,-1,
+                             };
+                             
+RFdriverData  RFDD_B_Rev_2 = {sizeof(RFdriverData),"RFdriver", 2, 2, 0x20, 0x69, 0x50,
+                              1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 6, 4, 32, 320, 5, 32, 320, 0, 2383.09, 0, 1, 2621.4, 0,
+                              1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 8, 6, 32, 320, 7, 32, 320, 2, 2383.09, 0, 3, 2621.4, 0,
+                              0,0,
+                              -1,-1,
+                             };
+
 DCbiasData  DCbD_250_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 250, -250, true, 2, 0x23, 0x18, 0x52,
                               0, 0, 113.7, 32767, 0, 113.7, 32767,        // Ch 1
                               0, 1, 113.7, 32767, 1, 113.7, 32767,        // Ch 2
@@ -70,6 +88,7 @@ DCbiasData  DCbD_250_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 250, -250, true
                               0, 6, 113.7, 32767, 6, 113.7, 32767,        // Ch 7
                               0, 7, 113.7, 32767, 7, 113.7, 32767,        // Ch 8
                               0, 0, -113.7, 32767, 0, 0, 0,               // Offset control, DAC only
+                              false,false,
                              };
 
 DCbiasData  DCbD_750_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 750, -750, true, 2, 0x23, 0x18, 0x52,
@@ -82,6 +101,7 @@ DCbiasData  DCbD_750_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 750, -750, true
                               0, 6, -26, 32767, 6, 26, 32767,        // Ch 7
                               0, 7, -26, 32767, 7, 26, 32767,        // Ch 8
                               0, 0, 26, 32767, 0, 0, 0,               // Offset control, DAC only
+                              false,false,
                              };
           
 DCbiasData  DCbD_50_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 50, -50, true, 2, 0x23, 0x18, 0x52,
@@ -94,6 +114,7 @@ DCbiasData  DCbD_50_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 50, -50, true, 2
                              0, 6, 609.48, 32767, 6, 609.48, 32767,        // Ch 7
                              0, 7, 609.48, 32767, 7, 609.48, 32767,        // Ch 8
                              0, 0, -609.48, 32767, 0, 0, 0,               // Offset control, DAC only
+                             false,false,
                             };
                             
 FAIMSdata  FAIMS_Rev_1 = {sizeof(FAIMSdata),"FAIMS", 1, 1000000, 25.0, false, 4, 180, 75.2, 21.5, 100.0, 60.0,0.5,
@@ -110,6 +131,7 @@ FAIMSdata  FAIMS_Rev_1 = {sizeof(FAIMSdata),"FAIMS", 1, 1000000, 25.0, false, 4,
                           0x50,0x20,0x24,0x18,0x69,0x27,0x23,0x40,
                           false,0.001,0.01,10,
                           1,
+                          50.0,
                           };
                          
 ESIdata  ESI_Rev_1 =   { sizeof(ESIdata),"ESI", 1,
@@ -138,17 +160,19 @@ ARBdata  ARB_Rev_1 = {sizeof(ARBdata),"ARB", 1, false, 1, false, 100, 0, true,20
                      };
 
 #ifdef TestMode
-WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_AP,"MIPSnet","MIPS","MIPS1234","",0};
+WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_AP,"MIPSnet","MIPS","MIPS1234","",0,true};
 #else
-WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_IDLE,"MIPSnet","MIPS","MIPS1234","",0};
+WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_IDLE,"MIPSnet","MIPS","MIPS1234","",0,false};
 #endif
 
 
 // List of all posible board addresses. These addresses are those of the EEPROM on the modules
 char *BoardAddressList = "A 0x50,A 0x52,A 0x54,A 0x56,B 0x50,B 0x52,B 0x54,B 0x56";
 // List of board names used to allow user to select a board by name for inital setup or re-init
-char *BoardVariantsNames = "RFdrvA R1,RFdrvB R1,DC250V R1,DC750V R1,DC50V  R1,Twave R1,Twave R2,Twave R3,FAIMS R1,ESI  R1,FIL R1,ARB R1";
+char *BoardVariantsNames = "RFdrvA R1,RFdrvB R1,RFdrvA R2,RFdrvB R2,DC250V R1,DC750V R1,DC50V  R1,Twave R1,Twave R2,Twave R3,FAIMS R1,ESI  R1,FIL R1,ARB R1";
 // List of variant board default data structure pointers with a one to one corespondence to list of board names
-void *BoardVariants[] = {(void *)&RFDD_A_Rev_1,(void *)&RFDD_B_Rev_1,(void *)&DCbD_250_Rev_1,(void *)&DCbD_750_Rev_1,(void *)&DCbD_50_Rev_1,(void *)&Twave_Rev1,(void *)&Twave_Rev2,(void *)&Twave_Rev3,(void *)&FAIMS_Rev_1,(void *)&ESI_Rev_1,(void *)&FILAMENT_Rev_1,(void *)&ARB_Rev_1};
+void *BoardVariants[] = {(void *)&RFDD_A_Rev_1,(void *)&RFDD_B_Rev_1,(void *)&RFDD_A_Rev_2,(void *)&RFDD_B_Rev_2,(void *)&DCbD_250_Rev_1,(void *)&DCbD_750_Rev_1,(void *)&DCbD_50_Rev_1,(void *)&Twave_Rev1,(void *)&Twave_Rev2,(void *)&Twave_Rev3,(void *)&FAIMS_Rev_1,(void *)&ESI_Rev_1,(void *)&FILAMENT_Rev_1,(void *)&ARB_Rev_1};
+
+
 
 

@@ -48,27 +48,45 @@ int ErrorCode = 0;   // Last communication error that was logged
 
 Ring_Buffer  RB;     // Receive ring buffer
 
+// ACK only string, two options. Need a comma when in the echo mode
+char *ACKonlyString1 = "\x06";
+char *ACKonlyString2 = ",\x06";
+char *SelectedACKonlyString = ACKonlyString1;
+
+bool echoMode = false;
+
 Commands  CmdArray[] = 	{
   // General commands
-  {"GVER",  CMDstr, 0, (char *)Version},	         // Report version
+  {"GVER",  CMDstr, 0, (char *)Version},	               // Report version
   {"GERR",  CMDint, 0, (char *)&ErrorCode},              // Report the last error code
-  {"GNAME", CMDstr, 0, (char *)MIPSconfigData.Name},	 // Report MIPS system name
-  {"SNAME", CMDstr, 1, (char *)MIPSconfigData.Name},	 // Set MIPS system name
+  {"GNAME", CMDstr, 0, (char *)MIPSconfigData.Name},	   // Report MIPS system name
+  {"SNAME", CMDstr, 1, (char *)MIPSconfigData.Name},	   // Set MIPS system name
   {"RESET", CMDfunction, 0, (char *)Software_Reset},     // Reset the Due
-  {"SAVE", CMDfunction, 0, (char *)SAVEparms},	         // Save MIPS configuration data to default.cfg on CD card
+  {"SAVE",  CMDfunction, 0, (char *)SAVEparms},	         // Save MIPS configuration data to default.cfg on CD card
   {"GCHAN", CMDfunctionStr, 1, (char *)GetNumChans},     // Report number for the selected system
-  {"MUTE", CMDfunctionStr, 1, (char *)Mute},             // Turns on and off the serial response from the MIPS system
-  {"TRIGOUT", CMDfunctionStr, 1, (char *)TriggerOut},    // Generates output trigger on rev 2 and higher controllers
+  {"MUTE",  CMDfunctionStr, 1, (char *)Mute},            // Turns on and off the serial response from the MIPS system
+  {"ECHO",  CMDbool, 1, (char *)&echoMode},              // Turns on and off the serial echo mode where the command is echoed to host, TRUE or FALSE
+  {"TRIGOUT", CMDfunctionStr, 1, (char *)(static_cast<void (*)(char *)>(&TriggerOut))},    // Generates output trigger on rev 2 and higher controllers
                                                          // supports, HIGH,LOW,PULSE
   {"DELAY", CMDfunction, 1, (char *)DelayCommand},       // Generates a delay in milliseconds. This is used by the macro functions
                                                          // to define delays in voltage ramp up etc.
   {"GCMDS", CMDfunction, 0, (char *)GetCommands},	 // Send a list of all commands
   {"GAENA", CMDbool, 0, (char *)&MIPSconfigData.UseAnalog}, // Print the UseAnalog flag, true or false
   {"SAENA", CMDbool, 1, (char *)&MIPSconfigData.UseAnalog}, // Sets the UseAnalog flag, true or false
-  {"THREADS", CMDfunction, 0, (char *)ListThreads},      // List all threads, there IDs, and there last runtimes
+  {"THREADS", CMDfunction, 0, (char *)ListThreads},         // List all threads, there IDs, and there last runtimes
   {"STHRDENA", CMDfunctionStr, 2, (char *)SetThreadEnable}, // Set thread enable to true or false
   {"SDEVADD", CMDfunctionStr, 2, (char *)DefineDeviceAddress}, // Set device board and address
-  {"RDEV", CMDfunction, 1, (char *)ReportAD7998}, // Read the ADC channel value
+  {"RDEV", CMDfunction, 1, (char *)ReportAD7998},              // Read the ADC channel value
+  {"TBLTSKENA", CMDbool, 1, (char *)&TasksEnabled},            // Enables tasks in table mode, true or false
+  {"ADC", CMDfunction, 1, (char *)ADCread},                    // Read and report ADC channel. Valid range 0 through 3
+  {"LEDOVRD", CMDbool, 1, (char *)&LEDoverride},               // Override the LED operation is true, always false on startup
+  {"LED",  CMDint, 1, (char *)&LEDstate},                      // Define the LEDs state you are looking for.
+  // Clock generation functions
+  {"GWIDTH",  CMDint, 0, (char *)&PulseWidth},                // Report the pulse width in microseconds
+  {"SWIDTH",  CMDint, 1, (char *)&PulseWidth},                // Set the pulse width in microseconds
+  {"GFREQ",  CMDint, 0, (char *)&PulseFreq},                  // Report the pulse frequency in Hz
+  {"SFREQ",  CMDint, 1, (char *)&PulseFreq},                  // Set the pulse frequency in Hz
+  {"BURST",  CMDfunction, 1, (char *)&GenerateBurst},              // Generates a frequencyy burst on trig out line
   // DC bias module commands
   {"SDCB", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&DCbiasSet))},      // Set voltage value
   {"GDCB", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasRead))},// Get Voltage value requested
@@ -79,7 +97,11 @@ Commands  CmdArray[] = 	{
   {"GDCMAX", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasReadMax))},// Read float voltage for selected board
   {"SDCPWR", CMDfunctionStr, 1, (char *)DCbiasPowerSet}, // Sets the DC bias power, on or off
   {"GDCPWR", CMDfunction, 0, (char *)DCbiasPower},       // Get the DC bias power, on or off
-  {"SDCBCHNS", CMDfunction, 2, (char *)DCbiasSetNumBoardChans}, // Sets the number of channels on a DCbias board. Used for setup only.
+  {"GDCBALL", CMDfunction, 0, (char *)DCbiasReportAllSetpoints},   // Returns the DC bias voltage setpoints for all channels in the system
+  {"GDCBALLV", CMDfunction, 0, (char *)DCbiasReportAllValues},     // Returns the DC bias voltage readback values for all channels in the system
+  {"SDCBCHNS", CMDfunction, 2, (char *)DCbiasSetNumBoardChans},    // Sets the number of channels on a DCbias board. Used for setup only.
+  {"SDCBONEOFF", CMDbool, 1, (char *)&DCbDarray[0].UseOneOffset},  // TRUE to enable use of one offset
+  {"DCBOFFRBENA", CMDbool, 1, (char *)&DCbDarray[0].OffsetReadback},  // TRUE to enable use of offset readback
   // RF generator module commands
   {"SRFFRQ", CMDfunction, 2, (char *)RFfreq},		 // Set RF frequency
   {"SRFVLT", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&RFvoltage))},	 // Set RF output voltage
@@ -88,8 +110,9 @@ Commands  CmdArray[] = 	{
   {"GRFPPVP", CMDfunction, 1, (char *)RFvoltageReportP}, // Report RF output voltage, positive phase
   {"GRFPPVN", CMDfunction, 1, (char *)RFvoltageReportN}, // Report RF output voltage, negative phase
   {"GRFDRV", CMDfunction, 1, (char *)RFdriveReport},     // Report RF drive level in percentage
-  {"GRFVLT", CMDfunction, 1, (char *)RFvoltageReport},     // Report RF output voltage setpoint
+  {"GRFVLT", CMDfunction, 1, (char *)RFvoltageReport},   // Report RF output voltage setpoint
   {"GRFPWR", CMDfunction, 1, (char *)RFheadPower},       // Report RF head power draw
+  {"GRFALL", CMDfunction, 0, (char *)RFreportAll},       // Reports Freq, RFVpp + and - for each RF channel in system
   // DIO commands
   {"SDIO", CMDfunctionStr, 2, (char *)SDIO_Serial},	 // Set DIO output bit
   {"GDIO", CMDfunctionStr, 1, (char *)GDIO_Serial},	 // Get DIO output bit
@@ -103,16 +126,19 @@ Commands  CmdArray[] = 	{
   {"STBLDAT", CMDfunction, 0, (char *)ParseTableCommand}, // Read the HVPS voltage table
   {"STBLCLK", CMDfunctionStr, 1, (char *)SetTableCLK},	  // Clock mode, EXT or INT
   {"STBLTRG", CMDfunctionStr, 1, (char *)SetTableTRG},	  // Trigger mode, EXT or SW
-  {"TBLABRT", CMDfunction, 0, (char *)SetTableAbort},	  // Abort table operation
-  {"SMOD", CMDfunctionStr, 1, (char *)SetTableMode},	  // Set the table mode
-  {"TBLSTRT", CMDfunction, 0, (char *)SWTableTrg},	  // Set the software trigger
-  {"GTBLFRQ", CMDfunction, 0, (char *)TableFreq},	  // Returns the current internal clock frequency
+  {"TBLABRT", CMDfunction, 0, (char *)SetTableAbort},	    // Abort table operation
+  {"SMOD", CMDfunctionStr, 1, (char *)SetTableMode},	    // Set the table mode
+  {"TBLSTRT", CMDfunction, 0, (char *)SWTableTrg},        // Set the software trigger
+  {"TBLSTOP", CMDfunction, 0, (char *)StopTable},         // Stops a running table
+  {"GTBLFRQ", CMDfunction, 0, (char *)TableFreq},	        // Returns the current internal clock frequency
   {"STBLNUM", CMDfunction, 1, (char *)SetTableNumber},    // Set the active table number
   {"GTBLNUM", CMDfunction, 0, (char *)GetTableNumber},    // Get the active table number
   {"STBLADV", CMDfunctionStr, 1, (char *)SetTableAdvance},// Set the table advance status, ON or OFF
   {"GTBLADV", CMDfunction, 0, (char *)GetTableAdvance},   // Get the table advance status, ON or OFF
   {"STBLVLT", CMDfun2int1flt, 3, (char *)SetTableEntryValue}, // Set a value in a loaded table
   {"GTBLVLT", CMDfunction, 2, (char *)GetTableEntryValue},// Get a value from a loaded table
+  {"STBLCNT", CMDfun2int1flt, 3, (char *)SetTableEntryCount}, // Set a count value in a loaded table
+  {"STBLDLY", CMDint, 1, (char *)&InterTableDelay}, // Defines the inter table delay in milli seconds
   // Macro commands
   {"MRECORD", CMDfunctionStr, 1, (char *) MacroRecord},    // Turn on macro recording into the filename argument
   {"MSTOP", CMDfunction, 0, (char *) MacroStop},           // Stop macro recording and close the file
@@ -133,7 +159,7 @@ Commands  CmdArray[] = 	{
   {"GTWDIR", CMDfunction, 1, (char *)getTWAVEdir},             // Report the TWAVE waveform direction, FWD or REV
   {"STWDIR", CMDfunctionStr, 2, (char *)setTWAVEdir},          // Set the TWAVE waveform direction, FWD or REV
   {"STWCCLK", CMDbool, 1, (char *)&TDarray[0].UseCommonClock}, // Flag to indicate common clock mode for two Twave modules.
-  {"STWCMP", CMDbool, 1, (char *)&TDarray[0].CompressorEnabled}, // Flag to indicate Twave compressor mode is enabled.
+  {"STWCMP", CMDbool, 1, (char *)&TD.CompressorEnabled}, // Flag to indicate Twave compressor mode is enabled.
   // FAIMS commands
   {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},  // Set FAIMS RF harmonic positive peak readback calibration
   {"SRFHNCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharNcal},  // Set FAIMS RF harmonic negative peak readback calibration
@@ -167,7 +193,7 @@ Commands  CmdArray[] = 	{
   {"SHOST",  CMDfunctionStr, 1, (char *)SetHost},                    // Set this MIPS box host name
   {"SSSID",  CMDfunctionStr, 1, (char *)SetSSID},                    // Set the WiFi SSID to connect to
   {"SPSWD",  CMDfunctionStr, 1, (char *)SetPassword},                // Set the WiFi network password
-  
+  {"SWIFIENA",  CMDbool, 1, (char *)&MIPSconfigData.UseWiFi},              // Set the WiFi enable flag
   // End of table marker
   {0},
 };
@@ -198,7 +224,7 @@ void SetThreadEnable(char *name, char *state)
 {
   Thread *t;
 
-  if ((!strcmp(state, "TRUE")) && (!strcmp(state, "FALSE")))
+  if ((strcmp(state, "TRUE") !=0) && (strcmp(state, "FALSE") != 0))
   {
     SetErrorCode(ERR_BADARG);
     SendNAK;
@@ -213,7 +239,7 @@ void SetThreadEnable(char *name, char *state)
     return;
   }
   SendACKonly;
-  if (strcmp(state, "TRUE")) t->enabled = true;
+  if (strcmp(state, "TRUE") == 0) t->enabled = true;
   else t->enabled = false;
 }
 
@@ -331,6 +357,8 @@ char *GetToken(bool ReturnComma)
 
 void ExecuteCommand(Commands *cmd, int arg1, int arg2, char *args1, char *args2, float farg1)
 {
+  if(echoMode) SelectedACKonlyString = ACKonlyString2;
+  else SelectedACKonlyString = ACKonlyString1;
   switch (cmd->Type)
   {
     case CMDbool:
@@ -371,10 +399,18 @@ void ExecuteCommand(Commands *cmd, int arg1, int arg2, char *args1, char *args2,
       }
       break;
     case CMDint:
-      // arg1 is a pointer to an int value to send out the serial port
-      SendACKonly;
-      if (!SerialMute) serial->println(*(cmd->pointers.intPtr));
-      break;
+      if (cmd->NumArgs == 0)   // If true then write the value
+      {
+         SendACKonly;
+         if (!SerialMute) serial->println(*(cmd->pointers.intPtr));
+         break;
+      }
+      if (cmd->NumArgs == 1) 
+      {
+          *(cmd->pointers.intPtr) = arg1;
+          SendACK;
+          break;
+      }
     case CMDfloat:
       // arg1 is a pointer to an float value to send out the serial port
       SendACKonly;
@@ -404,15 +440,26 @@ void ExecuteCommand(Commands *cmd, int arg1, int arg2, char *args1, char *args2,
 int ProcessCommand(void)
 {
   char *Token;
-  int i;
-  static int arg1, arg2;
+  int  i;
+  static int   arg1, arg2;
   static float farg1;
-  static enum PCstates state;
-  static int CmdNum;
+  static enum  PCstates state;
+  static int   CmdNum;
+  static char  delimiter=0;
 
   Token = GetToken(false);
   if (Token == NULL) return (-1);
   if (Token[0] == 0) return (-1);
+  if((echoMode) && (!SerialMute))
+  {
+    if (strcmp(Token, "\n") != 0) 
+    {
+      if(delimiter!=0) serial->write(delimiter);
+      serial->print(Token);
+    }
+    if (strcmp(Token, "\n") == 0) delimiter=0;
+    else delimiter = ',';
+  }
   switch (state)
   {
     case PCcmd:
@@ -767,6 +814,8 @@ void MacroPlay(char *filename, bool silent)
   // Unmute the serial system
   for (i = 0; i < strlen(unmute); i++) RB_Put(&RB, unmute[i]);
 }
+
+
 
 
 

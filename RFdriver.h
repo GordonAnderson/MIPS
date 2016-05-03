@@ -60,9 +60,12 @@ void RFvoltageReportN(int channel);
 void RFdriveReport(int channel);
 void RFvoltageReport(int channel);
 void RFheadPower(int channel);
+void RFreportAll(void);
 
 
 #endif
+
+
 
 
 
