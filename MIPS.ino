@@ -273,6 +273,24 @@
 //  V1.42, April, 29 2016
 //      1.) Fixed bug that came from the ADC resolution increase to 12 bit. This caused the power off detection to fail.
 //      2.) Added power up and power down output reset logic
+//  V1.43, May, 5 2016
+//      1.) Added display enable command.
+//      2.) Added watch dog timer kick in the process serial loop
+//      3.) Added the shutter control for Mike Belov's system. This is hard coded and still needs work to make
+//          a generic solution.
+//  V1.44, May 9, 2016
+//      1.) Updated filament cycle mode to accept 0 as forever in the number of cycles. 
+//      2.) Upded the Twave max order to 127
+//      3.) Added order = 0 to = stop
+//  V1.45, May15, 2016
+//      1.) Removed shutter control commands and logic.
+//      2.) Added DI port change reporting
+//      3.) Added DI to DO port mirroring
+//  V1.46, May 19, 2016
+//      1.) Fixed a bug in Twave order 0 compressor mode
+//  V1.47, May 21, 2016
+//      1.) Add new table driven compressor mode
+//      2.) Added all compressor host commands
 //
 // Couple of issues to resolve
 //    1.) External trigger lockup / missing trigger setup
@@ -284,8 +302,9 @@
 //          the DIO, only update if no pending update
 //      3.) Consider re-implementing the table mode dialog box code. This should work after the SPI upgrades to 
 //          display driver from step 3.
-//      4.) Need a way to fource update after calibration
+//      4.) Need a way to force update after calibration
 //
+// Serial.println(); will print '\r' and '\n', 
 //
 // Gordon Anderson
 // GAA Custom Engineering,LLC
@@ -341,10 +360,12 @@
 bool NormalStartup = true;
 bool SDcardPresent = false;
 
+bool DisableDisplay = false;
+
 bool LEDoverride = false;
 int  LEDstate = 0;
 
-char Version[] = "Version 1.42, April 29, 2016";
+char Version[] = "Version 1.47, May 21, 2016";
 
 // ThreadController that will controll all threads
 ThreadController control = ThreadController();
@@ -699,7 +720,17 @@ void setup()
   Serial.begin(115200);
   Stream *stm = &Serial;
 //  stm->println("MIPS!");
-  
+/*
+  Serial1.begin(9600);
+  pinMode(13, OUTPUT);
+  digitalWrite(13,LOW);
+  delay(100);
+  uint8_t  einit[24] = {0x55,0xAA,0xC9,0x00,0xA8,0xC0,0x2A,0x20,0x07,0x00,0xA8,0xC0,0x8C,0x4E,0xC9,0x00,0xA8,0xC0,0x03,0x00,0xC2,0x01,0x03,0xBE};
+  for(int i=0;i<24;i++) Serial1.write(einit[i]);
+  delay(100);
+  digitalWrite(13,HIGH);
+  Serial1.begin(115200);
+*/  
   // Init the display and setup all the hardware
   tft.begin();
   tft.fillScreen(ILI9340_BLACK);
@@ -906,13 +937,21 @@ void ProcessSerial(void)
     serial = &Serial;
     PutCh(Serial.read());
   }
+//  if (Serial1.available() > 0) 
+//  {
+//    serial = &Serial1;
+//    PutCh(Serial1.read());
+//  }
   // If there is a command in the input ring buffer, process it!
-  if(RB_Commands(&RB) > 0) while(ProcessCommand()==0);  // Process until flag that there is nothing to do
+  if(RB_Commands(&RB) > 0) while(ProcessCommand()==0) WDT_Restart(WDT);  // Process until flag that there is nothing to do
+                                                                         // kick the watchdog timer in case we get stuck here
+  DIOopsReport();
 }
 
 // Main processing loop
 void loop()
 {
+  tft.disableDisplay(DisableDisplay);
   WDT_Restart(WDT);
   // run ThreadController
   // this will check every thread inside ThreadController,

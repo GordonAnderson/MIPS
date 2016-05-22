@@ -91,6 +91,8 @@ int       TWboardAddress[2] = { -1, -1};     // Contains board A and B addresses
 // To select the hardware board do the following: SelectBoard(TWboardAddress[SelectedTwaveBoard]);
 TwaveData TD;
 
+char TwaveCompressorTable[100] = "N10C3";
+
 DIhandler *DIdirTW[2];
 void (*TWdirISRs[2])(void) = {TW_1_DIR_ISR, TW_2_DIR_ISR};
 DIhandler *DIsyncTW[2];
@@ -740,7 +742,7 @@ void Twave_loop(void)
   static float   CurrentGuard2Voltage[2] = {-1,-1};
   int i;
 
-  TDarray[SelectedTwaveModule] = TD;   // Store any changes, if dialog is selected
+  if ((ActiveDialog == &TwaveDialog2)||(ActiveDialog == &TwaveDialog)||(ActiveDialog == &CompressorDialog)) TDarray[SelectedTwaveModule] = TD;   // Store any changes, if dialog is selected
   CompressorLoop();
   for (i = 0; i < 2; i++)
   {
@@ -1156,6 +1158,19 @@ void setTWAVEdir(char *chan, char *dirstr)
 //    else State = NonCompress
 //    Set next interrupt time
 //
+// May 10, 2016. The compressor control was changed from the compress every Nth orginal design to
+// use a compression table to control the order of non compressed and compressed cycles.
+// Compressor table structure
+//  Xn...
+// Where
+//  X
+//    = N for non compressed
+//    = C for compressed
+//    = O for order
+//    = S for switch control
+//  n
+//    = number of cycles or options parameter
+//
 
 extern DialogBoxEntry CompressorEntries2[];
 
@@ -1164,13 +1179,15 @@ char Cmode[12]  = "Normal";
 
 DialogBoxEntry CompressorEntries[] = {
   {" Mode"                , 0, 1, D_LIST   , 0,  0, 8, 15, false, CmodeList, Cmode, NULL, UpdateMode},
-  {" Order"               , 0, 2, D_INT8   , 1, 20, 1, 21, false, "%2d", &TD.Corder, NULL, UpdateMode},
-  {" Num passes"          , 0, 3, D_INT8   , 1, 50, 1, 21, false, "%2d", &TD.NumPasses, NULL, NULL},
-  {" Compress Nth"        , 0, 4, D_INT8   , 1, 20, 1, 21, false, "%2d", &TD.CNth, NULL, NULL},
-  {" Trig delay, mS"      , 0, 5, D_FLOAT  , 0.1, 900, 0.1, 18, false, "%5.1f", &TD.Tdelay, NULL, NULL},
-  {" Compress t, mS"      , 0, 6, D_FLOAT  , 0.1, 900, 0.1, 18, false, "%5.1f", &TD.Tcompress, NULL, NULL},
-  {" Normal t, mS"        , 0, 7, D_FLOAT  , 0.1, 900, 0.1, 18, false, "%5.1f", &TD.Tnormal, NULL, NULL},
-  {" Non Comp t, mS"      , 0, 8, D_FLOAT  , 0.1, 900, 0.1, 18, false, "%5.1f", &TD.TnoC, NULL, NULL},
+  {" Order"               , 0, 2, D_INT8   , 0, 127, 1, 20, false, "%3d", &TD.Corder, NULL, UpdateMode},
+  {" Compression table"   , 0, 3, D_TITLE  , 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
+  {" "                    , 0, 4, D_STRING , 0, 2, 0, 2, false, "%.20s", TwaveCompressorTable, NULL, NULL},
+//{" Num passes"          , 0, 3, D_INT8   , 1, 50, 1, 21, false, "%2d", &TD.NumPasses, NULL, NULL},
+//{" Compress Nth"        , 0, 4, D_INT8   , 1, 20, 1, 21, false, "%2d", &TD.CNth, NULL, NULL},
+  {" Trig delay, mS"      , 0, 5, D_FLOAT  , 0.1, 999, 0.1, 18, false, "%5.1f", &TD.Tdelay, NULL, NULL},
+  {" Compress t, mS"      , 0, 6, D_FLOAT  , 0.1, 999, 0.1, 18, false, "%5.1f", &TD.Tcompress, NULL, NULL},
+  {" Normal t, mS"        , 0, 7, D_FLOAT  , 0.1, 999, 0.1, 18, false, "%5.1f", &TD.Tnormal, NULL, NULL},
+  {" Non Comp t, mS"      , 0, 8, D_FLOAT  , 0.1, 999, 0.1, 18, false, "%5.1f", &TD.TnoC, NULL, NULL},
   {" Next page"           , 0, 10, D_PAGE  , 0, 0, 0, 0, false, NULL, &CompressorEntries2, NULL, NULL},
   {" Return to Twave menu", 0, 11, D_DIALOG, 0, 0, 0, 0, false, NULL, &TwaveDialog2, NULL, NULL},
   {NULL},
@@ -1195,7 +1212,7 @@ DialogBox CompressorDialog = {{"Compressor params", ILI9340_BLACK, ILI9340_WHITE
   M_SCROLLING, 0, 0, CompressorEntries
 };
 
-#define MaxOrder  20
+#define MaxOrder  127
 
 #define CLOCK_A   9
 #define CLOCK_B   8
@@ -1248,6 +1265,8 @@ void SetSwitch(void)
 // This function will update the state
 void CompressorTimerISR(void)
 {
+  char OP;
+  
   // This interrupt occurs when the current state has timed out so advance to the next
   switch (CState)
   {
@@ -1261,14 +1280,15 @@ void CompressorTimerISR(void)
     case CS_NONCOMPRESS:
       CurrentPass++;
     case CS_TRIG:
-      // State will be Compress or NonCompress depending on CNth value
-      if((CurrentPass % TDarray[0].CNth) == 0)
+      // State will be Compress, NonCompress or 0 indicating finished, defined by table value
+      OP = GetNextOperationFromTable(false);
+      if(OP == 'C')
       {
         CState = CS_COMPRESS;
         C_NextEvent += C_Tc;
         ClockReset = TDarray[0].Corder * 8;
       }
-      else
+      else if(OP == 'N')
       {
         CState = CS_NONCOMPRESS;
         C_NextEvent += C_Tnc;
@@ -1278,25 +1298,17 @@ void CompressorTimerISR(void)
     default:
       break;
   }
-  // Update the timer
-  CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
-  // If this is the last pass then open the switch
-  if(CurrentPass == TDarray[0].NumPasses)
-  {
-    SetOutput(TD.Cswitch,TD.CswitchLevel);
-  }
   // Test if all passes are complete, if so stop the timer and exit
-  if(CurrentPass > TDarray[0].NumPasses)
+  if(OP == 0)
   {
     // Stop the timer
     CompressorTimer.stop();
     // Restore the mode
     UpdateMode();
-    // Turn off the switch
-    ClearOutput(TD.Cswitch,TD.CswitchLevel);
     return;
   }
-
+  // Update the timer
+  CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
 }
 
 // Called when we are going to start a compression cycle
@@ -1304,24 +1316,10 @@ void CompressorTriggerISR(void)
 {
   // Clear and setup variables
   ClockReset = 8;             // Put system in normal mode
-  CurrentPass = 1;            // Reset the pass counter
+  CurrentPass = 0;
+  GetNextOperationFromTable(true);
   C_NextEvent = C_Td;
-  if(C_Td != 0) CState = CS_TRIG;
-  else
-  {
-    // State will be Compress or NonCompress depending on CNth value
-    if((CurrentPass % TDarray[0].CNth) == 0)
-    {
-      CState = CS_COMPRESS;
-      C_NextEvent = C_Tc;
-      ClockReset = TDarray[0].Corder * 8;
-    }
-    else
-    {
-      CState = CS_NONCOMPRESS;
-      C_NextEvent = C_Tnc;
-    }
-  }
+  CState = CS_TRIG;
   // Setup the timer used to generate interrupts
   CompressorTimer.begin();
   CompressorTimer.setTrigger(TC_CMR_EEVTEDG_NONE);
@@ -1330,10 +1328,71 @@ void CompressorTriggerISR(void)
   CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
   CompressorTimer.enableTrigger();
   CompressorTimer.softwareTrigger();
-  // Close the switch
-  ClearOutput(TD.Cswitch,TD.CswitchLevel);
-  // Enable interrupts and loop here until process is finished. (really?)
-  // Need to process the watch dog timer or we will reset!
+}
+
+// This function reads the compressor table and return the next operation that will be performed.
+// The returned value is:
+//                        'N' for non compressed cycle
+//                        'C' for compressed cycle
+//                         0 at when done
+// This function will process commands in the table that perform setting updates.
+//     Valid commands that are processed by this function:
+//                        'S' for switch control, 0 to close, 1 to open
+//                        'O' order, 0 to 127 are valid values
+// If the init is true that the table pointers are reset to the start and the function return 0;
+char GetNextOperationFromTable(bool init)
+{
+  static int tblindex=0;
+  static char OP;
+  static int count = 0;
+
+  if(init)
+  {
+    tblindex = 0;
+    count = 0;
+    return(0);
+  }
+  if(count > 0)
+  {
+    count--;
+    return(OP);
+  }
+  while(1)
+  {
+    // Find a valid character
+    while(1)
+    {
+      if(TwaveCompressorTable[tblindex] == 0) return(0);
+      OP = TwaveCompressorTable[tblindex++];
+      count = 1;  // Default to count of 1
+      if(isDigit(TwaveCompressorTable[tblindex]))
+      {
+        // If here then get the value, it has to be an integer
+        count = int(TwaveCompressorTable[tblindex++] - '0');
+        while(isDigit(TwaveCompressorTable[tblindex])) count = count * 10 + int(TwaveCompressorTable[tblindex++] - '0');
+      }
+    }
+    if((OP=='N')||(OP=='C'))
+    {
+      // Only return valid options, N for non compressed and C for compressed
+      count--;
+      return(OP);
+    }
+    if(OP == 'S')
+    {
+      if(count == 0) ClearOutput(TD.Cswitch,TD.CswitchLevel);
+      if(count == 1) SetOutput(TD.Cswitch,TD.CswitchLevel);
+    }
+    if(OP == 'O')
+    {
+      if((count >= 0) && (count <= 127))
+      {
+         TDarray[0].Corder = count;
+         TD.Corder = count;
+         UpdateMode();
+      }
+    }
+  }
 }
 
 // This interrupt service routine generates the two clocks of each Twave module
@@ -1353,10 +1412,12 @@ void CompressorClockISR(void)
   pio->PIO_SODR = i;    // Set bit high
   pio->PIO_CODR = i;    // Set bit low
   ClockIndex++;
+  if(ClockReset == 0) ClockReset = 16;
   if(ClockIndex >= CR) 
   {
-    ClockIndex = 0;
     CR = ClockReset;
+    if((TD.Corder == 0) && (ClockIndex == 16)) ClockIndex = 8;  // for order = 0 the system will just hold its position.
+    else ClockIndex = 0;
   }
 }
 
@@ -1425,9 +1486,136 @@ void CompressorLoop(void)
   C_Tc  = (TDarray[0].Tcompress / 1000.0) * C_clock;
   C_Tn  = (TDarray[0].Tnormal / 1000.0) * C_clock;
   C_Tnc = (TDarray[0].TnoC / 1000.0) * C_clock;
+  if (ActiveDialog == &CompressorDialog) RefreshAllDialogEntries(&CompressorDialog);
 }
 
 // End of compressor code
+
+//
+// The following code supports the Compressor host commands. 
+//
+//   GTWCTBL          Get Twave compressor table
+//   STWCTBL          Set Twave compressor table
+//   GTWCMODE         Get Twave compressor mode
+//   STWCMODE         Set Twave compressor mode
+//   GTWCORDER        Get Twave compressor order
+//   STWCORDER        Set Twave compressor order
+//   GTWCTD           Get Twave compressor trigger delay, mS
+//   STWCTD           Set Twave compressor trigger delay, mS
+//   GTWCTC           Get Twave compressor compress time, mS
+//   STWCTC           Set Twave compressor compress time, mS
+//   GTWCTN           Get Twave compressor normal time, mS
+//   STWCTN           Set Twave compressor normal time, mS
+//   GTWCTNC          Get Twave compressor non compress time, mS
+//   STWCTNC          Set Twave compressor non compress time, mS
+//   TWCTRG           Software trigger the compressor
+//   GTWCSW           Get Twave compressor Switch state
+//   STWCSW           Set Twave compressor Switch state
+
+void SetTWCmode(char *mode)
+{
+  if ((strcmp(mode, "Normal") == 0) || (strcmp(mode, "Compress") == 0))
+  {
+    strcpy(Cmode,mode);
+    UpdateMode();
+    SendACK;
+    return;
+  }
+  SetErrorCode(ERR_BADARG);
+  SendNAK;
+}
+void GetTWCorder(void)
+{
+  SendACKonly;
+  if (!SerialMute) serial->println(TDarray[0].Corder);
+}
+bool RangeTest(DialogBoxEntry *des, char *EntryName, float fval)
+{
+  DialogBoxEntry *de;
+  
+  de = GetDialogEntries(des, EntryName);
+  if((fval >= de->Min) && (fval <= de->Max)) return true;
+  SetErrorCode(ERR_BADARG);
+  SendNAK;
+  return false;
+}
+void SetTWCorder(int ival)
+{
+  if(RangeTest(CompressorEntries,"Order",ival))
+  {
+    TDarray[0].Corder = ival;
+    TD.Corder = ival;
+    UpdateMode();
+    SendACK;
+  }
+}
+void SetTWCtriggerDelay(char *str)
+{
+  float fval;
+
+  fval = strtof(str,NULL);
+  if(RangeTest(CompressorEntries,"Trig delay, mS",fval))
+  {
+    TDarray[0].Tdelay = fval;
+    TD.Tdelay = fval;
+    SendACK;
+  }
+}
+void SetTWCcompressTime(char *str)
+{
+  float fval;
+
+  fval = strtof(str,NULL);
+  if(RangeTest(CompressorEntries,"Compress t, mS",fval))
+  {
+    TDarray[0].Tcompress = fval;
+    TD.Tcompress = fval;
+    SendACK;
+  }
+}
+void SetTWCnormalTime(char *str)
+{
+  float fval;
+
+  fval = strtof(str,NULL);
+  if(RangeTest(CompressorEntries,"Normal t, mS",fval))
+  {
+    TDarray[0].Tnormal = fval;
+    TD.Tnormal = fval;
+    SendACK;
+  }
+}
+void SetTWCnoncompressTime(char *str)
+{
+  float fval;
+
+  fval = strtof(str,NULL);
+  if(RangeTest(CompressorEntries,"Normal t, mS",fval))
+  {
+    TDarray[0].TnoC = fval;
+    TD.TnoC = fval;
+    SendACK;
+  }
+}
+void TWCtrigger(void)
+{
+   SendACKonly;
+   CompressorTriggerISR();
+}
+void SetTWCswitch(char *mode)
+{
+  if ((strcmp(mode, "Open") == 0) || (strcmp(mode, "Close") == 0))
+  {
+    strcpy(CswitchState,mode);
+    SetSwitch();
+    SendACK;
+    return;
+  }
+  SetErrorCode(ERR_BADARG);
+  SendNAK;
+}
+// End of compressor host command routines
+
 
 
 

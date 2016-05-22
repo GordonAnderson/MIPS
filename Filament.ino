@@ -146,7 +146,7 @@ DialogBoxEntry FilamentCycleEntries[] = {
   {" Current 2"           , 0, 3, D_FLOAT, 0, MaxFilCur, 0.01, 18, false, "%5.2f", &FCY.FCpoint2, NULL, NULL},
   {" Num cycles"          , 0, 4, D_INT  , 0, 1000, 1, 18, false, "%5d", &FCY.FCnumCyl, NULL, NULL},
 
-  {" Current cycle"       , 0, 6, D_INT, 0, 0, 0, 18, true, "%5d", &CurrentCycle, NULL, NULL},
+  {" Current cycle"       , 0, 6, D_INT, 0, 0, 0, 15, true, "%8d", &CurrentCycle, NULL, NULL},
 
   {" Return filament menu", 0, 10, D_DIALOG, 0, 0, 0, 0, false, NULL, &FilamentDialog, NULL, NULL},
   {NULL},
@@ -375,7 +375,7 @@ void FilamentCyclying(void)
               FC_State[b][c] = FC_WAIT_PT2;
               if(FilamentCycleCountTrigger[b][c]) FilamentCycleCounts[b][c]++;
               FilamentCycleCountTrigger[b][c] = false;
-              if(FilamentCycleCounts[b][c] >= FDarray[b].FCyl[c].FCnumCyl)
+              if((FilamentCycleCounts[b][c] >= FDarray[b].FCyl[c].FCnumCyl) && (FDarray[b].FCyl[c].FCnumCyl != 0))
               {
                 FDarray[b].FCD[c].CurrentSetpoint = SavedSetpoint[b][c];
                 FC_State[b][c] = FC_STOP;
@@ -400,7 +400,7 @@ void FilamentCyclying(void)
       }
       else
       {
-        // Here is not enabled, if we are not in STOP state then 
+        // Here if not enabled, if we are not in STOP state then 
         // restore the current setpoint and set state to stop.
         if(FC_State[b][c] != FC_STOP)
         {

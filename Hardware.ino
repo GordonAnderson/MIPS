@@ -36,6 +36,16 @@ int BurstCount = 100;
 int CurrentCount;
 bool BurstQueued = false;
 
+DIOops  dioops[8] = {DI0,0,false,false,0,false,0,
+                     DI1,0,false,false,0,false,0,
+                     DI2,0,false,false,0,false,0,
+                     DI3,0,false,false,0,false,0,
+                     DI4,0,false,false,0,false,0,
+                     DI5,0,false,false,0,false,0,
+                     DI6,0,false,false,0,false,0,
+                     DI7,0,false,false,0,false,0
+                     };
+
 MIPStimer FreqBurst(3);
 
 void FreqBurstISR()
@@ -305,7 +315,7 @@ void Init_IOpins(void)
   pinMode(PB_GREEN, OUTPUT);
   pinMode(PB_BLUE, OUTPUT);
   // On PCB red LED
-  pinMode(RED_LED, OUTPUT);
+//  pinMode(RED_LED, OUTPUT);
   // Misc control lines
   pinMode(ADDR0, OUTPUT);
   pinMode(ADDR1, OUTPUT);
@@ -332,7 +342,7 @@ void Reset_IOpins(void)
   pinMode(PB_GREEN, INPUT);
   pinMode(PB_BLUE, INPUT);
   // On PCB red LED
-  pinMode(RED_LED, INPUT);
+//  pinMode(RED_LED, INPUT);
   // Misc control lines
   pinMode(DAC0,INPUT);
   pinMode(ADDR0, INPUT);
@@ -470,6 +480,7 @@ void DigitalOut(int8_t MSB, int8_t LSB)
   // Set the data
   SPI.transfer(SPI_CS, MSB, SPI_CONTINUE);
   SPI.transfer(SPI_CS, LSB);
+  delayMicroseconds(2);
   // For rev 3.0 controller output using address 7 and stobe with output A12.
   SetAddress(7);
   SPI.setDataMode(SPI_CS, SPI_MODE1);
@@ -477,6 +488,7 @@ void DigitalOut(int8_t MSB, int8_t LSB)
   pinMode(DAC0,OUTPUT);
   digitalWrite(DAC0,LOW);
   digitalWrite(DAC0,HIGH);
+  delayMicroseconds(2);
   SetAddress(0);
 }
 
@@ -1236,5 +1248,149 @@ void ADCread(int chan)
    }
    SetErrorCode(ERR_BADARG);
    SendNAK;
+}
+
+// The following routines support DIO operations:
+//  Input state changes
+//  Input to output mirroring
+// One common interrupt supports all 8 input channels. The attach interrupt is always done 
+// with the change mode, the ISR will read the port to determine the actual change.
+//
+// Would also like to add a trigger command where an input edge triggers an output
+// action. Like TRIG,Q,P,A,L this would cause output A to go low on a positive edge of input Q
+
+// This function is called from the main pooling loop and sends the
+// change messages when enabled.
+void DIOopsReport(void)
+{
+  int  i;
+  char chan;
+  
+  for(i=0;i<8;i++)
+  {
+    chan = 'Q' + i;
+    if((dioops[i].Report) && (dioops[i].Changed))
+    {
+      serial->print("DIC,");
+      serial->print(chan);
+      if(dioops[i].ReportState == CHANGE) serial->println(",CHANGED");
+      if(dioops[i].ReportState == RISING) serial->println(",RISING");
+      if(dioops[i].ReportState == FALLING) serial->println(",FALLING");
+      dioops[i].Changed = false;
+    }
+  }
+}
+
+// This interrupt service routine looks through the dioops structure and
+// processes any changes. Reporting is done in the main polling loop.
+// The attach interrupt is always done as change to make sure we see every transistion.
+void DIOopsISR(void)
+{
+  int  i,j;
+  bool DIOset=false;
+
+  for(i=0;i<8;i++)
+  {
+    if((dioops[i].Report) || (dioops[i].Mirror))
+    {
+      j = digitalRead(dioops[i].DI);
+      if(j != dioops[i].LastLevel)
+      {
+        dioops[i].LastLevel = j;
+        if(dioops[i].Report)
+        {
+          if(dioops[i].ReportState == CHANGE) dioops[i].Changed = true;
+          if((dioops[i].ReportState == RISING) && (j == HIGH)) dioops[i].Changed = true;
+          if((dioops[i].ReportState == FALLING) && (j == LOW)) dioops[i].Changed = true;
+        }
+        if(dioops[i].Mirror)
+        {
+          if(j == LOW) SDIO_Set_Image(dioops[i].DO, '0');
+          else SDIO_Set_Image(dioops[i].DO, '1');
+          DIOset = true;  // flag to cause update
+        }
+      }
+    }
+  }
+  if(DIOset)
+  {
+    DOrefresh;
+    PulseLDAC;
+    UpdateDigitialOutputArray();
+  }
+}
+
+// This function is a host command processing function. This function will set up an input port for
+// change monitoring and will send a command to the host when the change is detected.
+// port is Q,R,S,T,U,V,W, or X
+// mode is RISING,FALLING,CHANGE, or OFF
+// OFF will remove and monitoring function.
+void DIOreport(char *port, char *mode)
+{
+  int i;
+
+  // Convert port to index
+  i = port[0] - 'Q';
+  if((i<0) || (i>7)) 
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;
+  }
+  if ((strcmp(mode, "RISING") == 0) || (strcmp(mode, "FALLING") == 0) || (strcmp(mode, "CHANGE") == 0))
+  {
+    dioops[i].ReportState = CHANGE;
+    if (strcmp(mode, "RISING") == 0) dioops[i].ReportState = RISING;
+    if (strcmp(mode, "FALLING") == 0) dioops[i].ReportState = FALLING;
+    dioops[i].Report = true;
+    dioops[i].Changed = false;
+    if(!dioops[i].Mirror) attachInterrupt(digitalPinToInterrupt(dioops[i].DI),DIOopsISR,CHANGE);
+    SendACK;
+    return;
+  }
+  if (strcmp(mode, "OFF") == 0)
+  {
+    dioops[i].ReportState = 0;
+    dioops[i].Report = false;
+    dioops[i].Changed = false;
+    if(!dioops[i].Mirror) detachInterrupt(digitalPinToInterrupt(dioops[i].DI));
+    SendACK;
+    return;
+  }
+  SetErrorCode(ERR_BADARG);
+  SendNAK;
+}
+
+// This function will mirror an input (Q through X) to an output (A through P or OFF)
+void DIOmirror(char *in, char *out)
+{
+  int i;
+
+  // Convert in to index
+  i = in[0] - 'Q';
+  if((i<0) || (i>7)) 
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;
+  }
+  // If out is OFF then disable the mirror for this channel
+  if (strcmp(out, "OFF") == 0)
+  {
+    dioops[i].Mirror = false;
+    if(!dioops[i].Report) detachInterrupt(digitalPinToInterrupt(dioops[i].DI));
+    SendACK;
+    return;
+  }
+  if((out[0] >= 'A') && (out[0] <= 'P'))
+  {
+    dioops[i].Mirror = true;
+    dioops[i].DO = out[0];
+    if(!dioops[i].Report) attachInterrupt(digitalPinToInterrupt(dioops[i].DI),DIOopsISR,CHANGE);
+    SendACK;
+    return;
+  }
+  SetErrorCode(ERR_BADARG);
+  SendNAK;
 }
 

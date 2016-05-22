@@ -46,7 +46,22 @@ enum PBledStates
   NOTHING
 };
 
-extern int    PBled;
+// This structure supports DIO special operations. Reporting of input
+// changes and mirroring of inputs to outputs. An array of 8 of these
+// structures supports each digital input.
+typedef struct
+{
+  int    DI;           // Digital input pin number
+  int    LastLevel;    // Inputs last level
+  bool   Changed;      // True if state change detected
+  bool   Report;       // True if reporting is selected
+  int    ReportState;  // RISING, FALLING, or CHANGE report flag
+  bool   Mirror;       // True if this input is mirrored to an output
+  char   DO;           // Digital output, i.e. A
+} DIOops;
+
+extern DIOops  dioops[8];
+extern int PBled;
 extern PBledStates  PBledMode;
 
 #define PB_ON(a)  PBled=a; PBledMode = ON
@@ -80,9 +95,9 @@ extern PBledStates  PBledMode;
 #define PB_BLUE_OFF   digitalWrite(PB_BLUE,HIGH)
 
 // Red LED on the PC board
-#define RED_LED      19
-#define RED_LED_ON    digitalWrite(RED_LED,LOW)
-#define RED_LED_OFF   digitalWrite(RED_LED,HIGH)
+//#define RED_LED      19
+//#define RED_LED_ON    digitalWrite(RED_LED,LOW)
+//#define RED_LED_OFF   digitalWrite(RED_LED,HIGH)
 
 // Misc signals
 #define LDAC          11
@@ -169,6 +184,9 @@ void QueueTriggerOut(int microSec);
 void ProcessTriggerOut(void);
 void ADCread(int chan);
 
+void DIOopsReport(void);
+void DIOreport(char *port, char *mode);
+void DIOmirror(char *in, char *out);
 
 #endif
 

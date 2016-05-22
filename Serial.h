@@ -22,6 +22,7 @@ extern bool SerialMute;
 
 extern bool LEDoverride;
 extern int  LEDstate;
+extern bool DisableDisplay;
 
 //extern HardwareSerial *serial;
 
@@ -62,6 +63,7 @@ enum CmdTypes
   CMDfunction,		  // Calls a function with 0,1,or 2 int args
   CMDfunctionStr,		// Calls a function with pointer to str arg
   CMDfun2int1flt,		// Calls a function with 2 int args followed by 1 float arg
+  CMDlongStr,       // Fills the pointer the a long string, max length is defined by num args value
   CMDna
 };
 

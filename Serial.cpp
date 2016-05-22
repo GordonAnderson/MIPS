@@ -81,6 +81,7 @@ Commands  CmdArray[] = 	{
   {"ADC", CMDfunction, 1, (char *)ADCread},                    // Read and report ADC channel. Valid range 0 through 3
   {"LEDOVRD", CMDbool, 1, (char *)&LEDoverride},               // Override the LED operation is true, always false on startup
   {"LED",  CMDint, 1, (char *)&LEDstate},                      // Define the LEDs state you are looking for.
+  {"DSPOFF", CMDbool, 1, (char *)&DisableDisplay},             // Print the UseAnalog flag, true or false
   // Clock generation functions
   {"GWIDTH",  CMDint, 0, (char *)&PulseWidth},                // Report the pulse width in microseconds
   {"SWIDTH",  CMDint, 1, (char *)&PulseWidth},                // Set the pulse width in microseconds
@@ -116,6 +117,8 @@ Commands  CmdArray[] = 	{
   // DIO commands
   {"SDIO", CMDfunctionStr, 2, (char *)SDIO_Serial},	 // Set DIO output bit
   {"GDIO", CMDfunctionStr, 1, (char *)GDIO_Serial},	 // Get DIO output bit
+  {"RPT", CMDfunctionStr, 2, (char *)DIOreport},     // Report an input state change
+  {"MIRROR", CMDfunctionStr, 2, (char *)DIOmirror},  // Mirror an input to an output
   // ESI module commands
   {"SHV", CMDfunctionStr, 2, (char *)SetESIchannel},     // Set channel high voltage
   {"GHV", CMDfunction, 1, (char *)GetESIchannel},        // Returns the high voltage setpoint
@@ -158,12 +161,30 @@ Commands  CmdArray[] = 	{
   {"STWSEQ", CMDfunctionStr, 2, (char *)setTWAVEsequence},     // Set the TWAVE sequence
   {"GTWDIR", CMDfunction, 1, (char *)getTWAVEdir},             // Report the TWAVE waveform direction, FWD or REV
   {"STWDIR", CMDfunctionStr, 2, (char *)setTWAVEdir},          // Set the TWAVE waveform direction, FWD or REV
+  // Twave compressor commands
+  {"STWCTBL", CMDlongStr, 100, (char *)TwaveCompressorTable},  // Twave compressor table definition setting command
+  {"GTWCTBL", CMDstr, 0, (char *)TwaveCompressorTable},        // Twave compressor table definition reporting command
+  {"GTWCMODE",CMDstr, 0, (char *)Cmode},                       // Report Twave compressor mode
+  {"STWCMODE",CMDfunctionStr, 1, (char *)SetTWCmode},          // Set Twave compressor mode
+  {"GTWCORDER",CMDfunction, 0, (char *)GetTWCorder},           // Report Twave compressor order
+  {"STWCORDER",CMDfunction, 1, (char *)SetTWCorder},           // Set Twave compressor order
+  {"GTWCTD",CMDfloat, 0, (char *)&TDarray[0].Tdelay},          // Report Twave compressor trigger delay in mS
+  {"STWCTD",CMDfunctionStr, 1, (char *)SetTWCtriggerDelay},    // Set Twave compressor trigger delay in mS
+  {"GTWCTC",CMDfloat, 0, (char *)&TDarray[0].Tcompress},       // Report Twave compressor compress time in mS
+  {"STWCTC",CMDfunctionStr, 1, (char *)SetTWCcompressTime},    // Set Twave compressor compress time in mS
+  {"GTWCTN",CMDfloat, 0, (char *)&TDarray[0].Tnormal},         // Report Twave compressor normal time in mS
+  {"STWCTN",CMDfunctionStr, 1, (char *)SetTWCnormalTime},      // Set Twave compressor normal time in mS
+  {"GTWCTNC",CMDfloat, 0, (char *)&TDarray[0].TnoC},           // Report Twave compressor non compress time in mS
+  {"STWCTNC",CMDfunctionStr, 1, (char *)SetTWCnoncompressTime},// Set Twave compressor non compress time in mS
+  {"TWCTRG",CMDfunction, 0, (char *)TWCtrigger},               // Force a Twave compressor trigger
+  {"GTWCSW",CMDstr, 0, (char *)CswitchState},                  // Report Twave compressor Switch state
+  {"STWCSW",CMDfunctionStr, 1, (char *)SetTWCswitch},          // Set Twave compressor Switch state
+  // Twave configuration commands  
   {"STWCCLK", CMDbool, 1, (char *)&TDarray[0].UseCommonClock}, // Flag to indicate common clock mode for two Twave modules.
-  {"STWCMP", CMDbool, 1, (char *)&TD.CompressorEnabled}, // Flag to indicate Twave compressor mode is enabled.
+  {"STWCMP", CMDbool, 1, (char *)&TDarray[0].CompressorEnabled}, // Flag to indicate Twave compressor mode is enabled.
   // FAIMS commands
   {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},  // Set FAIMS RF harmonic positive peak readback calibration
   {"SRFHNCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharNcal},  // Set FAIMS RF harmonic negative peak readback calibration
-
   // Filament commands
   {"GFLENA", CMDfunction, 1, (char *)GetFilamentEnable},             // Get filament ON/OFF status
   {"SFLENA", CMDfunctionStr, 2, (char *)SetFilamentEnable},          // Set filament ON/OFF status
@@ -412,9 +433,17 @@ void ExecuteCommand(Commands *cmd, int arg1, int arg2, char *args1, char *args2,
           break;
       }
     case CMDfloat:
-      // arg1 is a pointer to an float value to send out the serial port
-      SendACKonly;
-      if (!SerialMute) serial->println(*(cmd->pointers.floatPtr));
+      if (cmd->NumArgs == 0)   // If true then write the value
+      {
+          SendACKonly;
+          if (!SerialMute) serial->println(*(cmd->pointers.floatPtr));
+      }
+      if (cmd->NumArgs == 1) 
+      {
+          *(cmd->pointers.floatPtr) = farg1;
+          SendACK;
+          break;
+      }
       break;
     case CMDfunction:
       if (cmd->NumArgs == 0) cmd->pointers.funcVoid();
@@ -439,14 +468,34 @@ void ExecuteCommand(Commands *cmd, int arg1, int arg2, char *args1, char *args2,
 // This function does not block and return -1 if there was nothing to do.
 int ProcessCommand(void)
 {
-  char *Token;
-  int  i;
+  char   *Token,ch;
+  int    i;
   static int   arg1, arg2;
   static float farg1;
   static enum  PCstates state;
   static int   CmdNum;
   static char  delimiter=0;
+  // The following variables are used for the long string reading mode
+  static char *lstrptr = NULL;
+  static int  lstrindex;
+  static bool lstrmode = false;
+  static int lstrmax;
 
+  if(lstrmode)
+  {
+    ch = RB_Get(&RB);
+    if(ch == 0xFF) return(0);
+    if(ch == ',') return(0);
+    if(ch == '\r') return(0);
+    if(ch == '\n')
+    {
+      lstrptr[lstrindex++] = 0;
+      lstrmode = false;
+      return(0);
+    }
+    lstrptr[lstrindex++] = ch;
+    return(0);
+  }
   Token = GetToken(false);
   if (Token == NULL) return (-1);
   if (Token[0] == 0) return (-1);
@@ -467,14 +516,25 @@ int ProcessCommand(void)
       if (strcmp(Token, "\n") == 0) break;
       CmdNum = -1;
       // Look for command in command table
-      for (i = 0; CmdArray[i].Cmd != 0; i++) if (strcmp(Token, CmdArray[i].Cmd) == 0) {
-          CmdNum = i;
-          break;
-        }
+      for (i = 0; CmdArray[i].Cmd != 0; i++) if (strcmp(Token, CmdArray[i].Cmd) == 0) 
+      {
+        CmdNum = i;
+        break;
+      }
       if (CmdNum == -1)
       {
         SetErrorCode(ERR_BADCMD);
         SendNAK;
+        break;
+      }
+      // If this is a long string read command type then init the vaiable to support saving the
+      // string directly to the provided pointer and exit. This function must not block
+      if (CmdArray[i].Type == CMDlongStr)
+      {
+        lstrptr = CmdArray[i].pointers.charPtr;
+        lstrindex = 0;
+        lstrmax = CmdArray[i].NumArgs;
+        lstrmode = true;
         break;
       }
       if (CmdArray[i].NumArgs > 0) state = PCarg1;
@@ -484,6 +544,7 @@ int ProcessCommand(void)
       Sarg1[0]=0;
       sscanf(Token, "%d", &arg1);
       sscanf(Token, "%s", Sarg1);
+      sscanf(Token, "%f", &farg1);
       if (CmdArray[CmdNum].NumArgs > 1) state = PCarg2;
       else state = PCend;
       break;

@@ -1112,7 +1112,7 @@ void ProcessTables(void)
             // Restart table if reqested by user
             if(StopCommanded)
             {
-                if(!SerialMute) serial->write("Table stoped by user\n");
+                if(!SerialMute) serial->println("Table stoped by user");
                 break;
             }
             TimerStatus = MPT.getStatus();
@@ -1122,7 +1122,6 @@ void ProcessTables(void)
               SWtriggered = false;
               // Here when triggered
                if(!SerialMute) serial->write("TBLTRIG\n");
-//               if(StopRequest == true) serial->write("+");
                if(StopRequest == true) break;
             }
             // Exit this loop when the timer is stoped.

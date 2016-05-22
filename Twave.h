@@ -7,6 +7,11 @@ extern DialogBox TwaveDialog;
 extern DialogBox TwaveDialog2;
 extern DialogBox TwaveCalMenu;
 
+extern char TwaveCompressorTable[];
+
+extern char Cmode[];
+extern char CswitchState[];
+
 enum CompressorState
 {
   CS_TRIG,
@@ -82,7 +87,7 @@ void ConfigureTrig(void);
 void ConfigureSwitch(void);
 void SetSwitch(void);
 
-// Serial command prototypes
+// Host command prototypes
 void TWAVEnumberOfChannels(void);
 void sendTWAVEsequence(int channel);
 void sendTWAVEfrequency(int channel);
@@ -96,6 +101,18 @@ void sendTWAVEguard2Voltage(int channel);
 void setTWAVEguard2Voltage(char *chan, char *voltage);
 void getTWAVEdir(int channe);
 void setTWAVEdir(char *chan, char *dirstr);
+
+// Compressor host command prototypes
+void SetTWCmode(char *mode);
+void GetTWCorder(void);
+bool RangeTest(DialogBoxEntry *des, char *EntryName, float fval);
+void SetTWCorder(int ival);
+void SetTWCtriggerDelay(char *str);
+void SetTWCcompressTime(char *str);
+void SetTWCnormalTime(char *str);
+void SetTWCnoncompressTime(char *str);
+void TWCtrigger(void);
+void SetTWCswitch(char *mode);
 
 #endif
 
