@@ -36,20 +36,33 @@ int BurstCount = 100;
 int CurrentCount;
 bool BurstQueued = false;
 
-DIOops  dioops[8] = {DI0,0,false,false,0,false,0,
-                     DI1,0,false,false,0,false,0,
-                     DI2,0,false,false,0,false,0,
-                     DI3,0,false,false,0,false,0,
-                     DI4,0,false,false,0,false,0,
-                     DI5,0,false,false,0,false,0,
-                     DI6,0,false,false,0,false,0,
-                     DI7,0,false,false,0,false,0
+DIOops  dioops[8] = {DI0,0,false,false,0,false,0,NULL,
+                     DI1,0,false,false,0,false,0,NULL,
+                     DI2,0,false,false,0,false,0,NULL,
+                     DI3,0,false,false,0,false,0,NULL,
+                     DI4,0,false,false,0,false,0,NULL,
+                     DI5,0,false,false,0,false,0,NULL,
+                     DI6,0,false,false,0,false,0,NULL,
+                     DI7,0,false,false,0,false,0,NULL
                      };
 
 MIPStimer FreqBurst(3);
 
 void FreqBurstISR()
 {
+  static int lfreq = -1;
+
+  if(lfreq == -1) lfreq = PulseFreq;
+  else
+  {
+    if(lfreq != PulseFreq)
+    {
+      // Here is frequency has changed so update the timer.
+      lfreq = PulseFreq;
+      FreqBurst.setFrequency((double)PulseFreq);
+      FreqBurst.start(-1, 0, false);
+    }
+  }
   TriggerOut(PulseWidth);
   if(BurstCount < 0) return;
   CurrentCount++;
@@ -301,7 +314,7 @@ void SelectBoard(int8_t Board)
   }
   AtomicBlock< Atomic_RestoreState > a_Block;
   if (Board == 1) pio->PIO_CODR = pin;    // Set pin low;
-  else pio->PIO_SODR = pin;    // Set pin high;
+  else pio->PIO_SODR = pin;               // Set pin high;
 }
 
 // This function sets all the IO lines as needed by MIPS.
@@ -1148,12 +1161,12 @@ void TriggerOut(char *cmd)
   String Cmd;
   int uS;
   
-  if (MIPSconfigData.Rev < 2)
-  {
-    SetErrorCode(ERR_NOTSUPPORTINREV);
-    SendNAK;
-    return;
-  }
+//  if (MIPSconfigData.Rev < 2)
+//  {
+//    SetErrorCode(ERR_NOTSUPPORTINREV);
+//    SendNAK;
+//    return;
+//  }
   Cmd = cmd;
   uS = Cmd.toInt();
   if(uS >0)
@@ -1273,9 +1286,10 @@ void DIOopsReport(void)
     {
       serial->print("DIC,");
       serial->print(chan);
-      if(dioops[i].ReportState == CHANGE) serial->println(",CHANGED");
-      if(dioops[i].ReportState == RISING) serial->println(",RISING");
-      if(dioops[i].ReportState == FALLING) serial->println(",FALLING");
+      if(dioops[i].ReportState == CHANGE) serial->print(",CHANGED,");
+      if(dioops[i].ReportState == RISING) serial->print(",RISING,");
+      if(dioops[i].ReportState == FALLING) serial->print(",FALLING,");
+      serial->println(millis());
       dioops[i].Changed = false;
     }
   }
@@ -1339,21 +1353,23 @@ void DIOreport(char *port, char *mode)
   }
   if ((strcmp(mode, "RISING") == 0) || (strcmp(mode, "FALLING") == 0) || (strcmp(mode, "CHANGE") == 0))
   {
+    if(dioops[i].DIh == NULL) dioops[i].DIh = new DIhandler;
     dioops[i].ReportState = CHANGE;
     if (strcmp(mode, "RISING") == 0) dioops[i].ReportState = RISING;
     if (strcmp(mode, "FALLING") == 0) dioops[i].ReportState = FALLING;
     dioops[i].Report = true;
     dioops[i].Changed = false;
-    if(!dioops[i].Mirror) attachInterrupt(digitalPinToInterrupt(dioops[i].DI),DIOopsISR,CHANGE);
+    if(!dioops[i].Mirror) dioops[i].DIh->attached(port[0],CHANGE,DIOopsISR);
     SendACK;
     return;
   }
   if (strcmp(mode, "OFF") == 0)
   {
+    if(dioops[i].DIh == NULL) dioops[i].DIh = new DIhandler;
     dioops[i].ReportState = 0;
     dioops[i].Report = false;
     dioops[i].Changed = false;
-    if(!dioops[i].Mirror) detachInterrupt(digitalPinToInterrupt(dioops[i].DI));
+    if(!dioops[i].Mirror) dioops[i].DIh->detach();
     SendACK;
     return;
   }
@@ -1377,16 +1393,18 @@ void DIOmirror(char *in, char *out)
   // If out is OFF then disable the mirror for this channel
   if (strcmp(out, "OFF") == 0)
   {
+    if(dioops[i].DIh == NULL) dioops[i].DIh = new DIhandler;
     dioops[i].Mirror = false;
-    if(!dioops[i].Report) detachInterrupt(digitalPinToInterrupt(dioops[i].DI));
+    if(!dioops[i].Report) dioops[i].DIh->detach();
     SendACK;
     return;
   }
   if((out[0] >= 'A') && (out[0] <= 'P'))
   {
+    if(dioops[i].DIh == NULL) dioops[i].DIh = new DIhandler;
     dioops[i].Mirror = true;
     dioops[i].DO = out[0];
-    if(!dioops[i].Report) attachInterrupt(digitalPinToInterrupt(dioops[i].DI),DIOopsISR,CHANGE);
+    if(!dioops[i].Report) dioops[i].DIh->attached(in[0],CHANGE,DIOopsISR);
     SendACK;
     return;
   }
@@ -1394,3 +1412,58 @@ void DIOmirror(char *in, char *out)
   SendNAK;
 }
 
+// Laser Shutter control functions for Mike Belov's system
+/*
+void ShutterOpen(void)
+{
+  // Shutter to connected to output G, this interrupt will set G high
+  // Set the image bits
+  SDIO_Set_Image('G', '1');
+  // Send to the hardware
+  DOrefresh;
+  // Toggle LDAC
+  PulseLDAC;
+  UpdateDigitialOutputArray();
+  ShutterOpened = true;
+}
+
+void ShutterClose(void)
+{
+  // Shutter to connected to output G, this interrupt will set G low
+  // Set the image bits
+  SDIO_Set_Image('G', '0');
+  // Send to the hardware
+  DOrefresh;
+  // Toggle LDAC
+  PulseLDAC;
+  UpdateDigitialOutputArray();
+  ShutterClosed = true;
+}
+
+// This function is called to enable (TRUE) or disable (FALSE) the shutter
+// If TRUE then the Q and R inputs are setup for positive edge trigger. 
+// If false the interrupts are removed.
+void ShutterEnable(char *state)
+{
+  if ((strcmp(state, "TRUE") !=0) && (strcmp(state, "FALSE") != 0))
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;
+  }
+  SendACKonly;
+  if (strcmp(state, "TRUE") == 0)
+  {
+    // Set up Q and R inputs for positive edge trigger
+    attachInterrupt(DI0, ShutterOpen, RISING);
+    attachInterrupt(DI1, ShutterClose, RISING);
+  }
+  else
+  {
+    // Remove the interrupts from Q and R
+    detachInterrupt(DI0);
+    detachInterrupt(DI1);
+  }
+}
+
+*/

@@ -291,6 +291,17 @@
 //  V1.47, May 21, 2016
 //      1.) Add new table driven compressor mode
 //      2.) Added all compressor host commands
+//  V1.48, June 6, 2016
+//      1.) Updated the DIO special operations and the table trigger to use the DIhandler object.
+//          This allows the two capabilities to share an input channel.
+//  V1.49, June 17, 2016
+//      1.) Pulse output A when the scan is started to 10mS.
+//  V1.50, June 19, 2016
+//      1.) Added SOFTLDAC command to allow forcing software LDAC reguardless of MIPS version.
+//      2.) Added Twave compressor commands to support voltage and time setting in compression table. Only support whole numbers at this point.
+//          V,v,c,n,t are new commands.
+//  V1.51, June 20, 2016
+//      1.) Fixed a bug that prevented you from changing the frequency of a running clock.
 //
 // Couple of issues to resolve
 //    1.) External trigger lockup / missing trigger setup
@@ -365,7 +376,7 @@ bool DisableDisplay = false;
 bool LEDoverride = false;
 int  LEDstate = 0;
 
-char Version[] = "Version 1.47, May 21, 2016";
+char Version[] = "Version 1.51, June 20, 2016";
 
 // ThreadController that will controll all threads
 ThreadController control = ThreadController();
@@ -927,17 +938,17 @@ void ScanHardware(void)
 void ProcessSerial(void)
 {
   // Put serial received characters in the input ring buffer
-  if (SerialUSB.available() > 0) 
+  while (SerialUSB.available() > 0) 
   {
     serial = &SerialUSB;
     PutCh(SerialUSB.read());
   }
-  if (Serial.available() > 0) 
+  while (Serial.available() > 0) 
   {
     serial = &Serial;
     PutCh(Serial.read());
   }
-//  if (Serial1.available() > 0) 
+//  while (Serial1.available() > 0) 
 //  {
 //    serial = &Serial1;
 //    PutCh(Serial1.read());

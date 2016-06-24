@@ -686,6 +686,22 @@ void FAIMSDCbiasControl(void)
       // If we are not currently scanning then init the scan mode and start.
       if (!FAIMSscanning)
       {
+        // Pulse output A to trigger a mass spec, added 6/17/2016
+        // Set output A
+        // Set the image bits
+        SDIO_Set_Image('A', '1');
+        // Send to the hardware
+        DOrefresh;
+        // Toggle LDAC
+        PulseLDAC;
+        delay(10);
+        // Reset output A
+        // Set the image bits
+        SDIO_Set_Image('A', '0');
+        // Send to the hardware
+        DOrefresh;
+        // Toggle LDAC
+        PulseLDAC;
         // Setup the scanning parameters
         ScanTime = 0;
         StartTime = millis();

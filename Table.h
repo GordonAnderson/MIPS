@@ -78,8 +78,9 @@ typedef struct
 
 extern enum TableModes  TableMode;
 extern bool TasksEnabled;
-extern int InterTableDelay;
+extern int  InterTableDelay;
 extern bool ValueChange;
+extern volatile bool softLDAC;
 
 // ProcessEntry return codes
 #define PEprocessed 1

@@ -91,7 +91,7 @@ int       TWboardAddress[2] = { -1, -1};     // Contains board A and B addresses
 // To select the hardware board do the following: SelectBoard(TWboardAddress[SelectedTwaveBoard]);
 TwaveData TD;
 
-char TwaveCompressorTable[100] = "N10C3";
+char TwaveCompressorTable[100] = "C";
 
 DIhandler *DIdirTW[2];
 void (*TWdirISRs[2])(void) = {TW_1_DIR_ISR, TW_2_DIR_ISR};
@@ -997,7 +997,7 @@ void sendTWAVEpulseVoltage(int channel)
   if (!SerialMute) serial->println(TDarray[index].TWCD[0].VoltageSetpoint);
 }
 
-// Set the TWAVE pulse voltage level
+// Set the TWAVE pulse voltage level. This function is called from the serial processor.
 void setTWAVEpulseVoltage(char *chan, char *voltage)
 {
   int channel, index;
@@ -1181,7 +1181,7 @@ DialogBoxEntry CompressorEntries[] = {
   {" Mode"                , 0, 1, D_LIST   , 0,  0, 8, 15, false, CmodeList, Cmode, NULL, UpdateMode},
   {" Order"               , 0, 2, D_INT8   , 0, 127, 1, 20, false, "%3d", &TD.Corder, NULL, UpdateMode},
   {" Compression table"   , 0, 3, D_TITLE  , 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
-  {" "                    , 0, 4, D_STRING , 0, 2, 0, 2, false, "%.20s", TwaveCompressorTable, NULL, NULL},
+  {" "                    , 0, 4, D_STRING , 0, 2, 0, 2, false, "%-20.20s", TwaveCompressorTable, NULL, NULL},
 //{" Num passes"          , 0, 3, D_INT8   , 1, 50, 1, 21, false, "%2d", &TD.NumPasses, NULL, NULL},
 //{" Compress Nth"        , 0, 4, D_INT8   , 1, 20, 1, 21, false, "%2d", &TD.CNth, NULL, NULL},
   {" Trig delay, mS"      , 0, 5, D_FLOAT  , 0.1, 999, 0.1, 18, false, "%5.1f", &TD.Tdelay, NULL, NULL},
@@ -1340,8 +1340,17 @@ void CompressorTriggerISR(void)
 //                        'S' for switch control, 0 to close, 1 to open
 //                        'O' order, 0 to 127 are valid values
 // If the init is true that the table pointers are reset to the start and the function return 0;
+//
+// June 19, 2017. Add the following commands:
+//    'V' for TW1 voltage in units of volts, has to be whole numbers
+//    'v' for TW2 voltage in units of volts, has to be whole numbers
+//    'c' for compress time in milliseconds
+//    'n' for normal time in a compress cycle
+//    't' for non compress cycle time
+//    
 char GetNextOperationFromTable(bool init)
 {
+  int index;
   static int tblindex=0;
   static char OP;
   static int count = 0;
@@ -1371,6 +1380,7 @@ char GetNextOperationFromTable(bool init)
         count = int(TwaveCompressorTable[tblindex++] - '0');
         while(isDigit(TwaveCompressorTable[tblindex])) count = count * 10 + int(TwaveCompressorTable[tblindex++] - '0');
       }
+      break;
     }
     if((OP=='N')||(OP=='C'))
     {
@@ -1391,6 +1401,47 @@ char GetNextOperationFromTable(bool init)
          TD.Corder = count;
          UpdateMode();
       }
+    }
+    if(OP == 'V')
+    {
+      index = GetTwaveIndex(1);
+      if (index != -1)
+      {
+        if((count > 7) && (count <= 100))
+        {
+           if (index == SelectedTwaveModule) TD.TWCD[0].VoltageSetpoint = count;
+           TDarray[index].TWCD[0].VoltageSetpoint = count;   
+           SetPulseVoltage(0);  
+        }   
+      }
+    }
+    if(OP == 'v')
+    {
+      index = GetTwaveIndex(2);
+      if (index != -1)
+      {
+        if((count > 7) && (count <= 100))
+        {
+           if (index == SelectedTwaveModule) TD.TWCD[0].VoltageSetpoint = count;
+           TDarray[index].TWCD[0].VoltageSetpoint = count;   
+           SetPulseVoltage(1);  
+        }   
+      }      
+    }
+    if(OP == 'c')
+    {
+      TD.Tcompress = TDarray[0].Tcompress = count;
+      C_Tc  = (TDarray[0].Tcompress / 1000.0) * C_clock;
+    }
+    if(OP == 'n')
+    {
+      TD.Tnormal = TDarray[0].Tnormal = count;
+      C_Tn  = (TDarray[0].Tnormal / 1000.0) * C_clock;
+    }
+    if(OP == 't')
+    {
+      TD.TnoC = TDarray[0].TnoC = count;
+      C_Tnc = (TDarray[0].TnoC / 1000.0) * C_clock;
     }
   }
 }

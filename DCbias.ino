@@ -371,7 +371,7 @@ float DCbiasCounts2Value(int chan, int counts)
 void DCbiasDACupdate(int chan, int counts)
 {
   int brd = -1;
-  
+
   if(counts == -1) return;
   if(chan < 8)
   {

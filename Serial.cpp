@@ -82,6 +82,9 @@ Commands  CmdArray[] = 	{
   {"LEDOVRD", CMDbool, 1, (char *)&LEDoverride},               // Override the LED operation is true, always false on startup
   {"LED",  CMDint, 1, (char *)&LEDstate},                      // Define the LEDs state you are looking for.
   {"DSPOFF", CMDbool, 1, (char *)&DisableDisplay},             // Print the UseAnalog flag, true or false
+  // Commands added to support shutter control for Mike Belov.
+  // {"SHUTTERCTRL", CMDfunctionStr, 1, (char *)ShutterEnable}, // TRUE or FALSE to enable or disable shutter control
+
   // Clock generation functions
   {"GWIDTH",  CMDint, 0, (char *)&PulseWidth},                // Report the pulse width in microseconds
   {"SWIDTH",  CMDint, 1, (char *)&PulseWidth},                // Set the pulse width in microseconds
@@ -142,6 +145,7 @@ Commands  CmdArray[] = 	{
   {"GTBLVLT", CMDfunction, 2, (char *)GetTableEntryValue},// Get a value from a loaded table
   {"STBLCNT", CMDfun2int1flt, 3, (char *)SetTableEntryCount}, // Set a count value in a loaded table
   {"STBLDLY", CMDint, 1, (char *)&InterTableDelay}, // Defines the inter table delay in milli seconds
+  {"SOFTLDAC",CMDbool, 1, (char *)&softLDAC},       // TRUE or FALSE, set to TRUE to force the used of software LDAC
   // Macro commands
   {"MRECORD", CMDfunctionStr, 1, (char *) MacroRecord},    // Turn on macro recording into the filename argument
   {"MSTOP", CMDfunction, 0, (char *) MacroStop},           // Stop macro recording and close the file
@@ -180,7 +184,7 @@ Commands  CmdArray[] = 	{
   {"GTWCSW",CMDstr, 0, (char *)CswitchState},                  // Report Twave compressor Switch state
   {"STWCSW",CMDfunctionStr, 1, (char *)SetTWCswitch},          // Set Twave compressor Switch state
   // Twave configuration commands  
-  {"STWCCLK", CMDbool, 1, (char *)&TDarray[0].UseCommonClock}, // Flag to indicate common clock mode for two Twave modules.
+  {"STWCCLK", CMDbool, 1, (char *)&TDarray[0].UseCommonClock},   // Flag to indicate common clock mode for two Twave modules.
   {"STWCMP", CMDbool, 1, (char *)&TDarray[0].CompressorEnabled}, // Flag to indicate Twave compressor mode is enabled.
   // FAIMS commands
   {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},  // Set FAIMS RF harmonic positive peak readback calibration
@@ -484,7 +488,7 @@ int ProcessCommand(void)
   if(lstrmode)
   {
     ch = RB_Get(&RB);
-    if(ch == 0xFF) return(0);
+    if(ch == 0xFF) return(-1);
     if(ch == ',') return(0);
     if(ch == '\r') return(0);
     if(ch == '\n')

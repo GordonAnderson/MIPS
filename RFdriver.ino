@@ -391,8 +391,15 @@ void RFdriver_loop(void)
       if(RFDD.Rev > 1)
       {
         // Convert to engineering units for the Linear tech level sensors. Need 2nd order correction, y = 2x10^6 X^2 + 0.0145 X + 28.33
+        // This correction used with new small RF head. Installed first on Mike belovs system.
         Pv = ((float)(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan]) * (float)(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan])) * 2e-6 - (float)(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan]) * 0.0145 + 28.33;
         Nv = ((float)(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan]) * (float)(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan])) * 2e-6 - (float)(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan]) * 0.0145 + 28.33;
+        // Convert to engineering units for the Linear tech level sensors. Need 2nd order correction, y = 0.0011 X^2 + 0.1716 X - 42.853
+        // This correct used on high power RF heads, the above correct did not work for some reason. Need to figure out a better way to add these updates.
+//        Pv = Counts2Value(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan], &RFDD.RFCD[i].RFpADCchan);
+//        Pv = Pv * Pv * (0.00113) + Pv * 0.1716 - 42.853;
+//        Nv = Counts2Value(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan], &RFDD.RFCD[i].RFnADCchan);
+//        Nv = Nv * Nv * (0.0011) + Nv * 0.1716 - 42.853;
         if (RFpVpps[SelectedRFBoard][i] == 0) RFpVpps[SelectedRFBoard][i] = Pv;
         if (RFnVpps[SelectedRFBoard][i] == 0) RFnVpps[SelectedRFBoard][i] = Nv;
       }

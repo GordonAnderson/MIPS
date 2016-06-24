@@ -214,9 +214,11 @@
 // STBLTRG,NEG
 // STBLCLK,10500000
 // STBLDAT;136500:1:6,189000:1:0,305500:1:-9,337000:1:3,589500:1:2.5,594500:1:2,5000000:1:2;
-// STBLDAT;0:[1:10,10000:1:25:A:1,30000:1:5:A:0,30100:1:5:A:0];
+// STBLDAT;0:[1:1000,10000:1:25:A:1,30000:1:5:A:0,30100:1:5:A:0];
 // SMOD,TBL
 //
+// Timing tests
+// STBLDAT;0:[1:100000,100:1:25,1000:1:5,2000:];
 //
 // Testing pulse sequences
 // STBLDAT;0:[1:10,1000:1:25:A:1,3000:1:5:A:0];
@@ -236,6 +238,7 @@
 // STBLDAT;0:[1:100,300:1:10,400:1:0,401:];
 //
 // STBLDAT;0:[1:1000,0:A:0,5:A:1,10:A:0];
+// STBLDAT;0:[1:1000,0:A:0,500:A:1,10000:A:0];
 //
 // Issues/bugs
 //  1.) Change the table memory management to dynamically allocate the space needed, do not allocate a fixed 
@@ -281,6 +284,7 @@
 #include <Thread.h>
 #include <ThreadController.h>
 #include <MIPStimer.h>
+#include <DIhandler.h>
 #include "AtomicBlock.h"
 
 #if defined(__SAM3X8E__)
@@ -313,17 +317,21 @@ volatile bool Aborted = false;        // Set when an abort command is received
 volatile bool LOCrequest = false;     // Set when requested to enter local mode
 volatile bool StopRequest;            // Used by the realtime processing to stop the timer at the end of its cycle
 volatile bool StopCommanded;          // Flag set by the serial command TBLSTOP, stops the table and remains in table mode
-//volatile bool TableStopped = false;   // Set to true when the table completes
 volatile bool TableAdv = false;       // If this flag is true then the table number will be advanced to the next table
                                       // after every trigger
 volatile bool SWtriggered = false;
 volatile bool TableOnce = false;      // If true the table will play one time then the mode will return to local
 
+volatile bool softLDAC = false;       // If true forces the use of software LDAC
+
 bool ValueChange = false;
 
 bool TasksEnabled = false;            // Setting this flag to tue will enable all tasks in table mode
+bool TableTriggered = false;          // This flag is set when the table is triggered and reset when its complete
 
 int InterTableDelay = 3;
+
+DIhandler DIhTrig;
 
 enum TriggerModes TriggerMode = SW;
 enum ClockModes   ClockMode   = MCK128;
@@ -615,7 +623,7 @@ void SWTableTrg(void)
     // If there is a update at count 0 then fire LDAC and setup for the next event
     if(MPT.getRAcounter() == 0)
     {
-      if(MIPSconfigData.Rev <= 1) // Rev 1 used software control of LDAC
+      if((MIPSconfigData.Rev <= 1) || (softLDAC)) // Rev 1 used software control of LDAC
       {
         LDAClow;
         LDAChigh;
@@ -1119,6 +1127,7 @@ void ProcessTables(void)
             // If the timer has been triggered update the displayed status
             if(((TimerStatus & TC_SR_ETRGS)!=0) || SWtriggered)
             {
+              TableTriggered = true;
               SWtriggered = false;
               // Here when triggered
                if(!SerialMute) serial->write("TBLTRIG\n");
@@ -1128,6 +1137,7 @@ void ProcessTables(void)
             if(((TimerStatus & TC_SR_CLKSTA)==0)) // || TableStopped)
             {
                 // Issue the table complete message
+                TableTriggered = false;
                 if(!SerialMute) serial->write("TBLCMPLT\n");
                 // Exit the loop and setup for another trigger
                 break;
@@ -1151,6 +1161,7 @@ void ProcessTables(void)
             #endif
             // Process any serial commands
             ProcessSerial();
+            //if (serialEventRun) serialEventRun();   // This happens when loop returns, do it here to imitate loop
             // If full command processing in table mode is enabled then run tasks.
             if(TasksEnabled)
             {
@@ -1177,8 +1188,10 @@ void ProcessTables(void)
         // Advance to next table if advance mode is enabled
         AdvanceTableNumber();
         if(StopCommanded) StopCommanded = false;
+        TableTriggered = false;
     }
     // Clean up and exit
+    TableTriggered = false;
     StopCommanded = false;
     TableReady = false;
     LOCrequest = false;
@@ -1223,6 +1236,14 @@ void SetupTimer(void)
     // Need to make sure the any pending interrupts are cleared on TRIGGER. So if we are in a hardware
     // triggered mode we will first enable the trigger to a dummy ISR and then detach and reattached to the
     // real ISR. We will wait a few microseconds for the interrupt to clear.
+    if(TriggerMode == EDGE) {DIhTrig.attached('R', CHANGE, Dummy_ISR); delayMicroseconds(10); DIhTrig.detach();}
+    if(TriggerMode == POS)  {DIhTrig.attached('R', RISING, Dummy_ISR); delayMicroseconds(10); DIhTrig.detach();}
+    if(TriggerMode == NEG)  {DIhTrig.attached('R', FALLING, Dummy_ISR); delayMicroseconds(10); DIhTrig.detach();}
+    if(TriggerMode == SW)   {DIhTrig.detach(); MPT.setTrigger(TC_CMR_EEVTEDG_NONE);}
+    if(TriggerMode == EDGE) {DIhTrig.attached('R', CHANGE, Trigger_ISR); MPT.setTrigger(TC_CMR_EEVTEDG_EDGE);}
+    if(TriggerMode == POS)  {DIhTrig.attached('R', RISING, Trigger_ISR); MPT.setTrigger(TC_CMR_EEVTEDG_RISING);}
+    if(TriggerMode == NEG)  {DIhTrig.attached('R', FALLING, Trigger_ISR); MPT.setTrigger(TC_CMR_EEVTEDG_FALLING);}
+    /*
     if(TriggerMode == EDGE) {attachInterrupt(TRIGGER, Dummy_ISR, CHANGE); delayMicroseconds(10); detachInterrupt(TRIGGER);}
     if(TriggerMode == POS)  {attachInterrupt(TRIGGER, Dummy_ISR, RISING); delayMicroseconds(10); detachInterrupt(TRIGGER);}
     if(TriggerMode == NEG)  {attachInterrupt(TRIGGER, Dummy_ISR, FALLING); delayMicroseconds(10); detachInterrupt(TRIGGER);}
@@ -1230,6 +1251,7 @@ void SetupTimer(void)
     if(TriggerMode == EDGE) {attachInterrupt(TRIGGER, Trigger_ISR, CHANGE); MPT.setTrigger(TC_CMR_EEVTEDG_EDGE);}
     if(TriggerMode == POS)  {attachInterrupt(TRIGGER, Trigger_ISR, RISING); MPT.setTrigger(TC_CMR_EEVTEDG_RISING);}
     if(TriggerMode == NEG)  {attachInterrupt(TRIGGER, Trigger_ISR, FALLING); MPT.setTrigger(TC_CMR_EEVTEDG_FALLING);}
+    */
     if(ClockMode == EXT)    MPT.setClock(TC_CMR_TCCLKS_XC2);
     if(ClockMode == MCK2)   MPT.setClock(TC_CMR_TCCLKS_TIMER_CLOCK1);
     if(ClockMode == MCK8)   MPT.setClock(TC_CMR_TCCLKS_TIMER_CLOCK2);
@@ -1239,7 +1261,7 @@ void SetupTimer(void)
     MPT.attachInterruptRA(RAmatch_Handler);
     MPT.attachInterrupt(RCmatch_Handler);
     // Drive LDAC high
-    if(MIPSconfigData.Rev > 1)
+    if((MIPSconfigData.Rev > 1) && (!softLDAC))
     {
        LDACrelease;
     }
@@ -1251,6 +1273,10 @@ void SetupTimer(void)
     MPT.setRC(Theader->MaxCount);
     // Setup table variables
 //    MPT.enableTrigger();
+
+//    if((MIPSconfigData.Rev <= 1) || (softLDAC)) MPT.setTIOAeffectNOIO(TEheader->Count,TC_CMR_ACPA_TOGGLE);
+//    else MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE);
+
     SetupNextEntry();
     MPT.enableTrigger();
 }
@@ -1270,7 +1296,7 @@ void StopTimer(void)
     // Exit and do nothing if no tables are loaded
     if(TablesLoaded[CT] <= 0) return;
 //    serial->print("-");
-    detachInterrupt(TRIGGER);
+    DIhTrig.detach();
     // Stop the timer
     MPT.stop();
 //    TableStopped = true;
@@ -1318,10 +1344,14 @@ void AdvanceEntryPointer(void)
 void SetupNextEntry(void)
 {
     int   i;
-    
+    bool  DIOchange=false;
+
     // Timer count where these values are set
-    if(MIPSconfigData.Rev <= 1) MPT.setTIOAeffectNOIO(TEheader->Count,TC_CMR_ACPA_TOGGLE);
+    if((MIPSconfigData.Rev <= 1) || (softLDAC)) MPT.setTIOAeffectNOIO(TEheader->Count,TC_CMR_ACPA_TOGGLE);
     else MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE);
+
+//    MPT.setRA(TEheader->Count);
+    
     MPT.setRC(Theader->MaxCount);
     // Process the current entry, all channels
     while(1)
@@ -1346,7 +1376,7 @@ void SetupNextEntry(void)
                     {
                         // All done so stop the timer
                         StopRequest = true;
-                        DOrefresh;   // Added Jan 15, 2015
+                        if(DIOchange) DOrefresh;   // Added Jan 15, 2015
                         return;
                     }
                     // Setup for the first event in the next table if there is a time 0
@@ -1355,11 +1385,8 @@ void SetupNextEntry(void)
                     if(TEheader->Count == 0)
                     {
                        // Update the DIO hardware if needed
-                       DOrefresh;
+                       if(DIOchange) DOrefresh;
                        SetupNextEntry();
-//                       if(MIPSconfigData.Rev <= 1) MPT.setTIOAeffectNOIO(TEheader->Count,TC_CMR_ACPA_TOGGLE);
-//                       else MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE);
-//                       MPT.setRC(Theader->MaxCount);
                        return;
                     }
                 }
@@ -1378,13 +1405,10 @@ void SetupNextEntry(void)
                        // Update the DIO hardware if needed
                        DOrefresh;
                        SetupNextEntry();
-//                       if(MIPSconfigData.Rev <= 1) MPT.setTIOAeffectNOIO(TEheader->Count,TC_CMR_ACPA_TOGGLE);
-//                       else MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE);
-//                       MPT.setRC(Theader->MaxCount);
                        return;
                     }
                 }
-                DOrefresh;
+                if(DIOchange) DOrefresh;
                 return;
             }
             // If Chan is 0 to 15 its a DC bias output so send to DAC
@@ -1392,7 +1416,10 @@ void SetupNextEntry(void)
               DCbiasDACupdate(Tentry[i].Chan, Tentry[i].Value);
             // if Chan is A through P its a DIO to process
             if((Tentry[i].Chan >= 'A') &&(Tentry[i].Chan <= 'P'))
+            {
+                DIOchange = true;
                 SDIO_Set_Image(Tentry[i].Chan,Tentry[i].Value);
+            }
             // if Chan is t then this is a trigger out pulse so queue it up for next ISR
             if(Tentry[i].Chan == 't') QueueTriggerOut(Tentry[i].Value);
             if(Tentry[i].Chan == 'b') QueueBurst(Tentry[i].Value);
@@ -1400,7 +1427,7 @@ void SetupNextEntry(void)
         break;
     }
     // Update the DIO hardware if needed
-    DOrefresh;
+    if(DIOchange) DOrefresh;
     TentryCount++;
     // Advance to next entry
     if(TentryCount < Theader->NumEntries)
@@ -1433,8 +1460,7 @@ void Trigger_ISR(void)
 {
    if(MPT.getRAcounter() == 0)
    {
-//   serial->print("*");
-     if(MIPSconfigData.Rev <= 1) // Rev 1 used software control of LDAC
+     if((MIPSconfigData.Rev <= 1) || (softLDAC))// Rev 1 used software control of LDAC
      {
        LDAClow;
        LDAChigh;
@@ -1444,7 +1470,6 @@ void Trigger_ISR(void)
   // Set trigger to software, this prevents hardware retriggering. Added Jan 14, 2015 GAA
 //  MPT.setTrigger(TC_CMR_EEVTEDG_NONE);
 //  detachInterrupt(TRIGGER);
-//  serial->print(".");
 }
 
 // This interrupt happens when the compare register matches the timer value. At this time the
@@ -1454,12 +1479,11 @@ void RAmatch_Handler(void)
   ValueChange = true;
   ProcessTriggerOut();
   ProcessBurst();
-  if(MIPSconfigData.Rev <= 1) // Rev 1 used software control of LDAC
+  if((MIPSconfigData.Rev <= 1) || (softLDAC)) // Rev 1 used software control of LDAC
   {
     LDAClow;
     LDAChigh;
   }
-//  if(StopRequest) return;
   SetupNextEntry();
 }
 
@@ -1480,7 +1504,7 @@ void RCmatch_Handler(void)
     {
       ProcessTriggerOut();
       ProcessBurst();
-      if(MIPSconfigData.Rev <= 1) // Rev 1 used software control of LDAC
+      if((MIPSconfigData.Rev <= 1) || (softLDAC)) // Rev 1 used software control of LDAC
       {
         LDAClow;
         LDAChigh;

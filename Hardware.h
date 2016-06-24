@@ -4,6 +4,8 @@
 #ifndef Hardware_h
 #define Hardware_h
 
+#include <DIhandler.h>
+
 extern int PulseWidth;
 extern int PulseFreq;
 extern int BurstCount;
@@ -58,6 +60,7 @@ typedef struct
   int    ReportState;  // RISING, FALLING, or CHANGE report flag
   bool   Mirror;       // True if this input is mirrored to an output
   char   DO;           // Digital output, i.e. A
+  DIhandler *DIh;      // Interrupt handler
 } DIOops;
 
 extern DIOops  dioops[8];
@@ -173,6 +176,7 @@ void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali, int8_t Cmd);
 int  MCP2300(int8_t adr, uint8_t bits);
 int  MCP2300(int8_t adr, uint8_t reg, uint8_t bits);
 int  MCP2300(int8_t adr, uint8_t reg, uint8_t *data);
+void SetAddress(int8_t addr);
 
 bool AcquireTWI(void);
 void ReleaseTWI(void);
@@ -187,6 +191,8 @@ void ADCread(int chan);
 void DIOopsReport(void);
 void DIOreport(char *port, char *mode);
 void DIOmirror(char *in, char *out);
+
+//void ShutterEnable(char *state);
 
 #endif
 
