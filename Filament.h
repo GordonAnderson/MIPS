@@ -53,8 +53,12 @@ typedef struct
   uint8_t ADCadr;            // 8 channel ADC used for readback
   uint8_t DACadr;            // 4 channel DAC, channel used for output control
   uint8_t EEPROMadr;
-  FilamentCycling FCyl[2];   // Data structures supporting the cycling function
+  FilamentCycling FCyl[2];   // Data structures supporting the cycling functionnt
+  int     iSense;            // Bias current sense resistor value. If non-zero then channel 8 of DCbias board is used for 
+                             // current monitoring.
 } FilamentData;
+
+extern FilamentData  FDarray[2];
 
 // Function prototypes
 void FilamentChannels(void);
@@ -82,6 +86,7 @@ void GetFilamentStatus(int channel);
 void SetFilamentStatus(char *chan, char *Status);
 
 void SetFilamentReporting(int channel, int period);
+void ReportBiasCurrent(void);
 
 #endif
 

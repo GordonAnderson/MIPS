@@ -27,6 +27,8 @@ Thread WiFiThread  = Thread();
 
 WiFiData wifidata = WiFi_Rev_1;
 
+Stream *WiFiSerial = &Serial1;
+
 char *StartModeList = "IDLE,CONNECT,AP";
 char STM[20] = "IDLE";
 
@@ -157,21 +159,21 @@ void Disconnect(void)
 {
   String res;
   
-  Serial.println("StoP");
-  Serial.flush();
+  WiFiSerial->println("StoP");
+  WiFiSerial->flush();
   delay(100);
-  Serial.println("DISCONNECT");
-  Serial.flush();
+  WiFiSerial->println("DISCONNECT");
+  WiFiSerial->flush();
   delay(100);
-  while (Serial.available()) Serial.read();
-  Serial.println("RESET");
-  Serial.flush();
+  while (WiFiSerial->available()) WiFiSerial->read();
+  WiFiSerial->println("RESET");
+  WiFiSerial->flush();
   delay(500);
-  while (Serial.available()) Serial.read();  
-  Serial.println("STATUS");
-  Serial.flush();
+  while (WiFiSerial->available()) WiFiSerial->read();  
+  WiFiSerial->println("STATUS");
+  WiFiSerial->flush();
   delay(100);
-  res = Serial.readStringUntil('\n');
+  res = WiFiSerial->readStringUntil('\n');
   strcpy(WFS, GetEntry(WiFiStatusList, res.toInt() + 1));
   strcpy(wifidata.IP,"");
 }
@@ -184,33 +186,35 @@ void AccessPoint(void)
   DisplayMessage("Access Point setup");
   Disconnect();
   // Send host name
-  Serial.print("HOST,");
-  Serial.println(wifidata.Host);
+  WiFiSerial->print("HOST,");
+  WiFiSerial->println(wifidata.Host);
   // Send SSID
-  Serial.print("SSID,");
-  Serial.println(wifidata.ssid);
+  WiFiSerial->print("SSID,");
+  WiFiSerial->println(wifidata.ssid);
   // Send password
-  Serial.print("PSWD,");
-  Serial.println(wifidata.password);
-  Serial.flush();
+  WiFiSerial->print("PSWD,");
+  WiFiSerial->println(wifidata.password);
   delay(100);
+  while (WiFiSerial->available()) WiFiSerial->read();
+  WiFiSerial->flush();
   // Set AP mode
-  Serial.println("AP");
-  Serial.flush();
-  delay(1000);
-  while (Serial.available()) Serial.read();
+  WiFiSerial->println("AP");
+  delay(2000);
+  while (WiFiSerial->available()) WiFiSerial->read();
+  WiFiSerial->flush();
+  while (WiFiSerial->available()) WiFiSerial->read();
   // Get the IP address from the interface
-  Serial.println("IP");
-  res = Serial.readStringUntil('\n');
+  WiFiSerial->println("IP");
+  res = WiFiSerial->readStringUntil('\n');
   strcpy(wifidata.IP, res.c_str());
-  Serial.println("MDNS");
-  Serial.flush();
+  WiFiSerial->println("MDNS");
   delay(100);
-  while (Serial.available()) Serial.read();
-  Serial.println("REPEAT");
-  Serial.flush();
+  WiFiSerial->flush();
+  WiFiSerial->println("REPEAT");
+  while (WiFiSerial->available()) WiFiSerial->read();
+  WiFiSerial->flush();
   delay(500);
-  while (Serial.available()) Serial.read();
+  while (WiFiSerial->available()) WiFiSerial->read();
   strcpy(WFS, GetEntry(WiFiStatusList, 8));
   DismissMessage();
 }
@@ -224,45 +228,45 @@ void Connect(void)
   DisplayMessage("Connecting to WiFi");
   Disconnect();
   // Send host name
-  Serial.print("HOST,");
-  Serial.println(wifidata.Host);
+  WiFiSerial->print("HOST,");
+  WiFiSerial->println(wifidata.Host);
   // Send SSID
-  Serial.print("SSID,");
-  Serial.println(wifidata.ssid);
+  WiFiSerial->print("SSID,");
+  WiFiSerial->println(wifidata.ssid);
   // Send password
-  Serial.print("PSWD,");
-  Serial.println(wifidata.password);
-  Serial.flush();
+  WiFiSerial->print("PSWD,");
+  WiFiSerial->println(wifidata.password);
+  WiFiSerial->flush();
   delay(100);
   // Connect
-  Serial.println("CONNECT");
-  Serial.flush();
+  WiFiSerial->println("CONNECT");
+  WiFiSerial->flush();
   delay(1000);
-  while (Serial.available()) Serial.read();
+  while (WiFiSerial->available()) WiFiSerial->read();
   // Loop looking for a connect indication. Try for a few seconds then give up
   for (i = 0; i < 20; i++)
   {
     WDT_Restart(WDT);
-    while (Serial.available()) Serial.read();
+    while (WiFiSerial->available()) WiFiSerial->read();
     // Send get status command
-    Serial.println("STATUS");
-    Serial.flush();
-    res = Serial.readStringUntil('\n');
+    WiFiSerial->println("STATUS");
+    WiFiSerial->flush();
+    res = WiFiSerial->readStringUntil('\n');
     if (res.toInt() == 3)
     {
       strcpy(WFS, GetEntry(WiFiStatusList, res.toInt() + 1));
       // Get the IP address from the interface
-      Serial.println("IP");
-      res = Serial.readStringUntil('\n');
+      WiFiSerial->println("IP");
+      res = WiFiSerial->readStringUntil('\n');
       strcpy(wifidata.IP, res.c_str());
-      Serial.println("MDNS");
-      Serial.flush();
+      WiFiSerial->println("MDNS");
+      WiFiSerial->flush();
       delay(100);
-      while (Serial.available()) Serial.read();
-      Serial.println("REPEAT");
-      Serial.flush();
+      while (WiFiSerial->available()) WiFiSerial->read();
+      WiFiSerial->println("REPEAT");
+      WiFiSerial->flush();
       delay(500);
-      while (Serial.available()) Serial.read();
+      while (WiFiSerial->available()) WiFiSerial->read();
       DismissMessage();
       return;
     }
@@ -280,18 +284,31 @@ void WiFi_init(void)
 
   RestorWiFiSettings(false);
 //  if(!wifidata.Enable) return;   // Exit if disabled
+
+//MIPSconfigData.UseWiFi=true;
+//wifidata.SerialPort = 1;
+
   if(!MIPSconfigData.UseWiFi) return;
   // Setup ther serial port.
-  Serial.begin(115200);
-  Serial.flush();
+  if(wifidata.SerialPort == 1)
+  {
+     Serial1.begin(115200);  
+     WiFiSerial = &Serial1;     
+  }
+  else
+  {
+     Serial.begin(115200);  
+     WiFiSerial = &Serial;  
+  }
+  WiFiSerial->flush();
   // Issue a stop and disconnect command in case the module in already connected
   Disconnect();
   // Test for the module using the GVER command and exit if not found.
-  Serial.println("GVER");
-  Serial.flush();                             // Send all data
+  WiFiSerial->println("GVER");
+  WiFiSerial->flush();                             // Send all data
   delay(10);
-  Serial.setTimeout(100);
-  res = Serial.readStringUntil('\n');
+  WiFiSerial->setTimeout(100);
+  res = WiFiSerial->readStringUntil('\n');
   if (!res.startsWith("MIPSnet Version ")) return;
 //  RestorWiFiSettings(false);
   // If found and a SSID is defined try to connect and setup the interface, only if enabled

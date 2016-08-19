@@ -47,6 +47,17 @@
 //                          power
 //                          Implement using a task scheduled to fire at the definded rate.
 //
+//  Add emision current monitoring and display. Added July 2016
+//    If the emission current flag is set then use the current sense resistor value and the voltage difference between setpoint
+//    and readback on channel 8 to calculate the emision current.
+//    Move ramp rate to display page 2 to make room on first page for emission current.
+//    Add flag for emission current monitoring and also add variable for sense resistor size.
+//    Need to figure out how to fix DC bias module. Its read back is a 500 uA load at 50 volts so if I make the sense resistor
+//    10K that will be a 5 volt drop at no load current. I think this will calibrate out so it may be ok, then I can just read
+//    setpoint - readback and devide by sense resistor to get emission current. This is how the code is designed.
+//    Use sense resistor value as the flag, if 0 no sense, other wise assume on channel 8 and display sense. Add sense resistor 
+//    command to MIPS, both set and read.
+//
 // Gordon Anderson
 // July 25, 2015
 //
@@ -96,6 +107,7 @@ float FsupplyV;
 float Fvoltage;
 float Fcurrent;
 float Fpower;
+float BiasCurrent;
 
 extern DialogBoxEntry FilamentEntriesPage2[];
 extern DialogBox FilamentCycleDialog;
@@ -105,7 +117,7 @@ DialogBoxEntry FilamentEntriesPage1[] = {
   {" Enable"             , 0, 2, D_ONOFF, 0, 1,  1, 20, false, NULL, &FCD.FilammentPwr, NULL, NULL},
   {" Current"            , 0, 3, D_FLOAT, 0, MaxFilCur, 0.01, 18, false, "%5.2f", &FCD.CurrentSetpoint, NULL, NULL},
   {" Voltage"            , 0, 4, D_FLOAT, .7, 5, 0.1, 18, false, "%5.2f", &FCD.FilamentVoltage, NULL, NULL},
-  {" Ramp rate"          , 0, 5, D_FLOAT, 0, 1, 0.01, 18, false, "%5.3f", &FCD.RampRate, NULL, NULL},
+  {" Bias I, uA"         , 0, 5, D_FLOAT, 0, 0, 0, 18, true, "%5.0f", &BiasCurrent, NULL, NULL},
   {" Supply V"           , 0, 6, D_FLOAT, 0, 0, 0, 18, true, "%5.2f", &FsupplyV, NULL, NULL},
   {" Filament V"         , 0, 7, D_FLOAT, 0, 0, 0, 18, true, "%5.2f", &Fvoltage, NULL, NULL},
   {" Filament I"         , 0, 8, D_FLOAT, 0, 0, 0, 18, true, "%5.2f", &Fcurrent, NULL, NULL},
@@ -121,7 +133,7 @@ char Fmode[8] = "Ictrl";
 DialogBoxEntry FilamentEntriesPage2[] = {
   {" Mode"               , 0, 1, D_LIST , 0, 0, 7, 16, false, FmodeList, Fmode, NULL, FmodeChange},
   {" Max power"          , 0, 2, D_FLOAT, 1, 12, 1, 18, false, "%5.0f", &FCD.MaxPower, NULL, NULL},
-
+  {" Ramp rate"          , 0, 3, D_FLOAT, 0, 1, 0.01, 18, false, "%5.3f", &FCD.RampRate, NULL, NULL},
   {" Cal Supply V"       , 0, 4, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalFilamentSupplyV, NULL},
   {" Cal Filament V"     , 0, 5, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalFilamentV, NULL},
   {" Cal Filament I"     , 0, 6, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalFilamentI, NULL},
@@ -309,6 +321,8 @@ void RestorFilamentSettings(void)
 // will enable the filament driver module.
 void Filament_init(int8_t Board)
 {
+  DialogBoxEntry *de;
+  
   // Flag the board as present
   FilamentBoards[Board] = true;
   // Set active board to board being inited
@@ -319,6 +333,13 @@ void Filament_init(int8_t Board)
   // Init the hardware here...
   pinMode(FDarray[Board].FCD[0].Fpwr, OUTPUT);
   pinMode(FDarray[Board].FCD[1].Fpwr, OUTPUT);
+  // If current sense resisance value is 0 then turn off the display
+  de = GetDialogEntries(FilamentEntriesPage1, " Bias I, uA");
+  if(de != NULL)
+  {
+    if(FDarray[Board].iSense == 0) de->Type = D_OFF;
+    else de->Type = D_FLOAT;
+  }
   // Define the initial selected channel as 0 and setup
   Fchannel = 1;
   SelectFilamentChannel();
@@ -467,6 +488,13 @@ void Filament_loop(void)
   FD.FCD[SelectedFilamentChan] = FCD;    // This stores any changes back to the selected channels data structure
   FD.FCyl[SelectedFilamentChan] = FCY;
   FilamentCyclying();
+  // If current sense resistance is not 0 then calculate the bias current
+  if(FDarray[0].iSense != 0)
+  {
+    if(DCbiasBoards[0]) b = 0;
+    else b = 1;
+    BiasCurrent = ((DCbDarray[b].DCCD[7].VoltageSetpoint - Readbacks[b][7]) / float(FDarray[0].iSense)) * 1000000.0;
+  }
   // Loop through all the filament channels and output all the control parmaeters and update
   // all readback values
   for (b = 0; b < 2; b++)
@@ -990,5 +1018,11 @@ void SetFilamentReporting(int channel, int period)
   }
 }
 
+// Report filament bias current
+void ReportBiasCurrent(void)
+{
+  SendACKonly;
+  if (!SerialMute) serial->println(BiasCurrent);
+}
 
 

@@ -731,6 +731,41 @@ void DCbiasSet(char *Chan, char *Value)
   SendACK;
 }
 
+// This command adds a delta value to all the DCbias channels in the MIPS system.
+// If any channel is out of range an error is returned.
+void DCbiasDelta(char *Value)
+{
+  DCbiasData *DCbData;
+  int        chan;
+  float      fVal,value;
+  
+  // Scan the parameters
+  sscanf(Value,"%f",&value);
+  // Check the range on all the channels, exit if any errors are detected
+  for(chan = 1; chan <= NumberOfDCChannels; chan++)
+  {
+     if((DCbData = GetDCbiasDataPtr(chan)) == NULL) return;
+     // Exit if value range error
+     fVal = DCbData->DCCD[(chan-1) & 0x07].VoltageSetpoint;
+     fVal += value;
+     if(!CheckValue(DCbData, fVal - DCbData->DCoffset.VoltageSetpoint)) return;
+  }
+  // Now set the values in the boards data structure and let the processing
+  // loop update the outputs.
+  for(chan = 1; chan <= NumberOfDCChannels; chan++)
+  {
+    DCbData = GetDCbiasDataPtr(chan);
+    fVal = DCbData->DCCD[(chan-1) & 0x07].VoltageSetpoint;
+    fVal += value;
+    if(abs(DCbData->DCCD[(chan-1) & 0x07].VoltageSetpoint - fVal) > 1.0 ) DelayMonitoring();
+    DCbData->DCCD[(chan-1) & 0x07].VoltageSetpoint = value;
+    // If this channel is being displayed in a dialog then refresh the display
+    if(GetDCbiasBoard(chan) == SelectedDCBoard) dcbd.DCCD[(chan-1) & 0x07].VoltageSetpoint = fVal;
+  }
+  SendACK;
+}
+
+
 // Read the selected channel requested voltage
 void DCbiasRead(int chan, float *fVal)
 {

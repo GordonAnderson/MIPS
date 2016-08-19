@@ -54,8 +54,9 @@ extern bool NormalStartup;
 // Use the timer channel 6 for a clock in rev 1.0 to get to lower frequencies.
 // Also used on rev 2 due to issues with the clock chip.
 // This timer is also used to generate the software clock in the compressor mode.
+
 MIPStimer TwaveClk(6);
-//MIPStimer TwaveClk(4);
+MIPStimer CompressorTimer(4);
 
 // DAC channel assignment
 #define  DAC_PulseVoltage    0
@@ -424,6 +425,17 @@ void SetPulseVoltage(int ModuleIndex)
   if (TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint < (TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPulseVoltage)) TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint = TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPulseVoltage;
   // Use calibration data to convert engineering units requested to DAC counts.
   DACcounts = Value2Counts(TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint, &TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].DCctrl);
+  AD5625(TDarray[ModuleIndex].DACadr, TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].DCctrl.Chan, DACcounts);
+}
+
+void SetPulseVoltage(int ModuleIndex, float voltage)
+{
+  int DACcounts;
+
+  //  SelectBoard(TWboardAddress[SelectedTwaveBoard]);
+  if (TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint < (TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPulseVoltage)) TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint = TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPulseVoltage;
+  // Use calibration data to convert engineering units requested to DAC counts.
+  DACcounts = Value2Counts(voltage, &TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].DCctrl);
   AD5625(TDarray[ModuleIndex].DACadr, TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].DCctrl.Chan, DACcounts);
 }
 
@@ -1179,15 +1191,13 @@ char Cmode[12]  = "Normal";
 
 DialogBoxEntry CompressorEntries[] = {
   {" Mode"                , 0, 1, D_LIST   , 0,  0, 8, 15, false, CmodeList, Cmode, NULL, UpdateMode},
-  {" Order"               , 0, 2, D_INT8   , 0, 127, 1, 20, false, "%3d", &TD.Corder, NULL, UpdateMode},
+  {" Order"               , 0, 2, D_UINT8  , 0, 255, 1, 20, false, "%3d", &TD.Corder, NULL, UpdateMode},
   {" Compression table"   , 0, 3, D_TITLE  , 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
   {" "                    , 0, 4, D_STRING , 0, 2, 0, 2, false, "%-20.20s", TwaveCompressorTable, NULL, NULL},
-//{" Num passes"          , 0, 3, D_INT8   , 1, 50, 1, 21, false, "%2d", &TD.NumPasses, NULL, NULL},
-//{" Compress Nth"        , 0, 4, D_INT8   , 1, 20, 1, 21, false, "%2d", &TD.CNth, NULL, NULL},
-  {" Trig delay, mS"      , 0, 5, D_FLOAT  , 0.1, 999, 0.1, 18, false, "%5.1f", &TD.Tdelay, NULL, NULL},
-  {" Compress t, mS"      , 0, 6, D_FLOAT  , 0.1, 999, 0.1, 18, false, "%5.1f", &TD.Tcompress, NULL, NULL},
-  {" Normal t, mS"        , 0, 7, D_FLOAT  , 0.1, 999, 0.1, 18, false, "%5.1f", &TD.Tnormal, NULL, NULL},
-  {" Non Comp t, mS"      , 0, 8, D_FLOAT  , 0.1, 999, 0.1, 18, false, "%5.1f", &TD.TnoC, NULL, NULL},
+  {" Trig delay, mS"      , 0, 5, D_FLOAT  , 0.1, 99999, 0.1, 16, false, "%7.1f", &TD.Tdelay, NULL, NULL},
+  {" Compress t, mS"      , 0, 6, D_FLOAT  , 0.1, 99999, 0.1, 16, false, "%7.1f", &TD.Tcompress, NULL, NULL},
+  {" Normal t, mS"        , 0, 7, D_FLOAT  , 0.1, 99999, 0.1, 16, false, "%7.1f", &TD.Tnormal, NULL, NULL},
+  {" Non Comp t, mS"      , 0, 8, D_FLOAT  , 0.1, 99999, 0.1, 16, false, "%7.1f", &TD.TnoC, NULL, NULL},
   {" Next page"           , 0, 10, D_PAGE  , 0, 0, 0, 0, false, NULL, &CompressorEntries2, NULL, NULL},
   {" Return to Twave menu", 0, 11, D_DIALOG, 0, 0, 0, 0, false, NULL, &TwaveDialog2, NULL, NULL},
   {NULL},
@@ -1212,17 +1222,17 @@ DialogBox CompressorDialog = {{"Compressor params", ILI9340_BLACK, ILI9340_WHITE
   M_SCROLLING, 0, 0, CompressorEntries
 };
 
-#define MaxOrder  127
+#define MaxOrder  255
 
 #define CLOCK_A   9
 #define CLOCK_B   8
-
-MIPStimer CompressorTimer(4);
 
 volatile uint32_t  ClockArray[MaxOrder * 8];
 volatile int       ClockReset = 16;
 volatile int       ClockIndex = 0;
 volatile int       CR = 16;
+volatile bool      C_ClockEnable = true;
+volatile int       C_NormAmpMode = 0;             // If set to 1 then the normal mode will use the TW channel 1 amplitude
 
 volatile Pio *pio;
 
@@ -1231,16 +1241,52 @@ volatile Pio *pio;
 #define   C_clock       656250      // This is the clock frequenncy used for the timing control
                                     // for the compressor state machine. This is the clock frequency
                                     // for the timer. 
-uint32_t  C_Td;         // Trigger delay
-uint32_t  C_Tc;         // Compressed time
-uint32_t  C_Tn;         // Normal time
-uint32_t  C_Tnc;        // Non compressed cycle time
-uint32_t  C_NextEvent;  // Next event counter value
+uint32_t  C_Td;               // Trigger delay
+uint32_t  C_Tc;               // Compressed time
+uint32_t  C_Tn;               // Normal time
+uint32_t  C_Tnc;              // Non compressed cycle time
+uint32_t  C_Delay;            // Delay time
+uint32_t  C_NextEvent;        // Next event counter value
+uint32_t  C_SwitchTime;       // Switch open time
+uint32_t  C_GateOpenTime;     // Switch event time from start of table
 
 DIhandler *CtrigInput;
 
 CompressorState CState;
+CompressorSwitchState CSState;
 int CurrentPass;
+
+int CStackLevel;
+CompressorStack cStack[5];
+
+void CompressorStackInit(void)
+{
+  CStackLevel = 0;
+}
+
+bool CompressorLoopStart(int Index)
+{
+  // If stack is full exit and return false
+  if(CStackLevel >= 5) return false;
+  // Init the stack entry
+  CStackLevel++;
+  cStack[CStackLevel - 1].StartOfLoop = Index;
+  cStack[CStackLevel - 1].Inited = false;
+}
+
+int CompressorProcessLoop(int Count)
+{
+  if(CStackLevel <= 0) return -1;
+  if(cStack[CStackLevel - 1].Inited == false) cStack[CStackLevel - 1].Count = Count;
+  cStack[CStackLevel - 1].Inited = true;
+  cStack[CStackLevel - 1].Count--;
+  if(cStack[CStackLevel - 1].Count == 0) 
+  {
+    CStackLevel--;
+    return -1;
+  }
+  return cStack[CStackLevel - 1].StartOfLoop;
+}
 
 void UpdateMode(void)
 {
@@ -1261,16 +1307,59 @@ void SetSwitch(void)
   else ClearOutput(TD.Cswitch,TD.CswitchLevel);
 }
 
+// Called when the timer reaches the desired time point set in the B
+// compare register. This is used for gate or switch control
+void SwitchTimerISR(void)
+{
+  switch (CSState)
+  {
+    case CSS_OPEN_REQUEST:
+      // Open switch and set timer to close
+      SetOutput(TD.Cswitch,TD.CswitchLevel);
+      CSState = CSS_CLOSE;
+      CompressorTimer.setTIOBeffect(C_GateOpenTime + C_SwitchTime,TC_CMR_BCPB_TOGGLE);
+     break;
+    case CSS_CLOSE_REQUEST:
+      // Close switch and set timer to close
+      ClearOutput(TD.Cswitch,TD.CswitchLevel);
+      CSState = CSS_OPEN;
+      CompressorTimer.setTIOBeffect(C_GateOpenTime + C_SwitchTime,TC_CMR_BCPB_TOGGLE);
+      break;
+    case CSS_OPEN:
+      SetOutput(TD.Cswitch,TD.CswitchLevel);
+ //     CSState = CSS_IDLE;
+      break;
+    case CSS_CLOSE:
+      ClearOutput(TD.Cswitch,TD.CswitchLevel);  
+  //    CSState = CSS_IDLE;
+      break;
+    default:
+      break;
+  }
+}
+
 // Called when the timer reaches the desired time point.
 // This function will update the state
 void CompressorTimerISR(void)
 {
   char OP;
-  
+
+  interrupts();
   // This interrupt occurs when the current state has timed out so advance to the next
   switch (CState)
   {
     case CS_COMPRESS:
+      // If C_NormAmpMode is 1 or 2 then set the amplitude to TW1 level.
+      if((C_NormAmpMode == 1) || (C_NormAmpMode == 2))
+      {
+         if(AcquireTWI()) TWCsetV2toV1();
+         else TWIqueue(TWCsetV2toV1);
+      }
+      if(C_NormAmpMode == 2)
+      {
+         if(AcquireTWI()) TWCsetV();
+         else TWIqueue(TWCsetV);          
+      }
       // Next state is always normal
       ClockReset = 8;
       C_NextEvent += C_Tn;
@@ -1280,6 +1369,7 @@ void CompressorTimerISR(void)
     case CS_NONCOMPRESS:
       CurrentPass++;
     case CS_TRIG:
+    case CS_DELAY:
       // State will be Compress, NonCompress or 0 indicating finished, defined by table value
       OP = GetNextOperationFromTable(false);
       if(OP == 'C')
@@ -1287,12 +1377,28 @@ void CompressorTimerISR(void)
         CState = CS_COMPRESS;
         C_NextEvent += C_Tc;
         ClockReset = TDarray[0].Corder * 8;
+        // If C_NormAmpMode is 1 or 2 then set the amplitude to TW2 level.
+        if((C_NormAmpMode == 1) || (C_NormAmpMode == 2))
+        {
+           if(AcquireTWI()) TWCsetv();
+           else TWIqueue(TWCsetv);
+        }
+        if(C_NormAmpMode == 2)
+        {
+           if(AcquireTWI()) TWCsetV1toV2();
+           else TWIqueue(TWCsetV1toV2);          
+        }
       }
       else if(OP == 'N')
       {
         CState = CS_NONCOMPRESS;
         C_NextEvent += C_Tnc;
         ClockReset = 8;
+      }
+      else if(OP == 'D')
+      {
+        CState = CS_DELAY;  // Delay, hold current mode during delay
+        C_NextEvent += C_Delay;
       }
       break;
     default:
@@ -1311,9 +1417,12 @@ void CompressorTimerISR(void)
   CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
 }
 
-// Called when we are going to start a compression cycle
+// Called when we are going to start a compression cycle.
+// The A compare register is used for table timing.
+// The B compare register is used for the switch or gate timing
 void CompressorTriggerISR(void)
 {
+  interrupts();
   // Clear and setup variables
   ClockReset = 8;             // Put system in normal mode
   CurrentPass = 0;
@@ -1325,9 +1434,51 @@ void CompressorTriggerISR(void)
   CompressorTimer.setTrigger(TC_CMR_EEVTEDG_NONE);
   CompressorTimer.setClock(TC_CMR_TCCLKS_TIMER_CLOCK4);
   CompressorTimer.attachInterruptRA(CompressorTimerISR);
+  CompressorTimer.attachInterruptRB(SwitchTimerISR);
   CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
+  serial->println(C_NextEvent);
   CompressorTimer.enableTrigger();
   CompressorTimer.softwareTrigger();
+}
+
+// Set twave channel 1 voltage to the value defined in the channel 1 data structure
+void TWCsetV(void)
+{
+   int b=SelectedBoard();
+   SelectBoard(0);
+   SetPulseVoltage(0); 
+   SelectBoard(b); 
+}
+
+// Set twave channel 2 voltage to the value defined in the channel 2 data structure
+void TWCsetv(void)
+{
+   int b=SelectedBoard();
+   SelectBoard(1);
+   SetPulseVoltage(1); 
+   SelectBoard(b); 
+}
+
+// Set the twave channel 2 voltage to the value defined in the channel 1 data structure
+void TWCsetV2toV1(void)
+{
+   Wire.setClock(400000);
+   int b=SelectedBoard();
+   SelectBoard(1);
+   SetPulseVoltage(1,TDarray[0].TWCD[DAC_PulseVoltage].VoltageSetpoint); 
+   SelectBoard(b); 
+   Wire.setClock(100000);
+}
+
+// Set the twave channel 1 voltage to the value defined in the channel 2 data structure
+void TWCsetV1toV2(void)
+{
+   Wire.setClock(400000);
+   int b=SelectedBoard();
+   SelectBoard(0);
+   SetPulseVoltage(0,TDarray[1].TWCD[DAC_PulseVoltage].VoltageSetpoint); 
+   SelectBoard(b); 
+   Wire.setClock(100000);
 }
 
 // This function reads the compressor table and return the next operation that will be performed.
@@ -1341,22 +1492,47 @@ void CompressorTriggerISR(void)
 //                        'O' order, 0 to 127 are valid values
 // If the init is true that the table pointers are reset to the start and the function return 0;
 //
-// June 19, 2017. Add the following commands:
+// June 19, 2016. Add the following commands:
 //    'V' for TW1 voltage in units of volts, has to be whole numbers
 //    'v' for TW2 voltage in units of volts, has to be whole numbers
 //    'c' for compress time in milliseconds
 //    'n' for normal time in a compress cycle
 //    't' for non compress cycle time
+// July 2, 2016. Added the 'F' for frequency command
+//
+// Need to add ability to stop all clocking for a defined time.
+// Added repeat capability in the compressor table. Use this syntax ....[.....]9.... to define
+// a loop. Logic in code goes like this:
+//    1.) If we find a [ then push on to stack
+//    2.) When we find a ] if there is an entry on the stack init it with the count and dec the count.
+//        if its already inited then dec the count. If count is 0 then move on and clear entry from stack
+//    3.) Allow a depth of five.
+//
+// Added the following commands:
+//    'D' Delay in milliseconds
+//    's' Stop the clock
+//    'r' Restart the clock
+//
+// Added the following switch commands July 30, 2016
+//    'o' open gate time in mS
+//    'g' time to open gate relative to start of table in mS
+//    'G' time to close gate relative to start of table in mS
+//
+// Added the following command, august 8, 2016
+//    'M' set the mode of the compressor channel, channel 2
+//        if 0 its normal mode and TW2 amplitude control sets the amplitude in compress and normal.
+//        if 1 then the TW channel 1 amplitude is used in the normal mode on the TW2 compressor.
 //    
 char GetNextOperationFromTable(bool init)
 {
-  int index;
+  int index,b;
   static int tblindex=0;
   static char OP;
   static int count = 0;
 
   if(init)
   {
+    CompressorStackInit();
     tblindex = 0;
     count = 0;
     return(0);
@@ -1388,6 +1564,26 @@ char GetNextOperationFromTable(bool init)
       count--;
       return(OP);
     }
+    if(OP == 'D') //Delay
+    {
+      C_Delay = (((float)count) / 1000.0) * C_clock;
+      count = 0;
+      return(OP);
+    }
+    if(OP == 'g') //Time to open gate
+    {
+      C_GateOpenTime = (((float)count) / 1000.0) * C_clock;
+      count = 0;
+      CSState = CSS_OPEN_REQUEST;
+      CompressorTimer.setTIOBeffect(C_GateOpenTime,TC_CMR_BCPB_TOGGLE);
+    }
+    if(OP == 'G') //Time to close gate
+    {
+      C_GateOpenTime = (((float)count) / 1000.0) * C_clock;
+      count = 0;
+      CSState = CSS_CLOSE_REQUEST;
+      CompressorTimer.setTIOBeffect(C_GateOpenTime,TC_CMR_BCPB_TOGGLE);
+    }
     if(OP == 'S')
     {
       if(count == 0) ClearOutput(TD.Cswitch,TD.CswitchLevel);
@@ -1410,8 +1606,9 @@ char GetNextOperationFromTable(bool init)
         if((count > 7) && (count <= 100))
         {
            if (index == SelectedTwaveModule) TD.TWCD[0].VoltageSetpoint = count;
-           TDarray[index].TWCD[0].VoltageSetpoint = count;   
-           SetPulseVoltage(0);  
+           TDarray[index].TWCD[0].VoltageSetpoint = count; 
+           if(AcquireTWI()) TWCsetV();
+           else TWIqueue(TWCsetV);
         }   
       }
     }
@@ -1423,8 +1620,22 @@ char GetNextOperationFromTable(bool init)
         if((count > 7) && (count <= 100))
         {
            if (index == SelectedTwaveModule) TD.TWCD[0].VoltageSetpoint = count;
-           TDarray[index].TWCD[0].VoltageSetpoint = count;   
-           SetPulseVoltage(1);  
+           TDarray[index].TWCD[0].VoltageSetpoint = count;
+           if(AcquireTWI()) TWCsetv();
+           else TWIqueue(TWCsetv);
+        }   
+      }      
+    }
+    if(OP == 'F')
+    {
+      index = GetTwaveIndex(1);
+      if (index != -1)
+      {
+        if((count > 1000) && (count <= 300000))
+        {
+           if (index == SelectedTwaveModule) TD.Velocity = count;
+           TDarray[index].Velocity = count;
+           SetVelocity(0);
         }   
       }      
     }
@@ -1443,6 +1654,31 @@ char GetNextOperationFromTable(bool init)
       TD.TnoC = TDarray[0].TnoC = count;
       C_Tnc = (TDarray[0].TnoC / 1000.0) * C_clock;
     }
+    if(OP == 's')  // Stop the clock
+    {
+      C_ClockEnable = false;
+    }
+    if(OP == 'r')  // Restart the clock
+    {
+      C_ClockEnable = true;    
+    }
+    if(OP == 'o')  // Sets the switch open time
+    {
+      C_SwitchTime = (count / 1000.0) * C_clock;
+    }
+    if(OP == 'M')  // Set compressor normal amplitude mode
+    {
+      C_NormAmpMode = count;
+    }
+    if(OP == '[')
+    {
+       CompressorLoopStart(tblindex);
+    }    
+    if(OP == ']')
+    {
+      int i = CompressorProcessLoop(count);
+      if(i != -1) tblindex = i;
+    }    
   }
 }
 
@@ -1450,7 +1686,8 @@ char GetNextOperationFromTable(bool init)
 void CompressorClockISR(void)
 {
   uint32_t i;
-  
+
+  if(!C_ClockEnable) return;
   AtomicBlock< Atomic_RestoreState > a_Block;
   // Generate 4 clock pulses
   i = ClockArray[ClockIndex];
@@ -1575,11 +1812,13 @@ void SetTWCmode(char *mode)
   SetErrorCode(ERR_BADARG);
   SendNAK;
 }
+
 void GetTWCorder(void)
 {
   SendACKonly;
   if (!SerialMute) serial->println(TDarray[0].Corder);
 }
+
 bool RangeTest(DialogBoxEntry *des, char *EntryName, float fval)
 {
   DialogBoxEntry *de;
@@ -1590,6 +1829,7 @@ bool RangeTest(DialogBoxEntry *des, char *EntryName, float fval)
   SendNAK;
   return false;
 }
+
 void SetTWCorder(int ival)
 {
   if(RangeTest(CompressorEntries,"Order",ival))
@@ -1600,6 +1840,7 @@ void SetTWCorder(int ival)
     SendACK;
   }
 }
+
 void SetTWCtriggerDelay(char *str)
 {
   float fval;
@@ -1612,6 +1853,7 @@ void SetTWCtriggerDelay(char *str)
     SendACK;
   }
 }
+
 void SetTWCcompressTime(char *str)
 {
   float fval;
@@ -1624,6 +1866,7 @@ void SetTWCcompressTime(char *str)
     SendACK;
   }
 }
+
 void SetTWCnormalTime(char *str)
 {
   float fval;
@@ -1636,6 +1879,7 @@ void SetTWCnormalTime(char *str)
     SendACK;
   }
 }
+
 void SetTWCnoncompressTime(char *str)
 {
   float fval;
@@ -1648,11 +1892,13 @@ void SetTWCnoncompressTime(char *str)
     SendACK;
   }
 }
+
 void TWCtrigger(void)
 {
    SendACKonly;
    CompressorTriggerISR();
 }
+
 void SetTWCswitch(char *mode)
 {
   if ((strcmp(mode, "Open") == 0) || (strcmp(mode, "Close") == 0))

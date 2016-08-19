@@ -4,6 +4,7 @@
 extern float MaxDCbiasVoltage;
 extern int   NumberOfDCChannels;
 extern bool  DCbiasUpdate;
+extern bool  DCbiasBoards[2];
 
 typedef struct
 {
@@ -56,6 +57,7 @@ void  DCbiasSet(int Chan, float value);
 void  DCbiasSetNumBoardChans(int board, int num);
 void  DCbiasReportAllSetpoints(void);
 void  DCbiasReportAllValues(void);
+void  DCbiasDelta(char *Value);
 
 #endif
 

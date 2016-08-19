@@ -62,6 +62,7 @@ enum CmdTypes
   CMDbool,          // Sends or receives a bool, TRUE or FALSE
   CMDfunction,		  // Calls a function with 0,1,or 2 int args
   CMDfunctionStr,		// Calls a function with pointer to str arg
+  CMDfunctionLine,  // Calls a function with a full line in the ring buffer, function must get tokens
   CMDfun2int1flt,		// Calls a function with 2 int args followed by 1 float arg
   CMDlongStr,       // Fills the pointer the a long string, max length is defined by num args value
   CMDna
@@ -73,7 +74,8 @@ enum PCstates
   PCarg1,			// Looking for int arg1
   PCarg2,			// Looking for int arg2
   PCarg3,			// Looking for int arg3
-  PCargStr,			// Looking for string arg
+  PCargStr,		// Looking for string arg
+  PCargLine,  // Looking for fill line, no pasring, sent as string arg 
   PCend,
   PCna
 };

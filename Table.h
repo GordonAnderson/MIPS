@@ -81,6 +81,7 @@ extern bool TasksEnabled;
 extern int  InterTableDelay;
 extern bool ValueChange;
 extern volatile bool softLDAC;
+extern bool TableResponse;
 
 // ProcessEntry return codes
 #define PEprocessed 1

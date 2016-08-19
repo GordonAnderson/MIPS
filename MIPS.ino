@@ -302,6 +302,48 @@
 //          V,v,c,n,t are new commands.
 //  V1.51, June 20, 2016
 //      1.) Fixed a bug that prevented you from changing the frequency of a running clock.
+//  V1.52, June 23, 2016 (work in progress)
+//      1.) Table timing improvements. Reduced the minimum pulse width from 40uS to 12uS
+//          - Moved the DAC updates inline
+//          - Preprocess the DAC data so it only needs to load at run time
+//          - Updated the functions that allow changing a value at table run time
+//          - Need to test!
+//      2.) Fixed a bug in the compressor table voltage setting. Board selection was not being done.
+//      3.) Added flush after command processor in table mode command processing.
+//      4.) Changed all the write function to println in table reporting.
+//      5.) Added command to turn off table responses.
+//      6.) Fixed command processor so message processing only happens with a complete message in buffer.
+//  V1.53, June 29, 2016
+//      1.) Finished testing and debugging the Fast table mode and updated the system for filament systems.
+//          This version is with the FAST_TABLE mode enabled. Can get minimum pulse widths on order of 9 uS.
+//  V1.54, July 2, 2016
+//      1.) Added the SDCBDELTA command.
+//      2.) Added 'F' frequency command to multi-pass compressor
+//      3.) Added looping to multi-pass compressor, ...[...]x... where x is the loop count
+//      4.) Added bias current monitoring capability to Filament module. Also added the serial commands to set 
+//          bias sense resistor, use 10k resistor on channel 8 of bias module.
+//      5.) Made all the delay values in twave 100 seconds maximum
+//      6.) Added the frezze mode to the compressor after a delay time. Do this is table as a starting point.
+//      7.) Added the ehernet adapter code.
+//      8.) Increased Twave maximum order to 255
+//      --Need to add the following to this rev
+//          a.) DMA SPI interface in table code
+//          b.) Optomize the DIO in table mode, some of this is done
+//  V1.55, July 30, 2016
+//      1.) Added updates to support new rev 2.0 ARB module. Added the new ARB mode supporting pulse generation.
+//      2.) Added ARB serial commands.
+//      3.) Added the Twave multi-pass compressor switch control
+//  V1.56, August 2, 2016
+//      1.) Protocol error in the get filament current command was fixed.
+//      2.) Updated the ARB to support rev 2.0 and the new ARB mode.
+//  V1.57, August 8 2016
+//      1.) Added the M0 and M1 command to twave compressor table, M0 is normal mode, M1 applies TW2 voltage
+//          to TW1 in normal mode. this only happens in compressor table mode
+//  V1.58, August 9 2016
+//      1.) Added the M2 mode to the twave compressor, this applies TW2 voltage levels on TW1 in compress mode,
+//          this only happens in the compressor table mode.
+//  V1.59, August 17, 2016
+//      1.) Updated WiFi to support serial port 0 or 1.
 //
 // Couple of issues to resolve
 //    1.) External trigger lockup / missing trigger setup
@@ -309,11 +351,10 @@
 //
 // Next version to dos:
 //      1.) Update the display code to make it interupt safe when ISR uses SPI, done but turned off for compressor
-//      2.) Fix the DIO to allow command processing in table mode, this will require a pening update flag for
+//      2.) Fix the DIO to allow command processing in table mode, this will require a pending update flag for
 //          the DIO, only update if no pending update
 //      3.) Consider re-implementing the table mode dialog box code. This should work after the SPI upgrades to 
 //          display driver from step 3.
-//      4.) Need a way to force update after calibration
 //
 // Serial.println(); will print '\r' and '\n', 
 //
@@ -346,10 +387,13 @@
 #include "Variants.h"
 #include "Errors.h"
 #include "Serial.h"
+#include "ethernet.h"
 #include <Thread.h>
 #include <ThreadController.h>
 #include <MIPStimer.h>
 #include <DIhandler.h>
+
+#pragma GCC optimize "-Os"
 
 #if defined(__SAM3X8E__)
 #undef __FlashStringHelper::F(string_literal)
@@ -376,7 +420,7 @@ bool DisableDisplay = false;
 bool LEDoverride = false;
 int  LEDstate = 0;
 
-char Version[] = "Version 1.51, June 20, 2016";
+char Version[] = "Version 1.59, Aug 17, 2016";
 
 // ThreadController that will controll all threads
 ThreadController control = ThreadController();
@@ -523,6 +567,7 @@ void BoardFormat(void)
 
 void SaveMIPSSettings(void)
 {
+  
   if(SAVEparms("default.cfg") == 0) DisplayMessage("Parameters Saved!",2000);
   else DisplayMessage("Error saving!",2000);
 }
@@ -728,20 +773,11 @@ void setup()
   analogReadResolution(12);
   Reset_IOpins();
   ClearDOshiftRegs();
-  Serial.begin(115200);
-  Stream *stm = &Serial;
+//  Serial.begin(115200);
+//  Serial1.begin(115200);
+//  Stream *stm = &Serial;
 //  stm->println("MIPS!");
-/*
-  Serial1.begin(9600);
-  pinMode(13, OUTPUT);
-  digitalWrite(13,LOW);
-  delay(100);
-  uint8_t  einit[24] = {0x55,0xAA,0xC9,0x00,0xA8,0xC0,0x2A,0x20,0x07,0x00,0xA8,0xC0,0x8C,0x4E,0xC9,0x00,0xA8,0xC0,0x03,0x00,0xC2,0x01,0x03,0xBE};
-  for(int i=0;i<24;i++) Serial1.write(einit[i]);
-  delay(100);
-  digitalWrite(13,HIGH);
-  Serial1.begin(115200);
-*/  
+
   // Init the display and setup all the hardware
   tft.begin();
   tft.fillScreen(ILI9340_BLACK);
@@ -752,12 +788,21 @@ void setup()
   tft.println("Initializing....");
 
   SerialInit();
-  
+
   delay(250);
 
   MIPSsystemLoop();
 
+//  SPI.begin(_sdcs);
   SPI.setClockDivider(21);
+//  SPI.setClockDivider(200);
+//  if(root.isOpen()) root.close();
+//  pinMode(_sdcs,OUTPUT);
+//  digitalWrite(_sdcs,LOW);
+//  for(int i=0;i<10;i++) SPI.transfer(_sdcs, 0, SPI_CONTINUE);
+//  SPI.transfer(_sdcs, 0x92);
+//  digitalWrite(_sdcs,HIGH);
+//  delay(100);
   if (!SD.begin(_sdcs))
   {
     tft.println("SD disk failed to initalize!");
@@ -814,6 +859,7 @@ void setup()
   {
     MacroPlay(MIPSconfigData.StartupMacro,true);
   }
+  Ethernet_init();
 }
 
 // This task is called every 10 milliseconds and handels a number of tasks.
@@ -943,18 +989,15 @@ void ProcessSerial(void)
     serial = &SerialUSB;
     PutCh(SerialUSB.read());
   }
-  while (Serial.available() > 0) 
+  while (WiFiSerial->available() > 0) 
   {
-    serial = &Serial;
-    PutCh(Serial.read());
+    serial = WiFiSerial;
+    PutCh(WiFiSerial->read());
+//      serial->write(WiFiSerial->read());
   }
-//  while (Serial1.available() > 0) 
-//  {
-//    serial = &Serial1;
-//    PutCh(Serial1.read());
-//  }
+  ProcessEthernet();
   // If there is a command in the input ring buffer, process it!
-  if(RB_Commands(&RB) > 0) while(ProcessCommand()==0) WDT_Restart(WDT);  // Process until flag that there is nothing to do
+  while(RB_Commands(&RB) > 0) {ProcessCommand(); WDT_Restart(WDT);}      // Process until flag that there is nothing to do
                                                                          // kick the watchdog timer in case we get stuck here
   DIOopsReport();
 }

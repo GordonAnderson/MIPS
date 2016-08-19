@@ -75,6 +75,7 @@ void DialogButtonPress(DialogBox *d)
         case D_ONOFF:
         case D_INT:
         case D_INT8:
+        case D_UINT8:
         case D_FLOAT:
         case D_LIST:
         case D_DI:
@@ -137,6 +138,11 @@ void DialogValueAdjust(DialogBox *d, int8_t change)
       *(int8_t *)d->Entry[d->Selected].Value += change * d->Entry[d->Selected].StepSize * multiplier;
       if (*(int8_t *)d->Entry[d->Selected].Value > d->Entry[d->Selected].Max) *(int8_t *)d->Entry[d->Selected].Value = d->Entry[d->Selected].Max;
       if (*(int8_t *)d->Entry[d->Selected].Value < d->Entry[d->Selected].Min) *(int8_t *)d->Entry[d->Selected].Value = d->Entry[d->Selected].Min;
+      break;
+    case D_UINT8:
+      *(uint8_t *)d->Entry[d->Selected].Value += change * d->Entry[d->Selected].StepSize * multiplier;
+      if (*(uint8_t *)d->Entry[d->Selected].Value > d->Entry[d->Selected].Max) *(uint8_t *)d->Entry[d->Selected].Value = d->Entry[d->Selected].Max;
+      if (*(uint8_t *)d->Entry[d->Selected].Value < d->Entry[d->Selected].Min) *(uint8_t *)d->Entry[d->Selected].Value = d->Entry[d->Selected].Min;
       break;
     case D_FLOAT:
       *(float *)d->Entry[d->Selected].Value += change * d->Entry[d->Selected].StepSize * multiplier;
@@ -258,6 +264,9 @@ void DisplayDialogEntry(Window *w, DialogBoxEntry *de, bool HighLight)
       break;
     case D_INT8:
       p(de->fmt, *(int8_t *)de->Value);
+      break;
+    case D_UINT8:
+      p(de->fmt, *(uint8_t *)de->Value);
       break;
     case D_FLOAT:
       p(de->fmt, *(float *)de->Value);

@@ -60,9 +60,9 @@ extern int ErrorCode;
 #define ERR_CANTOPENFILE            105     // Can't open file
 #define ERR_CANTDELETEFILE          106     // Can't delete file
 #define ERR_NOTSUPPORTINREV         107     // Not supported in this MIPS controller revision
-
 #define ERR_WIFICONNECTED           108     // Not supported while WiFi is connected
-
+#define ERR_NOETHERNET              109     // No ethernet adapter detected
+#define ERR_ETHERNETCOMM            110     // Ethernet adapter communication error
 
 #endif
 

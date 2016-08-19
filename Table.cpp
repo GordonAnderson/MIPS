@@ -219,6 +219,16 @@
 //
 // Timing tests
 // STBLDAT;0:[1:100000,100:1:25,1000:1:5,2000:];
+// STBLDAT;0:[1:100000,100:1:25,107:1:10,1000:1:5,2000:];
+// STBLDAT;0:[1:100000,0:1:25,107:1:10,2000:1:5,3000:];
+// In FAST_TABLE mode:
+//  June 29, version
+//  6 is min count for 1 value change, 9.14uS
+//  10 is min count for 2 value change, 15.2uS
+//  Last event 21 min, 32uS
+//  
+//
+// STBLDAT;0:[1:100000,100:1:25,106:1:10,1000:1:5,2000:];
 //
 // Testing pulse sequences
 // STBLDAT;0:[1:10,1000:1:25:A:1,3000:1:5:A:0];
@@ -272,6 +282,7 @@
 #include "Arduino.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_ILI9340.h"
+#include "SPI.h"
 #include "table.h"
 #include "serial.h"
 #include "errors.h"
@@ -291,6 +302,10 @@
     #undef __FlashStringHelper::F(string_literal)
     #define F(string_literal) string_literal
 #endif
+
+//#define FAST_TABLE 1
+
+#pragma GCC optimize "-O3"
 
 extern ThreadController control;
 
@@ -323,6 +338,9 @@ volatile bool SWtriggered = false;
 volatile bool TableOnce = false;      // If true the table will play one time then the mode will return to local
 
 volatile bool softLDAC = false;       // If true forces the use of software LDAC
+bool TableResponse = true;            // This flag is true to enable table status response
+
+int  Chan2Brd[16];
 
 bool ValueChange = false;
 
@@ -743,7 +761,11 @@ void GetTableEntryValue(int Count, int Chan)
     }
     // Convert entry back to engineering units and send
     SendACKonly;
-    fval = DCbiasCounts2Value(TE->Chan, TE->Value);
+    // The value is saved as the DAC bit pattern so first convert back to DAC counts
+    int val = TE->Value;
+    val >>= 4;
+    val &= 0xFFFF;
+    fval = DCbiasCounts2Value(TE->Chan, val);
     if(!SerialMute) serial->println(fval);
 }
 
@@ -761,7 +783,14 @@ void SetTableEntryValue(int Count, int Chan, float fval)
         return;
     }
     // Convert to engineering units and write to table
-    TE->Value = DCbiasValue2Counts(TE->Chan, fval);
+    int val = DCbiasValue2Counts(TE->Chan, fval);
+    // Make value into bit image the DAC wants to see. This will allow fast DAC updating
+    // in the table execute mode. June 23 2016
+    uint8_t  *buf = (uint8_t *)&TE->Value;
+    buf[0] = 0;         // DAC command
+    buf[1] = (TE->Chan << 4) | (val >> 12);
+    buf[2] = (val >> 4);
+    buf[3] = (val << 4);
     SendACK;
 }
 
@@ -1034,6 +1063,14 @@ int ParseEntry(int Count, char *TK)
             if(!Token2float(&fval)) break;
             // Convert value to DAC counts
             TE->Value = DCbiasValue2Counts(TE->Chan, fval);
+            // Make value into bit image the DAC wants to see. This will allow fast DAC updating
+            // in the table execute mode. June 23 2016
+            uint8_t  *buf = (uint8_t *)&TE->Value;
+            int val = TE->Value;
+            buf[0] = 0;         // DAC command
+            buf[1] = (TE->Chan << 4) | (val >> 12);
+            buf[2] = (val >> 4);
+            buf[3] = (val << 4);
         }
         if((TK = NextToken()) == NULL) break;  // get next token to process
         // If this token is a : then another channel value pair follow
@@ -1108,7 +1145,7 @@ void ProcessTables(void)
         // Fall into a processing loop and remain in this loop until the timer completes
         LOCrequest = false;
         Aborted = false;
-        if(!SerialMute) serial->write("TBLRDY\n");
+        if((!SerialMute) && (TableResponse)) serial->println("TBLRDY\n");
         TableReady = true;
         StopRequest=false;
 //        TableStopped = false;
@@ -1120,7 +1157,7 @@ void ProcessTables(void)
             // Restart table if reqested by user
             if(StopCommanded)
             {
-                if(!SerialMute) serial->println("Table stoped by user");
+                if((!SerialMute) && (TableResponse)) serial->println("Table stoped by user");
                 break;
             }
             TimerStatus = MPT.getStatus();
@@ -1130,7 +1167,7 @@ void ProcessTables(void)
               TableTriggered = true;
               SWtriggered = false;
               // Here when triggered
-               if(!SerialMute) serial->write("TBLTRIG\n");
+               if((!SerialMute) && (TableResponse)) serial->println("TBLTRIG\n");
                if(StopRequest == true) break;
             }
             // Exit this loop when the timer is stoped.
@@ -1138,7 +1175,7 @@ void ProcessTables(void)
             {
                 // Issue the table complete message
                 TableTriggered = false;
-                if(!SerialMute) serial->write("TBLCMPLT\n");
+                if((!SerialMute) && (TableResponse)) serial->println("TBLCMPLT\n");
                 // Exit the loop and setup for another trigger
                 break;
             }
@@ -1154,13 +1191,14 @@ void ProcessTables(void)
             {
                 // Make sure button is released
                 while(digitalRead(PB)==HIGH);
-                if(!SerialMute) serial->write("ABORTED by user\n");
+                if((!SerialMute) && (TableResponse)) serial->println("ABORTED by user\n");
                 LOCrequest = true;
                 break;
             }
             #endif
             // Process any serial commands
             ProcessSerial();
+            serial->flush();
             //if (serialEventRun) serialEventRun();   // This happens when loop returns, do it here to imitate loop
             // If full command processing in table mode is enabled then run tasks.
             if(TasksEnabled)
@@ -1176,7 +1214,7 @@ void ProcessTables(void)
         if(Aborted)
         {
             // Issue an aborted message.
-            if(!SerialMute) serial->write("ABORTED\n");
+            if((!SerialMute) && (TableResponse)) serial->write("ABORTED\n");
         }
         if(Aborted || LOCrequest)
         {
@@ -1231,6 +1269,17 @@ void SetupTimer(void)
         NS.Count[(int)NS.Ptr] = 0;
         NS.Ptr++;
     }
+    // Setup the channel to board number array this is used in tabel processing for speed!
+    int i;
+    if(DCbiasBoards[0])
+    {
+       for(i=0;i<8;i++) Chan2Brd[i] = 0; 
+       for(i=0;i<8;i++) Chan2Brd[i+8] = 1; 
+    }
+    else if(DCbiasBoards[1])
+    {
+       for(i=0;i<8;i++) Chan2Brd[i] = 1;      
+    }
     // Setup counter, use MPT
     MPT.begin();  
     // Need to make sure the any pending interrupts are cleared on TRIGGER. So if we are in a hardware
@@ -1243,15 +1292,6 @@ void SetupTimer(void)
     if(TriggerMode == EDGE) {DIhTrig.attached('R', CHANGE, Trigger_ISR); MPT.setTrigger(TC_CMR_EEVTEDG_EDGE);}
     if(TriggerMode == POS)  {DIhTrig.attached('R', RISING, Trigger_ISR); MPT.setTrigger(TC_CMR_EEVTEDG_RISING);}
     if(TriggerMode == NEG)  {DIhTrig.attached('R', FALLING, Trigger_ISR); MPT.setTrigger(TC_CMR_EEVTEDG_FALLING);}
-    /*
-    if(TriggerMode == EDGE) {attachInterrupt(TRIGGER, Dummy_ISR, CHANGE); delayMicroseconds(10); detachInterrupt(TRIGGER);}
-    if(TriggerMode == POS)  {attachInterrupt(TRIGGER, Dummy_ISR, RISING); delayMicroseconds(10); detachInterrupt(TRIGGER);}
-    if(TriggerMode == NEG)  {attachInterrupt(TRIGGER, Dummy_ISR, FALLING); delayMicroseconds(10); detachInterrupt(TRIGGER);}
-    if(TriggerMode == SW)   {detachInterrupt(TRIGGER) ;MPT.setTrigger(TC_CMR_EEVTEDG_NONE);}
-    if(TriggerMode == EDGE) {attachInterrupt(TRIGGER, Trigger_ISR, CHANGE); MPT.setTrigger(TC_CMR_EEVTEDG_EDGE);}
-    if(TriggerMode == POS)  {attachInterrupt(TRIGGER, Trigger_ISR, RISING); MPT.setTrigger(TC_CMR_EEVTEDG_RISING);}
-    if(TriggerMode == NEG)  {attachInterrupt(TRIGGER, Trigger_ISR, FALLING); MPT.setTrigger(TC_CMR_EEVTEDG_FALLING);}
-    */
     if(ClockMode == EXT)    MPT.setClock(TC_CMR_TCCLKS_XC2);
     if(ClockMode == MCK2)   MPT.setClock(TC_CMR_TCCLKS_TIMER_CLOCK1);
     if(ClockMode == MCK8)   MPT.setClock(TC_CMR_TCCLKS_TIMER_CLOCK2);
@@ -1269,14 +1309,13 @@ void SetupTimer(void)
     {
        LDAChigh;
     }
+    SPI.setClockDivider(SPI_CS,6);
+    SPI.setDataMode(SPI_CS, SPI_MODE1);
     // Define the initial max counter value based on first table
     MPT.setRC(Theader->MaxCount);
     // Setup table variables
-//    MPT.enableTrigger();
-
-//    if((MIPSconfigData.Rev <= 1) || (softLDAC)) MPT.setTIOAeffectNOIO(TEheader->Count,TC_CMR_ACPA_TOGGLE);
-//    else MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE);
-
+    if((MIPSconfigData.Rev <= 1) || (softLDAC)) MPT.setTIOAeffectNOIO(TEheader->Count,TC_CMR_ACPA_TOGGLE);
+    else MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE);
     SetupNextEntry();
     MPT.enableTrigger();
 }
@@ -1291,21 +1330,19 @@ void StartTimer(void)
     MPT.softwareTrigger();
 }
 
-void StopTimer(void)
+inline void StopTimer(void)
 {
     // Exit and do nothing if no tables are loaded
     if(TablesLoaded[CT] <= 0) return;
-//    serial->print("-");
     DIhTrig.detach();
     // Stop the timer
     MPT.stop();
-//    TableStopped = true;
 }
 
 // Advance table pointer, this function assumes that the current table is pointing at the
 // last entry.
 // Return false if we reached the end of tables.
-bool AdvanceTablePointer(void)
+inline bool AdvanceTablePointer(void)
 {
     // If the current table is named then its on the nesting stack so remove it if its
     // repeat count has expired
@@ -1332,7 +1369,7 @@ bool AdvanceTablePointer(void)
 }
 
 // Advance to the next entry in current table
-void AdvanceEntryPointer(void)
+inline void AdvanceEntryPointer(void)
 {
     TEheader = (TableEntryHeader *)((char *)TEheader + (sizeof(TableEntryHeader) + (sizeof(TableEntry) * TEheader->NumChans)));
     Tentry = (TableEntry *)((char *)TEheader + sizeof(TableEntryHeader));
@@ -1340,19 +1377,50 @@ void AdvanceEntryPointer(void)
 
 // This function is called to setup the next time point values used by the time
 // table system.
-// The global table structure headers.
-void SetupNextEntry(void)
+// The global table structure headers are used and updated.
+// There are two modes of operation defined at compile time, if the FAST_TABLE mode is defined then the inline version
+// if used with a couple of missing features but it is a lot faster.
+
+// This function will overload the weak function in the MIPStimer function. This code
+// supports the maximum posible performance. This codes does not support some of the advanced
+// features in the lower performance code, specificaly the t and b table functions.
+#ifdef FAST_TABLE
+void TC8_Handler() 
 {
-    int   i;
-    bool  DIOchange=false;
+    static int i;
+     
+  i = TC2->TC_CHANNEL[2].TC_SR;
+  if(i & TC_SR_CPAS) SetupNextEntry();
+  if(i & TC_SR_CPCS)
+  {
+    if(StopRequest == true)
+    {
+        StopTimer();
+        StopRequest = false;
+        return;
+    }
+    // If compare register A is zero then at this point call setup next,
+    // also if rev 1 pulse LDAC as well
+    if(MPT.getRAcounter() == 0) SetupNextEntry();
+  }
+}
+#endif
 
+inline void SetupNextEntry(void)
+{
+   static int   i,k;
+   static bool  DIOchange;
+   static Pio *pio = g_APinDescription[ADDR0].pPort;
+
+    ValueChange = true;
+    DIOchange=false;
+    // Set the address
+    pio->PIO_CODR = 7;                          // Set all bits low
+    pio->PIO_SODR = DCbDarray[0].DACspi & 7;    // Set bits high
+SetupNextEntryAgain:  // sorry
     // Timer count where these values are set
-    if((MIPSconfigData.Rev <= 1) || (softLDAC)) MPT.setTIOAeffectNOIO(TEheader->Count,TC_CMR_ACPA_TOGGLE);
-    else MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE);
-
-//    MPT.setRA(TEheader->Count);
-    
-    MPT.setRC(Theader->MaxCount);
+    TC2->TC_CHANNEL[2].TC_RA = TEheader->Count;
+    TC2->TC_CHANNEL[2].TC_RC = Theader->MaxCount;
     // Process the current entry, all channels
     while(1)
     {
@@ -1386,8 +1454,9 @@ void SetupNextEntry(void)
                     {
                        // Update the DIO hardware if needed
                        if(DIOchange) DOrefresh;
-                       SetupNextEntry();
-                       return;
+                       goto SetupNextEntryAgain;
+                       //SetupNextEntry();
+                       //return;
                     }
                 }
                 else
@@ -1403,26 +1472,32 @@ void SetupNextEntry(void)
                     if(TEheader->Count == 0)
                     {
                        // Update the DIO hardware if needed
-                       DOrefresh;
-                       SetupNextEntry();
-                       return;
+                       if(DIOchange) DOrefresh;
+                       goto SetupNextEntryAgain;
+                       //SetupNextEntry();
+                       //return;
                     }
                 }
                 if(DIOchange) DOrefresh;
                 return;
             }
             // If Chan is 0 to 15 its a DC bias output so send to DAC
-            if((Tentry[i].Chan >= 0) &&(Tentry[i].Chan <= 15))
-              DCbiasDACupdate(Tentry[i].Chan, Tentry[i].Value);
+            if((Tentry[i].Chan >= 0) && (Tentry[i].Chan <= 15))
+            {
+              //DCbiasDACupdate(Tentry[i].Chan, Tentry[i].Value);
+              SelectBoard(Chan2Brd[Tentry[i].Chan]);
+              k=Tentry[i].Value;
+              SPI.transfer(SPI_CS, (uint8_t *)&k, 4);
+            }
             // if Chan is A through P its a DIO to process
-            if((Tentry[i].Chan >= 'A') &&(Tentry[i].Chan <= 'P'))
+            else if((Tentry[i].Chan >= 'A') &&(Tentry[i].Chan <= 'P'))
             {
                 DIOchange = true;
                 SDIO_Set_Image(Tentry[i].Chan,Tentry[i].Value);
             }
             // if Chan is t then this is a trigger out pulse so queue it up for next ISR
-            if(Tentry[i].Chan == 't') QueueTriggerOut(Tentry[i].Value);
-            if(Tentry[i].Chan == 'b') QueueBurst(Tentry[i].Value);
+            else if(Tentry[i].Chan == 't') QueueTriggerOut(Tentry[i].Value);
+            else if(Tentry[i].Chan == 'b') QueueBurst(Tentry[i].Value);
         }
         break;
     }
@@ -1432,7 +1507,9 @@ void SetupNextEntry(void)
     // Advance to next entry
     if(TentryCount < Theader->NumEntries)
     {
-        AdvanceEntryPointer();
+       // Advanced entry pointer
+       TEheader = (TableEntryHeader *)((char *)TEheader + (sizeof(TableEntryHeader) + (sizeof(TableEntry) * TEheader->NumChans)));
+       Tentry = (TableEntry *)((char *)TEheader + sizeof(TableEntryHeader));
     }
     else
     {
@@ -1443,8 +1520,7 @@ void SetupNextEntry(void)
             return;
         }
     }
-}
-
+} 
 
 //**************************************************************************************************
 //
@@ -1474,7 +1550,7 @@ void Trigger_ISR(void)
 
 // This interrupt happens when the compare register matches the timer value. At this time the
 // data is latched and the next values are written.
-void RAmatch_Handler(void)
+inline void RAmatch_Handler(void)
 {
   ValueChange = true;
   ProcessTriggerOut();
@@ -1489,7 +1565,7 @@ void RAmatch_Handler(void)
 
 // This interrupt happens when the counter reaches max count saved in RC. The function updates
 // max count.
-void RCmatch_Handler(void)
+inline void RCmatch_Handler(void)
 {
     ValueChange = true;
     if(StopRequest == true)
@@ -1512,7 +1588,6 @@ void RCmatch_Handler(void)
       SetupNextEntry();
     }
 }
-
 
 
 

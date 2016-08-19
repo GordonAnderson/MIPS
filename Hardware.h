@@ -111,6 +111,8 @@ extern PBledStates  PBledMode;
 #define ADDR2         27
 #define SPI_CS        52
 #define SCL           45    // Shift register clear
+#define DOenable      44    // Digital output buffer enable, active low
+#define DOMSBlatch    DAC0  // Digital output MSB latch
 #define BRDSEL        47
 #define TWI_SCL       21
 #define TWI_SDA       20
@@ -177,6 +179,8 @@ int  MCP2300(int8_t adr, uint8_t bits);
 int  MCP2300(int8_t adr, uint8_t reg, uint8_t bits);
 int  MCP2300(int8_t adr, uint8_t reg, uint8_t *data);
 void SetAddress(int8_t addr);
+void SelectBoard(int8_t Board);
+int SelectedBoard(void);
 
 bool AcquireTWI(void);
 void ReleaseTWI(void);

@@ -16,7 +16,7 @@
 #include "ARB.h"
 #include "WiFi.h"
 
-#define TestMode
+//#define TestMode
 //#define TestFilament
 //#define TestTwave
 

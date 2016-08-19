@@ -151,18 +151,20 @@ FilamentData FILAMENT_Rev_1 = {sizeof(FilamentData),"Filament",1,2,
                                0,5.0,false,0.1,FmodeI,10,48, 2,-3868,21206, 3,5392,13960, 3,13156,-137, 4,13050,-96, 5,2722,6421,
                                0x24,0x12,0x52,
                                false,1.0,4.0,20,
-                               false,1.0,4.0,20
+                               false,1.0,4.0,20,
+                               0
                               };
 
 ARBdata  ARB_Rev_1 = {sizeof(ARBdata),"ARB", 1, false, 1, false, 100, 0, true,20000,25,0,32,ARB_SIN,
                       1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,
                       0x32,0x50,
+                      "TWAVE",25.0,'Q',RISING,1000,1,
                      };
 
 #ifdef TestMode
-WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_AP,"MIPSnet","MIPS","MIPS1234","",0,true};
+WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_AP,"MIPSnet","MIPS","MIPS1234","",0,true,1};
 #else
-WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_IDLE,"MIPSnet","MIPS","MIPS1234","",0,false};
+WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_IDLE,"MIPSnet","MIPS","MIPS1234","",0,false,1};
 #endif
 
 

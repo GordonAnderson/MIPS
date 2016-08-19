@@ -22,6 +22,8 @@
 #include "FAIMS.h"
 #include "Filament.h"
 #include "WiFi.h"
+#include "ethernet.h"
+#include "arb.h"
 #include "Variants.h"
 #include <ThreadController.h>
 
@@ -82,9 +84,6 @@ Commands  CmdArray[] = 	{
   {"LEDOVRD", CMDbool, 1, (char *)&LEDoverride},               // Override the LED operation is true, always false on startup
   {"LED",  CMDint, 1, (char *)&LEDstate},                      // Define the LEDs state you are looking for.
   {"DSPOFF", CMDbool, 1, (char *)&DisableDisplay},             // Print the UseAnalog flag, true or false
-  // Commands added to support shutter control for Mike Belov.
-  // {"SHUTTERCTRL", CMDfunctionStr, 1, (char *)ShutterEnable}, // TRUE or FALSE to enable or disable shutter control
-
   // Clock generation functions
   {"GWIDTH",  CMDint, 0, (char *)&PulseWidth},                // Report the pulse width in microseconds
   {"SWIDTH",  CMDint, 1, (char *)&PulseWidth},                // Set the pulse width in microseconds
@@ -103,6 +102,7 @@ Commands  CmdArray[] = 	{
   {"GDCPWR", CMDfunction, 0, (char *)DCbiasPower},       // Get the DC bias power, on or off
   {"GDCBALL", CMDfunction, 0, (char *)DCbiasReportAllSetpoints},   // Returns the DC bias voltage setpoints for all channels in the system
   {"GDCBALLV", CMDfunction, 0, (char *)DCbiasReportAllValues},     // Returns the DC bias voltage readback values for all channels in the system
+  {"SDCBDELTA", CMDfunctionStr, 1, (char *)DCbiasDelta},   // Set all DC bias channels by a delta value
   {"SDCBCHNS", CMDfunction, 2, (char *)DCbiasSetNumBoardChans},    // Sets the number of channels on a DCbias board. Used for setup only.
   {"SDCBONEOFF", CMDbool, 1, (char *)&DCbDarray[0].UseOneOffset},  // TRUE to enable use of one offset
   {"DCBOFFRBENA", CMDbool, 1, (char *)&DCbDarray[0].OffsetReadback},  // TRUE to enable use of offset readback
@@ -146,6 +146,8 @@ Commands  CmdArray[] = 	{
   {"STBLCNT", CMDfun2int1flt, 3, (char *)SetTableEntryCount}, // Set a count value in a loaded table
   {"STBLDLY", CMDint, 1, (char *)&InterTableDelay}, // Defines the inter table delay in milli seconds
   {"SOFTLDAC",CMDbool, 1, (char *)&softLDAC},       // TRUE or FALSE, set to TRUE to force the used of software LDAC
+  {"GTBLREPLY",CMDbool, 0, (char *)&TableResponse},        // Returns TRUE or FALSE state of enable table response flag
+  {"STBLREPLY",CMDbool, 1, (char *)&TableResponse},       // TRUE or FALSE, set to TRUE enable table response messages (default)
   // Macro commands
   {"MRECORD", CMDfunctionStr, 1, (char *) MacroRecord},    // Turn on macro recording into the filename argument
   {"MSTOP", CMDfunction, 0, (char *) MacroStop},           // Stop macro recording and close the file
@@ -211,6 +213,9 @@ Commands  CmdArray[] = 	{
   {"GFLENAR", CMDfunction, 1, (char *)GetFilamentStatus},            // Get filament cycle status, OFF, or the number of cycles remaining
   {"SFLENAR", CMDfunctionStr, 2, (char *)SetFilamentStatus},         // Set filament cycle status, ON or OFF
   {"RFLPARMS", CMDfunction, 2, (char *)SetFilamentReporting},        // Sets a filament channel reporting rate, 0 = off. Rate is in seconds
+  {"GFLSRES", CMDint, 0, (char *)&FDarray[0].iSense},                // Returns the bias current sense resistor value
+  {"SFLSRES", CMDint, 1, (char *)&FDarray[0].iSense},                // Sets the bias current sense resistor value
+  {"GFLECUR", CMDfunction, 0, (char *)ReportBiasCurrent},            // Returns the filament emission current 
   // WiFi commands
   {"GHOST",  CMDstr, 0, (char *)wifidata.Host},                      // Report this MIPS box host name
   {"GSSID",  CMDstr, 0, (char *)wifidata.ssid},                      // Report the WiFi SSID to connect to
@@ -218,7 +223,36 @@ Commands  CmdArray[] = 	{
   {"SHOST",  CMDfunctionStr, 1, (char *)SetHost},                    // Set this MIPS box host name
   {"SSSID",  CMDfunctionStr, 1, (char *)SetSSID},                    // Set the WiFi SSID to connect to
   {"SPSWD",  CMDfunctionStr, 1, (char *)SetPassword},                // Set the WiFi network password
-  {"SWIFIENA",  CMDbool, 1, (char *)&MIPSconfigData.UseWiFi},              // Set the WiFi enable flag
+  {"SWIFIENA",  CMDbool, 1, (char *)&MIPSconfigData.UseWiFi},        // Set the WiFi enable flag
+  {"SWIFISP",  CMDint, 1, (char *)&wifidata.SerialPort},             // Set the WiFi serial port
+  // Ethernet commands
+  {"GEIP", CMDfunction, 0, (char *)ReportEIP},                       // Report the ethernet adapter IP address
+  {"SEIP", CMDfunctionStr, 1, (char *)SetEIP},                       // Set the ethernet adapter IP address
+  {"GEPORT", CMDfunction, 0, (char *)ReportEport},                   // Report the ethernet adapter port number
+  {"SEPORT", CMDfunction, 1, (char *)SetEport},                      // Set the ethernet adapter port number
+  {"GEGATE", CMDfunction, 0, (char *)ReportEGATE},                   // Report the ethernet adapter gateway IP address
+  {"SEGATE", CMDfunctionStr, 1, (char *)SetEGATE},                   // Set the ethernet adapter gateway IP address
+  // ARB general commands
+  {"SARBMODE", CMDfunctionStr, 1, (char *)SetARBMode},               // Sets the ARM mode
+  {"GARBMODE", CMDfunction, 0, (char *)GetARBMode},                  // Reports the ARM mode
+  {"SWFREQ", CMDfunction, 1, (char *)SetWFfreq},                     // Sets waveform frequency, 0 to 45000Hz
+  {"GWFREQ", CMDfunction, 0, (char *)GetWFfreq},                     // Returns the waveform frequency, 0 to 45000Hz
+  {"SWFVRNG", CMDfunctionStr, 1, (char *)SetWFrange},                // Sets waveform voltage range, rev 2.0
+  {"GWFVRNG", CMDfloat, 0, (char *)&ARBarray[0].Voltage},
+  {"SWFVOFF", CMDfunctionStr, 1, (char *)SetWFoffsetV},              // Sets waveform offset voltage, rev 2.0
+  {"GWFVOFF", CMDfloat, 0, (char *)&ARBarray[0].Offset},
+  {"SWFVAUX", CMDfunctionStr, 1, (char *)SetWFaux},                  // Sets waveform aux voltage, rev 2.0
+  {"GWFVAUX", CMDfloat, 0, (char *)&ARBarray[0].Aux},
+  {"SWFDIS", CMDfunction, 0, (char *)SetWFdisable},                  // Stops waveform generation
+  {"SWFENA", CMDfunction, 0, (char *)SetWFenable},                   // Starts waveform generation 
+  // ARB conventional ARB mode commands
+  {"SARBBUF", CMDfunction, 1, (char *)SetARBbufferLength},           // Sets ARB buffer length
+  {"GARBBUF", CMDint, 0, (char *)&ARBarray[0].BufferLength},         // Reports ARB buffer length
+  {"SARBNUM", CMDfunction, 1, (char *)SetARBbufferNum},              // Sets number of ARB buffer repeats per trigger 
+  {"GARBNUM", CMDint, 0, (char *)&ARBarray[0].NumBuffers},           // Reports number of ARB buffer repeats per trigger
+  {"SARBCHS", CMDfunctionStr, 1, (char *)SetARBchns},                // Sets all ARB channels in the full buffer to a defined value  
+  {"SARBCH", CMDfunctionStr, 2, (char *)SetARBchannel},              // Sets a defined ARB channel in the full buffer to a defined value  
+  {"SACHRNG", CMDfunctionLine, 0, (char *)SetARBchanRange},          // Sets an ARB channel to a value over a defined range
   // End of table marker
   {0},
 };
@@ -322,6 +356,7 @@ void GetNumChans(char *cmd)
   else if (strcmp(cmd, "TWAVE") == 0) TWAVEnumberOfChannels();
   else if (strcmp(cmd, "FAIMS") == 0) FAIMSnumberOfChannels();
   else if (strcmp(cmd, "FIL") == 0) FilamentChannels();
+  else if (strcmp(cmd, "ARB") == 0) ReportARBchannels();
   else
   {
     SetErrorCode(ERR_BADARG);
@@ -355,29 +390,30 @@ char *GetToken(bool ReturnComma)
   unsigned char ch;
 
   // Exit if the input buffer is empty
-  ch = RB_Next(&RB);
-  if (ch == 0xFF) return NULL;
-  if (Tptr >= MaxToken) Tptr = MaxToken - 1;
-
-  if ((ch == '\n') || (ch == ';') || (ch == ':') || (ch == ',') || (ch == ']') || (ch == '['))
+  while(1)
   {
-    if (Tptr != 0) ch = 0;
-    else
+    ch = RB_Next(&RB);
+    if (ch == 0xFF) return NULL;
+    if (Tptr >= MaxToken) Tptr = MaxToken - 1;
+    if ((ch == '\n') || (ch == ';') || (ch == ':') || (ch == ',') || (ch == ']') || (ch == '['))
     {
-      Char2Token(RB_Get(&RB));
-      ch = 0;
+      if (Tptr != 0) ch = 0;
+      else
+      {
+        Char2Token(RB_Get(&RB));
+        ch = 0;
+      }
+    }
+    else RB_Get(&RB);
+    // Place the character in the input buffer and advance pointer
+    Char2Token(ch);
+    if (ch == 0)
+    {
+      Tptr = 0;
+      if ((Token[0] == ',') && !ReturnComma) return NULL;
+      return Token;
     }
   }
-  else RB_Get(&RB);
-  // Place the character in the input buffer and advance pointer
-  Char2Token(ch);
-  if (ch == 0)
-  {
-    Tptr = 0;
-    if ((Token[0] == ',') && !ReturnComma) return NULL;
-    return Token;
-  }
-  return NULL;
 }
 
 void ExecuteCommand(Commands *cmd, int arg1, int arg2, char *args1, char *args2, float farg1)
@@ -469,7 +505,7 @@ void ExecuteCommand(Commands *cmd, int arg1, int arg2, char *args1, char *args2,
 }
 
 // This function processes serial commands.
-// This function does not block and return -1 if there was nothing to do.
+// This function does not block and returns -1 if there was nothing to do.
 int ProcessCommand(void)
 {
   char   *Token,ch;
@@ -485,6 +521,14 @@ int ProcessCommand(void)
   static bool lstrmode = false;
   static int lstrmax;
 
+  // Wait for line in ringbuffer
+  if(state == PCargLine)
+  {
+    if(RB.Commands <= 0) return -1;
+    CmdArray[CmdNum].pointers.funcVoid();
+    state = PCcmd;
+    return 0;
+  }
   if(lstrmode)
   {
     ch = RB_Get(&RB);
@@ -507,7 +551,7 @@ int ProcessCommand(void)
   {
     if (strcmp(Token, "\n") != 0) 
     {
-      if(delimiter!=0) serial->write(delimiter);
+      if(delimiter!=0) serial->print(delimiter);
       serial->print(Token);
     }
     if (strcmp(Token, "\n") == 0) delimiter=0;
@@ -529,6 +573,13 @@ int ProcessCommand(void)
       {
         SetErrorCode(ERR_BADCMD);
         SendNAK;
+        break;
+      }
+      // If the type CMDfunctionLine then we will wait for a full line in the ring buffer
+      // before we call the function. Function has not args and must pull tokens from ring buffer.
+      if (CmdArray[i].Type == CMDfunctionLine)
+      {
+        state = PCargLine;
         break;
       }
       // If this is a long string read command type then init the vaiable to support saving the

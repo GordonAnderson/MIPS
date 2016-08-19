@@ -15,6 +15,7 @@ enum DialogTypes
   D_TITLE,                      // Display only the title
   D_INT,
   D_INT8,
+  D_UINT8,
   D_FLOAT,
   D_BINARY8,
   D_YESNO,

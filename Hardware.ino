@@ -304,17 +304,22 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
 // This function sets the board select bit based on the board value
 void SelectBoard(int8_t Board)
 {
-  static Pio *pio = NULL;
-  static uint32_t pin;
+  static Pio *pio = g_APinDescription[BRDSEL].pPort;
+  static uint32_t pin =g_APinDescription[BRDSEL].ulPin;
 
-  if(pio==NULL)  
-  {
-    pio = g_APinDescription[BRDSEL].pPort;
-    pin = g_APinDescription[BRDSEL].ulPin;
-  }
   AtomicBlock< Atomic_RestoreState > a_Block;
   if (Board == 1) pio->PIO_CODR = pin;    // Set pin low;
   else pio->PIO_SODR = pin;               // Set pin high;
+}
+
+// Returns the current board selection
+int SelectedBoard(void)
+{
+  static Pio *pio = g_APinDescription[BRDSEL].pPort;
+  static uint32_t pin =g_APinDescription[BRDSEL].ulPin;
+
+  if((pio->PIO_ODSR & pin) != 0) return(1);
+  return(0);
 }
 
 // This function sets all the IO lines as needed by MIPS.
@@ -327,8 +332,6 @@ void Init_IOpins(void)
   pinMode(PB_RED, OUTPUT);
   pinMode(PB_GREEN, OUTPUT);
   pinMode(PB_BLUE, OUTPUT);
-  // On PCB red LED
-//  pinMode(RED_LED, OUTPUT);
   // Misc control lines
   pinMode(ADDR0, OUTPUT);
   pinMode(ADDR1, OUTPUT);
@@ -338,10 +341,12 @@ void Init_IOpins(void)
   pinMode(BRDSEL, OUTPUT);
   pinMode(SPI_CS, OUTPUT);
   pinMode(PWR_ON, OUTPUT);
-  pinMode(A11, OUTPUT);
+  pinMode(LDACctrl, OUTPUT);
   pinMode(TRGOUT, OUTPUT);
-  digitalWrite(A11, HIGH);
+  digitalWrite(LDACctrl, HIGH);
   pinMode(RFON, OUTPUT);
+  pinMode(DOMSBlatch,OUTPUT);
+  pinMode(DOenable,OUTPUT);
   RFON_OFF;
   ENA_BRD_A;
 }
@@ -411,21 +416,10 @@ float ReadVin(void)
 // the bit directions have already been set.
 void SetAddress(int8_t addr)
 {
-  static Pio *pio = NULL;
-  /*
-  if ((addr & 4) != 0) digitalWrite(ADDR2, HIGH);
-  else digitalWrite(ADDR2, LOW);
-  if ((addr & 2) != 0) digitalWrite(ADDR1, HIGH);
-  else digitalWrite(ADDR1, LOW);
-  if ((addr & 1) != 0) digitalWrite(ADDR0, HIGH);
-  else digitalWrite(ADDR0, LOW);
-  */
-  // The above commented out code takes 10uS to execute! The code below
-  // is much faster (3uS) and assumes ADDR0-ADDR2 are D.0-D.2
-  if(pio==NULL)  pio = g_APinDescription[ADDR0].pPort;
-  pio->PIO_CODR = 7;    // Set all bits low
-  pio->PIO_SODR = addr & 7;    // Set bit high
+  static Pio *pio = g_APinDescription[ADDR0].pPort;
 
+  pio->PIO_CODR = 7;           // Set all bits low
+  pio->PIO_SODR = addr & 7;    // Set bit high
 }
 
 // Clears the digitial output shift registers.
@@ -435,14 +429,15 @@ void ClearDOshiftRegs(void)
   digitalWrite(SCL, LOW);
   digitalWrite(SCL, HIGH);
   // Pulse the latch lines
-  pinMode(DAC0,OUTPUT);
-  digitalWrite(DAC0,LOW);
-  digitalWrite(DAC0,HIGH);
+  pinMode(DOMSBlatch,OUTPUT);
+  digitalWrite(DOMSBlatch,LOW);
+  digitalWrite(DOMSBlatch,HIGH);
   PulseLDAC;
   // This is used on REV 3.0 controller to disable output during boot
-  pinMode(44,OUTPUT);
-  digitalWrite(44,LOW);
+  pinMode(DOenable,OUTPUT);
+  digitalWrite(DOenable,LOW);
   // This is DI6 used to drive the enable after its cut free from the buffer.
+  // This is a hack for old controlers and needs be be removed at some point.
   pinMode(46,OUTPUT);
   digitalWrite(46,LOW);
 }
@@ -485,6 +480,9 @@ void ClearOutput(char chan, int8_t active)
 // JP1 position 2 jumper needs to be installed on the MIPS controller hardware.
 void DigitalOut(int8_t MSB, int8_t LSB)
 {
+  static Pio *pio = g_APinDescription[DOMSBlatch].pPort;
+  static uint32_t pin =g_APinDescription[DOMSBlatch].ulPin;
+
   AtomicBlock< Atomic_RestoreState > a_Block;
   // Set the address to 6
   SetAddress(6);
@@ -493,15 +491,13 @@ void DigitalOut(int8_t MSB, int8_t LSB)
   // Set the data
   SPI.transfer(SPI_CS, MSB, SPI_CONTINUE);
   SPI.transfer(SPI_CS, LSB);
-  delayMicroseconds(2);
+  delayMicroseconds(2);              // Test the need for this delay
   // For rev 3.0 controller output using address 7 and stobe with output A12.
   SetAddress(7);
-  SPI.setDataMode(SPI_CS, SPI_MODE1);
   SPI.transfer(SPI_CS, MSB);
-  pinMode(DAC0,OUTPUT);
-  digitalWrite(DAC0,LOW);
-  digitalWrite(DAC0,HIGH);
-  delayMicroseconds(2);
+  pio->PIO_CODR = pin;               // Set pin low;
+  pio->PIO_SODR = pin;               // Set pin high;
+  delayMicroseconds(2);              // Test the need for tis delay
   SetAddress(0);
 }
 
@@ -948,13 +944,14 @@ int AD5625(int8_t adr, uint8_t chan, uint16_t val,int8_t Cmd)
   int iStat;
 
   AcquireTWI();
+  interrupts();
   Wire.beginTransmission(adr);
   Wire.write((Cmd << 3) | chan);
   //    if(chan <= 3) val <<= 4;
   Wire.write((val >> 8) & 0xFF);
   Wire.write(val & 0xFF);
   {
-    //AtomicBlock< Atomic_RestoreState > a_Block;
+    AtomicBlock< Atomic_RestoreState > a_Block;
     iStat = Wire.endTransmission();
   }
   ReleaseTWI();
@@ -1111,8 +1108,11 @@ bool AcquireTWI(void)
 void ReleaseTWI(void)
 {
   static void (*function)();
+  static bool busy = false;
   int i;
-  
+
+  if(busy) return;
+  busy = true;
   AtomicBlock< Atomic_RestoreState > a_Block;
   if(TWIbusy)
   {
@@ -1128,6 +1128,7 @@ void ReleaseTWI(void)
     }
     TWIbusy=false;
   }
+  busy=false;
 }
 
 // This queues up a function to call when the currect TWI operation finishes.
@@ -1139,8 +1140,8 @@ void TWIqueue(void (*TWIfunction)())
   {
      if(TWIqueued[i] == NULL) 
      {
-      TWIqueued[i] = TWIfunction;
-      break;
+       TWIqueued[i] = TWIfunction;
+       break;
      }
   }
 }
@@ -1202,7 +1203,7 @@ void TriggerOut(char *cmd)
 }
 
 // This function will pulse the trigger output 
-void TriggerOut(int microSec)
+inline void TriggerOut(int microSec)
 {
   static Pio *pio = pio = g_APinDescription[TRGOUT].pPort;
   static uint32_t pin = pin = g_APinDescription[TRGOUT].ulPin;
@@ -1412,58 +1413,4 @@ void DIOmirror(char *in, char *out)
   SendNAK;
 }
 
-// Laser Shutter control functions for Mike Belov's system
-/*
-void ShutterOpen(void)
-{
-  // Shutter to connected to output G, this interrupt will set G high
-  // Set the image bits
-  SDIO_Set_Image('G', '1');
-  // Send to the hardware
-  DOrefresh;
-  // Toggle LDAC
-  PulseLDAC;
-  UpdateDigitialOutputArray();
-  ShutterOpened = true;
-}
 
-void ShutterClose(void)
-{
-  // Shutter to connected to output G, this interrupt will set G low
-  // Set the image bits
-  SDIO_Set_Image('G', '0');
-  // Send to the hardware
-  DOrefresh;
-  // Toggle LDAC
-  PulseLDAC;
-  UpdateDigitialOutputArray();
-  ShutterClosed = true;
-}
-
-// This function is called to enable (TRUE) or disable (FALSE) the shutter
-// If TRUE then the Q and R inputs are setup for positive edge trigger. 
-// If false the interrupts are removed.
-void ShutterEnable(char *state)
-{
-  if ((strcmp(state, "TRUE") !=0) && (strcmp(state, "FALSE") != 0))
-  {
-    SetErrorCode(ERR_BADARG);
-    SendNAK;
-    return;
-  }
-  SendACKonly;
-  if (strcmp(state, "TRUE") == 0)
-  {
-    // Set up Q and R inputs for positive edge trigger
-    attachInterrupt(DI0, ShutterOpen, RISING);
-    attachInterrupt(DI1, ShutterClose, RISING);
-  }
-  else
-  {
-    // Remove the interrupts from Q and R
-    detachInterrupt(DI0);
-    detachInterrupt(DI1);
-  }
-}
-
-*/

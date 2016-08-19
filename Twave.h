@@ -17,7 +17,17 @@ enum CompressorState
   CS_TRIG,
   CS_NONCOMPRESS,
   CS_COMPRESS,
-  CS_NORMAL
+  CS_NORMAL,
+  CS_DELAY
+};
+
+enum CompressorSwitchState
+{
+  CSS_OPEN_REQUEST,
+  CSS_CLOSE_REQUEST,
+  CSS_OPEN,
+  CSS_CLOSE,
+  CSS_IDLE
 };
 
 typedef struct
@@ -53,7 +63,7 @@ typedef struct
   bool    UseCommonClock;     // Flag set to true to use a common clock, this will cause both modules is set each others value
   // The following variable support the Twave compressor mode of operation
   bool   CompressorEnabled;   // True if the compressor mode has been enabled
-  int8_t Corder;              // Compressor order, 1 to 20
+  uint8_t Corder;              // Compressor order, 1 to 20
   int8_t NumPasses;           // Total number of passes through device
   int8_t CNth;                // Compress every Nth pass
   float  Tdelay;              // Delay from trigger to start of compressor or pass, in millisec
@@ -68,6 +78,14 @@ typedef struct
   char   TWgateDI;            // External gate for Twave output
   int8_t TWgateLevel;         // External gate for Twave outlut level
 } TwaveData;
+
+// Multi-pass compressor stack structure used for loops
+typedef struct
+{
+  bool Inited;
+  int StartOfLoop;
+  int Count;
+} CompressorStack;
 
 extern TwaveData TD;
 extern TwaveData TDarray[2];
