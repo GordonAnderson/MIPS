@@ -63,8 +63,12 @@ extern int ErrorCode;
 #define ERR_WIFICONNECTED           108     // Not supported while WiFi is connected
 #define ERR_NOETHERNET              109     // No ethernet adapter detected
 #define ERR_ETHERNETCOMM            110     // Ethernet adapter communication error
+#define ERR_EEPROMWRITE             110     // Error writing to EEPROM on module
+#define ERR_NOTOFFSETABLE           111     // DC bias module is not offsetable
 
 #endif
+
+
 
 
 

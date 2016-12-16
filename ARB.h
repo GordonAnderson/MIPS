@@ -1,7 +1,14 @@
 #ifndef ARB_H_
 #define ARB_H_
 
+// Digital IO pins used by the ARB system
 #define ARBsync 9
+#define ARBmode 48                    // Signals ARB module to enter compress mode
+
+#define CompressBoard 1               // Defines the board address used for the compressor 
+
+#define ARBnormal   digitalWrite(ARBmode,LOW)
+#define ARBcompress digitalWrite(ARBmode,HIGH)
 
 // TWI commands and constants
 #define TWI_ARB_ADD         0x32
@@ -29,6 +36,12 @@
 #define TWI_SET_ARB_VECTOR  0x13      // Set ARB vector in buffer, format:
                                       // 8 bit channel number, 8 bit number of bytes (29 max)
                                       // 8 bit unsiged values. 0 to 255. The index will automatically advance to allow long buffer fills.
+#define TWI_SET_SYNC_ENA    0x14      // Set external sync enable (true or false) 
+#define TWI_SET_COMP_ENA    0x15      // Set compression enable (true or false) 
+#define TWI_SET_COMP_ORDER  0x16      // Set compression order, byte value, 0 to 255 
+#define TWI_SET_COMP_EXT    0x17      // This flag will enable the hardware line to define normal/compression modes
+                                      // true will enable, when the hardware line is high then we are in compress mode.
+#define TWI_SET_EXT_CLOCK   0x18      // This command enables external (off board) clock. accepts true or false, true = external clock
 
 #define TWI_READ_REQ_FREQ   0x81      // Returns requested frequency
 #define TWI_READ_ACT_FREQ   0x82      // Returns actual frequency
@@ -72,7 +85,7 @@ typedef struct
   float         Offset;            // Offset voltage of 0 point voltage
   uint8_t       PPP;               // Number of data points per period
   WaveFormTypes wft;               // Waveform type
-  uint8_t       WaveForm[32];      // Arbitrary waveform storage
+  int8_t        WaveForm[32];      // Arbitrary waveform storage
   // TWI device addresses
   uint8_t       ARBadr;            // Arduino Due ARB controller address
   uint8_t       EEPROMadr;
@@ -84,15 +97,34 @@ typedef struct
   // ARB mode parameters
   int           BufferLength;      // Buffer length
   int           NumBuffers;        // Number of times to play the buffer on each trigger
+
+  char          ARBdirDI;          // Sync input in TWAVE mode or trigger in AARB mode
+  int8_t        ARBdirLevel;       // Sync level, 0,CHANGE,RISING, or FALLING
+  // Compressor variables
+  bool          UseCommonClock;     // Flag set to true to use a common clock, this will cause both modules is set each others value
+  bool          CompressorEnabled;  // True if the compressor mode has been enabled
+  uint8_t       Corder;             // Compressor order, 1 to 20
+  int8_t        NumPasses;          // Total number of passes through device
+  float         Tdelay;             // Delay from trigger to start of compressor or pass, in millisec
+  float         Tcompress;          // Time in compress mode, in millisec
+  float         Tnormal;            // Time in normal mode, in millisec
+  float         TnoC;               // Time for non compressed pass, in millisec
+  char          Ctrig;              // External input for compressor start trigger
+  int8_t        CtrigLevel;         // External input triggerl level
+  char          Cswitch;            // Digitial output to control output switch to relead ions to mass spec
+  int8_t        CswitchLevel;       // Digital output level control
 } ARBdata;
 
 extern ARBdata  ARBarray[2];
+extern DialogBoxEntry ARBCompressorEntries2[];
+extern DialogBox ARBCompressorDialog;
+extern MIPStimer *ARBclock;
 
 //Prototypes
 String GetWaveformString(WaveFormTypes wft);
 WaveFormTypes GetWaveformType(String WaveformString);
 void SetEnable(void);
-void SelectARBmodule(void);
+void SelectARBmodule(bool);
 void SetFrequency(void);
 void SetAmplitude(void);
 void SetOffset(void);
@@ -101,22 +133,46 @@ void SetDirection(void);
 void SetARBwaveform(void);
 
 void ReportARBchannels(void);
-void SetARBbufferLength(int len);
-void SetARBbufferNum(int num);
-void SetARBMode(char *mode);
-void GetARBMode(void);
-void SetWFfreq(int freq);
-void GetWFfreq(void);
-void SetWFenable(void);
-void SetWFdisable(void);
-void SetWFrange(char *srange);
-void SetWFoffsetV(char *srange);
-void SetWFaux(char *srange);
-void SetARBchns(char *sval);
-void SetARBchannel(char * sch, char *sval);
+void SetARBbufferLength(int module, int len);
+void GetARBbufferLength(int module);
+void SetARBbufferNum(int module, int num);
+void GetARBbufferNum(int module);
+void SetARBMode(char *module, char *mode);
+void GetARBMode(int module);
+void SetWFfreq(int module, int freq);
+void GetWFfreq(int module);
+void SetWFenable(int module);
+void SetWFdisable(int module);
+void SetWFrange(char *module, char *srange);
+void GetWFrange(int module);
+void SetWFoffsetV(char *module, char *srange);
+void GetWFoffsetV(int module);
+void SetWFaux(char *module, char *srange);
+void GetWFaux(int module);
+void SetARBdirection(char *module, char *dir);
+void GetARBdirection(int module);
+void SetARBwaveform(void);
+void GetARBwaveform(int module);
+void SetARBchns(char *module, char *sval);
+void SetARBchannel(void);
 void SetARBchanRange(void);
+void SetARBwfType(char *sMod, char *Swft);
+void GetARBwfType(int module);
+
+// Compressor proto types
+void SetARBCmode(char *mode);
+void GetARBCorder(void);
+void SetARBCorder(int ival);
+void SetARBCtriggerDelay(char *str);
+void SetARBCcompressTime(char *str);
+void SetARBCnormalTime(char *str);
+void SetARBCnoncompressTime(char *str);
+void ARBCtrigger(void);
+void SetARBCswitch(char *mode);
 
 #endif
+
+
 
 
 

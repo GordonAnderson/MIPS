@@ -344,10 +344,58 @@
 //          this only happens in the compressor table mode.
 //  V1.59, August 17, 2016
 //      1.) Updated WiFi to support serial port 0 or 1.
-//
-// Couple of issues to resolve
-//    1.) External trigger lockup / missing trigger setup
-//    2.) Exit table mode and its hold its last voltage as well as not alarming!
+//  V1.60, September 2, 2016
+//      1.) Added the table external clock EXTS mode for a hardware bug work a round at matt's lab in seattle.
+//      2.) Added the EXTN for negative edge command but its not yet fully implementd.
+//  V1.61, September 5, 2016
+//      1.) Added the EXT and ETXN clock edge inversion logic
+//      2.) Fixed a bug in the debounce logic for the EXTS clock mode of the table function.
+//  V1.62, September 11, 2016
+//      1.) Fixed the ext trigger function so it will work in the EXTS clock mode
+//  V1.63, September 13, 2016
+//      1.) Fixed a table bug that did not allow channels 9 through 15 to output
+//  V1.64, September 29, 2016
+//      1.) Fixed a table logic bug that was introduced with the table performance improvements. This bug caused the time point 0
+//          values not to update if you are also changing digital outputs.
+//  V1.65, October 2, 2016
+//      1.) Added About command to report system parameters
+//      2.) Added command to allow setting module rev level
+//      3.) Added About menu option
+//      3.) Upgrade the FAIMS module to support Rev 3 (this is a work in progress)
+//          - New clock mode / setup
+//          - Update the delay adjustment
+//  V1.66, October 6, 2016
+//      1.) Removed interrupt disables to improve clock generation in compressor enabled Twave systems
+//      2.) Updated FAIMS driver to support hardware rev 3. Must set the board rev to 3
+//  V1.67, October 14, 2016
+//      1.) Improved the filtering on the bias current monitoring for the filament system
+//  V1.68, October 15, 2016
+//      1.) Added current ramp down on filament disable
+//      2.) Added the DCbias profiles and profile commands including toggle between profiles
+//      3.) Add disable offset command
+//      4.) Added all the twave frequency sweep commands
+//  V1.69, November 3, 2016
+//      1.) Updated the ARB module driver with the following features:
+//          - Added support for two modules
+//          - Added External Sync
+//          - Added compression logic
+//          - Updated all of the host command and added host commands for compressor
+//      2.) Added the initial drivers for the high order FAIMS controller
+//      3.) Updated the table code to address the following issues
+//          - Fixed an error that would not allow you to start a table with an initial delay
+//          - Fixed a number of bugs when using external trigger to stat a table
+//  V1.70, November 8, 2016. Election day!
+//      1.) Moved all the sweep code into the generic compressor file
+//      2.) Added voltage sweep to the sweep code
+//      3.) Added the sweep functions to the ARB modules
+//  V1.71, December 3, 2016
+//      1.) Updated the Twave module driver to support rev 4.0 of the Twave hardware. This version
+//          has a CPLD for clock generation. Rev 4 also supports lowering the minimum pulse voltage to 5 volts.
+//      2.) Updated the Twave driver to only save a minimum pulse voltage of 15 volts.
+//  V1.72, December 15, 2016
+//      1.) Fixed a number of bugs in the RFdriver code to support using two RF driver boards in one system.
+//  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
+//        rev aware and adjust at run time. (Oct 28, 2016)
 //
 // Next version to dos:
 //      1.) Update the display code to make it interupt safe when ISR uses SPI, done but turned off for compressor
@@ -384,6 +432,7 @@
 #include "FAIMS.h"
 #include "ESI.h"
 #include "ARB.h"
+#include "HOFAIMS.h"
 #include "Variants.h"
 #include "Errors.h"
 #include "Serial.h"
@@ -420,7 +469,7 @@ bool DisableDisplay = false;
 bool LEDoverride = false;
 int  LEDstate = 0;
 
-char Version[] = "Version 1.59, Aug 17, 2016";
+char Version[] = "Version 1.72, Dec 15, 2016";
 
 // ThreadController that will controll all threads
 ThreadController control = ThreadController();
@@ -436,12 +485,14 @@ bool ButtonRotated = false;
 extern Menu HardwareTestMenu;
 extern DialogBox TwaveDialog;
 extern DialogBox MIPSconfig;
+extern DialogBox MIPSabout;
 extern DialogBox ModuleConfig;
 extern DialogBox MacroOptions;
 
 #define MaxMainMenuEntries  16
 
 void SerialPortReset(void);
+void DisplayAbout(void);
 
 char BoardAddress[20] = "";
 char BoardName[20] = "";
@@ -449,6 +500,7 @@ char BoardName[20] = "";
 // MIPS main menu
 MenuEntry MainMenuEntries[MaxMainMenuEntries] = {
   {" MIPS Configuration", M_DIALOG, 0, 0, 0, NULL, &MIPSconfig, NULL, NULL},
+  {" About this system",  M_DIALOG, 0, 0, 0, NULL, &MIPSabout, NULL, DisplayAbout},
   {" Reset serial port",  M_FUNCTION, 0, 0, 0, NULL, NULL, SerialPortReset, NULL},
   {""}};
   
@@ -474,7 +526,16 @@ DialogBoxEntry MIPSconfigEntries[] = {
 
 DialogBox MIPSconfig = {
   {"MIPS Configuration",ILI9340_BLACK,ILI9340_WHITE,2,0,0,300,220,B_DOUBLE,12},
-  M_SCROLLING,0,0,MIPSconfigEntries};
+  M_SCROLLING,0,0,false,MIPSconfigEntries};
+
+DialogBoxEntry MIPSaboutEntries[] = {
+  {"   Return to main menu  ", 0, 11, D_MENU, 0, 0, 0, 0, false, NULL, &MainMenu, NULL, NULL},
+  {NULL},
+};
+
+DialogBox MIPSabout = {
+  {"About this system",ILI9340_BLACK,ILI9340_WHITE,2,0,0,300,220,B_DOUBLE,12},
+  M_SCROLLING,0,0,false,MIPSaboutEntries};
   
 // MIPS module setup / config dialog box
 DialogBoxEntry ModuleConfigEntries[] = {
@@ -488,7 +549,7 @@ DialogBoxEntry ModuleConfigEntries[] = {
 
 DialogBox ModuleConfig = {
   {"Module Configuration",ILI9340_BLACK,ILI9340_WHITE,2,0,0,300,220,B_DOUBLE,12},
-  M_SCROLLING,0,0,ModuleConfigEntries};
+  M_SCROLLING,0,0,false,ModuleConfigEntries};
   
 // Macro dialog box supporting the following
 //  - Select and play a macro
@@ -506,7 +567,7 @@ DialogBoxEntry MacroEntries[] = {
 
 DialogBox MacroOptions = {
   {"Macro options",ILI9340_BLACK,ILI9340_WHITE,2,0,0,300,220,B_DOUBLE,12},
-  M_SCROLLING,0,0,MacroEntries};
+  M_SCROLLING,0,0,false,MacroEntries};
   
 // This function is called before the macro menu loads.
 void SetupMacroOptions(void)
@@ -521,6 +582,139 @@ void SerialPortReset(void)
   SerialUSB.flush();
   SerialUSB.end();
   SerialInit();
+}
+
+// This function is called by the serial command processor. This function will report the following:
+// MIPS version
+// MIPS name
+// List of modules, board, address, name, rev
+void About(void)
+{
+  uint8_t addr;
+  char    signature[100];
+  int8_t  rev;
+
+   SendACKonly;
+   if(SerialMute) return;
+   // Report the system version and name
+   serial->print("MIPS: ");
+   serial->println(Version);
+   serial->print("MIPS name: ");
+   serial->println(MIPSconfigData.Name);
+   if(MIPSconfigData.UseWiFi) serial->println("WiFi module enabled");
+   if(EthernetPresent) serial->println("Ethernet module enabled");
+   // Report all the modules and revisions
+   serial->println("System modules:");
+   serial->println("  Board,Address,Name,Rev");
+   for (addr = 0x50; addr <= 0x56; addr  += 2)
+   {
+      // Set board select to A
+      ENA_BRD_A;
+      if (ReadEEPROM(signature, addr, 0, 100) == 0)
+      {
+         serial->print("  a,");
+         serial->print(addr,HEX);
+         serial->print(",");
+         serial->print(&signature[2]);
+         serial->print(",");
+         rev = signature[22];
+         serial->println(rev);
+      }
+      // Set board select to B
+      ENA_BRD_B;
+      if (ReadEEPROM(signature, addr, 0, 100) == 0)
+      {
+         serial->print("  b,");
+         serial->print(addr,HEX);
+         serial->print(",");
+         serial->print(&signature[2]);
+         serial->print(",");
+         rev = signature[22];
+         serial->println(rev);
+      }
+   }
+}
+
+// This function is called after the About dialog box is created. This function
+// needs to display all the about data.
+void DisplayAbout(void)
+{
+   uint8_t addr;
+   char    signature[100],buf[25];
+   int y=0;
+
+//TWI_RESET();
+//Wire.begin();
+   PrintDialog(&MIPSabout, 1, y++, "MIPS Version:");
+   PrintDialog(&MIPSabout, 2, y++, &Version[8]);
+   PrintDialog(&MIPSabout, 1, y, "MIPS Name:");
+   PrintDialog(&MIPSabout, 11, y++, MIPSconfigData.Name);
+   if(MIPSconfigData.UseWiFi) PrintDialog(&MIPSabout, 1, y++,"WiFi module enabled");
+   if(EthernetPresent) PrintDialog(&MIPSabout, 1, y++,"Ethernet module enabled");
+   PrintDialog(&MIPSabout, 1, y++, "System modules:");
+   PrintDialog(&MIPSabout, 1, y++, "  Board,Addr,Name,Rev");
+   for (addr = 0x50; addr <= 0x56; addr  += 2)
+   {
+      // Set board select to A
+      ENA_BRD_A;
+      if (ReadEEPROM(signature, addr, 0, 100) == 0)
+      {
+         sprintf(buf,"  a,%x,%s,%d",addr,&signature[2],signature[22]);
+         PrintDialog(&MIPSabout, 1, y++, buf);
+      }
+      // Set board select to B
+      ENA_BRD_B;
+      if (ReadEEPROM(signature, addr, 0, 100) == 0)
+      {
+         sprintf(buf,"  b,%x,%s,%d",addr,&signature[2],signature[22]);
+         PrintDialog(&MIPSabout, 1, y++, buf);
+      }
+   }
+}
+
+// This function is called by the serial command processor. This function will set a modules rev level to the value
+// defined. All the parameters are pulled from the input ring buffer. The parameters are board,addr,rev
+void SetModuleRev(void)
+{
+   char    *Token;
+   char    *ptr;
+   String  sToken;
+   char    brd;
+   uint8_t addr,rev;
+
+   while(1)
+   {
+     // Read the board address
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     brd = toupper(Token[0]);
+     // Read the hex address
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     addr = strtol(Token,&ptr,16);
+     // Read the target rev level
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sToken = Token;
+     rev = sToken.toInt();
+     // Validate the parameters
+     if((brd != 'A') && (brd != 'B')) break;
+     if((addr != 0x50) && (addr != 0x52) && (addr != 0x54) && (addr != 0x56)) break;
+     // Write the rev number to EEPROM
+     if(brd == 'A') ENA_BRD_A;
+     else ENA_BRD_B;
+     if(WriteEEPROM(&rev, addr, 22, 1) != 0)
+     {
+        SetErrorCode(ERR_EEPROMWRITE);
+        SendNAK; 
+        return; 
+     }
+     SendACK;
+     return;
+   }
+   // If here then we had bad arguments!
+  SetErrorCode(ERR_BADARG);
+  SendNAK;  
 }
 
 // Called after macro is selected to play
@@ -768,15 +962,37 @@ void yield(void)
 
 //int sysTickHook(void) __attribute__ ((weak, alias("__mysysTickHook")));
 
+void testISR()
+{
+//   AtomicBlock< Atomic_RestoreState > a_Block;
+//   NVIC_SetPriority(TC1_IRQn, 15);
+   Timer1.setPriority(15);
+   for(int i=0;i<100;i++) delayMicroseconds(100);
+}
+
+void test(void)
+{
+   Timer1.attachInterrupt(testISR);
+   Timer1.start(100000); // Calls every 100ms
+}
+
 void setup()
 {
+  // Reset any ARB modules in system
+  pinMode(14,OUTPUT);
+  digitalWrite(14,LOW);
+  delay(10);
+  digitalWrite(14,HIGH);
+  delay(100);
+  //
+
   analogReadResolution(12);
   Reset_IOpins();
   ClearDOshiftRegs();
-//  Serial.begin(115200);
-//  Serial1.begin(115200);
-//  Stream *stm = &Serial;
-//  stm->println("MIPS!");
+  SPI.setClockDivider(21);
+  pinMode(_sdcs,OUTPUT);
+  digitalWrite(_sdcs,HIGH);
+  delay(100);
 
   // Init the display and setup all the hardware
   tft.begin();
@@ -791,18 +1007,20 @@ void setup()
 
   delay(250);
 
+//test();
+
   MIPSsystemLoop();
 
 //  SPI.begin(_sdcs);
   SPI.setClockDivider(21);
 //  SPI.setClockDivider(200);
 //  if(root.isOpen()) root.close();
-//  pinMode(_sdcs,OUTPUT);
+  pinMode(_sdcs,OUTPUT);
 //  digitalWrite(_sdcs,LOW);
 //  for(int i=0;i<10;i++) SPI.transfer(_sdcs, 0, SPI_CONTINUE);
 //  SPI.transfer(_sdcs, 0x92);
-//  digitalWrite(_sdcs,HIGH);
-//  delay(100);
+  digitalWrite(_sdcs,HIGH);
+  delay(100);
   if (!SD.begin(_sdcs))
   {
     tft.println("SD disk failed to initalize!");
@@ -928,6 +1146,7 @@ void ScanHardware(void)
   #endif
   #ifdef TestTwave
   Twave_init(0,0x52);
+  Twave_init(1,0x52);
   #endif
   // Loop through all the addresses looking for signatures
   for (addr = 0x50; addr <= 0x56; addr  += 2)
@@ -942,7 +1161,8 @@ void ScanHardware(void)
       if (strcmp(&signature[2], "DCbias") == 0) DCbias_init(0);
       if (strcmp(&signature[2], "ESI") == 0) ESI_init(0);
       if (strcmp(&signature[2], "Filament") == 0) Filament_init(0);
-      if (strcmp(&signature[2], "ARB") == 0) ARB_init(0);
+      if (strcmp(&signature[2], "ARB") == 0) ARB_init(0,addr);
+      if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(0,addr);
     }
     // Set board select to B
     ENA_BRD_B;
@@ -954,7 +1174,8 @@ void ScanHardware(void)
       if (strcmp(&signature[2], "DCbias") == 0) DCbias_init(1);
       if (strcmp(&signature[2], "ESI") == 0) ESI_init(1);
       if (strcmp(&signature[2], "Filament") == 0) Filament_init(1);
-      if (strcmp(&signature[2], "ARB") == 0) ARB_init(1);
+      if (strcmp(&signature[2], "ARB") == 0) ARB_init(1,addr);
+      if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(1,addr);
     }
   }
   // Now look for the FAIMS board...
@@ -1095,6 +1316,8 @@ bool LOADparms(char *filename)
   memcpy(&MIPSconfigData, &MCS, MCS.Size);
   return true;
 }
+
+
 
 
 

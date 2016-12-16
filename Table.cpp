@@ -180,6 +180,7 @@
 // STBLDAT;100:1:10,150:2:33;
 // STBLDAT;200:1:1,300:1:0,400:1:1,500:1:0;
 // STBLDAT;200:A:1,300:A:0,400:A:1,500:A:0;
+// STBLDAT;0:[A:1000,200:A:1,300:A:0,400:A:1,500:A:0:];
 // STBLDAT;200:A:1,300:A:0,400:A:1,700:A:0;
 // STBLDAT;100:A:1,150:A:0,200:A:1,250:A:0;
 // STBLDAT;0:A:1,150:A:0,200:A:1,250:A:0;
@@ -189,6 +190,7 @@
 // STBLDAT;100:1:15:3:123,150:2:33,400:[3:5,0:1:30:2:10,100:1:10:2:30,150:],0:1:15,50:1:5;
 // STBLDAT;0:[3:5,0:1:30:2:10,100:1:10:2:30,150:];
 // STBLDAT;0:[A:1000,0:1:0,1000:1:5,1000:];
+// STBLDAT;0:[A:1000,0:A:1,1000:A:0,1000:];
 //
 // Examples to be tested
 //
@@ -279,6 +281,9 @@
 //      c.) Allow software trigger
 //      This could be independent of the first setup dialog. Replace the current popup message.
 //
+//
+// attachInterrupt(digitalPinToInterrupt(DI2), ISRclk, RISING);
+//
 #include "Arduino.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_ILI9340.h"
@@ -309,10 +314,13 @@
 
 extern ThreadController control;
 
-MIPStimer MPT(8);
+MIPStimer MPT(TMR_Table);               // timer used for pulse sequence generation
+#define   MPTtc   TC2->TC_CHANNEL[2]    // Pointer to the timers control block
 
 #define NumTables 5
 #define MaxTable  4096
+unsigned int Counter;
+
 volatile unsigned char VoltageTable[NumTables][MaxTable];
 volatile int ptr;     // Table pointer
 volatile int CT = 0;  // Current table number
@@ -329,6 +337,7 @@ volatile NestingStack NS;             // Used to manage nested stacks
 
 volatile bool TableReady = false;     // This flag tells the system the tables are ready to use
 volatile bool Aborted = false;        // Set when an abort command is received
+volatile bool TableStopped = false;   //
 volatile bool LOCrequest = false;     // Set when requested to enter local mode
 volatile bool StopRequest;            // Used by the realtime processing to stop the timer at the end of its cycle
 volatile bool StopCommanded;          // Flag set by the serial command TBLSTOP, stops the table and remains in table mode
@@ -553,6 +562,8 @@ void SetTableCLK(char *cmd)
         return;
     }
     if(strcmp(cmd,"EXT") == 0) ClockMode = EXT;
+    else if(strcmp(cmd,"EXTN") == 0) ClockMode = EXTN;
+    else if(strcmp(cmd,"EXTS") == 0) ClockMode = EXTS;
     else if(strcmp(cmd,"MCK2") == 0) ClockMode = MCK2;
     else if(strcmp(cmd,"MCK8") == 0) ClockMode = MCK8;
     else if(strcmp(cmd,"MCK32") == 0) ClockMode = MCK32;
@@ -639,7 +650,7 @@ void SWTableTrg(void)
         return;
     }
     // If there is a update at count 0 then fire LDAC and setup for the next event
-    if(MPT.getRAcounter() == 0)
+    if(MPT.getRAcounter() == 0)  // This can't work because the timer has not yet been setup, maybe it has??
     {
       if((MIPSconfigData.Rev <= 1) || (softLDAC)) // Rev 1 used software control of LDAC
       {
@@ -648,12 +659,14 @@ void SWTableTrg(void)
       }
       else   // here for rev 2 
       {
-        LDACcapture;
-        LDACctrlLow;
-        LDACctrlHigh;
-        LDACrelease;
+        // Not sure why this was done and I removed it on Nov 3, 2016.
+        // This was part of a series of bug fixes for external triggering. 
+ //       LDACcapture;    
+ //       LDACctrlLow;
+ //       LDACctrlHigh;
+ //       LDACrelease;
       }
-      SetupNextEntry();
+//    SetupNextEntry();  // Nov 3, 2016
     }
     StartTimer();
     SendACK;
@@ -850,6 +863,7 @@ void ParseTableCommand(void)
     int         i,iStat;
     char        *TK;
     TableHeader *TH;
+    TableEntryHeader *TEH;
    
     // If we are in table mode then flush this message and NAK
     if(TableMode == TBL)
@@ -882,6 +896,20 @@ void ParseTableCommand(void)
         }
         if((TK[0] == '[') || (iStat == PENewNamedTable))
         {
+            if(iStat == 0) 
+            {
+              // Here if the table starts with a non zero value, this indicates a delay so make a table entry for the delay 
+              // with no output action. Nov 3, 2016
+              TH->MaxCount = i;
+              TH->NumEntries=1;
+              TEH = (TableEntryHeader *) &(VoltageTable[CT][ptr]); ptr += sizeof(TableEntryHeader);
+              TEH->Count = i;
+              TEH->NumChans = 0;
+              TH = (TableHeader *) &(VoltageTable[CT][ptr]); ptr += sizeof(TableHeader);
+              TH->TableName = 0xFF;  // set default
+              TH->RepeatCount = 1;   // set default
+              TH->NumEntries=0;      // clear entries
+            }
             if(iStat != PENewNamedTable) TestNesting++;
             // This is start of table, next two values define table name
             // and repeat count
@@ -891,7 +919,7 @@ void ParseTableCommand(void)
             if(!Token2int(&TH->RepeatCount)) break;
             if(!ExpectComma()) break;
             // Now get the initial time point value
-            if(iStat == 0) InitialOffset = i;
+//          if(iStat == 0) InitialOffset = i;   // This was the failed solution before the Nov 3, 2016 edits
             if(!Token2int(&i)) break;                   // First time point
             if(!ExpectColon()) break;
             if((TK = NextToken()) == NULL) break;       // First channel
@@ -1068,7 +1096,7 @@ int ParseEntry(int Count, char *TK)
             uint8_t  *buf = (uint8_t *)&TE->Value;
             int val = TE->Value;
             buf[0] = 0;         // DAC command
-            buf[1] = (TE->Chan << 4) | (val >> 12);
+            buf[1] = ((TE->Chan & 7) << 4) | (val >> 12);
             buf[2] = (val >> 4);
             buf[3] = (val << 4);
         }
@@ -1089,16 +1117,23 @@ void ReportTable(int count)
     // Test code to spit back the data stored in the voltage table as a
     // result of the parsed command string.
     int i;
-    char str[20];
-    
+    char str[60];
+
+    if(SerialMute) return;
     sprintf(str,"TestNesting = %d\n",TestNesting);
-    if(!SerialMute) serial->write(str);
+    serial->write(str);
     sprintf(str,"TablesLoaded = %d\n",TablesLoaded[CT]);
-    if(!SerialMute) serial->write(str);
+    serial->write(str);
+    sprintf(str,"Size of TableHeader = %d\n",sizeof(TableHeader));
+    serial->write(str);
+    sprintf(str,"Size of TableEntryHeader = %d\n",sizeof(TableEntryHeader));
+    serial->write(str);
+    sprintf(str,"Size of TableEntry = %d\n",sizeof(TableEntry));
+    serial->write(str);
     for(i=0;i<count+1;i++)
     {
         sprintf(str,"%x\n",VoltageTable[CT][i]);
-        if(!SerialMute) serial->write(str);
+        serial->write(str);
     }
 }
 
@@ -1148,7 +1183,7 @@ void ProcessTables(void)
         if((!SerialMute) && (TableResponse)) serial->println("TBLRDY\n");
         TableReady = true;
         StopRequest=false;
-//        TableStopped = false;
+        TableStopped = false;
         // Setup the timer
         SetupTimer();
         while(1)
@@ -1171,7 +1206,7 @@ void ProcessTables(void)
                if(StopRequest == true) break;
             }
             // Exit this loop when the timer is stoped.
-            if(((TimerStatus & TC_SR_CLKSTA)==0)) // || TableStopped)
+            if(((TimerStatus & TC_SR_CLKSTA)==0) || TableStopped)
             {
                 // Issue the table complete message
                 TableTriggered = false;
@@ -1292,7 +1327,21 @@ void SetupTimer(void)
     if(TriggerMode == EDGE) {DIhTrig.attached('R', CHANGE, Trigger_ISR); MPT.setTrigger(TC_CMR_EEVTEDG_EDGE);}
     if(TriggerMode == POS)  {DIhTrig.attached('R', RISING, Trigger_ISR); MPT.setTrigger(TC_CMR_EEVTEDG_RISING);}
     if(TriggerMode == NEG)  {DIhTrig.attached('R', FALLING, Trigger_ISR); MPT.setTrigger(TC_CMR_EEVTEDG_FALLING);}
-    if(ClockMode == EXT)    MPT.setClock(TC_CMR_TCCLKS_XC2);
+    if(ClockMode == EXT)    
+    {
+      MPT.setClock(TC_CMR_TCCLKS_XC2);
+      MPTtc.TC_CMR &= ~TC_CMR_CLKI;
+    }
+    if(ClockMode == EXTN)   
+    {
+      MPT.setClock(TC_CMR_TCCLKS_XC2);
+      MPTtc.TC_CMR |= TC_CMR_CLKI;
+    }
+    if(ClockMode == EXTS)
+    {
+      softLDAC = true;
+      MPT.setClock(TC_CMR_TCCLKS_XC2);
+    }
     if(ClockMode == MCK2)   MPT.setClock(TC_CMR_TCCLKS_TIMER_CLOCK1);
     if(ClockMode == MCK8)   MPT.setClock(TC_CMR_TCCLKS_TIMER_CLOCK2);
     if(ClockMode == MCK32)  MPT.setClock(TC_CMR_TCCLKS_TIMER_CLOCK3);
@@ -1311,11 +1360,22 @@ void SetupTimer(void)
     }
     SPI.setClockDivider(SPI_CS,6);
     SPI.setDataMode(SPI_CS, SPI_MODE1);
+    // If using the S input and a soft timer enable the clock
+    if(ClockMode == EXTS) ClockSsetup();
     // Define the initial max counter value based on first table
     MPT.setRC(Theader->MaxCount);
     // Setup table variables
     if((MIPSconfigData.Rev <= 1) || (softLDAC)) MPT.setTIOAeffectNOIO(TEheader->Count,TC_CMR_ACPA_TOGGLE);
-    else MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE);
+    // else MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE);  // Before the Nov 3, 2016 edits
+    else 
+    {
+      // This conditional added Nov 3, 2016
+      // The Toggle A output on trigger has to happen because we do not get a counter 0 event when triggered externally.
+      // This does cause an issue if we do not have time 0 value in the DAC latches. If we external trigger then we need to do the
+      // first SetupNext call in the trigger ISR
+      if(TEheader->Count == 0) MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE);
+      else MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE);
+    }
     SetupNextEntry();
     MPT.enableTrigger();
 }
@@ -1337,6 +1397,7 @@ inline void StopTimer(void)
     DIhTrig.detach();
     // Stop the timer
     MPT.stop();
+    if(ClockMode == EXTS) ClockSstop();
 }
 
 // Advance table pointer, this function assumes that the current table is pointing at the
@@ -1387,9 +1448,9 @@ inline void AdvanceEntryPointer(void)
 #ifdef FAST_TABLE
 void TC8_Handler() 
 {
-    static int i;
-     
-  i = TC2->TC_CHANNEL[2].TC_SR;
+  static int i;
+  
+  i = MPTtc.TC_SR;
   if(i & TC_SR_CPAS) SetupNextEntry();
   if(i & TC_SR_CPCS)
   {
@@ -1406,6 +1467,45 @@ void TC8_Handler()
 }
 #endif
 
+// This function allows a clock for the timer to appear on the 'S' input BNC and then the timer
+// function is emulated using an internal counter register. This interrupt is called everytime 
+// there is a rising edge on the 'S' input BNC. This input is also debounced.
+void ISRclk(void)
+{
+  static Pio *pio = g_APinDescription[SoftClockDIO].pPort;
+  static uint32_t pin =g_APinDescription[SoftClockDIO].ulPin;
+
+  // Exit if counter is not enabled
+  if(!TableTriggered) return;
+  // Validate its a rising edge and debounce
+  delayMicroseconds(1);    // Delay and then make sure the S input pin is high
+  if((pio->PIO_PDSR & pin) == 0) return;  
+  // Advance the counter
+  Counter++;
+  // Compare to RA and call ISR if equal
+  if(Counter == MPTtc.TC_RA) 
+  {
+    if(StopRequest) StopTimer();
+    RAmatch_Handler();
+  }
+  // Compare to RC and call ISR if equal and reset the count  
+  if(Counter == MPTtc.TC_RC) RCmatch_Handler();
+  if(Counter == MPTtc.TC_RC) Counter = 0;
+}
+
+void ClockSsetup(void)
+{
+   attachInterrupt(digitalPinToInterrupt(SoftClockDIO), ISRclk, RISING);
+   Counter=0;
+}
+
+void ClockSstop(void)
+{
+   TableStopped = true;
+   detachInterrupt(digitalPinToInterrupt(DI2));
+   Counter=0;
+}
+
 inline void SetupNextEntry(void)
 {
    static int   i,k;
@@ -1415,12 +1515,13 @@ inline void SetupNextEntry(void)
     ValueChange = true;
     DIOchange=false;
     // Set the address
+SetupNextEntryAgain:  // sorry
     pio->PIO_CODR = 7;                          // Set all bits low
     pio->PIO_SODR = DCbDarray[0].DACspi & 7;    // Set bits high
-SetupNextEntryAgain:  // sorry
     // Timer count where these values are set
-    TC2->TC_CHANNEL[2].TC_RA = TEheader->Count;
-    TC2->TC_CHANNEL[2].TC_RC = Theader->MaxCount;
+    MPTtc.TC_RA = TEheader->Count;
+    MPTtc.TC_RC = Theader->MaxCount;
+SetupNextEntryAgain2:
     // Process the current entry, all channels
     while(1)
     {
@@ -1507,9 +1608,7 @@ SetupNextEntryAgain:  // sorry
     // Advance to next entry
     if(TentryCount < Theader->NumEntries)
     {
-       // Advanced entry pointer
-       TEheader = (TableEntryHeader *)((char *)TEheader + (sizeof(TableEntryHeader) + (sizeof(TableEntry) * TEheader->NumChans)));
-       Tentry = (TableEntry *)((char *)TEheader + sizeof(TableEntryHeader));
+        AdvanceEntryPointer();
     }
     else
     {
@@ -1518,6 +1617,11 @@ SetupNextEntryAgain:  // sorry
             // All done so stop the timer
             StopRequest = true;
             return;
+        }
+        else
+        {
+          // If this table has a time 0 even then setup for it, nov 3, 2016
+          if(TEheader->Count == 0) goto SetupNextEntryAgain2;
         }
     }
 } 
@@ -1542,6 +1646,10 @@ void Trigger_ISR(void)
        LDAChigh;
      }
      SetupNextEntry();
+   }
+   if(ClockMode == EXTS)
+   {
+     StartTimer();
    }
   // Set trigger to software, this prevents hardware retriggering. Added Jan 14, 2015 GAA
 //  MPT.setTrigger(TC_CMR_EEVTEDG_NONE);
@@ -1588,6 +1696,8 @@ inline void RCmatch_Handler(void)
       SetupNextEntry();
     }
 }
+
+
 
 
 

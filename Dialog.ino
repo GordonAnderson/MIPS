@@ -93,6 +93,7 @@ void DialogButtonPress(DialogBox *d)
           d->Entry = (DialogBoxEntry *)d->Entry[d->Selected].Value;
           d->Selected = 0;
           d->State = M_SCROLLING;
+          d->LastUpdated = 0;
           DialogBoxDisplay(d);
           break;
         default:
@@ -216,6 +217,7 @@ void DialogValueAdjust(DialogBox *d, int8_t change)
     default:
       break;
   }
+  d->Changed = true;
   DisplayDialogEntry(&d->w, &d->Entry[d->Selected], true);
 }
 
@@ -401,6 +403,13 @@ void DisplayDialogEntryNames(Window *w, DialogBoxEntry *de, bool HighLight)
   p(de->Name);
 }
 
+void PrintDialog(DialogBox *d, int X, int Y, char *text)
+{
+  tft.setTextColor(d->w.Fcolor, d->w.Bcolor);
+  SetWindowTextPos(&d->w, X, Y);
+  p(text);
+}
+
 // This function displays all the dialog box entry names.
 void DisplayAllDialogEntryNames(DialogBox *d)
 {
@@ -523,6 +532,8 @@ int FindInList(char *list, char *entry)
   }
   return -1;
 }
+
+
 
 
 

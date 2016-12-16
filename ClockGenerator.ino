@@ -20,7 +20,7 @@ int16_t  P0;
 int16_t  P;
 int16_t  Q;
 int16_t  Div;
-int16_t LF;
+int16_t  LF;
 
 int Ref = 8000000;
 
@@ -210,5 +210,141 @@ int SetPLL3freq(int8_t adr, int Freq)
   return (0);
 }
 
+// This function sets the clock frequeancy for the FAIMS rev 2 controller.
+// Clock is set to 20 times the Freq value passed and the divers are set as follows
+// Output B = Fundemental, div by 120
+// Output C = Second harmonic, div by 60
+// Output D = Forth harmonic, div by 30
+// Output A = Fifth harmonic, div by 24
+// Output E = unused
+int FAIMSclockSet(int8_t adr, int Freq)
+{
+  float PTdivQT,error;
+  int   PT,QT,Q,P,PO,BestPT,BestQT;
+  int iStat;
 
+  CYregs.PLL2_Misc &= ~0x40;
+  Wire.beginTransmission(adr);
+  Wire.write(0x13);
+  Wire.write(CYregs.PLL2_Misc);
+  Wire.endTransmission();
+  CYregs.RegAdd = 0x08;
+  CYregs.Osc = 0b10010101;    // Crystal, 7PF, 30 ohms
+  // Set the dividers
+  CYregs.ClkA_Div_DS0 = 24;
+  CYregs.ClkA_Div_DS1 = 24;
+  CYregs.ClkB_Div_DS0 = 120;
+  CYregs.ClkB_Div_DS1 = 120;
+  CYregs.ClkC_Div = 60;
+  CYregs.ClkD_Div = 30;
+  CYregs.Clk_ACadj = 1;  // Set E out divider to 4
+  // Set the clock sources to PLL1
+  CYregs.ClkABCD_FS = 0b10101010;
+  // Set output duty cycle, enables, clkE_div
+  CYregs.Clk_ACadj |= 0b01010100;
+  // Set the output drive level
+  CYregs.Clk_DCadj = 0b00000000;
+  // Set the frequency for the PLL, set them all to 20 * Freq.
+  // Nominal Freq = 1mHz, Ref osc 20MHz = Ref * PT/QT
+  PTdivQT = (float)(Freq * 120) / (float)Ref;
+  error = 10000;
+  for(QT = 1; QT <= 256; QT++)
+  {
+    PT = PTdivQT * QT;
+    if(PT < 2048 )
+    {
+      if(error > abs(PTdivQT - (float)PT/(float)QT))
+      {
+        error > abs(PTdivQT - (float)PT/(float)QT);
+        BestPT = PT;
+        BestQT = QT;
+      }
+    }
+  }
+  PT = BestPT;
+  QT = BestQT;
+  //serial->println(Freq);
+  //serial->println(PT);
+  //serial->println(QT);
+  // Calculate P,P0, and Q
+  // PT =  (2 * (P+3)) + PO
+  // QT = Q + 2
+  Q = QT - 2;
+  // If PT is odd then PO = 1;
+  if((PT & 1) != 0) PO = 1;
+  else PO = 0;
+  P = (PT - PO)/2 - 3;
+  LF = 0;
+  
+  if (P > 231) LF = 1;
+  if (P > 626) LF = 2;
+  if (P > 834) LF = 3;
+  if (P > 1043) LF = 4;
+  LF = 1;
+  // Disable PLL2 and PLL3
+  CYregs.PLL2_P = P & 0xFF;
+  CYregs.PLL2_Misc = (0x00) | (LF << 3) | (PO << 2) | (P >> 8);
+  CYregs.PLL2_Q = Q;
+  CYregs.PLL3_P = P & 0xFF;
+  CYregs.PLL3_Misc = (0x00) | (LF << 3) | (PO << 2) | (P >> 8);
+  CYregs.PLL3_Q = Q;
+  // Send the data to the chip
+  Wire.beginTransmission(adr);
+  byte *bvals = (byte *)&CYregs;
+  for (int i = 0; i < sizeof(CY22393_regs); i++) Wire.write(bvals[i]);
+  if ((iStat = Wire.endTransmission(true)) != 0) return (iStat);  
+  // Set the PLL1 regs, use PLL2 in struct
+  CYregs.PLL2_Misc |= 0x40;
+  Wire.beginTransmission(adr);
+  Wire.write(0x13);
+  Wire.write(CYregs.PLL2_Misc);
+  Wire.endTransmission();
+  return(0);
+}
+
+// For harmonic, 1,2,4,5 set phase to 0 or 180
+void FAIMSphase(int harmonic, int phase)
+{
+  byte a;
+  byte adr = 0x69;
+  
+  if(harmonic == 1)  // output B
+  {
+    a = 120;
+    if(phase == 180) a |= 0x80;
+    Wire.beginTransmission(adr);
+    Wire.write(0x0a);
+    Wire.write(a);
+    Wire.write(a);
+    Wire.endTransmission();
+  }
+  else if(harmonic == 2)  // output C
+  {
+    a = 60;
+    if(phase == 180) a |= 0x80;
+    Wire.beginTransmission(adr);
+    Wire.write(0x0c);
+    Wire.write(a);
+    Wire.endTransmission();    
+  }
+  else if(harmonic == 4)  // output D
+  {
+    a = 30;
+    if(phase == 180) a |= 0x80;
+    Wire.beginTransmission(adr);
+    Wire.write(0x0d);
+    Wire.write(a);
+    Wire.endTransmission();        
+  }
+  else if(harmonic == 5)  // output A
+  {
+    a = 24;
+    if(phase == 180) a |= 0x80;
+    Wire.beginTransmission(adr);
+    Wire.write(0x08);
+    Wire.write(a);
+    Wire.write(a);
+    Wire.endTransmission();    
+  }
+}
 

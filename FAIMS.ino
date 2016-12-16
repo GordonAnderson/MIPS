@@ -147,15 +147,17 @@ DialogBoxEntry FAIMSentriesMainMenu[] = {
 
 DialogBox FAIMSMainMenu = {
   {"FAIMS main menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0,0, FAIMSentriesMainMenu
+  M_SCROLLING, 0,0,false, FAIMSentriesMainMenu
 };
+
+char FundamentalDelayName[] = " Fundamental phase";
 
 DialogBoxEntry FAIMSentriesTuneMenu[] = {
   {" Frequency"              , 0, 1, D_INT     , 500000, 2000000, 1000, 16, false, "%7d", &faims.Freq, NULL, NULL},
-  {" Coarse phase"           , 0, 2, D_INT     , 0, 7, 1, 22, false, "%1d", &faims.PhaseC, NULL, NULL},
+  {" Coarse phase"           , 0, 2, D_INT     , 0, 7, 1, 20, false, "%3d", &faims.PhaseC, NULL, NULL},
   {" Fine phase"             , 0, 3, D_INT     , 0, 255, 1, 20, false, "%3d", &faims.PhaseF, NULL, NULL},
-  {" Pri capacitance"        , 0, 4, D_FLOAT   , 0, 100, 0.1, 18, false, "%5.1f", &faims.Pcap, NULL, DelayArcDetect},
-  {" Har capacitance"        , 0, 5, D_FLOAT   , 0, 100, 0.1, 18, false, "%5.1f", &faims.Hcap, NULL, DelayArcDetect},
+  {" Pri capacitance"        , 0, 4, D_FLOAT   , 0, 100, 0.1, 18, false, "%5.1f", &faims.Pcap, NULL, NULL},
+  {" Har capacitance"        , 0, 5, D_FLOAT   , 0, 100, 0.1, 18, false, "%5.1f", &faims.Hcap, NULL, NULL},
   {" Arc Det Level"          , 0, 6, D_FLOAT   , 0, 100, 1, 19, false, "%4.0f", &faims.ArcSens, NULL, NULL},
   {" Environment menu"       , 0, 7, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSEnvMenu, NULL, NULL},
   {" Drive menu"             , 0, 8, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSDriveMenu, NULL, NULL},
@@ -166,7 +168,7 @@ DialogBoxEntry FAIMSentriesTuneMenu[] = {
 
 DialogBox FAIMSTuneMenu = {
   {"FAIMS tune menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0,0, FAIMSentriesTuneMenu
+  M_SCROLLING, 0,0,false, FAIMSentriesTuneMenu
 };
 
 DialogBoxEntry FAIMSentriesEnvMenu[] = {
@@ -185,7 +187,7 @@ DialogBoxEntry FAIMSentriesEnvMenu[] = {
 
 DialogBox FAIMSEnvMenu = {
   {"FAIMS enviornment menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0,0, FAIMSentriesEnvMenu
+  M_SCROLLING, 0,0,false, FAIMSentriesEnvMenu
 };
 
 DialogBoxEntry FAIMSentriesDriveMenu[] = {
@@ -205,7 +207,7 @@ DialogBoxEntry FAIMSentriesDriveMenu[] = {
 
 DialogBox FAIMSDriveMenu = {
   {"FAIMS drive menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0,0, FAIMSentriesDriveMenu
+  M_SCROLLING, 0,0,false, FAIMSentriesDriveMenu
 };
 
 DialogBoxEntry FAIMSentriesPowerMenu[] = {
@@ -221,7 +223,7 @@ DialogBoxEntry FAIMSentriesPowerMenu[] = {
 
 DialogBox FAIMSPowerMenu = {
   {"FAIMS power menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0,0, FAIMSentriesPowerMenu
+  M_SCROLLING, 0,0,false, FAIMSentriesPowerMenu
 };
 
 DialogBoxEntry FAIMSentriesDCMenu[] = {
@@ -331,7 +333,7 @@ void UpdateNFDlimits(void)
 
 DialogBox FAIMSDCMenu = {
   {"FAIMS DC menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0,0, FAIMSentriesDCMenu
+  M_SCROLLING, 0,0,false, FAIMSentriesDCMenu
 };
 
 DialogBoxEntry FAIMSentriesDCcalMenu[] = {
@@ -344,7 +346,7 @@ DialogBoxEntry FAIMSentriesDCcalMenu[] = {
 
 DialogBox FAIMScalMenu = {
   {"FAIMS DC cal menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0,0, FAIMSentriesDCcalMenu
+  M_SCROLLING, 0,0,false, FAIMSentriesDCcalMenu
 };
 
 MenuEntry MEFAIMSMonitor = {" FAIMS module", M_DIALOG, 0, 0, 0, NULL, &FAIMSMainMenu, NULL, NULL};
@@ -418,6 +420,9 @@ void SaveFAIMSSettings(void)
       SelectBoard(0);
     }
   }
+TWI_RESET();
+Wire.begin();
+  SelectBoard(FAIMSBoardAddress);
   if (WriteEEPROM(&faims, faims.EEPROMadr, 0, sizeof(FAIMSdata)) == 0)
   {
     DisplayMessage("Parameters Saved!", 2000);
@@ -441,6 +446,9 @@ void RestoreFAIMSSettings(bool NoDisplay)
     RestoreDCbiasSettings(true);
     SelectBoard(0);
   }
+TWI_RESET();
+Wire.begin();
+  SelectBoard(FAIMSBoardAddress);
   if (ReadEEPROM(&faimsT, faims.EEPROMadr, 0, sizeof(FAIMSdata)) == 0)
   {
     if (strcmp(faimsT.Name, faims.Name) == 0)
@@ -460,12 +468,13 @@ int BuildGPIOimage(void)
 {
   int   image;
 
-  image = faims.PhaseC & 0x07;
+  if(faims.Rev <= 2) image = faims.PhaseC & 0x07;
   if (faims.Drv1.Enable) image |= 0x10;
   if (faims.Drv2.Enable) image |= 0x20;
   if (faims.Drv3.Enable) image |= 0x40;
   if (!faims.Enable) image &= 0x8F;
-  image |= 0x08;
+  image &= ~0x08;  // Latch for 2nd harmonic delay, keep low
+  if(faims.Rev == 3) image &= ~0x04;  // Latch for fundemental osc delay, keep low
   return image;
 }
 
@@ -500,6 +509,7 @@ void FAIMSclockDetechISR(void)
 void FAIMS_init(int8_t Board)
 {
   DialogBoxEntry *de = GetDialogEntries(FAIMSentriesTuneMenu, " Environment menu");
+  DialogBoxEntry *de2 = GetDialogEntries(FAIMSentriesTuneMenu, " Coarse phase");
 
   // Flag the board as present
   FAIMSpresent = true;
@@ -524,9 +534,17 @@ void FAIMS_init(int8_t Board)
   MCP2300(faims.GPIOadr, 0, (uint8_t)0x80);
   MCP2300(faims.DELAYadr, 0, (uint8_t)0);
   // Init the clock generator and set the frequencies
-  SetRef(20000000);
-  CY_Init(faims.CLOCKadr);
-  SetPLL2freq(faims.CLOCKadr, faims.Freq * FreqMultiplier);
+  if(faims.Rev <= 2)
+  {
+     SetRef(20000000);
+     CY_Init(faims.CLOCKadr);
+     SetPLL2freq(faims.CLOCKadr, faims.Freq * FreqMultiplier);
+  }
+  if(faims.Rev == 3) 
+  {
+     SetRef(20000000);
+     FAIMSclockSet(faims.CLOCKadr, faims.Freq);
+  }
   // Setup the PWM outputs and set levels
   analogWriteResolution(12);
   if(faims.Enable == false)
@@ -594,6 +612,11 @@ void FAIMS_init(int8_t Board)
   {
     de->Type = D_OFF;
   }
+  if(faims.Rev == 3)
+  {
+    de2->Max  = 255;
+    de2->Name = FundamentalDelayName;
+  }
 }
 
 // Monitor power limits and reduce drive if over the limit. First reduce DriveChange until
@@ -631,6 +654,7 @@ bool TestClock(void)
 {
   unsigned int mt;
 
+  if(faims.Rev == 3) return(true);  // Disable for rev 3 hardware
   mt = millis();
   FAIMSclockChange = 0;
   attachInterrupt(2, FAIMSclockDetechISR, RISING);
@@ -638,7 +662,7 @@ bool TestClock(void)
   {
   }
   detachInterrupt(2);
-  if ((FAIMSclockChange * 1600) > faims.Freq * .90) return (true);
+  if ((FAIMSclockChange * 1600) > faims.Freq * .90) return (true);    
   return (false);
 }
 
@@ -865,6 +889,7 @@ void FAIMS_loop(void)
   static int  LastFreq = -1;
   static int  LastGPIO = -1;
   static int  LastDelay = -1;
+  static int  LastFunDelay = -1;
   static int  LastDrv  = -1;
   static bool LastEnable = false;
   static DialogBoxEntry *TMde = GetDialogEntries(FAIMSentriesTuneMenu, " Frequency");
@@ -872,6 +897,13 @@ void FAIMS_loop(void)
   static DialogBoxEntry *HCde = GetDialogEntries(FAIMSentriesTuneMenu, " Har capacitance");
 
   if(DiableArcDetectTimer > 0) DiableArcDetectTimer--;
+  // If the active dialog is the tune menu or the drive menu and there has been an entry
+  // change then disable the arc detector for a bit.
+  if((ActiveDialog == &FAIMSTuneMenu) || (ActiveDialog == &FAIMSDriveMenu))
+  {
+     if(ActiveDialog->Changed) DelayArcDetect(); 
+     ActiveDialog->Changed = false;
+  }
   // Select the board
   SelectBoard(FAIMSBoardAddress);
   MaxFAIMSVoltage = 0;
@@ -945,7 +977,13 @@ void FAIMS_loop(void)
   // Update the frequency if it has changed
   if (faims.Freq != LastFreq)
   {
-    for (i = 0; i < 5; i++) if (SetPLL2freq(faims.CLOCKadr, faims.Freq * FreqMultiplier) == 0) break;
+    for (i = 0; i < 5; i++) 
+    {
+      if((faims.Rev <= 2) && (SetPLL2freq(faims.CLOCKadr, faims.Freq * FreqMultiplier) == 0)) break;
+      if(faims.Rev == 3) if(FAIMSclockSet(faims.CLOCKadr, faims.Freq) == 0) break;
+      TWI_RESET();
+      Wire.begin();
+    }
     LastFreq = faims.Freq;
   }
   // Process the global drive level changes and set PWM output level
@@ -955,6 +993,8 @@ void FAIMS_loop(void)
     if (faims.Drv2.Drv > MaxDrv) MaxDrv = faims.Drv2.Drv;
     if (faims.Drv3.Drv > MaxDrv) MaxDrv = faims.Drv3.Drv;
     DrvChange = faims.Drv - MaxDrv;
+    if(faims.Drv > LastDrv) DiableArcDetectTimer = 0;
+    else DelayArcDetect();
     LastDrv = faims.Drv;
   }
   if(faims.Enable == false)
@@ -974,15 +1014,30 @@ void FAIMS_loop(void)
   {
     LastGPIO = BuildGPIOimage();
     // Retry if the GPIO fails
-    for(int j=0;j<100;j++) if (MCP2300(faims.GPIOadr, 0x0A, LastGPIO) == 0) break;
-    //    MCP2300(faims.GPIOadr, 0x0A, LastGPIO);
+    for(int j = 0; j < 10; j++) if (MCP2300(faims.GPIOadr, 0x0A, LastGPIO) == 0) break;
+    delay(1);
   }
   // Update the delay GPIO if needed
   if (faims.PhaseF != LastDelay)
   {
     LastDelay = faims.PhaseF;
     // Retry if the GPIO fails
-    for (i = 0; i < 10; i++) if (MCP2300(faims.DELAYadr, 0x0A, faims.PhaseF) == 0) break;
+    for (int j = 0; j < 10; j++) if (MCP2300(faims.GPIOadr, 0x0A, LastGPIO |= 0x08) == 0) break;
+    delay(1);
+    // Retry if the GPIO fails
+    for (int j = 0; j < 10; j++) if (MCP2300(faims.DELAYadr, 0x0A, faims.PhaseF) == 0) break;
+    delay(1);
+  }
+  // For rev 3 update fundamental delay if needed
+  if (faims.Rev == 3) if (faims.PhaseC != LastFunDelay)
+  {
+    LastFunDelay = faims.PhaseC;
+    // Retry if the GPIO fails
+    for (int j = 0; j < 10; j++) if (MCP2300(faims.GPIOadr, 0x0A, LastGPIO |= 0x04) == 0) break;
+    delay(1);
+    // Retry if the GPIO fails
+    for (int j = 0; j < 10; j++) if (MCP2300(faims.DELAYadr, 0x0A, faims.PhaseC) == 0) break;    
+    delay(1);
   }
   // Update the capacitor servos
   setServoPulse(1, 1 + (faims.Pcap / 100));
@@ -1019,7 +1074,7 @@ void FAIMS_loop(void)
     if (KVoutN * 1000 > MaxFAIMSVoltage) MaxFAIMSVoltage = KVoutN * 1000;
     // Arc detection
     // Compare the unfiltered value to the filtered value and if there is a sudden drop it
-    // could indicate an ark so turn off the system. (add this code! here)
+    // could indicate an arc so turn off the system. (add this code! here)
     if(DiableArcDetectTimer == 0) if (faims.Enable) if (((KVoutP + KVoutN) - (Vp + Vn)) > (KVoutP + KVoutN) / 3)
     {
       if((KVoutP + KVoutN) > (100 - faims.ArcSens)/100)
@@ -1134,6 +1189,8 @@ void FAIMSsetRFharNcal(char *m, char *b)
   res = b;
   faims.RFharN.b = res.toFloat();
 }
+
+
 
 
 

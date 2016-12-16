@@ -98,7 +98,7 @@ DialogBox AnalogDialog = {
     ILI9340_BLACK, ILI9340_WHITE,
     2, 0, 0, 300, 220, B_DOUBLE, 12
   },
-  M_SCROLLING, 0,0, AnalogEntriesPage1
+  M_SCROLLING, 0,0,false, AnalogEntriesPage1
 };
 
 DialogBoxEntry AnalogMonitorEntries[] = {
@@ -120,7 +120,7 @@ DialogBox AnalogMonitorDialog = {
     ILI9340_BLACK, ILI9340_WHITE,
     2, 0, 0, 300, 220, B_DOUBLE, 12
   },
-  M_SCROLLING, 0,0, AnalogMonitorEntries
+  M_SCROLLING, 0,0,false, AnalogMonitorEntries
 };
 
 MenuEntry MEAnalogModule = {" Analog input module", M_DIALOG, 0, 0, 0, NULL, &AnalogDialog, NULL, NULL};
@@ -440,6 +440,8 @@ void Analog_loop(void)
     if(disIndex >= analog.NumChannels) disIndex = 0;
   }
 }
+
+
 
 
 

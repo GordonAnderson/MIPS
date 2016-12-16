@@ -82,6 +82,7 @@ void MenuButtonPress(Menu *m)
         if (m->Entry[m->Selected].Value != NULL)
         {
           DialogBoxDisplay((DialogBox *)m->Entry[m->Selected].Value);
+          if (m->Entry[m->Selected].PostFunction != NULL) m->Entry[m->Selected].PostFunction();
           return;
         }
         break;
@@ -387,6 +388,8 @@ void DismissMessageIfButton(void)
   PopupDismissed = true;
   DismissMessage();
 }
+
+
 
 
 

@@ -16,6 +16,7 @@
 #include "DIO.h"
 #include "Table.h"
 #include "Hardware.h"
+#include "ClockGenerator.h"
 #include "DCbias.h"
 #include "ESI.h"
 #include "Twave.h"
@@ -63,6 +64,8 @@ Commands  CmdArray[] = 	{
   {"GERR",  CMDint, 0, (char *)&ErrorCode},              // Report the last error code
   {"GNAME", CMDstr, 0, (char *)MIPSconfigData.Name},	   // Report MIPS system name
   {"SNAME", CMDstr, 1, (char *)MIPSconfigData.Name},	   // Set MIPS system name
+  {"ABOUT", CMDfunction, 0, (char *)About},              // Report about this MIPS system
+  {"SMREV", CMDfunctionLine, 0, (char *)SetModuleRev},   // Set module rev level
   {"RESET", CMDfunction, 0, (char *)Software_Reset},     // Reset the Due
   {"SAVE",  CMDfunction, 0, (char *)SAVEparms},	         // Save MIPS configuration data to default.cfg on CD card
   {"GCHAN", CMDfunctionStr, 1, (char *)GetNumChans},     // Report number for the selected system
@@ -89,23 +92,32 @@ Commands  CmdArray[] = 	{
   {"SWIDTH",  CMDint, 1, (char *)&PulseWidth},                // Set the pulse width in microseconds
   {"GFREQ",  CMDint, 0, (char *)&PulseFreq},                  // Report the pulse frequency in Hz
   {"SFREQ",  CMDint, 1, (char *)&PulseFreq},                  // Set the pulse frequency in Hz
-  {"BURST",  CMDfunction, 1, (char *)&GenerateBurst},              // Generates a frequencyy burst on trig out line
+  {"BURST",  CMDfunction, 1, (char *)&GenerateBurst},         // Generates a frequencyy burst on trig out line
   // DC bias module commands
   {"SDCB", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&DCbiasSet))},      // Set voltage value
   {"GDCB", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasRead))},// Get Voltage value requested
   {"GDCBV", CMDfunction, 1, (char *)DCbiasReadV},        // Get Voltage actual voltage value
   {"SDCBOF", CMDfunctionStr, 2, (char *)DCbiasSetFloat}, // Set float voltage for selected board
   {"GDCBOF", CMDfunction, 1, (char *)DCbiasReadFloat},   // Read float voltage for selected board
-  {"GDCMIN", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasReadMin))},// Read float voltage for selected board
-  {"GDCMAX", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasReadMax))},// Read float voltage for selected board
-  {"SDCPWR", CMDfunctionStr, 1, (char *)DCbiasPowerSet}, // Sets the DC bias power, on or off
-  {"GDCPWR", CMDfunction, 0, (char *)DCbiasPower},       // Get the DC bias power, on or off
-  {"GDCBALL", CMDfunction, 0, (char *)DCbiasReportAllSetpoints},   // Returns the DC bias voltage setpoints for all channels in the system
-  {"GDCBALLV", CMDfunction, 0, (char *)DCbiasReportAllValues},     // Returns the DC bias voltage readback values for all channels in the system
-  {"SDCBDELTA", CMDfunctionStr, 1, (char *)DCbiasDelta},   // Set all DC bias channels by a delta value
-  {"SDCBCHNS", CMDfunction, 2, (char *)DCbiasSetNumBoardChans},    // Sets the number of channels on a DCbias board. Used for setup only.
-  {"SDCBONEOFF", CMDbool, 1, (char *)&DCbDarray[0].UseOneOffset},  // TRUE to enable use of one offset
+  {"GDCMIN", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasReadMin))}, // Read float voltage for selected board
+  {"GDCMAX", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasReadMax))}, // Read float voltage for selected board
+  {"SDCPWR", CMDfunctionStr, 1, (char *)DCbiasPowerSet},              // Sets the DC bias power, on or off
+  {"GDCPWR", CMDfunction, 0, (char *)DCbiasPower},                    // Get the DC bias power, on or off
+  {"SDCBALL", CMDfunctionLine, 0, (char *)SetAllDCbiasChannels},      // Sets the DCbias setpoints for all outputs
+  {"GDCBALL", CMDfunction, 0, (char *)DCbiasReportAllSetpoints},      // Returns the DC bias voltage setpoints for all channels in the system
+  {"GDCBALLV", CMDfunction, 0, (char *)DCbiasReportAllValues},        // Returns the DC bias voltage readback values for all channels in the system
+  {"SDCBDELTA", CMDfunctionStr, 1, (char *)DCbiasDelta},              // Set all DC bias channels by a delta value
+  {"SDCBCHNS", CMDfunction, 2, (char *)DCbiasSetNumBoardChans},       // Sets the number of channels on a DCbias board. Used for setup only.
+  {"SDCBONEOFF", CMDbool, 1, (char *)&DCbDarray[0].UseOneOffset},     // TRUE to enable use of one offset
   {"DCBOFFRBENA", CMDbool, 1, (char *)&DCbDarray[0].OffsetReadback},  // TRUE to enable use of offset readback
+  {"SDCBOFFENA", CMDfunctionStr, 2, (char *)DCbiasOffsetable},        // Set the DC bias channels offsetable flag, setup command
+  // DC bias module profile commands
+  {"SDCBPRO", CMDfunctionLine, 0, (char *)SetDCbiasProfile},          // Sets a DC bias profile
+  {"GDCBPRO", CMDfunction, 1, (char *)GetDCbiasProfile},              // Reports the select DC bias profile
+  {"ADCBPRO", CMDfunction, 1, (char *)SetApplyDCbiasProfile},         // Applies the select DC bias profile
+  {"CDCBPRO", CMDfunction, 1, (char *)SetDCbiasProfileFromCurrent},   // Copy the current DC bias values to the select profile
+  {"TDCBPRO", CMDfunctionLine, 0, (char *)SetDCbiasProfileToggle},    // Enables toggeling between two profiles with user defined dwell time
+  {"TDCBSTP", CMDfunction, 0, (char *)StopProfileToggle},             // Stop the profile toggeling
   // RF generator module commands
   {"SRFFRQ", CMDfunction, 2, (char *)RFfreq},		 // Set RF frequency
   {"SRFVLT", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&RFvoltage))},	 // Set RF output voltage
@@ -148,6 +160,7 @@ Commands  CmdArray[] = 	{
   {"SOFTLDAC",CMDbool, 1, (char *)&softLDAC},       // TRUE or FALSE, set to TRUE to force the used of software LDAC
   {"GTBLREPLY",CMDbool, 0, (char *)&TableResponse},        // Returns TRUE or FALSE state of enable table response flag
   {"STBLREPLY",CMDbool, 1, (char *)&TableResponse},       // TRUE or FALSE, set to TRUE enable table response messages (default)
+  {"TBLRPT",CMDfunction,1, (char *)ReportTable},          // Report table as hex bytes
   // Macro commands
   {"MRECORD", CMDfunctionStr, 1, (char *) MacroRecord},    // Turn on macro recording into the filename argument
   {"MSTOP", CMDfunction, 0, (char *) MacroStop},           // Stop macro recording and close the file
@@ -185,10 +198,25 @@ Commands  CmdArray[] = 	{
   {"TWCTRG",CMDfunction, 0, (char *)TWCtrigger},               // Force a Twave compressor trigger
   {"GTWCSW",CMDstr, 0, (char *)CswitchState},                  // Report Twave compressor Switch state
   {"STWCSW",CMDfunctionStr, 1, (char *)SetTWCswitch},          // Set Twave compressor Switch state
+  // Twave and ARB frequency/voltage sweep commands
+  {"STWSSTRT",CMDfunction, 2, (char *)SetStartFreqTWSW},       // Set the TWAVE sweep start frequency
+  {"GTWSSTRT",CMDfunction, 1, (char *)GetStartFreqTWSW},       // Return the TWAVE sweep start frequency
+  {"STWSSTP",CMDfunction, 2, (char *)SetStopFreqTWSW},         // Set the TWAVE sweep stop frequency
+  {"GTWSSTP",CMDfunction, 1, (char *)GetStopFreqTWSW},         // Return the TWAVE sweep stop frequency
+  {"STWSSTRTV",CMDfunctionStr, 2, (char *)SetStartVoltageTWSW},// Set the TWAVE sweep start voltage
+  {"GTWSSTRTV",CMDfunction, 1, (char *)GetStartVoltageTWSW},   // Return the TWAVE sweep start voltage
+  {"STWSSTPV",CMDfunctionStr, 2, (char *)SetStopVoltageTWSW},  // Set the TWAVE sweep stop voltage
+  {"GTWSSTPV",CMDfunction, 1, (char *)GetStopVoltageTWSW},     // Return the TWAVE sweep stop voltage
+  {"STWSTM",CMDfunctionStr, 2, (char *)SetSweepTimeTWSW},      // Set the TWAVE sweep time
+  {"GTWSTM",CMDfunction, 1, (char *)GetSweepTimeTWSW},         // Return the TWAVE sweep time
+  {"STWSGO",CMDfunction, 1, (char *)StartSweepTWSW},           // Start the sweep
+  {"STWSHLT",CMDfunction, 1, (char *)StopSweepTWSW},           // Stop the sweep
+  {"GTWSTA",CMDfunction, 1, (char *)GetStatusTWSW},            // Return the TWAVE sweep status
   // Twave configuration commands  
   {"STWCCLK", CMDbool, 1, (char *)&TDarray[0].UseCommonClock},   // Flag to indicate common clock mode for two Twave modules.
   {"STWCMP", CMDbool, 1, (char *)&TDarray[0].CompressorEnabled}, // Flag to indicate Twave compressor mode is enabled.
-  // FAIMS commands
+  // FAIMS commands 
+  {"SFAIMSP", CMDfunction, 2, (char *)FAIMSphase},             // Set FAIMS harmonic phase to 0 or 180
   {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},  // Set FAIMS RF harmonic positive peak readback calibration
   {"SRFHNCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharNcal},  // Set FAIMS RF harmonic negative peak readback calibration
   // Filament commands
@@ -233,26 +261,53 @@ Commands  CmdArray[] = 	{
   {"GEGATE", CMDfunction, 0, (char *)ReportEGATE},                   // Report the ethernet adapter gateway IP address
   {"SEGATE", CMDfunctionStr, 1, (char *)SetEGATE},                   // Set the ethernet adapter gateway IP address
   // ARB general commands
-  {"SARBMODE", CMDfunctionStr, 1, (char *)SetARBMode},               // Sets the ARM mode
-  {"GARBMODE", CMDfunction, 0, (char *)GetARBMode},                  // Reports the ARM mode
-  {"SWFREQ", CMDfunction, 1, (char *)SetWFfreq},                     // Sets waveform frequency, 0 to 45000Hz
-  {"GWFREQ", CMDfunction, 0, (char *)GetWFfreq},                     // Returns the waveform frequency, 0 to 45000Hz
-  {"SWFVRNG", CMDfunctionStr, 1, (char *)SetWFrange},                // Sets waveform voltage range, rev 2.0
-  {"GWFVRNG", CMDfloat, 0, (char *)&ARBarray[0].Voltage},
-  {"SWFVOFF", CMDfunctionStr, 1, (char *)SetWFoffsetV},              // Sets waveform offset voltage, rev 2.0
-  {"GWFVOFF", CMDfloat, 0, (char *)&ARBarray[0].Offset},
-  {"SWFVAUX", CMDfunctionStr, 1, (char *)SetWFaux},                  // Sets waveform aux voltage, rev 2.0
-  {"GWFVAUX", CMDfloat, 0, (char *)&ARBarray[0].Aux},
-  {"SWFDIS", CMDfunction, 0, (char *)SetWFdisable},                  // Stops waveform generation
-  {"SWFENA", CMDfunction, 0, (char *)SetWFenable},                   // Starts waveform generation 
+  {"SARBMODE", CMDfunctionStr, 2, (char *)SetARBMode},               // Sets the ARM mode
+  {"GARBMODE", CMDfunction, 1, (char *)GetARBMode},                  // Reports the ARM mode
+  {"SWFREQ", CMDfunction, 2, (char *)SetWFfreq},                     // Sets waveform frequency, 0 to 45000Hz
+  {"GWFREQ", CMDfunction, 1, (char *)GetWFfreq},                     // Returns the waveform frequency, 0 to 45000Hz
+  {"SWFVRNG", CMDfunctionStr, 2, (char *)SetWFrange},                // Sets waveform voltage range, rev 2.0
+  {"GWFVRNG", CMDfunction, 1, (char *)GetWFrange},
+  {"SWFVOFF", CMDfunctionStr, 2, (char *)SetWFoffsetV},              // Sets waveform offset voltage, rev 2.0
+  {"GWFVOFF", CMDfunction, 1, (char *)GetWFoffsetV},
+  {"SWFVAUX", CMDfunctionStr, 2, (char *)SetWFaux},                  // Sets waveform aux voltage, rev 2.0
+  {"GWFVAUX", CMDfunction, 1, (char *)GetWFaux},
+  {"SWFDIS", CMDfunction, 1, (char *)SetWFdisable},                  // Stops waveform generation
+  {"SWFENA", CMDfunction, 1, (char *)SetWFenable},                   // Starts waveform generation 
+  {"SWFDIR", CMDfunctionStr, 2, (char *)SetARBdirection},            // Sets the waveform direction, FWD or REV
+  {"GWFDIR", CMDfunction, 1, (char *)GetARBdirection},               // Returns the waveform direction, FWD or REV
+  {"SWFARB", CMDfunctionLine, 0, (char *)SetARBwaveform},            // Sets an arbitrary waveform
+  {"GWFARB", CMDfunction, 1, (char *)GetARBwaveform},                // Returns an arbitrary waveform
+  {"SWFTYP", CMDfunctionStr, 2, (char *)SetARBwfType},               // Sets the arbitrary waveform type
+  {"GWFTYP", CMDfunction, 1, (char *)GetARBwfType},                  // Returns the arbitrary waveform type
   // ARB conventional ARB mode commands
-  {"SARBBUF", CMDfunction, 1, (char *)SetARBbufferLength},           // Sets ARB buffer length
-  {"GARBBUF", CMDint, 0, (char *)&ARBarray[0].BufferLength},         // Reports ARB buffer length
-  {"SARBNUM", CMDfunction, 1, (char *)SetARBbufferNum},              // Sets number of ARB buffer repeats per trigger 
-  {"GARBNUM", CMDint, 0, (char *)&ARBarray[0].NumBuffers},           // Reports number of ARB buffer repeats per trigger
-  {"SARBCHS", CMDfunctionStr, 1, (char *)SetARBchns},                // Sets all ARB channels in the full buffer to a defined value  
-  {"SARBCH", CMDfunctionStr, 2, (char *)SetARBchannel},              // Sets a defined ARB channel in the full buffer to a defined value  
+  {"SARBBUF", CMDfunction, 2, (char *)SetARBbufferLength},           // Sets ARB buffer length
+  {"GARBBUF", CMDfunction, 1, (char *)GetARBbufferLength},           // Reports ARB buffer length
+  {"SARBNUM", CMDfunction, 2, (char *)SetARBbufferNum},              // Sets number of ARB buffer repeats per trigger 
+  {"GARBNUM", CMDfunction, 1, (char *)GetARBbufferNum},              // Reports number of ARB buffer repeats per trigger
+  {"SARBCHS", CMDfunctionStr, 2, (char *)SetARBchns},                // Sets all ARB channels in the full buffer to a defined value  
+  {"SARBCH", CMDfunctionLine, 0, (char *)SetARBchannel},             // Sets a defined ARB channel in the full buffer to a defined value  
   {"SACHRNG", CMDfunctionLine, 0, (char *)SetARBchanRange},          // Sets an ARB channel to a value over a defined range
+  // ARB compressor commands
+  {"SARBCTBL", CMDlongStr, 100, (char *)TwaveCompressorTable},       // Twave compressor table definition setting command
+  {"GARBCTBL", CMDstr, 0, (char *)TwaveCompressorTable},             // Twave compressor table definition reporting command
+  {"GARBCMODE",CMDstr, 0, (char *)Cmode},                            // Report Twave compressor mode
+  {"SARBCMODE",CMDfunctionStr, 1, (char *)SetARBCmode},              // Set Twave compressor mode
+  {"GARBCORDER",CMDfunction, 0, (char *)GetARBCorder},               // Report Twave compressor order
+  {"SARBCORDER",CMDfunction, 1, (char *)SetARBCorder},               // Set Twave compressor order
+  {"GARBCTD",CMDfloat, 0, (char *)&ARBarray[0].Tdelay},              // Report Twave compressor trigger delay in mS
+  {"SARBCTD",CMDfunctionStr, 1, (char *)SetARBCtriggerDelay},        // Set Twave compressor trigger delay in mS
+  {"GARBCTC",CMDfloat, 0, (char *)&ARBarray[0].Tcompress},           // Report Twave compressor compress time in mS
+  {"SARBCTC",CMDfunctionStr, 1, (char *)SetARBCcompressTime},        // Set Twave compressor compress time in mS
+  {"GARBCTN",CMDfloat, 0, (char *)&ARBarray[0].Tnormal},             // Report Twave compressor normal time in mS
+  {"SARBCTN",CMDfunctionStr, 1, (char *)SetARBCnormalTime},          // Set Twave compressor normal time in mS
+  {"GARBCTNC",CMDfloat, 0, (char *)&ARBarray[0].TnoC},               // Report Twave compressor non compress time in mS
+  {"SARBCTNC",CMDfunctionStr, 1, (char *)SetARBCnoncompressTime},    // Set Twave compressor non compress time in mS
+  {"TARBTRG",CMDfunction, 0, (char *)ARBCtrigger},                   // Force a Twave compressor trigger
+  {"GARBCSW",CMDstr, 0, (char *)CswitchState},                       // Report Twave compressor Switch state
+  {"SARBCSW",CMDfunctionStr, 1, (char *)SetARBCswitch},              // Set Twave compressor Switch state
+  // ARB configuration commands  
+  {"SARBCCLK", CMDbool, 1, (char *)&ARBarray[0].UseCommonClock},     // Flag to indicate common clock mode for two ARB modules.
+  {"SARBCMP", CMDbool, 1, (char *)&ARBarray[0].CompressorEnabled},   // Flag to indicate ARB compressor mode is enabled.
   // End of table marker
   {0},
 };
@@ -539,6 +594,7 @@ int ProcessCommand(void)
     {
       lstrptr[lstrindex++] = 0;
       lstrmode = false;
+      SendACK;
       return(0);
     }
     lstrptr[lstrindex++] = ch;
@@ -930,6 +986,8 @@ void MacroPlay(char *filename, bool silent)
   // Unmute the serial system
   for (i = 0; i < strlen(unmute); i++) RB_Put(&RB, unmute[i]);
 }
+
+
 
 
 

@@ -27,6 +27,8 @@ enum TriggerModes
 enum ClockModes
 {
 	EXT,     // External
+  EXTN,    // External, negative edge sensitive
+  EXTS,    // External using S input and done in software 
 	MCK2,    // Internal, options are MCK / (2 or 8 or 32 or 128)
   MCK8,
   MCK32,
@@ -126,6 +128,8 @@ void StopTimer(void);
 bool AdvanceTablePointer(void);
 void AdvanceEntryPointer(void);
 void SetupNextEntry(void);
+void ClockSsetup(void);
+void ClockSstop(void);
 
 // Call backs
 void Dummy_ISR(void);
@@ -134,6 +138,8 @@ void RAmatch_Handler(void);
 void RCmatch_Handler(void);
 
 #endif
+
+
 
 
 

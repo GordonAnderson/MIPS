@@ -24,6 +24,10 @@ extern bool LEDoverride;
 extern int  LEDstate;
 extern bool DisableDisplay;
 
+extern void About(void);
+extern void SetModuleRev(void);
+
+
 //extern HardwareSerial *serial;
 
 // Ring buffer size
@@ -142,6 +146,8 @@ void DCbiasReadMax(int chan);
 void DCbiasNumber(void);
 
 #endif /* SERIAL_H_ */
+
+
 
 
 

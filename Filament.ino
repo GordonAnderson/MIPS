@@ -147,7 +147,7 @@ DialogBoxEntry FilamentEntriesPage2[] = {
 
 DialogBox FilamentDialog = {
   {"Filament control params",ILI9340_BLACK, ILI9340_WHITE,2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0, 0, FilamentEntriesPage1
+  M_SCROLLING, 0, 0,false, FilamentEntriesPage1
 };
 
 int CurrentCycle;
@@ -166,7 +166,7 @@ DialogBoxEntry FilamentCycleEntries[] = {
 
 DialogBox FilamentCycleDialog = {
   {"Filament cycling params",ILI9340_BLACK, ILI9340_WHITE,2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0, 0, FilamentCycleEntries
+  M_SCROLLING, 0, 0,false, FilamentCycleEntries
 };
 
 MenuEntry MEFilamentModule = {" Filament module", M_DIALOG, 0, 0, 0, NULL, &FilamentDialog, NULL, NULL};
@@ -482,6 +482,7 @@ void Filament_loop(void)
   uint16_t   ADCvals[8];
   int        adcStatus;
   float      StepSize;
+  static     float LastVoltage = -1000;
 
   SelectedFilamentBoard = BoardFromSelectedFilamentChannel(SelectedFilamentChan);
   SelectBoard(SelectedFilamentBoard);
@@ -489,11 +490,24 @@ void Filament_loop(void)
   FD.FCyl[SelectedFilamentChan] = FCY;
   FilamentCyclying();
   // If current sense resistance is not 0 then calculate the bias current
-  if(FDarray[0].iSense != 0)
+  if((FDarray[0].iSense != 0) && IsPowerON())
   {
     if(DCbiasBoards[0]) b = 0;
     else b = 1;
-    BiasCurrent = ((DCbDarray[b].DCCD[7].VoltageSetpoint - Readbacks[b][7]) / float(FDarray[0].iSense)) * 1000000.0;
+    SelectBoard(b);
+    // Read and average the ADC value for the current monitor
+    int SenseADC =  AD7998(DCbDarray[b].ADCadr, 7, 50);
+    float BiasV = Counts2Value(SenseADC,&DCbDarray[b].DCCD[7].DCmon) + DCbDarray[b].DCoffset.VoltageSetpoint;
+    if(DCbDarray[b].DCCD[7].VoltageSetpoint != LastVoltage)
+    {
+      LastVoltage = DCbDarray[b].DCCD[7].VoltageSetpoint;
+      BiasCurrent = ((DCbDarray[b].DCCD[7].VoltageSetpoint - BiasV) / float(FDarray[0].iSense)) * 1000000.0;
+    }
+    else
+    {
+      float BCfilter = 0.05;
+      BiasCurrent = BCfilter * (((DCbDarray[b].DCCD[7].VoltageSetpoint - BiasV) / float(FDarray[0].iSense)) * 1000000.0) + (1-BCfilter) * BiasCurrent;
+    }
   }
   // Loop through all the filament channels and output all the control parmaeters and update
   // all readback values
@@ -517,8 +531,14 @@ void Filament_loop(void)
         }
         else
         {
-          digitalWrite(FDarray[b].FCD[c].Fpwr, HIGH); // Power off
-          CurrentSetpoints[b][c] = 0;
+          // Ramp current to zero and then turn off power
+          StepSize = FDarray[b].FCD[c].RampRate / 10;
+          CurrentSetpoints[b][c] -= StepSize;
+          if(CurrentSetpoints[b][c] <= 0)
+          {
+             digitalWrite(FDarray[b].FCD[c].Fpwr, HIGH); // Power off
+             CurrentSetpoints[b][c] = 0;
+          }
         }
         // Output the voltage and current control data to the DAC
         AD5625(FDarray[b].DACadr, FDarray[b].FCD[c].DCfsuply.Chan, Value2Counts(FDarray[b].FCD[c].FilamentVoltage, &FDarray[b].FCD[c].DCfsuply));
@@ -1024,5 +1044,7 @@ void ReportBiasCurrent(void)
   SendACKonly;
   if (!SerialMute) serial->println(BiasCurrent);
 }
+
+
 
 

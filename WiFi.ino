@@ -67,7 +67,7 @@ DialogBox WiFiDialog = {
     ILI9340_BLACK, ILI9340_WHITE,
     2, 0, 0, 300, 220, B_DOUBLE, 12
   },
-  M_SCROLLING, 0, 0, WiFiEntriesPage1
+  M_SCROLLING, 0, 0,false, WiFiEntriesPage1
 };
 
 MenuEntry MEWiFiModule = {" WiFi module", M_DIALOG, 0, 0, 0, NULL, &WiFiDialog, NULL, NULL};
@@ -368,6 +368,8 @@ void SetPassword(char *pswd)
   else strcpy(wifidata.password,pswd);     
   SendACK;
 }
+
+
 
 
 

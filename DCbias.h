@@ -46,7 +46,7 @@ void  DCbiasPowerSet(char *cmd);
 void  DCbiasPower(void);
 void  DelayMonitoring(void);
 
-void  DCbiasRead(int, float *);
+void  DCbiasRead(int, float **);
 void  DCbiasRead(int);
 bool  DCbiasReadMax(int chan, float *fVal);
 void  DCbiasReadMax(int chan);
@@ -56,10 +56,22 @@ void  DCbiasSet(char *Chan, char *value);
 void  DCbiasSet(int Chan, float value);
 void  DCbiasSetNumBoardChans(int board, int num);
 void  DCbiasReportAllSetpoints(void);
+void  SetAllDCbiasChannels(void);
 void  DCbiasReportAllValues(void);
 void  DCbiasDelta(char *Value);
+void  DCbiasOffsetable(char *schan, char *state);
+
+void SetDCbiasProfile(void);
+void GetDCbiasProfile(int num);
+void SetApplyDCbiasProfile(int num);
+void SetDCbiasProfileFromCurrent(int num);
+void StopProfileToggle(void);
+void SetDCbiasProfileToggle(void);
+
 
 #endif
+
+
 
 
 

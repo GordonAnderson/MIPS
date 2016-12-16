@@ -4,6 +4,19 @@
 // This file supports the DC bias modules on the MIPS system. The MIPS controller
 // supports up to two DCbias modules.
 //
+// October 15, 2016. Added the DCbias profile capability. This allow up to 10 voltage
+// profiles. The following commands support the voltage profiles.
+//  SDCBPRO,num,ch1,ch2,ch3...    // Set a profile, must provide all channels
+//  GDCBPRO,num                   // Return a profile
+//  ADCBPRO,num                   // Apply a profile
+//  CDCBPRO,num                   // Set profile with current values
+//  TDCBPRO,p1,p1,dwell           // Toggle between profile p1 and p2, dwell at each profile
+//                                // for dwell millisec
+//  TDCBSTP                       // Stops the toggling
+// Additional commands
+//  SDCBALL,ch1,ch2,ch3....       // Set all DC bias channels
+//  SDCBOFFENA,chan,val           // Sets the offsetable flag TRUE or FALSE    
+//
 // Gordon Anderson
 //
 #include "DCbias.h"
@@ -13,20 +26,27 @@
 #include "Errors.h"
 
 extern DialogBox DCbiasDialog;
-
 extern bool NormalStartup;
+
+// DC bias profiles
+#define NumProfiles 10
+float DCbiasProfiles[NumProfiles][16];
+bool DCbiasProfileApplied = false;
+int  Profile1,Profile2,CurrentProfile;
+int  ProfileDwell;
 
 // Filter time constant is:
 // TC in seconds = 1/(sample rate is samples per sec * filter value) * 2 * pi
 #define  Filter 0.5         // Weak filter coefficent
 #define  StrongFilter 0.05  // Strong filter coefficent
 
+//float Profiles[10][16];
 //MIPS Threads
 Thread DCbiasThread  = Thread();
 
 #ifdef TestMode
 int  NumberOfDCChannels = 16; // Defines the number of DC channels supported. Set during intaliztion.
-                             // valid values are 0, 8, or 16
+                              // valid values are 0, 8, or 16
 bool  DCbiasBoards[2] = {true,true};  // Defines the boards that are present in the system
 #else
 int  NumberOfDCChannels = 0;
@@ -109,7 +129,7 @@ DialogBox DCbiasDialog = {
     "DC bias parameters",
     ILI9340_BLACK,ILI9340_WHITE,2,0, 0,300, 220,B_DOUBLE,12
   },
-  M_SCROLLING,0,0,DCDialogEntriesPage1
+  M_SCROLLING,0,0,false,DCDialogEntriesPage1
 };
 
 MenuEntry MEDCbiasMonitor = {" DC bias module", M_DIALOG,0,0,0,NULL,&DCbiasDialog,NULL,NULL};
@@ -368,6 +388,7 @@ float DCbiasCounts2Value(int chan, int counts)
 
 // This function sends the DAC counts to the selected channel.
 // This function is used by the time table generation code.
+// The channel value range is from 0 to maxchannel-1
 void DCbiasDACupdate(int chan, int counts)
 {
   int brd = -1;
@@ -443,6 +464,12 @@ void DCbias_init(int8_t Board)
   {
     // Setup the min and max values in the user interface
     SetupEntry(&dcbd, DCDialogEntriesPage1);
+    // If this board is not offsetable then disable the menu option and set the offset value to 0
+    if(!DCbD.Offsetable)
+    {
+      DCbD.DCoffset.VoltageSetpoint = 0;
+      DCDialogEntriesPage1[8].Type = D_OFF;
+    }
     // Setup the menu
     AddMainMenuEntry(&MEDCbiasMonitor);
     if(ActiveDialog == NULL) DialogBoxDisplay(&DCbiasDialog);
@@ -455,6 +482,11 @@ void DCbias_init(int8_t Board)
   }
   else
   {
+    if(!DCbD.Offsetable)
+    {
+      DCbD.DCoffset.VoltageSetpoint = 0;
+      DCDialogEntriesPage1a[8].Type = D_OFF;
+    }    
     // If here we are setting up the second DCbias card so point back to the first one
     SelectedDCBoard = 0;
     SelectBoard(0);
@@ -480,7 +512,7 @@ void DCbias_loop(void)
   int     i,b;
   uint16_t ADCvals[8];
 
-  // Monitor power on output bit. If power comes on hold all output at zero until power is stable, short delay.
+  // Monitor power on output bit. If power comes on, hold all outputs at zero until power is stable, short delay.
   if(digitalRead(PWR_ON) != 0) 
   {
     // Here is power is off, set supply off flag and delay loop counter
@@ -531,7 +563,7 @@ void DCbias_loop(void)
         if((V != DCbiasV[b][i]) || DCbiasUpdate)
         {
           DCbiasV[b][i] = V;
-          AD5668(DCbDarray[b].DACspi,DCbDarray[b].DCCD[i].DCctrl.Chan,Value2Counts(V,&DCbDarray[b].DCCD[i].DCctrl),3);
+          if(!DCbiasProfileApplied) AD5668(DCbDarray[b].DACspi,DCbDarray[b].DCCD[i].DCctrl.Chan,Value2Counts(V,&DCbDarray[b].DCCD[i].DCctrl),3);
         }
       }
       else
@@ -571,6 +603,7 @@ void DCbias_loop(void)
       }
     }
   }
+  DCbiasProfileApplied = false;
   DCbiasUpdate = false;
   dcbd = DCbD;
   VerrorFiltered = StrongFilter * Verror + (1-StrongFilter) * VerrorFiltered;
@@ -690,6 +723,29 @@ void DCbiasNumber(void)
   if(!SerialMute) serial->println(NumberOfDCChannels);
 }
 
+
+// This fuction sets the offsetable flag in the data structure for the selected channnel.
+void DCbiasOffsetable(char *schan, char *state)
+{
+  DCbiasData *DCbData;
+  int        chan;
+
+  // Scan the parameters
+  sscanf(schan,"%d",&chan);
+  // Process the request
+  if(!CheckChannel(chan)) return;
+  if((DCbData = GetDCbiasDataPtr(chan)) == NULL) return;
+  if((strcmp(state,"TRUE") != 0) && (strcmp(state,"FALSE") != 0))
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;
+  }
+  if(strcmp(state,"TRUE") == 0) DCbData->Offsetable = true;
+  if(strcmp(state,"FALSE") == 0) DCbData->Offsetable = false;
+  SendACK;
+}
+
 // Set the DCbias channel voltage
 void DCbiasSet(int chan, float value)
 {
@@ -767,14 +823,14 @@ void DCbiasDelta(char *Value)
 
 
 // Read the selected channel requested voltage
-void DCbiasRead(int chan, float *fVal)
+void DCbiasRead(int chan, float **fVal)
 {
   DCbiasData *DCbData;
   
-  fVal = NULL;
+  *fVal = NULL;
   if(!CheckChannel(chan,false)) return;
   if((DCbData = GetDCbiasDataPtr(chan,false)) == NULL) return;
-  fVal = &DCbData->DCCD[(chan-1) & 0x07].VoltageSetpoint;
+  *fVal = &DCbData->DCCD[(chan-1) & 0x07].VoltageSetpoint;
 }
 
 void DCbiasRead(int chan)
@@ -813,6 +869,13 @@ void DCbiasSetFloat(char *Chan, char *Value)
   if((DCbData = GetDCbiasDataPtr(chan)) == NULL) return;
   // Exit if value range error
   if(!CheckValue(DCbData, value)) return;
+  // Exit with error if this board is not offsetable
+  if(!DCbData->Offsetable)
+  {
+    SetErrorCode(ERR_NOTOFFSETABLE);
+    SendNAK;
+    return;
+  }
   // Now set the value in the boards data structure and let the processing
   // loop update the outputs.
   DelayMonitoring();
@@ -934,6 +997,58 @@ void DCbiasSetNumBoardChans(int board, int num)
   SendNAK;
 }
 
+// This function will set all the DCbias channel values. This function is called with the
+// arguments in the input ring buffer. All channel must be defined or an error is returned.
+void SetAllDCbiasChannels(void)
+{
+   DCbiasData *DCbData;
+   char   *Token;
+   String sToken;
+   int    ch;
+   float  vals[16];
+
+   while(1)
+   {
+     // Read the DCbias channel values
+     for(ch = 0; ch < NumberOfDCChannels; ch++)
+     {
+       GetToken(true);
+       if((Token = GetToken(true)) == NULL) goto SetDCbiasProfileError;
+       sToken = Token;
+       vals[ch] = sToken.toFloat();
+     }
+     if((Token = GetToken(true)) == NULL) break;
+     if(Token[0] != '\n') break;
+     // Test the range of the parameters passed
+     for(ch = 0; ch < NumberOfDCChannels; ch++)
+     {
+       if((DCbData = GetDCbiasDataPtr((ch+1),false)) == NULL) goto SetDCbiasProfileError;
+       if(!CheckValue(DCbData, vals[ch] - DCbData->DCoffset.VoltageSetpoint,false)) goto SetDCbiasProfileError;
+     }
+     SendACKonly;
+     // Output the data to the DACs
+     for(ch = 0; ch < NumberOfDCChannels; ch++)
+     {
+        // Update the DAC
+        DCbiasDACupdate(ch, DCbiasValue2Counts(ch, vals[ch]));
+        // Update the display
+        DCbiasSet(ch+1, vals[ch]);
+        // If this channel is being displayed in a dialog then refresh the display
+        if(GetDCbiasBoard(ch+1) == SelectedDCBoard) dcbd.DCCD[(ch) & 0x07].VoltageSetpoint = vals[ch];
+     }
+     // Pulse LDAC to latch them all at the same time!
+     LDAClow;
+     LDAChigh;
+     // Set flag indicating DACs updated
+     DCbiasProfileApplied = true;  
+     return;
+   }
+SetDCbiasProfileError:    // Sorry but it works in this case...
+   // If here then we had bad arguments!
+   SetErrorCode(ERR_BADARG);
+   SendNAK;
+}
+
 // Report all the DC bias channels voltage setpoints
 void DCbiasReportAllSetpoints(void)
 {
@@ -976,5 +1091,198 @@ void DCbiasReportAllValues(void)
   serial->println("");
 }
 
+// October 15, 2016. Added the DCbias profile capability. This allow up to 10 voltage
+// profiles. The following commands support the voltage profiles.
+//  SDCBPRO,num,ch1,ch2,ch3...    // Set a profile, must provide all channels
+//  GDCBPRO,num                   // Return a profile
+//  ADCBPRO,num                   // Apply a profile
+//  CDCBPRO,num                   // Set profile with current values
+//  TDCBPRO,p1,p1,dwell           // Toggle between profile p1 and p2, dwell at each profile
+//                                // for dwell millisec
+//  TDCBSTP                       // Stops the toggling
+
+// This function is called with the parameters in the input ring buffer. The full command
+// line has been received before this function is called. The first argument is the profile
+// number followed by the channel values. All channels must be defined for a valid command.
+// If the profile number is valid and data is invalid then the profile is set to 0.
+void SetDCbiasProfile(void)
+{
+   DCbiasData *DCbData;
+   char   *Token;
+   String sToken;
+   int    num,ch;
+   float  val;
+
+   num = -1;
+   while(1)
+   {
+     // Read The profile number
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sToken = Token;
+     num = sToken.toInt();
+     if((num < 1)||(num > NumProfiles)) break;
+     num--;
+     // Read the DCbias channel values
+     for(ch = 0; ch < NumberOfDCChannels; ch++)
+     {
+       GetToken(true);
+       if((Token = GetToken(true)) == NULL) goto SetDCbiasProfileError;
+       sToken = Token;
+       DCbiasProfiles[num][ch] = sToken.toFloat();
+     }
+     if((Token = GetToken(true)) == NULL) break;
+     if(Token[0] != '\n') break;
+     // Test the range of the parameters passed
+     for(ch = 0; ch < NumberOfDCChannels; ch++)
+     {
+       if((DCbData = GetDCbiasDataPtr((ch+1),false)) == NULL) goto SetDCbiasProfileError;
+       if(!CheckValue(DCbData, DCbiasProfiles[num][ch] - DCbData->DCoffset.VoltageSetpoint,false)) goto SetDCbiasProfileError;
+     }
+     // Exit with no error!
+     SendACK;
+     return;
+   }
+SetDCbiasProfileError:    // Sorry but it works in this case...
+   // If here then we had bad arguments!
+   // If num is valid set the profile to 0
+   if((num >= 0)&&(num < NumProfiles)) for(ch = 0; ch < NumberOfDCChannels; ch++) DCbiasProfiles[num][ch] = 0.0;
+   SetErrorCode(ERR_BADARG);
+   SendNAK;
+}
+
+// This function returns the selected DCbias profile.
+void GetDCbiasProfile(int num)
+{
+   if((num < 1)||(num > NumProfiles))
+   {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;
+     return;
+   }
+   SendACKonly;
+   num--;
+   if(SerialMute) return;
+   for(int ch = 0; ch < NumberOfDCChannels; ch++)
+   {
+     serial->print(DCbiasProfiles[num][ch]);
+     if(ch == (NumberOfDCChannels-1)) serial->println("");
+     else serial->print(",");
+   }
+}
+
+// This function applies a DCbias voltage profile. All the values are written to
+// the DAC and then LDAC is pulsed to make all channels update at the
+// same time. The values are also written to the DCbias buffers and display buffers
+// to allow the screen to update. A flag is set in this function to stop the DCbias
+// polling loop from detecting the change and updating the DACs in the pollong loop.
+void ApplyDCbiasProfile(int num)
+{
+   CurrentProfile = num;
+   num--;
+   for(int ch = 0; ch < NumberOfDCChannels; ch++)
+   {
+      // Update the DAC
+      DCbiasDACupdate(ch, DCbiasValue2Counts(ch, DCbiasProfiles[num][ch]));
+      // Update the display
+      DCbiasSet(ch+1, DCbiasProfiles[num][ch]);
+   }
+   // Pulse LDAC to latch them all at the same time!
+   LDAClow;
+   LDAChigh;
+   // Set flag indicating DACs updated
+   DCbiasProfileApplied = true;  
+}
+
+void SetApplyDCbiasProfile(int num)
+{
+   if((num < 1)||(num > NumProfiles))
+   {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;
+     return;
+   }
+   ApplyDCbiasProfile(num);
+   SendACK;
+}
+
+// This function will set the defined profile number with the current DCbias settings.
+void SetDCbiasProfileFromCurrent(int num)
+{
+   int   ch;
+   float *fval;
+   
+   if((num < 1)||(num > NumProfiles))
+   {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;
+     return;
+   }
+   // Move current values to the select profile
+   for(ch = 0; ch < NumberOfDCChannels; ch++)
+   {
+      DCbiasRead(ch+1, &fval);
+      DCbiasProfiles[num-1][ch] = *fval;
+   }
+   SendACK;
+}
+
+// This function enabled toggeling between two different DCbias voltage profiles.
+// Additionally a dwell time, in milli seconds, defines how long the system remains 
+// at each profile. This function is called with all the arguments in the ringbuffer.
+void ProfileISR(void)
+{
+  if(CurrentProfile == Profile1) ApplyDCbiasProfile(Profile2);
+  else ApplyDCbiasProfile(Profile1);
+}
+
+void SetDCbiasProfileToggle(void)
+{
+   DCbiasData *DCbData;
+   char   *Token;
+   String sToken;
+
+   while(1)
+   {
+     // Read the first profile number
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sToken = Token;
+     Profile1 = sToken.toInt();
+     // Read the second profile number
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sToken = Token;
+     Profile2 = sToken.toInt();
+     // Read the dwell time 
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sToken = Token;
+     ProfileDwell = sToken.toInt();
+     if((Token = GetToken(true)) == NULL) break;
+     if(Token[0] != '\n') break;
+     // Test the range of the parameters passed
+     if((Profile1 < 1) || (Profile1 > NumProfiles)) break;
+     if((Profile2 < 1) || (Profile2 > NumProfiles)) break;
+     if(ProfileDwell < 0) break;
+     // Apply the first profile and setup the timer and ISR for
+     // profile toggling
+     ApplyDCbiasProfile(Profile1);
+     TMR_Profiles.attachInterrupt(ProfileISR);
+     TMR_Profiles.start(ProfileDwell*1000);
+     // Exit with no error!
+     SendACK;
+     return;
+   }
+   // If here then we had bad arguments!
+   SetErrorCode(ERR_BADARG);
+   SendNAK;  
+}
+
+void StopProfileToggle(void)
+{
+  TMR_Profiles.stop();
+  SendACK;
+}
 
 

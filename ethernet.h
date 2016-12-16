@@ -1,6 +1,8 @@
 #ifndef ETHERNET_H_
 #define ETHERNET_H_
 
+extern bool EthernetPresent;
+
 typedef struct
 {
    uint8_t    Dest_IP[4];
@@ -35,4 +37,6 @@ void ReportEGATE(void);
 void SetEGATE(char *ips);
 
 #endif
+
+
 

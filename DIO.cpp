@@ -94,7 +94,7 @@ DialogBox DIDialog = {
     12
   },
   M_SCROLLING,
-  0,0,
+  0,0,false,
   DIDialogEntries
 };
 
@@ -132,7 +132,7 @@ DialogBox DODialog = {
     12
   },
   M_SCROLLING,
-  0,0,
+  0,0,false,
   DODialogEntries
 };
 
@@ -279,6 +279,8 @@ void SDIO_Serial(char *CH, char *State)
   PulseLDAC;
   UpdateDigitialOutputArray();
 }
+
+
 
 
 

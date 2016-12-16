@@ -46,7 +46,7 @@ DIOops  dioops[8] = {DI0,0,false,false,0,false,0,NULL,
                      DI7,0,false,false,0,false,0,NULL
                      };
 
-MIPStimer FreqBurst(3);
+MIPStimer FreqBurst(TMR_TrigOut);
 
 void FreqBurstISR()
 {
@@ -182,7 +182,7 @@ DialogBoxEntry CalibrationDialogEntries[] = {
 
 DialogBox CalibrationDialog = {
   {"Calibration Menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0,0, CalibrationDialogEntries
+  M_SCROLLING, 0,0,false, CalibrationDialogEntries
 };
 
 // This function allows calibration of a DAC output channel along with its ADC readback channel.
@@ -543,6 +543,7 @@ int ReadEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count)
   byte  *bval;
   int   iStat, i = 0, num;
 
+  AcquireTWI();
   num = count;
   bval = (byte *)src;
   delay(10);
@@ -944,14 +945,14 @@ int AD5625(int8_t adr, uint8_t chan, uint16_t val,int8_t Cmd)
   int iStat;
 
   AcquireTWI();
-  interrupts();
+//  interrupts();
   Wire.beginTransmission(adr);
   Wire.write((Cmd << 3) | chan);
   //    if(chan <= 3) val <<= 4;
   Wire.write((val >> 8) & 0xFF);
   Wire.write(val & 0xFF);
   {
-    AtomicBlock< Atomic_RestoreState > a_Block;
+//    AtomicBlock< Atomic_RestoreState > a_Block;
     iStat = Wire.endTransmission();
   }
   ReleaseTWI();
@@ -1113,7 +1114,7 @@ void ReleaseTWI(void)
 
   if(busy) return;
   busy = true;
-  AtomicBlock< Atomic_RestoreState > a_Block;
+//  AtomicBlock< Atomic_RestoreState > a_Block;
   if(TWIbusy)
   {
     for(i=0;i<MaxQueued;i++)
@@ -1412,5 +1413,6 @@ void DIOmirror(char *in, char *out)
   SetErrorCode(ERR_BADARG);
   SendNAK;
 }
+
 
 

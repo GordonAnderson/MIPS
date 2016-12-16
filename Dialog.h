@@ -54,6 +54,7 @@ typedef struct
   MenuState       State;          // State of DialogBox 
   int8_t          Selected;       // Defines the selected enrty, -1 if not selection
   int8_t          LastUpdated;    //
+  bool            Changed;        // Set to true when the user has changed a value in the dialog
   DialogBoxEntry  *Entry;         // Array of Dialog box entries, terminated with NULL
 }DialogBox;
 
@@ -73,8 +74,11 @@ void DisplayAllDialogEntryNames(DialogBox *d);
 void DialogBoxDisplay(DialogBox *d);
 DialogBoxEntry *GetDialogEntries(DialogBoxEntry *de, char *rname);
 void RefreshAllDialogEntries(DialogBox *d);
+void PrintDialog(DialogBox *d, int X, int Y, char *text);
 
 #endif
+
+
 
 
 

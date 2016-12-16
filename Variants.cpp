@@ -158,8 +158,18 @@ FilamentData FILAMENT_Rev_1 = {sizeof(FilamentData),"Filament",1,2,
 ARBdata  ARB_Rev_1 = {sizeof(ARBdata),"ARB", 1, false, 1, false, 100, 0, true,20000,25,0,32,ARB_SIN,
                       1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,
                       0x32,0x50,
-                      "TWAVE",25.0,'Q',RISING,1000,1,
+                      "TWAVE",25.0,'Q',RISING,1000,1,0,-1,
+                      false,true,2,1,10.0,10.0,10.0,10.0,
+                      0,-1,0,-1
                      };
+
+HOFAIMSdata  HOFAIMS_Rev_1 = {sizeof(HOFAIMSdata),"HOFAIMS", 1, false, 0, 25.0, 0, 20, 50,
+                              0,2621,0,                                         // Vmon
+                              1,2621,0,                                         // Imod
+                              2,6656,10000,                                     // RFmon
+                              0x50,0x24,
+                              2                                                // SPI address
+                              };
 
 #ifdef TestMode
 WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_AP,"MIPSnet","MIPS","MIPS1234","",0,true,1};
@@ -171,9 +181,11 @@ WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_IDLE,"MIPSnet","MIPS","MIPS
 // List of all posible board addresses. These addresses are those of the EEPROM on the modules
 char *BoardAddressList = "A 0x50,A 0x52,A 0x54,A 0x56,B 0x50,B 0x52,B 0x54,B 0x56";
 // List of board names used to allow user to select a board by name for inital setup or re-init
-char *BoardVariantsNames = "RFdrvA R1,RFdrvB R1,RFdrvA R2,RFdrvB R2,DC250V R1,DC750V R1,DC50V  R1,Twave R1,Twave R2,Twave R3,FAIMS R1,ESI  R1,FIL R1,ARB R1";
+char *BoardVariantsNames = "RFdrvA R1,RFdrvB R1,RFdrvA R2,RFdrvB R2,DC250V R1,DC750V R1,DC50V  R1,Twave R1,Twave R2,Twave R3,FAIMS R1,ESI  R1,FIL R1,ARB R1,HOFAIMS";
 // List of variant board default data structure pointers with a one to one corespondence to list of board names
-void *BoardVariants[] = {(void *)&RFDD_A_Rev_1,(void *)&RFDD_B_Rev_1,(void *)&RFDD_A_Rev_2,(void *)&RFDD_B_Rev_2,(void *)&DCbD_250_Rev_1,(void *)&DCbD_750_Rev_1,(void *)&DCbD_50_Rev_1,(void *)&Twave_Rev1,(void *)&Twave_Rev2,(void *)&Twave_Rev3,(void *)&FAIMS_Rev_1,(void *)&ESI_Rev_1,(void *)&FILAMENT_Rev_1,(void *)&ARB_Rev_1};
+void *BoardVariants[] = {(void *)&RFDD_A_Rev_1,(void *)&RFDD_B_Rev_1,(void *)&RFDD_A_Rev_2,(void *)&RFDD_B_Rev_2,(void *)&DCbD_250_Rev_1,(void *)&DCbD_750_Rev_1,(void *)&DCbD_50_Rev_1,(void *)&Twave_Rev1,(void *)&Twave_Rev2,(void *)&Twave_Rev3,(void *)&FAIMS_Rev_1,(void *)&ESI_Rev_1,(void *)&FILAMENT_Rev_1,(void *)&ARB_Rev_1,(void *)&HOFAIMS_Rev_1};
+
+
 
 
 

@@ -14,10 +14,16 @@
 // Support added for Twave driver module rev 3.0. December 19. 2015 This version
 // uses a clock chip that will function over the required rance.
 //
+// Rev 4.0 of the Twave module adds a Coolrunner CPLD to the hardware. This allows
+// all the compressor clock logic to be moved into hardware on the module. The CPLD
+// has a 16 bit SPI interface used to control all the options. Hardware signals
+// for SPI data, SPI clock, Strobe, Select provide the interface to the Due controller.
+// On board jumpers allow on board of external clock.
+//
 // Added features:
-//    0.) Add support for 2 twave boards.
-//    1.) Add menu option to allow sync trigger input.
-//    2.) Add menu option to allow digitial input of direction control.
+//    0.) Added support for 2 twave boards.
+//    1.) Added menu option to allow sync trigger input.
+//    2.) Added menu option to allow digitial input of direction control.
 //    3.) Using different bits for direction control of module A and B.
 //    4.) Add menu option to allow second module to use first modules clock
 //        this also requires a board jumper. Add UseCommonClock flag and logic.
@@ -27,7 +33,7 @@
 //        - Use EXT2-12 (DUE 8, c.22) for the clock on board B, requires a cut and jump
 //          need to route this signal through EXT2-14 pin on board B.
 //        - Add compressor menu option when enabled
-//            - Compression factor, 1 to 20
+//            - Compression factor, 1 to 255
 //            - Enable, ON/OFF
 //            - External input for enable
 //        - ISR to support the clock function
@@ -35,6 +41,26 @@
 // Add gate function and gate serial command. Then gated off all outputs will go low and no change
 // when gated back on the bit pattern will reload and start. Maybe we can just set the pulse voltage 
 // to zero, this would be the simple thing to do but still needs TWI interface.
+//
+// Ahmed requested the frequenncy sweep function. This will allow defining the following
+//  -Start freq
+//  -Stop freq
+//  -sweep time in seconds
+//  -Start and Stop
+//  - Must support two twave channels, with syncronized start
+//  - Commands:
+//      STWSSTRT,chan,freq    // defines start freq
+//      GTWSSTRT,chan
+//      STWSSTP,chan,freq     // defines stop freq
+//      GTWSSTP,chan
+//      STWSTM,chan,time      // defines sweep time in seconds
+//      GTWSTM,chan
+//      STWSGO,chan           // Starts the sweep on channel 1 or 2, or 3 for both
+//      STWSHLT,chan          // Stops the sweep on channel 1 or 2, or 3 for both
+//      GTWSTA,chan           // Returns selected channel scan status, running or stopped
+//   Implementation details
+//    - Parameters are not saved
+//    - Updated 10 times per second
 //
 // Gordon Anderson
 //
@@ -44,6 +70,7 @@
 #include "Dialog.h"
 #include "pwm01.h"
 #include "Variants.h"
+#include "Compressor.h"
 
 extern bool NormalStartup;
 
@@ -54,9 +81,9 @@ extern bool NormalStartup;
 // Use the timer channel 6 for a clock in rev 1.0 to get to lower frequencies.
 // Also used on rev 2 due to issues with the clock chip.
 // This timer is also used to generate the software clock in the compressor mode.
-
-MIPStimer TwaveClk(6);
-MIPStimer CompressorTimer(4);
+// 6,4 works
+//MIPStimer TwaveClk(6);
+MIPStimer TwaveClk(TMR_TwaveClk);
 
 // DAC channel assignment
 #define  DAC_PulseVoltage    0
@@ -73,7 +100,9 @@ MIPStimer CompressorTimer(4);
 #define   TWclr        14
 #define   TWld         48
 
-#define   MinPulseVoltage    7
+#define   MinPulseVoltage        7
+#define   MinPulseVoltageRev4    5
+#define   MinPulseVoltageSave    15
 
 MenuEntry METwaveMonitor =  {" Twave module", M_DIALOG, 0, 0, 0, NULL, &TwaveDialog , NULL, NULL};   // Rev 1 menu
 MenuEntry METwaveMonitor2 = {" Twave module", M_DIALOG, 0, 0, 0, NULL, &TwaveDialog2, NULL, NULL};   // Rev 2 and 3 menu
@@ -92,7 +121,8 @@ int       TWboardAddress[2] = { -1, -1};     // Contains board A and B addresses
 // To select the hardware board do the following: SelectBoard(TWboardAddress[SelectedTwaveBoard]);
 TwaveData TD;
 
-char TwaveCompressorTable[100] = "C";
+// CPLD SPI input register image variables.
+uint16_t  TWcpld[2] = {TWMdir | TWMload | TWMmode | TWMsrena | 0x0F, TWMdir | TWMload | TWMmode | TWMsrena | 0x0F};
 
 DIhandler *DIdirTW[2];
 void (*TWdirISRs[2])(void) = {TW_1_DIR_ISR, TW_2_DIR_ISR};
@@ -107,6 +137,12 @@ void TW_1_GateOn(void)
 {
   int brd,mSdelay;
   
+  if(TDarray[0].Rev == 4)
+  {
+     TWcpld[TWboardAddress[0]] |= TWMsrena;
+     TWcpldLoad(TWboardAddress[0]);
+     return;
+  }
   // Read and save board select then select the board and update the sequence to 0xFF
   brd = digitalRead(BRDSEL);
   ENA_BRD_A;
@@ -136,6 +172,12 @@ void TW_1_GateOff(void)
 {
   int brd,mSdelay;
   
+  if(TDarray[0].Rev == 4)
+  {
+     TWcpld[TWboardAddress[0]] &= ~TWMsrena;
+     TWcpldLoad(TWboardAddress[0]);
+     return;
+  }
 //  digitalWrite(TWld, LOW);  // Hold load line actice, this will stop the clocking
   // Read and save board select then select the board and update the sequence to 0xFF
   brd = digitalRead(BRDSEL);
@@ -186,6 +228,12 @@ void TW_2_GateOn(void)
 {
   int brd,mSdelay;
   
+  if(TDarray[1].Rev == 4)
+  {
+     TWcpld[TWboardAddress[1]] |= TWMsrena;
+     TWcpldLoad(TWboardAddress[1]);
+     return;
+  }
   // Read and save board select then select the board and update the sequence to 0xFF
   brd = digitalRead(BRDSEL);
   ENA_BRD_B;
@@ -215,7 +263,13 @@ void TW_2_GateOff(void)
 {
   int brd,mSdelay;
   
-//  digitalWrite(TWld, LOW);  // Hold load line actice, this will stop the clocking
+  if(TDarray[1].Rev == 4)
+  {
+     TWcpld[TWboardAddress[1]] &= ~TWMsrena;
+     TWcpldLoad(TWboardAddress[1]);
+     return;
+  }
+//  digitalWrite(TWld, LOW);  // Hold load line active, this will stop the clocking
   // Read and save board select then select the board and update the sequence to 0xFF
   brd = digitalRead(BRDSEL);
   ENA_BRD_B;
@@ -261,6 +315,14 @@ void TW_2_GATE_ISR(void)
 
 void TW_1_DIR_ISR(void)
 {
+  if(TDarray[0].Rev == 4)
+  {
+     if(TDarray[0].Direction) TWcpld[TWboardAddress[0]] |= TWMdir;
+     else TWcpld[TWboardAddress[0]] &= ~TWMdir;
+     // Update the CPLD
+     TWcpldLoad(TWboardAddress[0]);
+     return;
+  }
   if (DIdirTW[0]->activeLevel()) TDarray[0].Direction = true;
   else TDarray[0].Direction = false;
   if (0 == SelectedTwaveModule)
@@ -279,6 +341,14 @@ void TW_1_DIR_ISR(void)
 }
 void TW_2_DIR_ISR(void)
 {
+  if(TDarray[1].Rev == 4)
+  {
+     if(TDarray[1].Direction) TWcpld[TWboardAddress[1]] |= TWMdir;
+     else TWcpld[TWboardAddress[1]] &= ~TWMdir;
+     // Update the CPLD
+     TWcpldLoad(TWboardAddress[1]);
+     return;
+  }
   if (DIdirTW[1]->activeLevel()) TDarray[1].Direction = true;
   else TDarray[1].Direction = false;
   if (1 == SelectedTwaveModule)
@@ -295,8 +365,14 @@ void TW_2_DIR_ISR(void)
   CompressorClockReset();
   digitalWrite(TWld, HIGH);
 }
+
 void TW_1_SYNC_ISR(void)
 {
+  if(TDarray[0].Rev == 4)
+  {
+    SetSequence(0);
+    return;
+  }
   AtomicBlock< Atomic_RestoreState > a_Block;
   // Re-load the sequence generator
   digitalWrite(TWld, LOW);
@@ -307,6 +383,11 @@ void TW_1_SYNC_ISR(void)
 }
 void TW_2_SYNC_ISR(void)
 {
+  if(TDarray[1].Rev == 4)
+  {
+    SetSequence(1);
+    return;
+  }
   AtomicBlock< Atomic_RestoreState > a_Block;
   // Re-load the sequence generator
   digitalWrite(TWld, LOW);
@@ -325,10 +406,14 @@ float MaxTwaveVoltage = 0;  // This value is set to the highest Twave output vol
 
 void SetVelocity(int ModuleIndex)
 {
-  //  SelectBoard(TWboardAddress[SelectedTwaveBoard]);
-  if (TDarray[ModuleIndex].Rev == 3)
+//  SelectBoard(TWboardAddress[ModuleIndex]);
+  if (TDarray[ModuleIndex].Rev == 4)
   {
-    // Rev 3 only supports the on module FS7140 clock chip.
+    FS7140setup(TDarray[ModuleIndex].CLOCKadr,TDarray[ModuleIndex].Velocity);   
+  }
+  else if (TDarray[ModuleIndex].Rev == 3)
+  {
+    // Rev 3 supports the on module FS7140 clock chip.
     if(TDarray[0].CompressorEnabled)
     {
       TwaveClk.attachInterrupt(CompressorClockISR);
@@ -340,7 +425,7 @@ void SetVelocity(int ModuleIndex)
   else if (TDarray[ModuleIndex].Rev == 2)
   {
 #ifdef UseTimer
-    // The 8 times multiplier is because the output toggles on each clock thus devides
+    // The 8 times multiplier is because the output toggles on each clock thus divides
     // by two and the rev 2 hardware has a 4x division.
     TwaveClk.setFrequency((double)(TDarray[ModuleIndex].Velocity * 8));
     TwaveClk.setTIOAeffect(1, TC_CMR_ACPA_TOGGLE);
@@ -369,9 +454,22 @@ void SetVelocity(int ModuleIndex)
 
 void SetSequence(int ModuleIndex)
 {
-  int   i;
-  int   numTry = 0;
+  int     i;
+  int     numTry = 0;
+  uint8_t *b;
 
+  if(TDarray[ModuleIndex].Rev == 4)
+  {
+    b = (uint8_t *)&TWcpld[TWboardAddress[ModuleIndex]];
+    // Load image with sequence in lower 8 bits and set the Load bit
+    b[0] = ~TDarray[ModuleIndex].Sequence;
+    TWcpld[TWboardAddress[ModuleIndex]] |= TWMload;
+    // Update the CPLD
+    TWcpldLoad(TWboardAddress[ModuleIndex]);
+    // Clear the load bit in image register
+    TWcpld[TWboardAddress[ModuleIndex]] &= ~TWMload;
+    return;
+  }
   if ((TDarray[ModuleIndex].Rev == 2) || (TDarray[ModuleIndex].Rev == 3))
   {
     // Retry if the GPIO fails, this is needed!
@@ -419,10 +517,13 @@ void SetSequence(int ModuleIndex)
 // This function will set the Pulse voltage DAC output.
 void SetPulseVoltage(int ModuleIndex)
 {
-  int DACcounts;
+  int   DACcounts;
+  float MinPV;
 
+  if(TDarray[ModuleIndex].Rev == 4) MinPV = MinPulseVoltageRev4;
+  else MinPV = MinPulseVoltage;
   //  SelectBoard(TWboardAddress[SelectedTwaveBoard]);
-  if (TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint < (TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPulseVoltage)) TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint = TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPulseVoltage;
+  if (TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint < (TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPV)) TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint = TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPV;
   // Use calibration data to convert engineering units requested to DAC counts.
   DACcounts = Value2Counts(TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint, &TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].DCctrl);
   AD5625(TDarray[ModuleIndex].DACadr, TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].DCctrl.Chan, DACcounts);
@@ -431,9 +532,11 @@ void SetPulseVoltage(int ModuleIndex)
 void SetPulseVoltage(int ModuleIndex, float voltage)
 {
   int DACcounts;
+  float MinPV;
 
+  if(TDarray[ModuleIndex].Rev == 4) MinPV = MinPulseVoltageRev4;
   //  SelectBoard(TWboardAddress[SelectedTwaveBoard]);
-  if (TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint < (TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPulseVoltage)) TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint = TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPulseVoltage;
+  if (TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint < (TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPV)) TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint = TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPV;
   // Use calibration data to convert engineering units requested to DAC counts.
   DACcounts = Value2Counts(voltage, &TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].DCctrl);
   AD5625(TDarray[ModuleIndex].DACadr, TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].DCctrl.Chan, DACcounts);
@@ -475,11 +578,16 @@ void SetGuard2(int ModuleIndex)
 // Write the current board parameters to the EEPROM on the RFdriver board.
 void SaveTwaveSettings(void)
 {
+  float pv;
+  
+  pv = TDarray[SelectedTwaveModule].TWCD[DAC_PulseVoltage].VoltageSetpoint;
+  if(pv < MinPulseVoltageSave) pv = MinPulseVoltageSave;
   if (WriteEEPROM(&TDarray[SelectedTwaveModule], TwaveEEPROMaddr[SelectedTwaveModule], 0, sizeof(TwaveData)) == 0)
   {
     DisplayMessage("Parameters Saved!", 2000);
   }
   else DisplayMessage("Unable to Save!", 2000);
+  TDarray[SelectedTwaveModule].TWCD[DAC_PulseVoltage].VoltageSetpoint = pv;
 }
 
 // Restore the parameters from the EEPROM on the Twave board. Read the EEPROM and make sure the board name
@@ -505,6 +613,7 @@ void RestoreTwaveSettings(bool NoDisplay)
     else if (!NoDisplay) DisplayMessage("Corrupted EEPROM data!", 2000);
   }
   else if (!NoDisplay) DisplayMessage("Unable to Restore!", 2000);
+  if(TDarray[SelectedTwaveModule].TWCD[DAC_PulseVoltage].VoltageSetpoint < MinPulseVoltageSave) TDarray[SelectedTwaveModule].TWCD[DAC_PulseVoltage].VoltageSetpoint = MinPulseVoltageSave;
 }
 
 
@@ -526,10 +635,10 @@ DialogBoxEntry TwaveDialogEntries[] = {
 };
 
 DialogBox TwaveDialog = {{"Twave parameters", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0, 0, TwaveDialogEntries
+  M_SCROLLING, 0, 0,false, TwaveDialogEntries
 };
 
-// Rev 2.0/3.0 dialog options
+// Rev 2.0/3.0/4.0 dialog options
 DialogBoxEntry TwaveDialogEntries2[] = {
   {" Twave module"       , 0, 1, D_INT, 1, 1, 1, 22, false, "%1d", &TwaveModuleNumber, NULL, SelectTwaveModule},
   {" Clock freq, Hz"     , 0, 2, D_INT, 1000, 300000, 1000, 16, false, "%7d", &TD.Velocity, NULL, NULL},
@@ -546,7 +655,7 @@ DialogBoxEntry TwaveDialogEntries2[] = {
 };
 
 DialogBox TwaveDialog2 = {{"Twave parameters", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0, 0, TwaveDialogEntries2
+  M_SCROLLING, 0, 0,false, TwaveDialogEntries2
 };
 
 DialogBoxEntry TwaveDialogEntries2page2[] = {
@@ -563,6 +672,56 @@ DialogBoxEntry TwaveDialogEntries2page2[] = {
   {" Return to first page", 0, 11, D_PAGE , 0, 0, 0, 0, false, NULL, &TwaveDialogEntries2, NULL, NULL},
   {NULL},
 };
+
+// The function loads the TW CPLD image register to the hardware
+void TWcpldLoad(int index, bool Strobe)
+{
+  uint8_t  *b;
+
+  AtomicBlock< Atomic_RestoreState > a_Block;
+  b = (uint8_t *)&TWcpld[index];
+  // Select the board
+  if(index == 0) digitalWrite(TWselect,LOW);
+  else digitalWrite(TWselect,HIGH);
+  // Set the SPI address
+  SetAddress(4);
+  // Send data
+  SPI.setDataMode(SPI_CS, SPI_MODE1);
+  SPI.transfer(SPI_CS, b[1], SPI_CONTINUE);
+  SPI.transfer(SPI_CS, b[0]);
+  // Pulse strobe and exit
+  if(Strobe)
+  {
+     digitalWrite(TWstrobe,HIGH);
+     digitalWrite(TWstrobe,LOW);
+  }
+  SetAddress(0);  
+}
+
+// This function will load the sequence into both twave channel and
+// clear the clock logic. This should sync the two channels
+void TWcpldSync(void)
+{
+  uint8_t  *b;
+
+  AtomicBlock< Atomic_RestoreState > a_Block;
+  b = (uint8_t *)&TWcpld[0];
+  b[0] = ~TDarray[0].Sequence;
+  b = (uint8_t *)&TWcpld[1];
+  b[0] = ~TDarray[1].Sequence;
+  TWcpld[0] |= TWMload;
+  TWcpld[0] |= TWMclear;
+  TWcpld[1] |= TWMload;
+  TWcpld[1] |= TWMclear;
+  TWcpldLoad(0,false);
+  TWcpldLoad(1,false);
+  digitalWrite(TWstrobe,HIGH);
+  digitalWrite(TWstrobe,LOW);  
+  TWcpld[0] &= ~TWMload;
+  TWcpld[0] &= ~TWMclear;
+  TWcpld[1] &= ~TWMload;
+  TWcpld[1] &= ~TWMclear;
+}
 
 void CalibratePulse(void)
 {
@@ -582,6 +741,7 @@ void CalibratePulse(void)
   sprintf(Name, "      Pulse V");
   // Calibrate this channel
   ChannelCalibrate(&CC, Name, 20.0, 75.0);
+  TDarray[SelectedTwaveModule] = TD;
 }
 
 void CalibrateGuard1(void)
@@ -602,6 +762,7 @@ void CalibrateGuard1(void)
   sprintf(Name, "     Guard 1");
   // Calibrate this channel
   ChannelCalibrate(&CC, Name, 10.0, 75.0);
+  TDarray[SelectedTwaveModule] = TD;
 }
 
 void CalibrateGuard2(void)
@@ -622,6 +783,7 @@ void CalibrateGuard2(void)
   sprintf(Name, "     Guard 2");
   // Calibrate this channel
   ChannelCalibrate(&CC, Name, 10.0, 75.0);
+  TDarray[SelectedTwaveModule] = TD;
 }
 
 // External trigger interrupt vectors here!
@@ -652,7 +814,8 @@ void SelectTwaveModule(void)
 
 void Twave_init(int8_t Board, uint8_t addr)
 {
-  DialogBox *SavedDialog;
+  DialogBox      *SavedDialog;
+  DialogBoxEntry *de;
 
   TwaveEEPROMaddr[Board] = addr;
   // Flag the board as present
@@ -688,6 +851,16 @@ void Twave_init(int8_t Board, uint8_t addr)
     pinMode(TWclr, OUTPUT);
     pinMode(TWld, OUTPUT);
   }
+  // If rev 4.0 setup the CPLD control bits and update the minimum pulse voltage
+  if(TD.Rev == 4)
+  {
+    pinMode(TWstrobe, OUTPUT);
+    pinMode(TWselect, OUTPUT);
+    digitalWrite(TWstrobe, LOW);
+    digitalWrite(TWselect, LOW);
+    de = GetDialogEntries(TwaveDialogEntries2, "Pulse voltage"); 
+    de->Min = MinPulseVoltageRev4;
+  }
   SetPulseVoltage(Board);
   SetRestingVoltage();
   SetGuard1(Board);
@@ -713,8 +886,8 @@ void Twave_init(int8_t Board, uint8_t addr)
     // Setup the menu
     if (TD.Rev == 1) AddMainMenuEntry(&METwaveMonitor);
     if (TD.Rev == 1) DialogBoxDisplay(&TwaveDialog);
-    if ((TD.Rev == 2) || (TD.Rev == 3)) AddMainMenuEntry(&METwaveMonitor2);
-    if ((TD.Rev == 2) || (TD.Rev == 3))
+    if ((TD.Rev == 2) || (TD.Rev == 3) || (TD.Rev == 4)) AddMainMenuEntry(&METwaveMonitor2);
+    if ((TD.Rev == 2) || (TD.Rev == 3) || (TD.Rev == 4))
     {
       if (ActiveDialog == NULL)
       {
@@ -754,8 +927,16 @@ void Twave_loop(void)
   static float   CurrentGuard2Voltage[2] = {-1,-1};
   int i;
 
-  if ((ActiveDialog == &TwaveDialog2)||(ActiveDialog == &TwaveDialog)||(ActiveDialog == &CompressorDialog)) TDarray[SelectedTwaveModule] = TD;   // Store any changes, if dialog is selected
+  if ((ActiveDialog == &TwaveDialog2)||(ActiveDialog == &TwaveDialog)||(ActiveDialog == &CompressorDialog)) 
+  {
+    if(ActiveDialog->Changed)
+    {
+       TDarray[SelectedTwaveModule] = TD;
+       ActiveDialog->Changed = false;
+    }
+  }
   CompressorLoop();
+  ProcessSweep();
   for (i = 0; i < 2; i++)
   {
     if (TwaveBoards[i])
@@ -798,9 +979,20 @@ void Twave_loop(void)
             if (TDarray[i].Direction) digitalWrite(TWdirB, HIGH);
             else digitalWrite(TWdirB, LOW);
           }
-            digitalWrite(TWld, LOW);
-            delay(1);
-            digitalWrite(TWld, HIGH);
+          digitalWrite(TWld, LOW);
+          delay(1);
+          digitalWrite(TWld, HIGH);
+        }
+      }
+      if (TDarray[i].Rev == 4)
+      {
+        if (CurrentDirection[i] != TDarray[i].Direction)
+        {
+          CurrentDirection[i] = TDarray[i].Direction;
+          if(TDarray[i].Direction) TWcpld[TWboardAddress[i]] |= TWMdir;
+          else TWcpld[TWboardAddress[i]] &= ~TWMdir;
+          // Update the CPLD
+          TWcpldLoad(TWboardAddress[i]);
         }
       }
       if (TDarray[i].Rev >= 2)
@@ -845,7 +1037,7 @@ void Twave_loop(void)
           TD.Velocity = TDarray[i].Velocity;
         }
       }
-      // Determine the higest Twave output voltage
+      // Determine the highest Twave output voltage
       MaxTwaveVoltage = 0;
       if (TDarray[i].TWCD[DAC_Guard1].VoltageSetpoint > MaxTwaveVoltage) MaxTwaveVoltage = TDarray[i].TWCD[DAC_Guard1].VoltageSetpoint;
       if (TDarray[i].TWCD[DAC_Guard2].VoltageSetpoint > MaxTwaveVoltage) MaxTwaveVoltage = TDarray[i].TWCD[DAC_Guard2].VoltageSetpoint;
@@ -857,6 +1049,7 @@ void Twave_loop(void)
   // Display the monitored values based on the dialog box curently being displayed
   if (ActiveDialog == &TwaveDialog2) RefreshAllDialogEntries(&TwaveDialog2);
   if (ActiveDialog == &TwaveDialog) RefreshAllDialogEntries(&TwaveDialog);
+  TD = TDarray[SelectedTwaveModule];
 }
 
 //
@@ -1186,9 +1379,6 @@ void setTWAVEdir(char *chan, char *dirstr)
 
 extern DialogBoxEntry CompressorEntries2[];
 
-char *CmodeList = "Normal,Compress";
-char Cmode[12]  = "Normal";
-
 DialogBoxEntry CompressorEntries[] = {
   {" Mode"                , 0, 1, D_LIST   , 0,  0, 8, 15, false, CmodeList, Cmode, NULL, UpdateMode},
   {" Order"               , 0, 2, D_UINT8  , 0, 255, 1, 20, false, "%3d", &TD.Corder, NULL, UpdateMode},
@@ -1203,9 +1393,6 @@ DialogBoxEntry CompressorEntries[] = {
   {NULL},
 };
 
-char *CswitchList    = "Open,Close";
-char CswitchState[6] = "Open";
-
 DialogBoxEntry CompressorEntries2[] = {
   {" Trig input"          , 0, 1, D_DI     , 0, 0, 2, 21, false, NULL, &TD.Ctrig, NULL, ConfigureTrig},
   {" Trig level"          , 0, 2, D_DILEVEL, 0, 0, 4, 19, false, NULL, &TD.CtrigLevel, NULL, ConfigureTrig},
@@ -1219,7 +1406,7 @@ DialogBoxEntry CompressorEntries2[] = {
 };
 
 DialogBox CompressorDialog = {{"Compressor params", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0, 0, CompressorEntries
+  M_SCROLLING, 0, 0,false, CompressorEntries
 };
 
 #define MaxOrder  255
@@ -1232,64 +1419,26 @@ volatile int       ClockReset = 16;
 volatile int       ClockIndex = 0;
 volatile int       CR = 16;
 volatile bool      C_ClockEnable = true;
-volatile int       C_NormAmpMode = 0;             // If set to 1 then the normal mode will use the TW channel 1 amplitude
 
 volatile Pio *pio;
 
-// Time delay parameters. All the time values in milli secs are converted into timer counts and saved in these 
-// variables.
-#define   C_clock       656250      // This is the clock frequenncy used for the timing control
-                                    // for the compressor state machine. This is the clock frequency
-                                    // for the timer. 
-uint32_t  C_Td;               // Trigger delay
-uint32_t  C_Tc;               // Compressed time
-uint32_t  C_Tn;               // Normal time
-uint32_t  C_Tnc;              // Non compressed cycle time
-uint32_t  C_Delay;            // Delay time
-uint32_t  C_NextEvent;        // Next event counter value
-uint32_t  C_SwitchTime;       // Switch open time
-uint32_t  C_GateOpenTime;     // Switch event time from start of table
-
-DIhandler *CtrigInput;
-
-CompressorState CState;
-CompressorSwitchState CSState;
-int CurrentPass;
-
-int CStackLevel;
-CompressorStack cStack[5];
-
-void CompressorStackInit(void)
-{
-  CStackLevel = 0;
-}
-
-bool CompressorLoopStart(int Index)
-{
-  // If stack is full exit and return false
-  if(CStackLevel >= 5) return false;
-  // Init the stack entry
-  CStackLevel++;
-  cStack[CStackLevel - 1].StartOfLoop = Index;
-  cStack[CStackLevel - 1].Inited = false;
-}
-
-int CompressorProcessLoop(int Count)
-{
-  if(CStackLevel <= 0) return -1;
-  if(cStack[CStackLevel - 1].Inited == false) cStack[CStackLevel - 1].Count = Count;
-  cStack[CStackLevel - 1].Inited = true;
-  cStack[CStackLevel - 1].Count--;
-  if(cStack[CStackLevel - 1].Count == 0) 
-  {
-    CStackLevel--;
-    return -1;
-  }
-  return cStack[CStackLevel - 1].StartOfLoop;
-}
-
 void UpdateMode(void)
 {
+  uint8_t *b;
+  
+  if(TDarray[0].Rev == 4)
+  {
+    // Rev 4.0 uses a CPLD for clock and compression logic
+    uint8_t *b = (uint8_t *)&TWcpld[1];    // board address 1 is always the compressor channel
+    b[0] = TDarray[0].Corder;
+    if(strcmp(Cmode,"Normal")==0) TWcpld[1] |= TWMmode;
+    else TWcpld[1] &= ~TWMmode;
+    TWcpld[1] |= TWMorder;
+    TWcpldLoad(1);
+    TWcpld[1] &= ~TWMorder;
+    TWcpldSync();
+    return;
+  }
   if(strcmp(Cmode,"Normal")==0) ClockReset = 8;
   else ClockReset = TD.Corder * 8;
 }
@@ -1327,11 +1476,9 @@ void SwitchTimerISR(void)
       break;
     case CSS_OPEN:
       SetOutput(TD.Cswitch,TD.CswitchLevel);
- //     CSState = CSS_IDLE;
       break;
     case CSS_CLOSE:
       ClearOutput(TD.Cswitch,TD.CswitchLevel);  
-  //    CSState = CSS_IDLE;
       break;
     default:
       break;
@@ -1344,7 +1491,6 @@ void CompressorTimerISR(void)
 {
   char OP;
 
-  interrupts();
   // This interrupt occurs when the current state has timed out so advance to the next
   switch (CState)
   {
@@ -1364,6 +1510,11 @@ void CompressorTimerISR(void)
       ClockReset = 8;
       C_NextEvent += C_Tn;
       CState = CS_NORMAL;
+      if(TDarray[0].Rev == 4)
+      {
+         TWcpld[1] |= TWMmode;
+         TWcpldSync();
+      }
       break;
     case CS_NORMAL:
     case CS_NONCOMPRESS:
@@ -1377,6 +1528,11 @@ void CompressorTimerISR(void)
         CState = CS_COMPRESS;
         C_NextEvent += C_Tc;
         ClockReset = TDarray[0].Corder * 8;
+        if(TDarray[0].Rev == 4)
+        {
+          TWcpld[1] &= ~TWMmode;
+          TWcpldSync();
+        }
         // If C_NormAmpMode is 1 or 2 then set the amplitude to TW2 level.
         if((C_NormAmpMode == 1) || (C_NormAmpMode == 2))
         {
@@ -1394,6 +1550,11 @@ void CompressorTimerISR(void)
         CState = CS_NONCOMPRESS;
         C_NextEvent += C_Tnc;
         ClockReset = 8;
+        if(TDarray[0].Rev == 4)
+        {
+           TWcpld[1] |= TWMmode;
+           TWcpldSync();
+        }
       }
       else if(OP == 'D')
       {
@@ -1422,21 +1583,25 @@ void CompressorTimerISR(void)
 // The B compare register is used for the switch or gate timing
 void CompressorTriggerISR(void)
 {
-  interrupts();
+  AtomicBlock< Atomic_RestoreState > a_Block;
   // Clear and setup variables
   ClockReset = 8;             // Put system in normal mode
   CurrentPass = 0;
+  if(TDarray[0].Rev == 4)
+  {
+    TWcpld[1] |= TWMmode;
+    TWcpldSync();
+  }
   GetNextOperationFromTable(true);
   C_NextEvent = C_Td;
   CState = CS_TRIG;
   // Setup the timer used to generate interrupts
   CompressorTimer.begin();
-  CompressorTimer.setTrigger(TC_CMR_EEVTEDG_NONE);
-  CompressorTimer.setClock(TC_CMR_TCCLKS_TIMER_CLOCK4);
   CompressorTimer.attachInterruptRA(CompressorTimerISR);
   CompressorTimer.attachInterruptRB(SwitchTimerISR);
+  CompressorTimer.setTrigger(TC_CMR_EEVTEDG_NONE);
+  CompressorTimer.setClock(TC_CMR_TCCLKS_TIMER_CLOCK4);
   CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
-  serial->println(C_NextEvent);
   CompressorTimer.enableTrigger();
   CompressorTimer.softwareTrigger();
 }
@@ -1688,6 +1853,7 @@ void CompressorClockISR(void)
   uint32_t i;
 
   if(!C_ClockEnable) return;
+  if(CState == CS_DELAY) return;
   AtomicBlock< Atomic_RestoreState > a_Block;
   // Generate 4 clock pulses
   i = ClockArray[ClockIndex];
@@ -1737,20 +1903,25 @@ void CompressorInit(void)
   if(!TDarray[0].CompressorEnabled) return;  // Exit if the compressor is not enabled
   TDarray[0].UseCommonClock = true;          // If we are in compressor mode then we must use a common clock
   TDarray[1].UseCommonClock = true;
-  pinMode(CLOCK_A, OUTPUT);  // Clock A output pin
-  pinMode(CLOCK_B, OUTPUT);  // Clock B output pin
   // Setup the pio pointer
   pio = g_APinDescription[CLOCK_A].pPort;
   // Init the clock array used to generate the clocks
-  for(i=0;i < MaxOrder * 8;i++)
+  // Rev 3 used a software clock, rev 4 is done in hardware
+  if(TDarray[0].Rev == 3)
   {
-    ClockArray[i] =  g_APinDescription[CLOCK_A].ulPin;
-    if(i < 8) ClockArray[i] |= g_APinDescription[CLOCK_B].ulPin;
+    pinMode(CLOCK_A, OUTPUT);  // Clock A output pin
+    pinMode(CLOCK_B, OUTPUT);  // Clock B output pin
+    for(i=0;i < MaxOrder * 8;i++)
+    {
+      ClockArray[i] =  g_APinDescription[CLOCK_A].ulPin;
+      if(i < 8) ClockArray[i] |= g_APinDescription[CLOCK_B].ulPin;
+    }
+    // Setup the timer and the ISR for the clock
+    TwaveClk.attachInterrupt(CompressorClockISR);
+    TwaveClk.setFrequency((double)TDarray[0].Velocity);
+    TwaveClk.start(-1, 0, false);
+    //NVIC_SetPriority(TC7_IRQn, 0);
   }
-  // Setup the timer and the ISR for the clock
-  TwaveClk.attachInterrupt(CompressorClockISR);
-  TwaveClk.setFrequency((double)TDarray[0].Velocity);
-  TwaveClk.start(-1, 0, false);
   // Clear the switch output
   ClearOutput(TDarray[0].Cswitch,TDarray[0].CswitchLevel);
   // Enable the compressor menu selection 
@@ -1895,7 +2066,7 @@ void SetTWCnoncompressTime(char *str)
 
 void TWCtrigger(void)
 {
-   SendACKonly;
+   SendACK;
    CompressorTriggerISR();
 }
 
@@ -1912,7 +2083,4 @@ void SetTWCswitch(char *mode)
   SendNAK;
 }
 // End of compressor host command routines
-
-
-
 

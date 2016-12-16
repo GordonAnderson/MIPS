@@ -95,7 +95,7 @@ DialogBoxEntry RFdriverDialogEntriesPage2[] = {
 
 DialogBox RFdriverDialog = {
   {"RF driver parameters", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
-  M_SCROLLING, 0,0, RFdriverDialogEntriesPage1
+  M_SCROLLING, 0,0,false, RFdriverDialogEntriesPage1
 };
 
 MenuEntry MERFdriverMonitor = {" RF driver module", M_DIALOG, 0, 0, 0, NULL, &RFdriverDialog, NULL, NULL};
@@ -123,15 +123,15 @@ void RFgateChange(void)
 {
   String trig;
 
-  RFDD.RFgateDI[SelectedRFChan] = RFgateDI[0];
-  if (RFDD.RFgateDI[SelectedRFChan] == 'N') RFDD.RFgateDI[SelectedRFChan] = 0;
+  RFDD.RFgateDI[SelectedRFChan & 1] = RFgateDI[0];
+  if (RFDD.RFgateDI[SelectedRFChan & 1] == 'N') RFDD.RFgateDI[SelectedRFChan & 1] = 0;
   trig = RFgateTrig;
-  if (trig == "NA") RFDD.RFgateTrig[SelectedRFChan] = -1;
-  else if (trig == "BOTH") RFDD.RFgateTrig[SelectedRFChan] = CHANGE;
-  else if (trig == "HIGH") RFDD.RFgateTrig[SelectedRFChan] = HIGH;
-  else if (trig == "LOW") RFDD.RFgateTrig[SelectedRFChan] = LOW;
-  else if (trig == "POS") RFDD.RFgateTrig[SelectedRFChan] = RISING;
-  else if (trig == "NEG") RFDD.RFgateTrig[SelectedRFChan] = FALLING;
+  if (trig == "NA") RFDD.RFgateTrig[SelectedRFChan & 1] = -1;
+  else if (trig == "BOTH") RFDD.RFgateTrig[SelectedRFChan & 1] = CHANGE;
+  else if (trig == "HIGH") RFDD.RFgateTrig[SelectedRFChan & 1] = HIGH;
+  else if (trig == "LOW") RFDD.RFgateTrig[SelectedRFChan & 1] = LOW;
+  else if (trig == "POS") RFDD.RFgateTrig[SelectedRFChan & 1] = RISING;
+  else if (trig == "NEG") RFDD.RFgateTrig[SelectedRFChan & 1] = FALLING;
 }
 
 void SetNextRFPage(void)
@@ -210,19 +210,20 @@ int8_t BoardFromSelectedChannel(int8_t SC)
 // Called after the user selects a channel
 void SelectChannel(void)
 {
-  RFCD = RFDD.RFCD[Channel - 1];
   SelectedRFChan = Channel - 1;
   SelectedRFBoard = BoardFromSelectedChannel(SelectedRFChan);
+  RFCD = RFDD.RFCD[(Channel - 1) & 1];
+  SelectBoard(SelectedRFBoard);
 //  Powers[SelectedRFBoard][SelectedRFChan] = RFpVpps[SelectedRFBoard][SelectedRFChan] = RFnVpps[SelectedRFBoard][SelectedRFChan] = 0;
-  RFgateDI[0] = RFDD.RFgateDI[SelectedRFChan];
+  RFgateDI[0] = RFDD.RFgateDI[SelectedRFChan & 1];
   RFgateDI[1] = 0;
   if (RFgateDI[0] == 0) strcpy(RFgateDI, "NA");
-  if (RFDD.RFgateTrig[SelectedRFChan] == -1) strcpy(RFgateTrig, "NA");
-  else if (RFDD.RFgateTrig[SelectedRFChan] == CHANGE) strcpy(RFgateTrig, "BOTH");
-  else if (RFDD.RFgateTrig[SelectedRFChan] == HIGH) strcpy(RFgateTrig, "HIGH");
-  else if (RFDD.RFgateTrig[SelectedRFChan] == LOW) strcpy(RFgateTrig, "LOW");
-  else if (RFDD.RFgateTrig[SelectedRFChan] == RISING) strcpy(RFgateTrig, "POS");
-  else if (RFDD.RFgateTrig[SelectedRFChan] == FALLING) strcpy(RFgateTrig, "NEG");
+  if (RFDD.RFgateTrig[SelectedRFChan & 1] == -1) strcpy(RFgateTrig, "NA");
+  else if (RFDD.RFgateTrig[SelectedRFChan & 1] == CHANGE) strcpy(RFgateTrig, "BOTH");
+  else if (RFDD.RFgateTrig[SelectedRFChan & 1] == HIGH) strcpy(RFgateTrig, "HIGH");
+  else if (RFDD.RFgateTrig[SelectedRFChan & 1] == LOW) strcpy(RFgateTrig, "LOW");
+  else if (RFDD.RFgateTrig[SelectedRFChan & 1] == RISING) strcpy(RFgateTrig, "POS");
+  else if (RFDD.RFgateTrig[SelectedRFChan & 1] == FALLING) strcpy(RFgateTrig, "NEG");
   if (RFCD.RFmode == RF_MANUAL) strcpy(RFmode, "MANUAL");
   else strcpy(RFmode, "AUTO");
   RFmodeChange();
@@ -237,6 +238,8 @@ void SelectChannel(void)
 // If only one board is installed it can be board 0 or 1.
 void RFdriver_init(int8_t Board)
 {
+  DialogBox *sd;
+  
   // Flag the board as present
   RFdriverBoards[Board] = true;
   // Create the digital input gate objects
@@ -246,6 +249,8 @@ void RFdriver_init(int8_t Board)
   SelectedRFBoard = Board;
   SelectBoard(Board);
   // If normal startup load the EEPROM parameters from the RF driver card.
+  sd = ActiveDialog;
+  ActiveDialog = NULL;
   if (NormalStartup)
   {
     RestoreRFdriverSettings(true);
@@ -257,6 +262,7 @@ void RFdriver_init(int8_t Board)
   SetPLL3freq(RFDD.CLOCKadr, RFDD.RFCD[1].Freq);
   // Setup the PWM outputs and set levels
   analogWriteResolution(12);
+  SelectedRFBoard = Board;
   pinMode(RFDD.RFCD[0].PWMchan, OUTPUT);
   analogWrite(RFDD.RFCD[0].PWMchan, (RFDD.RFCD[0].DriveLevel * PWMFS) / 100);
   pinMode(RFDD.RFCD[1].PWMchan, OUTPUT);
@@ -264,6 +270,7 @@ void RFdriver_init(int8_t Board)
   // Define the initial selected channel as 0 and setup
   Channel = 1;
   SelectChannel();
+  ActiveDialog = sd;
   // Setup the menu if this is the very first call to this init function
   if (NumberOfRFChannels == 0)
   {
@@ -293,7 +300,7 @@ void RFcontrol(void)
     {
       if (Powers[board][chan] > RFDDarray[board].RFCD[chan].MaxPower) RFDDarray[board].RFCD[chan].DriveLevel -= 0.1;
       if (RFDDarray[board].RFCD[chan].DriveLevel < 0) RFDDarray[board].RFCD[chan].DriveLevel = 0;
-      if ((SelectedRFBoard == board) && (SelectedRFChan == chan))
+      if ((SelectedRFBoard == board) && ((SelectedRFChan & 1) == chan))
       {
         RFCD.DriveLevel = RFDDarray[board].RFCD[chan].DriveLevel;
       }
@@ -304,7 +311,7 @@ void RFcontrol(void)
         else RFDDarray[board].RFCD[chan].DriveLevel += .01;
         if (RFDDarray[board].RFCD[chan].DriveLevel < 0) RFDDarray[board].RFCD[chan].DriveLevel = 0;
         if (RFDDarray[board].RFCD[chan].DriveLevel > RFDDarray[board].RFCD[chan].MaxDrive) RFDDarray[board].RFCD[chan].DriveLevel = RFDDarray[board].RFCD[chan].MaxDrive;
-        if ((SelectedRFBoard == board) && (SelectedRFChan == chan))
+        if ((SelectedRFBoard == board) && ((SelectedRFChan & 1) == chan))
         {
           RFCD.DriveLevel = RFDDarray[board].RFCD[chan].DriveLevel;
         }
@@ -325,7 +332,7 @@ void RFdriver_loop(void)
   MaxRFVoltage = 0;
   SelectedRFBoard = BoardFromSelectedChannel(SelectedRFChan);
   SelectBoard(SelectedRFBoard);
-  RFDD.RFCD[SelectedRFChan] = RFCD;    // This stores any changes back to the selected channels data structure
+  RFDD.RFCD[SelectedRFChan & 1] = RFCD;    // This stores any changes back to the selected channels data structure
   // Set the Drive level limit in the UI menu
   RFdriverDialogEntriesPage1[2].Max = RFCD.MaxDrive;
   // Update the clock generator and set the frequencies for
@@ -355,21 +362,23 @@ void RFdriver_loop(void)
     if (DIh[SelectedRFBoard][1]->activeLevel()) analogWrite(RFDD.RFCD[1].PWMchan, (RFDD.RFCD[1].DriveLevel * PWMFS) / 100);
   }
   // Update the PWM outputs and set levels
+  for (i = 0; i < NumberOfRFChannels; i++)
   {
-//    AtomicBlock< Atomic_RestoreState > 	a_Block;
-    if (DIh[SelectedRFBoard][0]->activeLevel()) analogWrite(RFDD.RFCD[0].PWMchan, (RFDD.RFCD[0].DriveLevel * PWMFS) / 100);
-    else analogWrite(RFDD.RFCD[0].PWMchan, 0);
-    if (DIh[SelectedRFBoard][1]->activeLevel()) analogWrite(RFDD.RFCD[1].PWMchan, (RFDD.RFCD[1].DriveLevel * PWMFS) / 100);
-    else analogWrite(RFDD.RFCD[1].PWMchan, 0);
+    SelectedRFBoard = BoardFromSelectedChannel(i);
+    if (DIh[SelectedRFBoard][i & 1]->activeLevel()) 
+    {
+      analogWrite(RFDD.RFCD[i & 1].PWMchan, (RFDD.RFCD[i & 1].DriveLevel * PWMFS) / 100);
+    }
+    else analogWrite(RFDD.RFCD[i & 1].PWMchan, 0);
   }
   // Check and update the RF gate controls
   for (i = 0; i < NumberOfRFChannels; i++)
   {
     SelectedRFBoard = BoardFromSelectedChannel(i);
-    if ((RFDD.RFgateDI[i] != DIh[SelectedRFBoard][i]->di) || (RFDD.RFgateTrig[SelectedRFChan] != DIh[SelectedRFBoard][i]->mode))
+    if ((RFDD.RFgateDI[i & 1] != DIh[SelectedRFBoard][i & 1]->di) || (RFDD.RFgateTrig[SelectedRFChan & 1] != DIh[SelectedRFBoard][i]->mode))
     {
-      DIh[SelectedRFBoard][i]->detach();
-      DIh[SelectedRFBoard][i]->attached(RFDD.RFgateDI[i], RFDD.RFgateTrig[i], GateTriggerISRs[SelectedRFBoard][i]);
+      DIh[SelectedRFBoard][i & 1]->detach();
+      DIh[SelectedRFBoard][i & 1]->attached(RFDD.RFgateDI[i & 1], RFDD.RFgateTrig[i & 1], GateTriggerISRs[SelectedRFBoard][i & 1]);
     }
   }
   // Read all the voltage monitors and caculate all the RF head power
@@ -382,63 +391,72 @@ void RFdriver_loop(void)
     ValueChange = false;
     delay(1);
     if ((i == 0) || (i == 2)) if ((AD7998(RFDD.ADCadr, ADCvals) != 0) || (ValueChange))  // this logic is not correct!
-      {
+    {
         i++;
         continue;
-      }
-    if (DIh[SelectedRFBoard][i]->activeLevel())
+    }
+    if (DIh[SelectedRFBoard][i & 1]->activeLevel())
     {
-      if(RFDD.Rev > 1)
+      if(RFDD.Rev == 3)
+      {
+         // y = -62.27195 + 2.06452*x - 0.025363*x^2 + 0.000161919*x^3 - 3.873611e-7*x^4 + 3.255975e-10*x^5
+         // y = 49.14388 - 1.28479*x + 0.01031666*x^2 - 0.00001091348*x^3
+         Pv = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan], &RFDD.RFCD[i & 1].RFpADCchan);
+         Pv = 3.255975e-10 * pow(Pv,5) - 3.873611e-7 * pow(Pv,4) + 0.000161919 * pow(Pv,3) - 0.025363 * pow(Pv,2) + 2.06452 * Pv - 62.27195;
+         Nv = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan);
+         Nv = 3.255975e-10 * pow(Nv,5) - 3.873611e-7 * pow(Nv,4) + 0.000161919 * pow(Nv,3) - 0.025363 * pow(Nv,2) + 2.06452 * Nv - 62.27195;
+      }
+      else if(RFDD.Rev == 1)
       {
         // Convert to engineering units for the Linear tech level sensors. Need 2nd order correction, y = 2x10^6 X^2 + 0.0145 X + 28.33
         // This correction used with new small RF head. Installed first on Mike belovs system.
-        Pv = ((float)(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan]) * (float)(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan])) * 2e-6 - (float)(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan]) * 0.0145 + 28.33;
-        Nv = ((float)(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan]) * (float)(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan])) * 2e-6 - (float)(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan]) * 0.0145 + 28.33;
+        Pv = ((float)(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan]) * (float)(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan])) * 2e-6 - (float)(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan]) * 0.0145 + 28.33;
+        Nv = ((float)(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan]) * (float)(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan])) * 2e-6 - (float)(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan]) * 0.0145 + 28.33;
         // Convert to engineering units for the Linear tech level sensors. Need 2nd order correction, y = 0.0011 X^2 + 0.1716 X - 42.853
         // This correct used on high power RF heads, the above correct did not work for some reason. Need to figure out a better way to add these updates.
 //        Pv = Counts2Value(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan], &RFDD.RFCD[i].RFpADCchan);
 //        Pv = Pv * Pv * (0.00113) + Pv * 0.1716 - 42.853;
 //        Nv = Counts2Value(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan], &RFDD.RFCD[i].RFnADCchan);
 //        Nv = Nv * Nv * (0.0011) + Nv * 0.1716 - 42.853;
-        if (RFpVpps[SelectedRFBoard][i] == 0) RFpVpps[SelectedRFBoard][i] = Pv;
-        if (RFnVpps[SelectedRFBoard][i] == 0) RFnVpps[SelectedRFBoard][i] = Nv;
+        if (RFpVpps[SelectedRFBoard][i & 1] == 0) RFpVpps[SelectedRFBoard][i & 1] = Pv;
+        if (RFnVpps[SelectedRFBoard][i & 1] == 0) RFnVpps[SelectedRFBoard][i & 1] = Nv;
       }
       else
       {
-        if (RFpVpps[SelectedRFBoard][i] == 0) RFpVpps[SelectedRFBoard][i] = Counts2Value(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan], &RFDD.RFCD[i].RFpADCchan);
-        if (RFnVpps[SelectedRFBoard][i] == 0) RFnVpps[SelectedRFBoard][i] = Counts2Value(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan], &RFDD.RFCD[i].RFnADCchan);
+        if (RFpVpps[SelectedRFBoard][i & 1] == 0) RFpVpps[SelectedRFBoard][i & 1] = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan], &RFDD.RFCD[i & 1].RFpADCchan);
+        if (RFnVpps[SelectedRFBoard][i & 1] == 0) RFnVpps[SelectedRFBoard][i & 1] = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan);
       }
       // Filter with 1st order difference equation
       if(RFDD.Rev > 1)
       {
-        RFpVpps[SelectedRFBoard][i] = Filter * Pv + (1 - Filter) * RFpVpps[SelectedRFBoard][i];
-        RFnVpps[SelectedRFBoard][i] = Filter * Nv + (1 - Filter) * RFnVpps[SelectedRFBoard][i];
+        RFpVpps[SelectedRFBoard][i & 1] = Filter * Pv + (1 - Filter) * RFpVpps[SelectedRFBoard][i & 1];
+        RFnVpps[SelectedRFBoard][i & 1] = Filter * Nv + (1 - Filter) * RFnVpps[SelectedRFBoard][i & 1];
       }
       else
       {
-        RFpVpps[SelectedRFBoard][i] = Filter * Counts2Value(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan], &RFDD.RFCD[i].RFpADCchan) + (1 - Filter) * RFpVpps[SelectedRFBoard][i];
-        RFnVpps[SelectedRFBoard][i] = Filter * Counts2Value(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan], &RFDD.RFCD[i].RFnADCchan) + (1 - Filter) * RFnVpps[SelectedRFBoard][i];
+        RFpVpps[SelectedRFBoard][i & 1] = Filter * Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan], &RFDD.RFCD[i & 1].RFpADCchan) + (1 - Filter) * RFpVpps[SelectedRFBoard][i & 1];
+        RFnVpps[SelectedRFBoard][i & 1] = Filter * Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan) + (1 - Filter) * RFnVpps[SelectedRFBoard][i & 1];
       }
       // Limit test
-      if (RFpVpps[SelectedRFBoard][i] < 0) RFpVpps[SelectedRFBoard][i] = 0;
-      if (RFnVpps[SelectedRFBoard][i] < 0) RFnVpps[SelectedRFBoard][i] = 0;
-      if (abs(RFpVpps[SelectedRFBoard][i]) > MaxRFVoltage) MaxRFVoltage = abs(RFpVpps[SelectedRFBoard][i]);
-      if (abs(RFnVpps[SelectedRFBoard][i]) > MaxRFVoltage) MaxRFVoltage = abs(RFnVpps[SelectedRFBoard][i]);
+      if (RFpVpps[SelectedRFBoard][i & 1] < 0) RFpVpps[SelectedRFBoard][i & 1] = 0;
+      if (RFnVpps[SelectedRFBoard][i & 1] < 0) RFnVpps[SelectedRFBoard][i & 1] = 0;
+      if (abs(RFpVpps[SelectedRFBoard][i & 1]) > MaxRFVoltage) MaxRFVoltage = abs(RFpVpps[SelectedRFBoard][i & 1]);
+      if (abs(RFnVpps[SelectedRFBoard][i & 1]) > MaxRFVoltage) MaxRFVoltage = abs(RFnVpps[SelectedRFBoard][i & 1]);
       // Calculate RF head power
-      V = Counts2Value(ADCvals[RFDD.RFCD[i].DriveVADCchan.Chan], &RFDD.RFCD[i].DriveVADCchan);
-      I = Counts2Value(ADCvals[RFDD.RFCD[i].DriveIADCchan.Chan], &RFDD.RFCD[i].DriveIADCchan);
+      V = Counts2Value(ADCvals[RFDD.RFCD[i & 1].DriveVADCchan.Chan], &RFDD.RFCD[i & 1].DriveVADCchan);
+      I = Counts2Value(ADCvals[RFDD.RFCD[i & 1].DriveIADCchan.Chan], &RFDD.RFCD[i & 1].DriveIADCchan);
       // Filter with 1st order difference equation
-      Powers[SelectedRFBoard][i] = Filter * (V * I) + (1 - Filter) * Powers[SelectedRFBoard][i];
-      if (Powers[SelectedRFBoard][i] < 0) Powers[SelectedRFBoard][i] = 0;
+      Powers[SelectedRFBoard][i & 1] = Filter * (V * I) + (1 - Filter) * Powers[SelectedRFBoard][i & 1];
+      if (Powers[SelectedRFBoard][i & 1] < 0) Powers[SelectedRFBoard][i & 1] = 0;
     }
   }
   // Reselect the active channel's board
   SelectedRFBoard = BoardFromSelectedChannel(SelectedRFChan);
   SelectBoard(SelectedRFBoard);
   // Read the ADC monitor values for the selected channel.
-  RFpVpp = RFpVpps[SelectedRFBoard][SelectedRFChan];
-  RFnVpp = RFnVpps[SelectedRFBoard][SelectedRFChan];
-  Power = Powers[SelectedRFBoard][SelectedRFChan];
+  RFpVpp = RFpVpps[SelectedRFBoard][SelectedRFChan & 1];
+  RFnVpp = RFnVpps[SelectedRFBoard][SelectedRFChan & 1];
+  Power = Powers[SelectedRFBoard][SelectedRFChan & 1];
   if (ActiveDialog->Entry == RFdriverDialogEntriesPage1)
   {
     if((ActiveDialog->Selected != disIndex+1) || (ActiveDialog->State == M_SCROLLING)) DisplayDialogEntry(&ActiveDialog->w, &ActiveDialog->Entry[disIndex+1], false);
@@ -674,6 +692,8 @@ void RFreportAll(void)
   }
   serial->println("");
 }
+
+
 
 
 

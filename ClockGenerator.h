@@ -6,6 +6,7 @@
  */
 #ifndef CLOCKGENERATOR_H_
 #define CLOCKGENERATOR_H_
+#include <MIPStimer.h>
 
 typedef struct
 {
@@ -34,8 +35,12 @@ int FindPQ(long ClockOut);
 int CY_Init(int8_t adr);
 int SetPLL2freq(int8_t adr, int Freq);
 int SetPLL3freq(int8_t adr, int Freq);
+int FAIMSclockSet(int8_t adr, int Freq);
+void FAIMSphase(int harmonic, int phase);
 
 #endif /* CLOCKGENERATOR_H_ */
+
+
 
 
 

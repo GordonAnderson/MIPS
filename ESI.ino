@@ -61,7 +61,7 @@ DialogBox ESIdialog = {
     2,0,0,300,220,
     B_DOUBLE,12
   },
-  M_SCROLLING,0,0,ESIentries
+  M_SCROLLING,0,0,false,ESIentries
 };
 
 MenuEntry MEESImonitor = {" ESI module", M_DIALOG,0,0,0,NULL,&ESIdialog,NULL,NULL};
@@ -343,6 +343,8 @@ void GetESIchannelMax(int chan)
   SendACKonly;
   if(!SerialMute) serial->println(ESIarray[(chan-1)/2].ESIchan[(chan-1)&1].MaxVoltage);
 }
+
+
 
 
 
