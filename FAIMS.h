@@ -32,6 +32,16 @@ Drv3 current
 #define FAIMS_h
 
 extern float MaxFAIMSVoltage;
+extern bool  DiableArcDetect;
+
+extern float TotalPower;
+extern float KVoutP;
+extern float KVoutN;
+
+extern float  DCoffsetRB;
+extern float  DCbiasRB;
+extern float  DCcvRB;
+
 
 // Drive data structure
 typedef struct
@@ -88,6 +98,8 @@ typedef struct
   float  ArcSens;
 } FAIMSdata;
 
+extern FAIMSdata  faims;
+
 // Prototypes
 void SaveFAIMSSettings(void);
 void RestoreFAIMSSettings(void);
@@ -97,6 +109,10 @@ void CalibrateDCoffset(void);
 
 // Serial command prototypes
 void FAIMSnumberOfChannels(void);
+void FAIMSsetDrive(char *drv);
+void FAIMSsetCV(char *volts);
+void FAIMSsetBIAS(char *volts);
+void FAIMSsetOffset(char *volts);
 void FAIMSsetRFharPcal(char *m, char *b);
 void FAIMSsetRFharNcal(char *m, char *b);
 

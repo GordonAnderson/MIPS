@@ -65,6 +65,8 @@ extern int ErrorCode;
 #define ERR_ETHERNETCOMM            110     // Ethernet adapter communication error
 #define ERR_EEPROMWRITE             110     // Error writing to EEPROM on module
 #define ERR_NOTOFFSETABLE           111     // DC bias module is not offsetable
+#define ERR_INTERNAL                112     // Internal error such as can't allocate resource
+#define ERR_BMPERROR                113     // BMP file error
 
 #endif
 

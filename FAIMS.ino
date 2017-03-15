@@ -27,6 +27,13 @@
 //        - Enable
 //        - Temp and tress coeef and limts
 //
+// December 2016
+//  1.) Set output A high when FAIMS generation is actibe.
+//  2.) If input T is high then the system shuts down due to external Estop.
+//
+// Feburary 10, 2017
+//  -- DC CV rise and fall times = 15mS
+//  -- DC bias rise and fall times = 15mS
 //
 // To Dos:
 //  1.) Add all the serial commands to support FAIMS.List of commands to add:
@@ -98,7 +105,7 @@ float  Drv2Power = 0;
 float  Drv3Power = 0;
 
 // FAIMS scan mode variables
-bool   FAIMSscan = false;      // True when the DCcv scan is requensted
+bool   FAIMSscan = false;      // True when the DCcv scan is requested
 bool   FAIMSscanning = false;  // True when the system is scanning
 bool   FieldDriven = false;    // This flag is set if this is a field driven FAIMS system
 float  ScanTime = 0;           // This is how long the system has been scanning
@@ -124,6 +131,7 @@ float  DCoffsetRB = 0;
 float  DCbiasRB   = 0;
 float  DCcvRB     = 0;
 
+bool DiableArcDetect = false;
 void DelayArcDetect(void);
 
 //MIPS Threads
@@ -159,10 +167,11 @@ DialogBoxEntry FAIMSentriesTuneMenu[] = {
   {" Pri capacitance"        , 0, 4, D_FLOAT   , 0, 100, 0.1, 18, false, "%5.1f", &faims.Pcap, NULL, NULL},
   {" Har capacitance"        , 0, 5, D_FLOAT   , 0, 100, 0.1, 18, false, "%5.1f", &faims.Hcap, NULL, NULL},
   {" Arc Det Level"          , 0, 6, D_FLOAT   , 0, 100, 1, 19, false, "%4.0f", &faims.ArcSens, NULL, NULL},
-  {" Environment menu"       , 0, 7, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSEnvMenu, NULL, NULL},
-  {" Drive menu"             , 0, 8, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSDriveMenu, NULL, NULL},
-  {" Power menu"             , 0, 9, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSPowerMenu, NULL, NULL},
-  {" Return to FAIMS menu"   , 0, 10, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSMainMenu, NULL, NULL},
+  {" Arc Det Disable"        , 0, 7, D_YESNO   , 0, 1, 1, 19, false, NULL, &DiableArcDetect, NULL, NULL},
+  {" Environment menu"       , 0, 8, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSEnvMenu, NULL, NULL},
+  {" Drive menu"             , 0, 9, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSDriveMenu, NULL, NULL},
+  {" Power menu"             , 0, 10,D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSPowerMenu, NULL, NULL},
+  {" Return to FAIMS menu"   , 0, 11,D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSMainMenu, NULL, NULL},
   {NULL},
 };
 
@@ -234,6 +243,7 @@ DialogBoxEntry FAIMSentriesDCMenu[] = {
   {""                        , 0, 1, D_FLOAT   , 0, 0, 0, 18, true, "%5.1f", &DCbiasRB, NULL, NULL},
   {""                        , 0, 2, D_FLOAT   , 0, 0, 0, 18, true, "%5.1f", &DCcvRB, NULL, NULL},
   {""                        , 0, 3, D_FLOAT   , 0, 0, 0, 18, true, "%5.1f", &DCoffsetRB, NULL, NULL},
+  {" Curtain V"              , 0, 4, D_OFF     , -1000, 1000, 10, 18, false, "%5.0f", &ESIarray[1].VoltageSetpoint, NULL, NULL},
   {" CV start"               , 0, 5, D_FLOAT   , -250, 250, 0.1, 18, false, "%5.1f", &faims.CVstart, NULL, NULL},
   {" CV end"                 , 0, 6, D_FLOAT   , -250, 250, 0.1, 18, false, "%5.1f", &faims.CVend, NULL, NULL},
   {" Duration"               , 0, 7, D_FLOAT   , 1, 10000, 1, 15, false, "%8.1f", &faims.Duration, NULL, NULL},
@@ -316,8 +326,8 @@ void SetupNFDEntry(DCbiasData *dc)
   {
     FAIMSentriesDCMenu[i].Min = -250.0 + faims.DCoffset.VoltageSetpoint;
     FAIMSentriesDCMenu[i].Max =  250.0 + faims.DCoffset.VoltageSetpoint;
-    FAIMSentriesDCMenu[7+i].Min = -250.0 + faims.DCoffset.VoltageSetpoint;
-    FAIMSentriesDCMenu[7+i].Max =  250.0 + faims.DCoffset.VoltageSetpoint;
+    FAIMSentriesDCMenu[8+i].Min = -250.0 + faims.DCoffset.VoltageSetpoint;
+    FAIMSentriesDCMenu[8+i].Max =  250.0 + faims.DCoffset.VoltageSetpoint;
   }
 }
 
@@ -457,6 +467,7 @@ Wire.begin();
       memcpy(&faims, &faimsT, faimsT.Size);
       faims.Size = sizeof(FAIMSdata);
       Loops = faims.Loops;
+      faims.Enable = false;
       if (!NoDisplay) DisplayMessage("Parameters Restored!", 2000);
     }
     else if (!NoDisplay) DisplayMessage("Corrupted EEPROM data!", 2000);
@@ -525,9 +536,9 @@ void FAIMS_init(int8_t Board)
   Loops = faims.Loops;
   // Force global enable to false and set global drive to highest driver channel value
   faims.Enable = false;
-  faims.Drv = faims.Drv1.Drv;
-  if (faims.Drv2.Drv > faims.Drv) faims.Drv = faims.Drv2.Drv;
-  if (faims.Drv3.Drv > faims.Drv) faims.Drv = faims.Drv3.Drv;
+//  faims.Drv = faims.Drv1.Drv;
+//  if (faims.Drv2.Drv > faims.Drv) faims.Drv = faims.Drv2.Drv;
+//  if (faims.Drv3.Drv > faims.Drv) faims.Drv = faims.Drv3.Drv;
   DrvChange = 0;
   // Init all the hardware...
   // Set GPIO direction registers
@@ -544,6 +555,15 @@ void FAIMS_init(int8_t Board)
   {
      SetRef(20000000);
      FAIMSclockSet(faims.CLOCKadr, faims.Freq);
+  }
+  // If ESI rev 3 board is present then enable the curtian menu option
+  if((NumberOfESIchannels >= 1) && (ESIarray[1].Rev == 3))
+  {
+    DialogBoxEntry *de = GetDialogEntries(FAIMSentriesDCMenu, " Curtain V");
+    if(de != NULL)
+    {
+      de->Type = D_FLOAT;
+    }
   }
   // Setup the PWM outputs and set levels
   analogWriteResolution(12);
@@ -892,6 +912,9 @@ void FAIMS_loop(void)
   static int  LastFunDelay = -1;
   static int  LastDrv  = -1;
   static bool LastEnable = false;
+  static float LastCV = -1;
+  static float LastBias = -1;
+  static float LastOffset = -1;
   static DialogBoxEntry *TMde = GetDialogEntries(FAIMSentriesTuneMenu, " Frequency");
   static DialogBoxEntry *PCde = GetDialogEntries(FAIMSentriesTuneMenu, " Pri capacitance");
   static DialogBoxEntry *HCde = GetDialogEntries(FAIMSentriesTuneMenu, " Har capacitance");
@@ -947,7 +970,18 @@ void FAIMS_loop(void)
         baseTemp = currentTemp;
         deltaPressure = deltaTemp = 0;
       }
+      // Raise digital output A to flag we are on!
+      SetOutput('A', HIGH);
+      // Enable the curtian supply if present in system
+      if((NumberOfESIchannels >= 1) && (ESIarray[1].Rev == 3)) ESIarray[1].Enable =true;
     }
+  }
+  if ((LastEnable) && (!faims.Enable))
+  {
+    // Here if the system was just disabled.
+    ClearOutput('A', HIGH);    
+    // Turn off the esi board, used for curtian supply
+    if((NumberOfESIchannels >= 1) && (ESIarray[1].Rev == 3)) ESIarray[0].Enable = ESIarray[1].Enable =false;
   }
   LastEnable = faims.Enable;
   // Turn on RF on led in faims RF deck if any drive is enabled and global enable
@@ -1026,6 +1060,7 @@ void FAIMS_loop(void)
     delay(1);
     // Retry if the GPIO fails
     for (int j = 0; j < 10; j++) if (MCP2300(faims.DELAYadr, 0x0A, faims.PhaseF) == 0) break;
+    LastGPIO &= ~0x08;
     delay(1);
   }
   // For rev 3 update fundamental delay if needed
@@ -1037,6 +1072,7 @@ void FAIMS_loop(void)
     delay(1);
     // Retry if the GPIO fails
     for (int j = 0; j < 10; j++) if (MCP2300(faims.DELAYadr, 0x0A, faims.PhaseC) == 0) break;    
+    LastGPIO &= ~0x04;
     delay(1);
   }
   // Update the capacitor servos
@@ -1075,9 +1111,11 @@ void FAIMS_loop(void)
     // Arc detection
     // Compare the unfiltered value to the filtered value and if there is a sudden drop it
     // could indicate an arc so turn off the system. (add this code! here)
-    if(DiableArcDetectTimer == 0) if (faims.Enable) if (((KVoutP + KVoutN) - (Vp + Vn)) > (KVoutP + KVoutN) / 3)
+//    if((DiableArcDetectTimer == 0) && !DiableArcDetect) if (faims.Enable) if (((KVoutP + KVoutN) - (Vp + Vn)) > (KVoutP + KVoutN) / 3)
+    if((DiableArcDetectTimer == 0) && !DiableArcDetect) if (faims.Enable) if((KVoutP > 0.1) || (KVoutN > 0.1))
     {
-      if((KVoutP + KVoutN) > (100 - faims.ArcSens)/100)
+//      if((KVoutP + KVoutN) > (100 - faims.ArcSens)/100)
+      if (((KVoutP + KVoutN) - (Vp + Vn)) > ((KVoutP + KVoutN) * (100 - faims.ArcSens))/ 100)
       {
         // Arc detected! Shutdown
         // Disable the drivers and display a estop warning
@@ -1086,6 +1124,10 @@ void FAIMS_loop(void)
         DisplayMessage(" Arc detected! ", 2000);
       }
     }
+    // If the voltages changed then seed the filters
+    if(LastCV != faims.DCcv.VoltageSetpoint) LastCV = DCcvRB = faims.DCcv.VoltageSetpoint;
+    if(LastBias != faims.DCbias.VoltageSetpoint) LastBias = DCbiasRB = faims.DCbias.VoltageSetpoint;
+    if(LastOffset != faims.DCoffset.VoltageSetpoint) LastOffset = DCoffsetRB = faims.DCoffset.VoltageSetpoint;
     // Monitor all the readback voltages
     DCoffsetRB = Filter * Counts2Value(ADCvals[faims.DCoffset.DCmon.Chan], &faims.DCoffset.DCmon) + (1 - Filter) * DCoffsetRB;
     if (DCoffsetRB > MaxFAIMSVoltage) MaxFAIMSVoltage = DCoffsetRB;
@@ -1109,6 +1151,14 @@ void FAIMS_loop(void)
       faims.Enable = false;
       if (ActiveDialog != NULL) ActiveDialog->State = M_SCROLLING;
       DisplayMessage(" Emergency Stop! ", 2000);
+    }
+    // If S input is high then stop, this is external Estop
+    if((DigitalIn() & 0x04) != 0)
+    {
+       // Disable the drivers and display a estop warning
+      faims.Enable = false;
+      if (ActiveDialog != NULL) ActiveDialog->State = M_SCROLLING;
+      DisplayMessage(" Emergency Stop! ", 2000);     
     }
   }
   // Monitor power limits and reduce drive if over the limit.
@@ -1168,6 +1218,84 @@ void FAIMSnumberOfChannels(void)
 {
   SendACKonly;
   if(!SerialMute) serial->println(NumberOfFAIMS);
+}
+
+// Set faims drive level in percentange from 0 to 100 percent
+void FAIMSsetDrive(char *drv)
+{
+  String res;
+  float  v;
+  DialogBoxEntry *de = GetDialogEntries(FAIMSentriesPowerMenu, "Max drive level");
+
+  res = drv;
+  v = res.toFloat();
+  if((v > *((float *)de->Value)) || (v < 10))
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;
+  }
+  faims.Drv = v;
+  SendACK;    
+}
+
+// Set the faims CV voltage, get limits from the dialog structure
+void FAIMSsetCV(char *volts)
+{
+  String res;
+  float  v;
+  DialogBoxEntry *de = GetDialogEntries(FAIMSentriesDCMenu, "DC CV");
+
+  res = volts;
+  v = res.toFloat();
+  if((v > de->Max) || (v < de->Min))
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;
+  }
+  faims.DCcv.VoltageSetpoint = v;
+  SendACK;  
+}
+
+// Set the faims Bias voltage, get limits from the dialog structure
+void FAIMSsetBIAS(char *volts)
+{
+  String res;
+  float  v;
+  DialogBoxEntry *de = GetDialogEntries(FAIMSentriesDCMenu, "DC bias");
+
+  res = volts;
+  v = res.toFloat();
+  if((v > de->Max) || (v < de->Min))
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;
+  }
+  faims.DCbias.VoltageSetpoint = v;
+  SendACK;  
+}
+
+// Set the faims Offset voltage, +-250V range. 
+// This function assumes this is a non field driven faims system
+void FAIMSsetOffset(char *volts)
+{
+  String res;
+  float  v;
+
+  res = volts;
+  v = res.toFloat();
+  if((v > 250) || (v < -250))
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;
+  }
+  // Set the offset voltage
+  faims.DCoffset.VoltageSetpoint = v;
+  UpdateNFDlimits();
+  SendACK;
 }
 
 void FAIMSsetRFharPcal(char *m, char *b)

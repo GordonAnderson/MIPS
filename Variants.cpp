@@ -135,14 +135,14 @@ FAIMSdata  FAIMS_Rev_1 = {sizeof(FAIMSdata),"FAIMS", 1, 1000000, 25.0, false, 4,
                           };
                          
 ESIdata  ESI_Rev_1 =   { sizeof(ESIdata),"ESI", 1,
-                         0.0,6000,0.0,      // ESI channel 0
-                             0,10.9225,0,   //   DAC voltage control
-                             1,10.9225,0,   //   ADC voltage readback
-                             0,13106,0,   //   ADC current readback, mA
-                         0.0,-6000,0.0,     // ESI channel 1
-                             1,-10.9225,0,  //   DAC voltage control
-                             3,-10.9225,0,  //   ADC voltage readback
-                             2,13106,0,   //   ADC current readback, mA
+                         false,0.0,6000,6000,0.1,  // ESI channel 0
+                             0,10.9225,0,            //   DAC voltage control
+                             1,10.9225,0,            //   ADC voltage readback
+                             0,13106,0,              //   ADC current readback, mA
+                         false,0.0,-6000,-6000,0.1, // ESI channel 1
+                             1,-10.9225,0,           //   DAC voltage control
+                             3,-10.9225,0,           //   ADC voltage readback
+                             2,13106,0,              //   ADC current readback, mA
                          0x24,0x1F,0x52,
                        };
 
@@ -159,8 +159,9 @@ ARBdata  ARB_Rev_1 = {sizeof(ARBdata),"ARB", 1, false, 1, false, 100, 0, true,20
                       1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,
                       0x32,0x50,
                       "TWAVE",25.0,'Q',RISING,1000,1,0,-1,
-                      false,true,2,1,10.0,10.0,10.0,10.0,
-                      0,-1,0,-1
+                      false,false,2,1,10.0,10.0,10.0,10.0,
+                      0,-1,0,-1,
+                      false
                      };
 
 HOFAIMSdata  HOFAIMS_Rev_1 = {sizeof(HOFAIMSdata),"HOFAIMS", 1, false, 0, 25.0, 0, 20, 50,

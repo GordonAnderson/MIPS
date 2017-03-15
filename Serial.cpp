@@ -8,6 +8,7 @@
  */
 #include "Arduino.h"
 #include "SD.h"
+#include "Adafruit_ILI9340.h"
 #include "string.h"
 #include "Serial.h"
 #include "Errors.h"
@@ -63,7 +64,8 @@ Commands  CmdArray[] = 	{
   {"GVER",  CMDstr, 0, (char *)Version},	               // Report version
   {"GERR",  CMDint, 0, (char *)&ErrorCode},              // Report the last error code
   {"GNAME", CMDstr, 0, (char *)MIPSconfigData.Name},	   // Report MIPS system name
-  {"SNAME", CMDstr, 1, (char *)MIPSconfigData.Name},	   // Set MIPS system name
+  {"SNAME", CMDstr, 1, (char *)MIPSconfigData.Name},     // Set MIPS system name
+  {"BIMAGE", CMDstr, 1, (char *)MIPSconfigData.BootImage}, // Set MIPS boot image
   {"ABOUT", CMDfunction, 0, (char *)About},              // Report about this MIPS system
   {"SMREV", CMDfunctionLine, 0, (char *)SetModuleRev},   // Set module rev level
   {"RESET", CMDfunction, 0, (char *)Software_Reset},     // Reset the Due
@@ -81,18 +83,32 @@ Commands  CmdArray[] = 	{
   {"THREADS", CMDfunction, 0, (char *)ListThreads},         // List all threads, there IDs, and there last runtimes
   {"STHRDENA", CMDfunctionStr, 2, (char *)SetThreadEnable}, // Set thread enable to true or false
   {"SDEVADD", CMDfunctionStr, 2, (char *)DefineDeviceAddress}, // Set device board and address
-  {"RDEV", CMDfunction, 1, (char *)ReportAD7998},              // Read the ADC channel value
+  {"RDEV", CMDfunction, 1, (char *)ReportAD7998},              // Read the ADC channel value, AD7998 device
+  {"RDEV2", CMDfunction, 1, (char *)ReportAD7994},              // Read the ADC channel value, AD7994 device
   {"TBLTSKENA", CMDbool, 1, (char *)&TasksEnabled},            // Enables tasks in table mode, true or false
   {"ADC", CMDfunction, 1, (char *)ADCread},                    // Read and report ADC channel. Valid range 0 through 3
   {"LEDOVRD", CMDbool, 1, (char *)&LEDoverride},               // Override the LED operation is true, always false on startup
   {"LED",  CMDint, 1, (char *)&LEDstate},                      // Define the LEDs state you are looking for.
   {"DSPOFF", CMDbool, 1, (char *)&DisableDisplay},             // Print the UseAnalog flag, true or false
+  {"CHKIMAGE",  CMDfunctionStr, 1, (char *)CheckImage},        // Reports the image file status
+  {"LOADIMAGE",  CMDfunctionStr, 1, (char *)LoadImage},        // Loads an image file to the display
   // Clock generation functions
   {"GWIDTH",  CMDint, 0, (char *)&PulseWidth},                // Report the pulse width in microseconds
   {"SWIDTH",  CMDint, 1, (char *)&PulseWidth},                // Set the pulse width in microseconds
   {"GFREQ",  CMDint, 0, (char *)&PulseFreq},                  // Report the pulse frequency in Hz
   {"SFREQ",  CMDint, 1, (char *)&PulseFreq},                  // Set the pulse frequency in Hz
   {"BURST",  CMDfunction, 1, (char *)&GenerateBurst},         // Generates a frequencyy burst on trig out line
+  // Delay trigger finctions. This supports delayed trigger and retriggering of supported modules
+  {"SDTRIGINP", CMDfunctionStr, 2, (char *)SetDelayTrigInput},// Set delay trigger input (Q-X) and level, POS or NEG
+  {"SDTRIGDLY",  CMDint, 1, (char *)&DtrigDelay},             // Set trigger delay in uS
+  {"GDTRIGDLY",  CMDint, 0, (char *)&DtrigDelay},             // Returns trigger delay in uS
+  {"SDTRIGPRD",  CMDint, 1, (char *)&DtrigPeriod},            // Set trigger delay repeat period in uS
+  {"GDTRIGPRD",  CMDint, 0, (char *)&DtrigPeriod},            // Returns trigger delay repeat period in uS
+  {"SDTRIGRPT",  CMDint, 1, (char *)&DtrigNumber},            // Defines the number of trigger repeats, 0 = forever
+  {"GDTRIGRPT",  CMDint, 0, (char *)&DtrigNumber},            // Returns the number of trigger repeats, 0 = forever
+  {"SDTRIGMOD", CMDfunctionStr, 1, (char *)SetDelayTrigModule},// Defines the delay trigger module, ARB
+  {"SDTRIGENA", CMDfunctionStr, 1, (char *)SetDelayTrigEnable},// TRUE enables the trigger FALSE disables
+  {"GDTRIGENA", CMDbool, 0, (char *)&DtrigEnable},             // Returns the trigger delay enable status
   // DC bias module commands
   {"SDCB", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&DCbiasSet))},      // Set voltage value
   {"GDCB", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasRead))},// Get Voltage value requested
@@ -129,6 +145,8 @@ Commands  CmdArray[] = 	{
   {"GRFVLT", CMDfunction, 1, (char *)RFvoltageReport},   // Report RF output voltage setpoint
   {"GRFPWR", CMDfunction, 1, (char *)RFheadPower},       // Report RF head power draw
   {"GRFALL", CMDfunction, 0, (char *)RFreportAll},       // Reports Freq, RFVpp + and - for each RF channel in system
+  {"TUNERFCH", CMDfunction, 1, (char *)RFautoTune},      // Auto tune the select RF channel
+  {"RETUNERFCH", CMDfunction, 1, (char *)RFautoRetune},  // Auto retune the select RF channel, start and current freq and drive
   // DIO commands
   {"SDIO", CMDfunctionStr, 2, (char *)SDIO_Serial},	 // Set DIO output bit
   {"GDIO", CMDfunctionStr, 1, (char *)GDIO_Serial},	 // Get DIO output bit
@@ -140,6 +158,12 @@ Commands  CmdArray[] = 	{
   {"GHVV", CMDfunction, 1, (char *)GetESIchannelV},      // Returns the actual high voltage output
   {"GHVI", CMDfunction, 1, (char *)GetESIchannelI},      // Returns the output current in mA
   {"GHVMAX", CMDfunction, 1, (char *)GetESIchannelMax},  // Returns the maximum high voltage outut value
+  {"GHVMIN", CMDfunction, 1, (char *)GetESIchannelMin},  // Returns the minimum high voltage outut value
+  {"SHVENA", CMDfunction, 1, (char *)SetESIchannelEnable},// Enables a selected channel
+  {"SHVDIS", CMDfunction, 1, (char *)SetESIchannelDisable},// Disables a selected channel
+  {"GHVSTATUS", CMDfunction, 1, (char *)GetESIstatus},     // Returns the selected channel's status, ON or OFF
+  {"SHVPSUP", CMDfunction, 2, (char *)SetESImodulePos},     // Sets a  modules positive supply voltage
+  {"SHVNSUP", CMDfunction, 2, (char *)SetESImoduleNeg},     // Sets a  modules negative supply voltage
   // Table commands, tables enable pulse sequence generation
   {"STBLDAT", CMDfunction, 0, (char *)ParseTableCommand}, // Read the HVPS voltage table
   {"STBLCLK", CMDfunctionStr, 1, (char *)SetTableCLK},	  // Clock mode, EXT or INT
@@ -215,10 +239,29 @@ Commands  CmdArray[] = 	{
   // Twave configuration commands  
   {"STWCCLK", CMDbool, 1, (char *)&TDarray[0].UseCommonClock},   // Flag to indicate common clock mode for two Twave modules.
   {"STWCMP", CMDbool, 1, (char *)&TDarray[0].CompressorEnabled}, // Flag to indicate Twave compressor mode is enabled.
-  // FAIMS commands 
-  {"SFAIMSP", CMDfunction, 2, (char *)FAIMSphase},             // Set FAIMS harmonic phase to 0 or 180
-  {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},  // Set FAIMS RF harmonic positive peak readback calibration
-  {"SRFHNCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharNcal},  // Set FAIMS RF harmonic negative peak readback calibration
+  // FAIMS  General FAIMS commands
+  {"SFMENA", CMDbool, 1, (char *)&faims.Enable},                // Set the FAIMS enable flag, TRUE enables waveform generation
+  {"GFMENA", CMDbool, 0, (char *)&faims.Enable},                // Returns the FAIMS enable flag
+  {"SFMDRV", CMDfunctionStr, 1, (char *)FAIMSsetDrive},         // Sets FAIMS drive level in percent
+  {"GFMDRV", CMDfloat, 0, (char *)&faims.Drv},                  // Returns FAIMS drive level in percent
+  {"GFMPWR", CMDfloat, 0, (char *)&TotalPower},                 // Returns FAIMS total power in watts
+  {"GFMPV", CMDfloat, 0, (char *)&KVoutP},                      // Returns FAIMS positive peak output voltage
+  {"GFMNV", CMDfloat, 0, (char *)&KVoutN},                      // Returns FAIMS negative peak output voltage
+  // FAIMS DC CV and Bias commands
+  {"SFMCV", CMDfunctionStr, 1, (char *)FAIMSsetCV},               // Sets FAIMS DC CV voltage setpoint
+  {"GFMCV", CMDfloat, 0, (char *)&faims.DCcv.VoltageSetpoint},    // Returns FAIMS DC CV voltage setpoint
+  {"GFMCVA", CMDfloat, 0, (char *)&DCcvRB},                       // Returns FAIMS DC CV voltage actual
+  {"SFMBIAS", CMDfunctionStr, 1, (char *)FAIMSsetBIAS},           // Sets FAIMS DC Bias voltage setpoint
+  {"GFMBIAS", CMDfloat, 0, (char *)&faims.DCbias.VoltageSetpoint},// Returns FAIMS DC Bias voltage setpoint
+  {"GFMBIASA", CMDfloat, 0, (char *)&DCbiasRB},                   // Returns FAIMS DC Bias voltage actual
+  {"SFMOFF", CMDfunctionStr, 1, (char *)FAIMSsetOffset},          // Sets FAIMS DC offset voltage setpoint
+  {"GFMOFF", CMDfloat, 0, (char *)&faims.DCoffset.VoltageSetpoint},// Returns FAIMS DC offset voltage setpoint
+  {"GFMOFFA", CMDfloat, 0, (char *)&DCoffsetRB},                   // Returns FAIMS DC offset voltage actual
+  // FAIMS calibration commands   
+  //{"SFAIMSP", CMDfunction, 2, (char *)FAIMSphase},                // Set FAIMS harmonic phase to 0 or 180, bad idea!
+  {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},     // Set FAIMS RF harmonic positive peak readback calibration
+  {"SRFHNCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharNcal},     // Set FAIMS RF harmonic negative peak readback calibration
+  {"SARCDIS",CMDbool, 1, (char *)&DiableArcDetect},               // TRUE or FALSE, set to TRUE disable arc detection
   // Filament commands
   {"GFLENA", CMDfunction, 1, (char *)GetFilamentEnable},             // Get filament ON/OFF status
   {"SFLENA", CMDfunctionStr, 2, (char *)SetFilamentEnable},          // Set filament ON/OFF status
@@ -232,6 +275,8 @@ Commands  CmdArray[] = 	{
   {"GFLPWR", CMDfunction, 1, (char *)GetFilamentPower},              // Get filament power (actual) 
   {"GFLRT", CMDfunction, 1, (char *)GetCurrentRampRate},             // Get filament current ramp rate in amps per second
   {"SFLRT", CMDfunctionStr, 2, (char *)SetCurrentRampRate},          // Set filament current ramp rate in amps per second
+  {"GFLDIR", CMDfunction, 1, (char *)GetCerrentDirection},           // Get filament current direcrtion,rev 2
+  {"SFLDIR", CMDfunctionStr, 2, (char *)SetCurrentDirection},        // Set filament current direction, rev 2
   {"GFLP1", CMDfunction, 1, (char *)GetFilamentCycleCurrent1},       // Get filament cycle current 1 (setpoint)
   {"SFLP1", CMDfunctionStr, 2, (char *)SetFilamentCycleCurrent1},    // Set filament cycle current 1 (setpoint)
   {"GFLP2", CMDfunction, 1, (char *)GetFilamentCycleCurrent2},       // Get filament cycle current 2 (setpoint)
@@ -244,6 +289,7 @@ Commands  CmdArray[] = 	{
   {"GFLSRES", CMDint, 0, (char *)&FDarray[0].iSense},                // Returns the bias current sense resistor value
   {"SFLSRES", CMDint, 1, (char *)&FDarray[0].iSense},                // Sets the bias current sense resistor value
   {"GFLECUR", CMDfunction, 0, (char *)ReportBiasCurrent},            // Returns the filament emission current 
+  {"SFLSWD",  CMDbool, 1, (char *)&FLserialWD},                      // Set serial watch dog timer mode
   // WiFi commands
   {"GHOST",  CMDstr, 0, (char *)wifidata.Host},                      // Report this MIPS box host name
   {"GSSID",  CMDstr, 0, (char *)wifidata.ssid},                      // Report the WiFi SSID to connect to
@@ -308,9 +354,36 @@ Commands  CmdArray[] = 	{
   // ARB configuration commands  
   {"SARBCCLK", CMDbool, 1, (char *)&ARBarray[0].UseCommonClock},     // Flag to indicate common clock mode for two ARB modules.
   {"SARBCMP", CMDbool, 1, (char *)&ARBarray[0].CompressorEnabled},   // Flag to indicate ARB compressor mode is enabled.
+  {"SARBCOFF", CMDbool, 1, (char *)&ARBarray[0].ARBcommonOffset},    // Flag to all ARB channels use a common offset
   // End of table marker
   {0},
 };
+
+void CheckImage(char *filename)
+{
+  SendACKonly;
+  bmpReport(filename);
+}
+
+void LoadImage(char *filename)
+{
+  bool DD;
+  
+  DD = DisableDisplay;
+  DisableDisplay = false;
+  tft.disableDisplay(DisableDisplay);
+  if(bmpDraw(filename, 0, 0))
+  {
+    SendACK;
+  }
+  else
+  {
+    SetErrorCode(ERR_BMPERROR);
+    SendNAK;
+  }
+  DisableDisplay = DD;
+  tft.disableDisplay(DisableDisplay);
+}
 
 // This function lists all the current threads and there current state.
 void ListThreads(void)
@@ -403,6 +476,10 @@ void Mute(char *cmd)
 // FAIMS = Number of FAIMS drivers
 // TWAVE = Number of TWAVE drivers
 // FIL = Number of filiment channels
+// ARB = Number of ARB channels
+// DIO = Number of digital IO channels
+// DI = Number of digital input channels
+// DO = Number of digital output channels
 void GetNumChans(char *cmd)
 {
   if (strcmp(cmd, "RF") == 0) RFnumber();
@@ -412,6 +489,21 @@ void GetNumChans(char *cmd)
   else if (strcmp(cmd, "FAIMS") == 0) FAIMSnumberOfChannels();
   else if (strcmp(cmd, "FIL") == 0) FilamentChannels();
   else if (strcmp(cmd, "ARB") == 0) ReportARBchannels();
+  else if (strcmp(cmd, "DIO") == 0)
+  {
+    SendACKonly;
+    if(!SerialMute) serial->println(24);
+  }
+  else if (strcmp(cmd, "DI") == 0)
+  {
+    SendACKonly;
+    if(!SerialMute) serial->println(8);
+  }
+  else if (strcmp(cmd, "DO") == 0)
+  {
+    SendACKonly;
+    if(!SerialMute) serial->println(16);
+  }
   else
   {
     SetErrorCode(ERR_BADARG);
@@ -422,7 +514,9 @@ void GetNumChans(char *cmd)
 
 void SerialInit(void)
 {
-  //  Serial.begin(9600);
+  #ifdef EnableSerial
+  if((!MIPSconfigData.UseWiFi) || (wifidata.SerialPort!=0)) Serial.begin(SerialBAUD);
+  #endif
   //Serial_ *serial = &SerialUSB;
   SerialUSB.begin(0);
   //  serial->println("Initializing....");

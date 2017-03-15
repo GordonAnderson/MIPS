@@ -6,14 +6,13 @@
 // controller holds two of these modules and is linked to a FAIMS system. A rev 3 FAIMS controller
 // is required in the FAIMS system and it provides the clocks used by these modules.
 //
-// The "R" or trigger input is monitored and if its detected high then the global enable is cleared to
-// turn onn the HOFAIMS drivers.
+// The "T" input is monitored and if its detected high then the global enable is cleared to
+// turn off the HOFAIMS drivers.
 //
-// To do list for this driver and hardware:
-//   1.) Add power monitoring and limiting logic
-//   2.) Add a extern disable input to shut down the drivers
-//   3.) Need to fix the readbacks on voltage, the sense lines. one channel seems to work the 
-//       other is much less sensative.
+// Features:
+//   1.) Power monitoring and limiting logic
+//   2.) Drive level limiting
+//   2.) Extern disable input to shut down the drivers, input T
 //
 // Gordon Anderson
 // October 29, 2016
@@ -54,6 +53,7 @@ float HOFAIMSPower;
 float HOFAIMSTotalPower;
 
 extern DialogBoxEntry HOFAIMSentriesPage1[];
+extern DialogBoxEntry HOFAIMSentriesLimits[];
 
 
 DialogBoxEntry HOFAIMSentries[] = {
@@ -76,10 +76,18 @@ DialogBoxEntry HOFAIMSentriesPage1[] = {
   {" RF, KV"             , 0, 4, D_FLOAT   , 0, 1, 1, 18, true, "%5.2f", &HOFAIMSKVout, NULL, NULL},
   {" Power"              , 0, 5, D_FLOAT   , 0, 0, 0, 20, true, "%3.0f", &HOFAIMSPower, NULL, NULL},
   {" Capacitance"        , 0, 6, D_FLOAT, 0, 100, 0.1, 18, false, "%5.1f", &hofaims.Cap, NULL, NULL},
-  {" Delay"        ,       0, 7, D_INT, 0, 255, 1, 20, false, "%3d", &hofaims.Delay, NULL, NULL},
+  {" Phase"        ,       0, 7, D_INT, 0, 255, 1, 20, false, "%3d", &hofaims.Delay, NULL, NULL},
+  {" Limits"             , 0, 8, D_PAGE,  0, 0  , 0, 0,  false, NULL, &HOFAIMSentriesLimits, NULL, NULL},
   {" Save settings"      , 0, 9, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SaveHOFAIMSsettings, NULL},
   {" Restore settings"   , 0,10, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RestoreHOFAIMSsettings, NULL},
   {" Return first page"  , 0,11, D_PAGE,     0, 0, 0, 0, false, NULL, &HOFAIMSentries, NULL, NULL},
+  {NULL},
+};
+
+DialogBoxEntry HOFAIMSentriesLimits[] = {
+  {" Max power"          , 0,1, D_FLOAT , 1, 100 , 1, 18, false, "%5.1f", &hofaims.MaxPower, NULL, NULL},
+  {" Max drive"          , 0,2, D_FLOAT , 0, 100 , 1, 18, false, "%5.1f", &hofaims.MaxDrive, NULL, NULL},
+  {" Return"             , 0,9, D_PAGE,     0, 0, 0, 0, false, NULL, &HOFAIMSentriesPage1, NULL, NULL},
   {NULL},
 };
 
@@ -234,7 +242,7 @@ void SetDelay(int Board, int dVal)
 {
    SelectBoard(Board);
    SetAddress(HOFAIMSarray[Board].DELAYspi);
-   SPI.setDataMode(SPI_CS, SPI_MODE1);
+   SPI.setDataMode(SPI_CS, SPI_MODE2);
    SPI.transfer(SPI_CS, dVal);
    SetAddress(0);
    serial->println(dVal);
@@ -297,6 +305,13 @@ void HOFAIMS_init(int8_t Board, int8_t addr)
   NumberOfHOFAIMSchannels += 1; 
   // Set the maximum number of channels in the selection menu
   HOFAIMSentriesPage1[0].Max = NumberOfHOFAIMSchannels;
+
+/*
+  HOFAIMSarray[0].RFmon.m = 53571;
+  HOFAIMSarray[0].RFmon.b = 11000;
+  HOFAIMSarray[1].RFmon.m = 62500;
+  HOFAIMSarray[1].RFmon.b = 13000;
+*/
 }
 
 // This is the HOFAIMS main processing loop called every 100 mS by
@@ -306,6 +321,7 @@ void HOFAIMS_loop(void)
   int        b,i;
   uint16_t   HOFAIMSADCvals[4];
   static int CurrentDelay[2] = {-1,-1};
+  static bool ShutdownArmed = false;
   float      Drives[2];
 
   if (ActiveDialog == &HOFAIMSdialog)
@@ -369,14 +385,29 @@ void HOFAIMS_loop(void)
         }
       }
     }
+    // Power and drive limit testing
+    if(HOFAIMSarray[b].Drive > HOFAIMSarray[b].MaxDrive) HOFAIMSarray[b].Drive = HOFAIMSdrive -= 1.0;
+    if((HOFAIMSmonitors[b][0] * HOFAIMSmonitors[b][1]) > HOFAIMSarray[b].MaxPower) HOFAIMSdrive -= 1.0;
+    if(HOFAIMSdrive < 0) HOFAIMSdrive=0;
   }
   HOFAIMSTotalPower = HOFAIMSmonitors[0][0] * HOFAIMSmonitors[0][1] + HOFAIMSmonitors[1][0] * HOFAIMSmonitors[1][1];
   SelectBoard(SelectedHOFAIMSboard);
   if (ActiveDialog == &HOFAIMSdialog) RefreshAllDialogEntries(&HOFAIMSdialog);
   hofaims = HOFAIMS;
   ServosEnabled = true;
-  // Read the "R" input, if high then disable the drives
-  if (digitalRead(DI1) == HIGH) HOFAIMSenable = false;
+  // Remote shutdown processing. If the T input goes high then the remote
+  // shutdown is armed and the HOFAIMS will disable when T goes low.
+  if(HOFAIMSenable == true)
+  {
+    if(digitalRead(DI3) == HIGH) ShutdownArmed = true;
+    if((ShutdownArmed) && (digitalRead(DI3) == LOW)) 
+    {
+      if (ActiveDialog != NULL) ActiveDialog->State = M_SCROLLING;
+      HOFAIMSenable = false;
+      DisplayMessage("External stop!", 2000);
+    }
+  }
+  else ShutdownArmed = false;
 }
 
 

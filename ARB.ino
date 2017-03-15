@@ -7,7 +7,7 @@
 // July 31, 2016
 //  Added a second mode traditional ARM mode of operation. With this mode you can
 //  define channel output level / pulses. This mode supports rev 2.0 of the ARB
-//  and adds the aux output channel as well as offset output.
+//  and adds the aux output channel as well as offset output.c
 //
 // October 22, 2016
 //  - Add support for two ARB modules (done)
@@ -597,7 +597,6 @@ void ARBsyncISR(void)
 void ARB_init(int8_t Board, int8_t addr)
 {
   // If this is the first board then reset the ARB CPUs
-/*
   if (NumberOfARBchannels == 0)
   {
      pinMode(14,OUTPUT);
@@ -606,7 +605,6 @@ void ARB_init(int8_t Board, int8_t addr)
      digitalWrite(14,HIGH);
      delay(100);
   }
-*/
   // Flag the board as present
   ARBboards[Board] = true;
   // Set active board to board being inited
@@ -653,7 +651,9 @@ void ARB_init(int8_t Board, int8_t addr)
   // Set the frequency
   SetFrequency(Board,ARBarray[Board].Frequency);
   // If we are using a common clock then signal the ARB module to use external clock
-  if(ARBarray[Board].UseCommonClock) SetBool(Board, TWI_SET_EXT_CLOCK, true);
+  if(ARBarray[0].UseCommonClock) SetBool(Board, TWI_SET_EXT_CLOCK, true);
+//SetBool(Board, TWI_SET_EXT_CLOCK, true);
+//ARBarray[0].UseCommonClock = true;
   NumberOfARBchannels += 8;  // Always add eight channels for each board
   // Set the maximum number of channels in the selection menu
   ARBentriesPage1[0].Max = NumberOfARBchannels / 8;
@@ -726,9 +726,10 @@ void ARB_loop(void)
         if (ARBarray[0].UseCommonClock) // Make both clocks match if use common clock flag is set
         {
           ARBarray[(b + 1) & 1].Frequency = ARBarray[b].Frequency;
+          CurrentFreq[0] = CurrentFreq[1] = ARBarray[b].Frequency;
         }
         SetFrequency(b,ARBarray[b].Frequency);
-        CurrentFreq[0] =CurrentFreq[1] = ARBarray[b].Frequency;
+        CurrentFreq[b] = ARBarray[b].Frequency;
       }
       if(CurrentAmplitude[b] != ARBarray[b].Voltage)
       {
@@ -737,6 +738,11 @@ void ARB_loop(void)
       }
       if(CurrentOffset[b] != ARBarray[b].Offset)
       {
+        if (ARBarray[0].ARBcommonOffset)  // True is using a common offset
+        {
+          ARBarray[(b + 1) & 1].Offset = ARBarray[b].Offset;
+          //CurrentOffset[0] = CurrentOffset[1] = ARBarray[b].Offset;
+        }
         SetFloat(b, TWI_SET_OFFSETV, ARBarray[b].Offset);
         CurrentOffset[b] = ARBarray[b].Offset;
       }

@@ -10,6 +10,14 @@ extern int PulseWidth;
 extern int PulseFreq;
 extern int BurstCount;
 
+// Delayed trigger capability variables
+extern int  DtrigDelay;
+extern int  DtrigPeriod;
+extern int  DtrigNumber;
+extern int  DtrigCurrentNum;
+extern bool DtrigEnable;
+
+
 typedef struct
 {
   int8_t  Chan;              // ADC channel number 0 through max channels for chip
@@ -153,6 +161,7 @@ void  QueueBurst(int num);
 void  ProcessBurst(void);
 void  DefineDeviceAddress(char *board, char *addr);
 void  ReportAD7998(int chan);
+void  ReportAD7994(int chan);
 void  Init_IOpins(void);
 void  Reset_IOpins(void);
 void  Software_Reset();
@@ -195,6 +204,13 @@ void ADCread(int chan);
 void DIOopsReport(void);
 void DIOreport(char *port, char *mode);
 void DIOmirror(char *in, char *out);
+
+void SetDelayTrigInput(char *input, char *level);
+void SetDelayTrigEnable(char *sena);
+void SetDelayTrigModule(char *module);
+
+bool bmpDraw(char *filename, uint8_t x, uint8_t y);
+void bmpReport(char *filename);
 
 //void ShutterEnable(char *state);
 

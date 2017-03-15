@@ -61,7 +61,8 @@ void RFdriveReport(int channel);
 void RFvoltageReport(int channel);
 void RFheadPower(int channel);
 void RFreportAll(void);
-
+void RFautoTune(int channel);
+void RFautoRetune(int channel);
 
 #endif
 

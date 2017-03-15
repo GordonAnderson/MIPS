@@ -27,6 +27,7 @@ extern bool DisableDisplay;
 extern void About(void);
 extern void SetModuleRev(void);
 
+extern Adafruit_ILI9340 tft;
 
 //extern HardwareSerial *serial;
 
@@ -110,6 +111,8 @@ extern Ring_Buffer  RB;
 extern char Version[];
 
 // Function prototypes
+void CheckImage(char *filename);
+void LoadImage(char *filename);
 void SetThreadEnable(char *, char *);
 void ListThreads(void);
 void SerialInit(void);

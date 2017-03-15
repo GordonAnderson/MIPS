@@ -311,6 +311,8 @@ Thread DisplayDismissThread  = Thread();
 // Displays a pop up message and it remains until DismissMessage is called
 void DisplayMessage(char *message)
 {
+  // Exit there is something to restore, thus popup message is already on screen
+  if((saveActiveMenu != NULL) || (saveActiveDialog != NULL)) return;
   // Save the menu and dialogbox pointers then set to null. This
   // will stop screen updates
   if(saveActiveMenu == NULL); saveActiveMenu = ActiveMenu;

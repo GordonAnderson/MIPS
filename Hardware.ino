@@ -5,17 +5,6 @@
 //  The general calibration functions are in this file and these functions are used for all the 
 //  calibration function. These functions all calibration of the outputs as well as the readbacks.
 //
-// To do list:
-//  1.) Add general input interrupt processing. This capability needs the following features:
-//      a.) Develop a enable function that will:
-//          - accept a digitial input channel A - P
-//          - define trigger type, high,low,pos,neg,edge
-//          - define the call back function when event happens
-//          - return true if it is setup or false if there is a setup error.
-//      b.) Add a release function to remove a call back and if its the last call back detach the interrupt
-//      c.) This capability allows multiple call backs for one input interrupt the only requirement is the 
-//          trigger type has to match for all the call backs
-//      d.) It would be cool to develop this as a class!
 //
 // Gordon Anderson
 //
@@ -131,6 +120,21 @@ void ReportAD7998(int chan)
   digitalWrite(BRDSEL,brd);
 }
 
+// This function reports the average value read from the AD7984 ADC and reported through the USB interface.
+void ReportAD7994(int chan)
+{
+  int brd;
+  
+  // Save current board address
+  brd = digitalRead(BRDSEL);
+  // Select board
+  SelectBoard(BoardSelect);
+  // Read channel
+  serial->println((int)AD7994(DeviceAddr, chan, 100));
+  // Restore board address
+  digitalWrite(BRDSEL,brd);
+}
+
 // Counts to value and value to count conversion functions.
 // Overloaded for both DACchan and ADCchan structs.
 float Counts2Value(int Counts, DACchan *DC)
@@ -171,8 +175,8 @@ int ADCZeroCounts;
 int ADCMidCounts;
 
 DialogBoxEntry CalibrationDialogEntries[] = {
-  {" Set output to", 0, 4, D_INT, 0, 65535, 1, 20, false, "%d", &ZeroCalValue, NULL, NULL},
-  {" Set output to", 0, 5, D_INT, 0, 65535, 1, 20, false, "%d", &MidCalValue, NULL, NULL},
+  {" Set output to", 0, 4, D_INT, 0, 65535, 1, 18, false, "%d", &ZeroCalValue, NULL, NULL},
+  {" Set output to", 0, 5, D_INT, 0, 65535, 1, 18, false, "%d", &MidCalValue, NULL, NULL},
   {" Exit", 0, 7, D_DIALOG, 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
   {"", 0, 2, D_TITLE, 0, 0, 0, false, NULL, NULL, NULL, NULL},
   {" Abort", 0, 8, D_DIALOG, 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
@@ -379,6 +383,8 @@ void Reset_IOpins(void)
   digitalWrite(6, LOW);
   digitalWrite(7, LOW);
   digitalWrite(8, LOW);
+  digitalWrite(14, HIGH);
+  digitalWrite(48, HIGH);
 }
 
 void Software_Reset()
@@ -1414,5 +1420,367 @@ void DIOmirror(char *in, char *out)
   SendNAK;
 }
 
+// 
+// The following functions support delayed triggering and trigger repeat functions. These
+// functions allow you to define an input trigger and then a module that this trigger will
+// call. The trigger can be programmed with a delay as well as a trigger repeat period and
+// number of repeats. The interface to this these functions are through the host computer
+// interface.
+//
+// Serial commands:
+//  SDTRIGINP,input,active    Defines the trigger input Q - X and actibe level POS or NEG.
+//  SDTRIGDLY,time            Defines the trigger delay in microseconds.
+//  SDTRIGPRD,period          Defines the trigger repeat time in microseconds.
+//  SDTRIGRPT,num             Defines the number of trigger repeats, 0 = forever
+//  SDTRIGMOD,module          Define the module that this trigger affects
+//  SDTRIGENA,state           True enables the trigger false disables
+//
+DIhandler *DIdelayedTrigger = NULL;
+MIPStimer *DelayTriggerTMR = NULL;
+void  (*DelayedTrigFunction)() = NULL;
+char DtrigInput[3] = "NA";
+char DtrigLevel[5] = "NA";
+int  DtrigDelay    = 0;
+int  DtrigPeriod   = 0;
+int  DtrigNumber   = 1;
+int  DtrigCurrentNum;
+bool DtrigEnable   = false;
+
+// This ISR is called when the timer reaches its terminal count, or max count
+void DelayedTriggerTMR_ISR(void)
+{
+  if(DelayedTrigFunction != NULL) DelayedTrigFunction();
+  DtrigCurrentNum++;
+  if(DtrigNumber == 0) return;
+  if(DtrigCurrentNum >= DtrigNumber) DelayTriggerTMR->stop();
+  DelayTriggerTMR->setRC((DtrigPeriod * 105)/10);
+}
+
+// This function is called as a result of the hardware trigger and calls the trigger function and processes any 
+// timer needs
+void DelayedTriggerISR(void)
+{
+  if(!DtrigEnable) return;
+  if(DtrigDelay == 0)
+  {
+    // If here there is no trigger delay so call the function
+    if(DelayedTrigFunction != NULL) DelayedTrigFunction();
+    if(DtrigNumber == 1) DelayTriggerTMR->stop();
+    else
+    {
+      DelayTriggerTMR->setRC((DtrigPeriod * 105)/10);
+      DelayTriggerTMR->begin();
+      DelayTriggerTMR->setClock(TC_CMR_TCCLKS_TIMER_CLOCK2);   // 10.5 MHz clock
+      DelayTriggerTMR->enableTrigger();
+      DelayTriggerTMR->softwareTrigger();
+    }
+    DtrigCurrentNum = 1;    
+    return;
+  }
+  else
+  {
+    // If here setup the timer with the trigger delay
+    DelayTriggerTMR->setRC((DtrigDelay * 105)/10);
+    DelayTriggerTMR->begin();
+    DelayTriggerTMR->setClock(TC_CMR_TCCLKS_TIMER_CLOCK2);   // 10.5 MHz clock
+    DelayTriggerTMR->enableTrigger();
+    DelayTriggerTMR->softwareTrigger();
+  }
+  DtrigCurrentNum=0;
+}
+
+// This function sets the delay trigger input and level. Any current trigger seetings and 
+// actions are stopped.
+void SetDelayTrigInput(char *input, char *level)
+{
+  int di,dil;
+  
+  // Validate input values
+  di = FindInList(DIlist, input);
+  dil = FindInList(DILlist, level);
+  if((di == -1) || (dil == -1))
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;  
+    return;
+  }
+  // Allocate handler and timer if null
+  if(DelayTriggerTMR == NULL)
+  {
+    DelayTriggerTMR = new MIPStimer(TMR_DelayedTrigger);
+    DelayTriggerTMR->begin();
+    DelayTriggerTMR->attachInterrupt(DelayedTriggerTMR_ISR);
+    DelayTriggerTMR->setTrigger(TC_CMR_EEVTEDG_NONE);
+    DelayTriggerTMR->setClock(TC_CMR_TCCLKS_TIMER_CLOCK2);   // 10.5 MHz clock
+  }
+  DelayTriggerTMR->stop();
+  if(DIdelayedTrigger == NULL) DIdelayedTrigger = new DIhandler;
+  if((DelayTriggerTMR == NULL) || (DIdelayedTrigger == NULL))
+  {
+    SetErrorCode(ERR_INTERNAL);
+    SendNAK;  
+    return;
+  }
+  // Setup trigger
+  DtrigEnable = false;
+  DIdelayedTrigger->detach();
+  DIdelayedTrigger->attached(input[0], dil-2, DelayedTriggerISR);
+  SendACK;
+  return;
+}
+
+// This function processes delay trigger enable and disable commands.
+void SetDelayTrigEnable(char *sena)
+{
+  String Sena;
+
+  Sena = sena;
+  // If false disable the timer and set the enable flag to false
+  if(Sena == "FALSE")
+  {
+    DtrigEnable = false;
+    DelayTriggerTMR->stop();
+    SendACK;
+    return;
+  }
+  else if(Sena == "TRUE")
+  {
+    // Here with enable request
+    DtrigEnable = true;
+    SendACK;
+    return;    
+  }
+  SetErrorCode(ERR_BADARG);
+  SendNAK;  
+}
+
+// This function sets the module to trigger with the delay trigger function.
+void SetDelayTrigModule(char *module)
+{
+  String Module;
+
+  Module = module;
+  if(Module == "ARB") DelayedTrigFunction = ARBsyncISR;
+  else
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;  
+    return;    
+  }
+  SendACK;
+}
+
+//
+// End of delay trigger functions
+//
+
+//
+// BMP image loading functions
+//
+
+// This function opens a Windows Bitmap (BMP) file and
+// displays it at the given coordinates.  It's sped up
+// by reading many pixels worth of data at a time
+// (rather than pixel by pixel).  Increasing the buffer
+// size takes more of the Arduino's precious RAM but
+// makes loading a little faster.  20 pixels seems a
+// good balance.
+
+// MIPS display is 320 x 240 pixels in size.
+// This function requires the bmp file to be 24 bit
+// depth and use no compression.
+
+#define BUFFPIXEL 20
+
+// Returns false if any error is detected
+bool bmpDraw(char *filename, uint8_t x, uint8_t y) 
+{
+  File     bmpFile;
+  int      bmpWidth, bmpHeight;   // W+H in pixels
+  uint8_t  bmpDepth;              // Bit depth (currently must be 24)
+  uint32_t bmpImageoffset;        // Start of image data in file
+  uint32_t rowSize;               // Not always = bmpWidth; may have padding
+  uint8_t  sdbuffer[3*BUFFPIXEL]; // pixel buffer (R+G+B per pixel)
+  uint8_t  buffidx = sizeof(sdbuffer); // Current position in sdbuffer
+  boolean  goodBmp = false;       // Set to true on valid header parse
+  boolean  flip    = true;        // BMP is stored bottom-to-top
+  int      w, h, row, col;
+  uint8_t  r, g, b;
+  uint32_t pos = 0;
+
+  if((x >= tft.width()) || (y >= tft.height())) return(false);
+
+  // Open requested file on SD card
+  if ((bmpFile = SD.open(filename)) == NULL)
+  {
+    return(false);
+  }
+
+  // Parse BMP header
+  if(read16(bmpFile) == 0x4D42) 
+  { // BMP signature
+    read32(bmpFile);
+    (void)read32(bmpFile); // Read & ignore creator bytes
+    bmpImageoffset = read32(bmpFile); // Start of image data
+    // Read DIB header
+    read32(bmpFile);
+    bmpWidth  = read32(bmpFile);
+    bmpHeight = read32(bmpFile);
+    if(read16(bmpFile) == 1) 
+    { // # planes -- must be '1'
+      bmpDepth = read16(bmpFile); // bits per pixel
+      if((bmpDepth == 24) && (read32(bmpFile) == 0)) 
+      { // 0 = uncompressed
+
+        goodBmp = true; // Supported BMP format -- proceed!
+        // BMP rows are padded (if needed) to 4-byte boundary
+        rowSize = (bmpWidth * 3 + 3) & ~3;
+        // If bmpHeight is negative, image is in top-down order.
+        // This is not canon but has been observed in the wild.
+        if(bmpHeight < 0) 
+        {
+          bmpHeight = -bmpHeight;
+          flip      = false;
+        }
+
+        // Crop area to be loaded
+        w = bmpWidth;
+        h = bmpHeight;
+        if((x+w-1) >= tft.width())  w = tft.width()  - x;
+        if((y+h-1) >= tft.height()) h = tft.height() - y;
+
+        // Set TFT address window to clipped image bounds
+        tft.setAddrWindow(x, y, x+w-1, y+h-1);
+
+        for (row=0; row<h; row++) 
+        { // For each scanline...
+
+          // Seek to start of scan line.  It might seem labor-
+          // intensive to be doing this on every line, but this
+          // method covers a lot of gritty details like cropping
+          // and scanline padding.  Also, the seek only takes
+          // place if the file position actually needs to change
+          // (avoids a lot of cluster math in SD library).
+          if(flip) // Bitmap is stored bottom-to-top order (normal BMP)
+            pos = bmpImageoffset + (bmpHeight - 1 - row) * rowSize;
+          else     // Bitmap is stored top-to-bottom
+            pos = bmpImageoffset + row * rowSize;
+          if(bmpFile.position() != pos) 
+          { // Need seek?
+            bmpFile.seek(pos);
+            buffidx = sizeof(sdbuffer); // Force buffer reload
+          }
+          for (col=0; col<w; col++) 
+          { // For each pixel...
+            // Time to read more pixel data?
+            if (buffidx >= sizeof(sdbuffer)) 
+            { // Indeed
+              bmpFile.read(sdbuffer, sizeof(sdbuffer));
+              buffidx = 0; // Set index to beginning
+            }
+            // Convert pixel from BMP to TFT format, push to display
+            b = sdbuffer[buffidx++];
+            g = sdbuffer[buffidx++];
+            r = sdbuffer[buffidx++];
+            tft.pushColor(tft.Color565(r,g,b));
+          } // end pixel
+        } // end scanline
+      } // end goodBmp
+    }
+  }
+  bmpFile.close();
+  if(!goodBmp) return(false);
+  return(true);
+}
+
+// This function reports details of the bmp immage file as well
+// defining the MIPS display requirements.
+
+void bmpReport(char *filename) 
+{
+  File     bmpFile;
+  int      bmpWidth, bmpHeight;   // W+H in pixels
+  uint8_t  bmpDepth;              // Bit depth (currently must be 24)
+  uint32_t bmpImageoffset;        // Start of image data in file
+  uint32_t rowSize;               // Not always = bmpWidth; may have padding
+  boolean  goodBmp = false;       // Set to true on valid header parse
+
+
+  serial->println();
+  serial->println("MIPS display details:");
+  serial->println("  display size: 320 x 240");
+  serial->println("  color graphics");
+  serial->println("  bmp file must have 24 bit depth");
+  serial->println("  and use no compression");
+
+  
+  serial->println();
+  serial->print("Image file '");
+  serial->print(filename);
+  serial->println('\'');
+
+  // Open requested file on SD card
+  if ((bmpFile = SD.open(filename)) == NULL)
+  {
+    serial->print("File not found");
+    return;
+  }
+
+  // Parse BMP header
+  if(read16(bmpFile) == 0x4D42) 
+  { // BMP signature
+    serial->print("File size: "); serial->println(read32(bmpFile));
+    (void)read32(bmpFile); // Read & ignore creator bytes
+    bmpImageoffset = read32(bmpFile); // Start of image data
+    serial->print("Image Offset: "); serial->println(bmpImageoffset, DEC);
+    // Read DIB header
+    serial->print("Header size: "); serial->println(read32(bmpFile));
+    bmpWidth  = read32(bmpFile);
+    bmpHeight = read32(bmpFile);
+    if(read16(bmpFile) == 1) 
+    { // # planes -- must be '1'
+      bmpDepth = read16(bmpFile); // bits per pixel
+      serial->print("Bit Depth: "); serial->println(bmpDepth);
+      if((bmpDepth == 24) && (read32(bmpFile) == 0)) 
+      { // 0 = uncompressed
+
+        goodBmp = true; // Supported BMP format -- proceed!
+        serial->print("Image size: ");
+        serial->print(bmpWidth);
+        serial->print('x');
+        serial->println(bmpHeight);
+        serial->println("BMP format is valid.");
+      } // end goodBmp
+    }
+  }
+  bmpFile.close();
+  if(!goodBmp) serial->println("BMP format not recognized.");
+}
+
+// These read 16- and 32-bit types from the SD card file.
+// BMP data is stored little-endian, Arduino is little-endian too.
+// May need to reverse subscript order if porting elsewhere.
+
+uint16_t read16(File f) 
+{
+  uint16_t result;
+  ((uint8_t *)&result)[0] = f.read(); // LSB
+  ((uint8_t *)&result)[1] = f.read(); // MSB
+  return result;
+}
+
+uint32_t read32(File f) 
+{
+  uint32_t result;
+  ((uint8_t *)&result)[0] = f.read(); // LSB
+  ((uint8_t *)&result)[1] = f.read();
+  ((uint8_t *)&result)[2] = f.read();
+  ((uint8_t *)&result)[3] = f.read(); // MSB
+  return result;
+}
+
+//
+// End of BMP functions
+//
 
 

@@ -282,11 +282,13 @@ void WiFi_init(void)
 {
   String res;
 
+//SaveWiFiSettings();
   RestorWiFiSettings(false);
 //  if(!wifidata.Enable) return;   // Exit if disabled
 
 //MIPSconfigData.UseWiFi=true;
 //wifidata.SerialPort = 1;
+//if(MIPSconfigData.UseWiFi) && (wifidata.SerialPort==0)
 
   if(!MIPSconfigData.UseWiFi) return;
   // Setup ther serial port.
@@ -309,7 +311,10 @@ void WiFi_init(void)
   delay(10);
   WiFiSerial->setTimeout(100);
   res = WiFiSerial->readStringUntil('\n');
-  if (!res.startsWith("MIPSnet Version ")) return;
+  if (!res.startsWith("MIPSnet Version ")) 
+  {
+    DisplayMessage("WiFi setup ERROR!", 2000);
+  }
 //  RestorWiFiSettings(false);
   // If found and a SSID is defined try to connect and setup the interface, only if enabled
   if (wifidata.WFstartMode == WS_CONNECT) if (strlen(wifidata.ssid) > 0) Connect();

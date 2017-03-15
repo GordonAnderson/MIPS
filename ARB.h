@@ -113,6 +113,8 @@ typedef struct
   int8_t        CtrigLevel;         // External input triggerl level
   char          Cswitch;            // Digitial output to control output switch to relead ions to mass spec
   int8_t        CswitchLevel;       // Digital output level control
+  // Flags
+  bool          ARBcommonOffset;    // If true only one board provides offset for both channels
 } ARBdata;
 
 extern ARBdata  ARBarray[2];

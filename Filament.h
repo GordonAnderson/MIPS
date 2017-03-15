@@ -1,6 +1,9 @@
 #ifndef FILAMENT_H_
 #define FILAMENT_H_
 
+extern bool FLserialWD;
+
+
 enum FilamentModes
 {
   FmodeI,                   // Current control mode
@@ -20,7 +23,7 @@ typedef struct
 {
   float    CurrentSetpoint;    // Current setpoint
   float    FilamentVoltage;    // Filament voltage setpoint
-  bool     FilammentPwr;       // Power supply on/off state, true = on
+  bool     FilamentPwr;        // Power supply on/off state, true = on
   float    RampRate;           // Current rampe rate in amps per second.
   int      Mode;               // Filament controller mode of operation
   float    MaxPower;           // Maximum filament power limit
@@ -56,6 +59,8 @@ typedef struct
   FilamentCycling FCyl[2];   // Data structures supporting the cycling functionnt
   int     iSense;            // Bias current sense resistor value. If non-zero then channel 8 of DCbias board is used for 
                              // current monitoring.
+  // Added the current direction flag for the firmware rev 2
+  bool    Idir;              // Current direction
 } FilamentData;
 
 extern FilamentData  FDarray[2];
@@ -75,6 +80,7 @@ void GetFilamentVoltage(int channel);
 void GetFilamentPower(int channel);
 void GetCurrentRampRate(int channel);
 void SetCurrentRampRate(char *chan, char *RampRate);
+void ResetFilamentSerialWD(void);
 
 void GetFilamentCycleCurrent1(int channel);
 void SetFilamentCycleCurrent1(char *chan, char *current);
@@ -84,6 +90,10 @@ void GetFilamentCycleCount(int channel);
 void SetFilamentCycleCount(char *chan, char *count);
 void GetFilamentStatus(int channel);
 void SetFilamentStatus(char *chan, char *Status);
+void GetCerrentDirection(int channel);
+void SetCurrentDirection(char *chan, char *dir);
+void FilamentShutdown(void);
+
 
 void SetFilamentReporting(int channel, int period);
 void ReportBiasCurrent(void);

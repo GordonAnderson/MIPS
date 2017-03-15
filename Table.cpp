@@ -191,6 +191,7 @@
 // STBLDAT;0:[3:5,0:1:30:2:10,100:1:10:2:30,150:];
 // STBLDAT;0:[A:1000,0:1:0,1000:1:5,1000:];
 // STBLDAT;0:[A:1000,0:A:1,1000:A:0,1000:];
+// STBLDAT;0:[A:1000,100:A:1,1000:A:0,1000:];
 //
 // Examples to be tested
 //
@@ -222,7 +223,8 @@
 // Timing tests
 // STBLDAT;0:[1:100000,100:1:25,1000:1:5,2000:];
 // STBLDAT;0:[1:100000,100:1:25,107:1:10,1000:1:5,2000:];
-// STBLDAT;0:[1:100000,0:1:25,107:1:10,2000:1:5,3000:];
+// STBLDAT;0:[1:100000,100:A:1,107:A:0,1000:A:1,2000:];
+// STBLDAT;0:[1:100000,0:1:25:2:30,107:1:10,2000:1:5,3000:];
 // In FAST_TABLE mode:
 //  June 29, version
 //  6 is min count for 1 value change, 9.14uS
@@ -285,6 +287,8 @@
 // attachInterrupt(digitalPinToInterrupt(DI2), ISRclk, RISING);
 //
 #include "Arduino.h"
+#include "variant.h"
+#include <stdio.h>
 #include "Adafruit_GFX.h"
 #include "Adafruit_ILI9340.h"
 #include "SPI.h"
@@ -807,7 +811,7 @@ void SetTableEntryValue(int Count, int Chan, float fval)
     SendACK;
 }
 
-// Set a voltage level at a time point channel point.
+// Set a new count or time value at a time point channel point.
 void SetTableEntryCount(int Count, int Chan, float NewCount)
 {
     
@@ -896,7 +900,7 @@ void ParseTableCommand(void)
         }
         if((TK[0] == '[') || (iStat == PENewNamedTable))
         {
-            if(iStat == 0) 
+            if((iStat == 0) && (i > 0))  // Added the i > 0 test dec 20, was broke from nov 3 to dec 20
             {
               // Here if the table starts with a non zero value, this indicates a delay so make a table entry for the delay 
               // with no output action. Nov 3, 2016

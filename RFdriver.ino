@@ -5,10 +5,6 @@
 // in one MIPS system. Each RF driver can drive 2 high Q heads so a single MIPS system can drive
 // 4 high Q heads.
 //
-// To Dos:
-//  1.) Add auto tune
-//  2.) Make the PWM 12 bit but this requires editing varient.h in the ardunio source code.
-//
 // Gordon Anderson
 //
 #include "RFdriver.h"
@@ -59,6 +55,18 @@ float RFpVpp;
 float RFnVpp;
 float Power;
 
+// Auto tune parameters
+bool TuneRequest = false;
+bool RetuneRequest = false;
+bool TuneReport = false;
+int  TuneRFChan;
+int  TuneRFBoard;
+// Tune states
+#define TUNE_SCAN_DOWN 1
+#define TUNE_SCAN_UP 2
+
+#define MaxNumDown 5
+
 DIhandler *DIh[2][2];
 void (*GateTriggerISRs[2][2])(void) = {RF_A1_ISR, RF_A2_ISR, RF_B1_ISR, RF_B2_ISR};
 
@@ -86,19 +94,34 @@ DialogBoxEntry RFdriverDialogEntriesPage2[] = {
   {" Mode"          , 0, 3, D_LIST, 0, 0, 7, 16, false, ModeList, RFmode, NULL, RFmodeChange},
   {" Gate input"    , 0, 4, D_LIST, 0, 0, 5, 18, false, DIlist, RFgateDI, NULL, RFgateChange},
   {" Gate level"    , 0, 5, D_LIST, 0, 0, 5, 18, false, DILlist, RFgateTrig, NULL, RFgateChange},
-  {" Save settings", 0, 7, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SaveRFdriverSettings, NULL},
-  {" Restore settings", 0, 8, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RestoreRFdriverSettings, NULL},
-  {" First page"         , 0, 9, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SetFirstRFPage, NULL},
-  {" Return to main menu", 0, 10, D_MENU, 0, 0, 0, 0, false, NULL, &MainMenu, NULL, NULL},
+  {" Auto tune"     , 0, 6, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RFat, NULL},
+  {" Auto retune"   , 0, 7, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RFart, NULL},
+  {" Save settings" , 0, 8, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SaveRFdriverSettings, NULL},
+  {" Restore settings", 0, 9, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RestoreRFdriverSettings, NULL},
+  {" First page"         , 0,10, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SetFirstRFPage, NULL},
+  {" Return to main menu", 0, 11, D_MENU, 0, 0, 0, 0, false, NULL, &MainMenu, NULL, NULL},
   {NULL},
 };
 
+// change orgin to 3,7
 DialogBox RFdriverDialog = {
   {"RF driver parameters", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
   M_SCROLLING, 0,0,false, RFdriverDialogEntriesPage1
 };
 
 MenuEntry MERFdriverMonitor = {" RF driver module", M_DIALOG, 0, 0, 0, NULL, &RFdriverDialog, NULL, NULL};
+
+void RFat(void)
+{
+  TuneRFChan = SelectedRFChan;
+  TuneRequest = true;  
+}
+
+void RFart(void)
+{
+  TuneRFChan = SelectedRFChan;
+  RetuneRequest = true;  
+}
 
 void RFmodeChange(void)
 {
@@ -113,6 +136,11 @@ void RFmodeChange(void)
   }
   else if (mode == "AUTO")
   {
+    // If RFmode just changed to auto then set the voltage setpoint to the current value
+    if(RFCD.RFmode != RF_AUTO)
+    {
+        RFCD.Setpoint = (RFpVpps[SelectedRFBoard][SelectedRFChan & 1] + RFnVpps[SelectedRFBoard][SelectedRFChan & 1]) / 2;
+    }
     RFCD.RFmode = RF_AUTO;
     RFdriverDialogEntriesPage1[2].Type = D_OFF;
     RFdriverDialogEntriesPage1[3].Type = D_FLOAT;
@@ -320,10 +348,129 @@ void RFcontrol(void)
   }
 }
 
+// Auto tune algorithm, procedure is as follows:
+// 1.) Set power tp 10%
+// 2.) Set frequency to 1MHz
+// 3.) Go down in frequency in 100KHz steps and record amplitude, stop when 5 steps in a row are all decreasing
+// 4.) Go up in frequency from 1MHzin 100KHz steps and record amplitude, stop when 5 steps in a row are all decreasing
+// 5.) Use the peak found in steps 3 and 4 and sweep in 10K steps using the same procedure in 3 and 4
+// 6.) Use the peak found in step 5 and sweep in 1K steps using the same procedure in 3 and 4
+// 7.) Done!
+//
+// Called from the main processing loop, this function does not block, uses a state machine to perform thge logic
+// States
+//  TUNE_SCAN_DOWN
+//  TUNE_SCAN_UP
+
+void RFdriver_tune(void)
+{
+   static bool   Tuning = false;
+   static int    TuneStep = 100000, TuneState;
+   static float  Max, Current, Last;
+   static int    FreqMax, Freq;
+   static int    NumDown,Nth;
+
+   if(TuneRequest)
+   {
+     TuneRFBoard = BoardFromSelectedChannel(TuneRFChan); 
+     // Set freq to 1MHz
+     RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq = 1000000;
+     // Set drive to 10%
+     RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].DriveLevel = 10;
+     Tuning = true;
+     TuneStep = 100000;
+     Freq = 1000000;
+     Last = Max = 0;
+     NumDown = 0;
+     TuneRequest = false;
+     TuneState = TUNE_SCAN_DOWN;
+     Nth = 20;
+     DisplayMessage("Tune in process");
+     return;
+   }
+   if(RetuneRequest)
+   {
+     TuneRFBoard = BoardFromSelectedChannel(TuneRFChan); 
+     // Set freq to current
+     Freq = RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq;
+     Tuning = true;
+     TuneStep = 1000;
+     Last = Max = 0;
+     NumDown = 0;
+     RetuneRequest = false;
+     TuneState = TUNE_SCAN_DOWN;
+     Nth = 20;
+     DisplayMessage("Retune in process");
+     return;
+   }
+   if(!Tuning) return;
+   if(--Nth > 0) return;
+   Nth = 20;
+   // Here if the system is tuning
+   Current = RFpVpps[TuneRFBoard][TuneRFChan & 1] + RFnVpps[TuneRFBoard][TuneRFChan & 1];
+   TuneRFBoard = BoardFromSelectedChannel(TuneRFChan);
+   switch (TuneState)
+   {
+     case TUNE_SCAN_DOWN:
+        if(Current > Max)
+        {
+          Max = Current;
+          FreqMax = RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq;
+        }
+        if(Current <= (Last + 1)) NumDown++;
+        else NumDown = 0;
+        RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq -= TuneStep;
+        if((NumDown >= MaxNumDown) || (RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq < 500000))
+        {
+          TuneState = TUNE_SCAN_UP;
+          RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq = Freq;
+          NumDown = 0;
+        }
+        break;
+     case TUNE_SCAN_UP:
+        if(Current > Max)
+        {
+          Max = Current;
+          FreqMax = RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq;
+        }
+        if(Current <= (Last +1)) NumDown++;
+        else NumDown = 0;
+        RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq += TuneStep;
+        if((NumDown >= MaxNumDown) || (RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq > 5000000))
+        {
+          // Here we have found the peak for this step size, this
+          // process repeats until step size is 1KHz
+          Freq = FreqMax;
+          RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq = Freq;
+          if(TuneStep == 1000)
+          {
+            // If here we are done!
+            Tuning = false;
+            DismissMessage();
+            if(TuneReport && !SerialMute)
+            {
+              serial->print("Auto tune compelete, frequency = ");
+              serial->println(Freq);
+            }
+            TuneReport = false;
+            return;
+          }
+          else TuneStep /= 10;
+          TuneState = TUNE_SCAN_DOWN;
+          NumDown = 0;
+        }
+        break;
+     default:
+        break;
+   }
+   Last = Current;
+}
+
+
 // This function is called by the main loop every 100 millisec
 void RFdriver_loop(void)
 {
-  int i;
+  int i,j;
   uint16_t ADCvals[8];
   float V, I, Pv, Nv;
   static int LastFreq[2][2] = { -1, -1, -1, -1};
@@ -332,40 +479,52 @@ void RFdriver_loop(void)
   MaxRFVoltage = 0;
   SelectedRFBoard = BoardFromSelectedChannel(SelectedRFChan);
   SelectBoard(SelectedRFBoard);
-  RFDD.RFCD[SelectedRFChan & 1] = RFCD;    // This stores any changes back to the selected channels data structure
-  // Set the Drive level limit in the UI menu
-  RFdriverDialogEntriesPage1[2].Max = RFCD.MaxDrive;
+  if(ActiveDialog == &RFdriverDialog)
+  {
+    if(ActiveDialog->Changed) 
+    {
+      // This stores any changes back to the selected channels data structure
+      RFDD.RFCD[SelectedRFChan & 1] = RFCD;    
+     // Set the Drive level limit in the UI menu
+     RFdriverDialogEntriesPage1[2].Max = RFCD.MaxDrive;
+    }
+  }
+  RFdriver_tune();
   // Update the clock generator and set the frequencies for
   // all boards that are present in system. Only update if the freq
   // has actually changed.
-  // This logic needs to be updated to lower the drive level to 0 then wait a couple milli seconds
-  // before changing the frequency and then reset the drive level. This will prevent the noise from
+  // This logic lowers the drive level to 0 then waits a couple milli seconds
+  // before changing the frequency and then resets the drive level. This prevents the noise from
   // causing the PLL to lock up.
-  if (LastFreq[SelectedRFBoard][0] != RFDD.RFCD[0].Freq)
+
+  for (i = 0; i < NumberOfRFChannels; i++)
   {
-    // Lower drive level to 0 then delay
-    analogWrite(RFDD.RFCD[0].PWMchan, 0);
-    delay(2);
-    for (i = 0; i < 5; i++) if (SetPLL2freq(RFDD.CLOCKadr, RFDD.RFCD[0].Freq) == 0) break;
-    LastFreq[SelectedRFBoard][0] = RFDD.RFCD[0].Freq;
-    // Reset drive level
-    if (DIh[SelectedRFBoard][0]->activeLevel()) analogWrite(RFDD.RFCD[0].PWMchan, (RFDD.RFCD[0].DriveLevel * PWMFS) / 100);
+    SelectedRFBoard = BoardFromSelectedChannel(i);
+    SelectBoard(SelectedRFBoard);
+    if (LastFreq[SelectedRFBoard][i & 1] != RFDD.RFCD[i & 1].Freq)
+    {
+      // Lower drive level to 0 then delay
+      analogWrite(RFDD.RFCD[i & 1].PWMchan, 0);
+      delay(2);
+      if((i & 1) == 0)
+      {
+        for (j = 0; j < 5; j++) if (SetPLL2freq(RFDD.CLOCKadr, RFDD.RFCD[i & 1].Freq) == 0) break;        
+      }
+      else
+      {
+        for (j = 0; j < 5; j++) if (SetPLL3freq(RFDD.CLOCKadr, RFDD.RFCD[i & 1].Freq) == 0) break;                
+      }
+      LastFreq[SelectedRFBoard][i & 1] = RFDD.RFCD[i & 1].Freq;
+      // Reset drive level
+      if (DIh[SelectedRFBoard][i & 1]->activeLevel()) analogWrite(RFDD.RFCD[i & 1].PWMchan, (RFDD.RFCD[i & 1].DriveLevel * PWMFS) / 100);
+    }    
   }
-  if (LastFreq[SelectedRFBoard][1] != RFDD.RFCD[1].Freq)
-  {
-    // Lower drive level to 0 then delay
-    analogWrite(RFDD.RFCD[1].PWMchan, 0);
-    delay(2);
-    for (i = 0; i < 5; i++) if (SetPLL3freq(RFDD.CLOCKadr, RFDD.RFCD[1].Freq) == 0) break;
-    LastFreq[SelectedRFBoard][1] = RFDD.RFCD[1].Freq;
-    // Reset drive level
-    if (DIh[SelectedRFBoard][1]->activeLevel()) analogWrite(RFDD.RFCD[1].PWMchan, (RFDD.RFCD[1].DriveLevel * PWMFS) / 100);
-  }
+
   // Update the PWM outputs and set levels
   for (i = 0; i < NumberOfRFChannels; i++)
   {
     SelectedRFBoard = BoardFromSelectedChannel(i);
-    if (DIh[SelectedRFBoard][i & 1]->activeLevel()) 
+    if (DIh[SelectedRFBoard][i & 1]->test(RFDDarray[SelectedRFBoard].RFgateTrig[i & 1])) 
     {
       analogWrite(RFDD.RFCD[i & 1].PWMchan, (RFDD.RFCD[i & 1].DriveLevel * PWMFS) / 100);
     }
@@ -378,7 +537,8 @@ void RFdriver_loop(void)
     if ((RFDD.RFgateDI[i & 1] != DIh[SelectedRFBoard][i & 1]->di) || (RFDD.RFgateTrig[SelectedRFChan & 1] != DIh[SelectedRFBoard][i]->mode))
     {
       DIh[SelectedRFBoard][i & 1]->detach();
-      DIh[SelectedRFBoard][i & 1]->attached(RFDD.RFgateDI[i & 1], RFDD.RFgateTrig[i & 1], GateTriggerISRs[SelectedRFBoard][i & 1]);
+//      DIh[SelectedRFBoard][i & 1]->attached(RFDD.RFgateDI[i & 1], RFDD.RFgateTrig[i & 1], GateTriggerISRs[SelectedRFBoard][i & 1]);
+      DIh[SelectedRFBoard][i & 1]->attached(RFDD.RFgateDI[i & 1], CHANGE, GateTriggerISRs[SelectedRFBoard][i & 1]);
     }
   }
   // Read all the voltage monitors and caculate all the RF head power
@@ -395,7 +555,7 @@ void RFdriver_loop(void)
         i++;
         continue;
     }
-    if (DIh[SelectedRFBoard][i & 1]->activeLevel())
+    if (DIh[SelectedRFBoard][i & 1]->test(RFDDarray[SelectedRFBoard].RFgateTrig[i & 1]))
     {
       if(RFDD.Rev == 3)
       {
@@ -463,12 +623,13 @@ void RFdriver_loop(void)
     if(++disIndex >= 6) disIndex = 0;
   }
   RFcontrol();
+  RFCD = RFDD.RFCD[SelectedRFChan & 1]; 
 }
 
 // Gate ISR functions
 void RF_A1_ISR(void)
 {
-  if (DIh[0][0]->activeLevel()) analogWrite(RFDDarray[0].RFCD[0].PWMchan, (RFDDarray[0].RFCD[0].DriveLevel * PWMFS) / 100);
+  if(DIh[0][0]->test(RFDDarray[0].RFgateTrig[0])) analogWrite(RFDDarray[0].RFCD[0].PWMchan, (RFDDarray[0].RFCD[0].DriveLevel * PWMFS) / 100);
   else analogWrite(RFDDarray[0].RFCD[0].PWMchan, 0);
 }
 void RF_A2_ISR(void)
@@ -612,6 +773,35 @@ void RFfreqReport(int channel)
   SendACKonly;
   i = BoardFromSelectedChannel(channel - 1);
   if (!SerialMute) serial->println(RFDDarray[i].RFCD[(channel - 1) & 1].Freq);
+}
+
+// Auto tune a selected channel
+void RFautoTune(int channel)
+{
+  int i;
+
+  // If channel is invalid send NAK and exit
+  if (!IsChannelValid(channel)) return;
+  // Set the tune flag and exit
+  SendACK;
+  TuneRFChan = channel - 1;
+  TuneRequest = true;
+  TuneReport = true;   // Causes the auto tune algorithm to send report
+}
+
+// Auto retune a selected channel, this function starts and the current freq and power settings and
+// peaks the output by making small adjustments
+void RFautoRetune(int channel)
+{
+  int i;
+
+  // If channel is invalid send NAK and exit
+  if (!IsChannelValid(channel)) return;
+  // Set the tune flag and exit
+  SendACK;
+  TuneRFChan = channel - 1;
+  RetuneRequest = true;
+  TuneReport = true;   // Causes the auto tune algorithm to send report
 }
 
 void RFvoltageReportP(int channel)

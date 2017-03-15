@@ -30,10 +30,10 @@ extern bool NormalStartup;
 
 // DC bias profiles
 #define NumProfiles 10
-float DCbiasProfiles[NumProfiles][16];
-bool DCbiasProfileApplied = false;
-int  Profile1,Profile2,CurrentProfile;
-int  ProfileDwell;
+float   DCbiasProfiles[NumProfiles][16];
+bool    DCbiasProfileApplied = false;
+int     Profile1,Profile2,CurrentProfile;
+int     ProfileDwell;
 
 // Filter time constant is:
 // TC in seconds = 1/(sample rate is samples per sec * filter value) * 2 * pi

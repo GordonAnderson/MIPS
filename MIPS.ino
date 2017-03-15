@@ -394,6 +394,49 @@
 //      2.) Updated the Twave driver to only save a minimum pulse voltage of 15 volts.
 //  V1.72, December 15, 2016
 //      1.) Fixed a number of bugs in the RFdriver code to support using two RF driver boards in one system.
+//  V1.73, December 20, 2016
+//      1.) Fixed a bug that was introduced with rev 1.69. The table code update broke the table processing
+//          for tables that start with 0:[, this is most tables!
+//      2.) Re-enabled the serial port with buad rate set to 9600. variants.h has swith to turn it on and off
+//          and set compile time baud rate
+//      3.) Added DIO, DI, and DO to the get number of channels command
+//      4.) Added remote e-stop input to FAIMS and HOFAIMS, input S is used and active high in both cases
+//      5.) Added HOFAIMS power and drive limit code.
+//      6.) Updated arc detector sensativity control for FAIMS.
+//      7.) Added delayed triggering capability supporing ARB module only at this point
+//  1.74, January 20, 2017
+//      1.) Improved the RF driver closed loop control functions
+//  1.75, Feburary 4, 2017
+//      1.) Added common offset flag and function to the ARB
+//      2.) Added FAIMS host commands to support the CV parking capability
+//  1.76, Feburary 20, 2017
+//      1.) Added RF driver auto tune function
+//      2.) Added arc detect disable to FAIMS
+//  1.77, Feburary 22, 2017
+//      1.) Added ESI features:
+//          a.) current limit and trip
+//          b.) voltage limit
+//          c.) voltage ramp up
+//          d.) enable
+//  1.78, March 1, 2017
+//      1.) Added ESI rev 3 updates and tested. Rev 3 supports automatic polarity switching for the ESI voltage.
+//          Rev 3.0 supports onlt the EMCO C series supplies
+//      2.) Fixed bug in RF driver related to auto tune above channel 2
+//  1.79, March 9, 2017
+//      1.) Added the rev 2 mode for the filament driver. This allows connecting the two channels and then acting
+//          as a single channel with current reveral capability. This has been developed and tested.
+//      2.) Added a watch dog timer mode on serial traffic, if there is no serial traffic the system will disable
+//          the filament driver channels.
+//      3.) Added to the loss of power detection logic a filament power shutdown. The detection gives a total of 35 mS of advance 
+//          notice.
+//      4.) Added the ability to display a graphics image on the display. and to startup with am image with the
+//          display disabled.
+//      5.) Added a tune complete message when auto tuning from a serial command.
+//      6.) Added a retune command to make fine adjustments to the tuning, move in 1KHz steps at the current 
+//          power settings.
+//      7.) Added Auto tune and retune response messages.
+//      8.) Turning off the display now disables the button and reports to host button press and rotation.
+//
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
 //
@@ -469,7 +512,7 @@ bool DisableDisplay = false;
 bool LEDoverride = false;
 int  LEDstate = 0;
 
-char Version[] = "Version 1.72, Dec 15, 2016";
+char Version[] = "Version 1.79, Mar 9, 2017";
 
 // ThreadController that will controll all threads
 ThreadController control = ThreadController();
@@ -799,11 +842,23 @@ File myFile;
 
 void encChanged(void)
 {
+  if(DisableDisplay)
+  {
+    // If serial is enabled then send message
+    if(!SerialMute) serial->println("Button rotated.");
+    return;
+  }
   ButtonRotated = true;
 }
 
 void encPB(void)
 {
+  if(DisableDisplay)
+  {
+    // If serial is enabled then send message
+    if(!SerialMute) serial->println("Button pressed.");
+    return;
+  }
   ButtonPressed = true;
 }
 
@@ -978,14 +1033,6 @@ void test(void)
 
 void setup()
 {
-  // Reset any ARB modules in system
-  pinMode(14,OUTPUT);
-  digitalWrite(14,LOW);
-  delay(10);
-  digitalWrite(14,HIGH);
-  delay(100);
-  //
-
   analogReadResolution(12);
   Reset_IOpins();
   ClearDOshiftRegs();
@@ -1011,14 +1058,8 @@ void setup()
 
   MIPSsystemLoop();
 
-//  SPI.begin(_sdcs);
   SPI.setClockDivider(21);
-//  SPI.setClockDivider(200);
-//  if(root.isOpen()) root.close();
   pinMode(_sdcs,OUTPUT);
-//  digitalWrite(_sdcs,LOW);
-//  for(int i=0;i<10;i++) SPI.transfer(_sdcs, 0, SPI_CONTINUE);
-//  SPI.transfer(_sdcs, 0x92);
   digitalWrite(_sdcs,HIGH);
   delay(100);
   if (!SD.begin(_sdcs))
@@ -1033,6 +1074,11 @@ void setup()
   }
   SPI.setClockDivider(11);    // If SD card init fails it will slow down the SPI interface
 
+  if(bmpDraw(MIPSconfigData.BootImage, 0, 0))
+  {
+    DisableDisplay = true;
+    tft.disableDisplay(DisableDisplay);
+  }
   // Setup the hardware pin directions. Note setting pinMode to output
   // will drive the output pin high.
   Init_IOpins();
@@ -1109,6 +1155,7 @@ void MIPSsystemLoop(void)
   {
     // Set all control lines to input, this will keep the systems from souring power to
     // the boards through driven outputs.
+    FilamentShutdown();
     ClearDOshiftRegs();
     Reset_IOpins();
     // Display a message on the screen that MIPS power is off.
@@ -1178,7 +1225,8 @@ void ScanHardware(void)
       if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(1,addr);
     }
   }
-  // Now look for the FAIMS board...
+  // Now look for the FAIMS board. This is done last because field driven FAIMS mode is selected if
+  // a DCbias module is found.
   for (addr = 0x50; addr <= 0x56; addr  += 2)
   {
     // Set board select to A
@@ -1207,11 +1255,24 @@ void ProcessSerial(void)
   // Put serial received characters in the input ring buffer
   while (SerialUSB.available() > 0) 
   {
+    ResetFilamentSerialWD();
     serial = &SerialUSB;
     PutCh(SerialUSB.read());
   }
+  #ifdef EnableSerial
+  if((!MIPSconfigData.UseWiFi) || (wifidata.SerialPort!=0))
+  {
+    while (Serial.available() > 0) 
+    {
+      ResetFilamentSerialWD();
+      serial = &Serial;
+      PutCh(Serial.read());
+    }
+  }
+  #endif
   while (WiFiSerial->available() > 0) 
   {
+    ResetFilamentSerialWD();
     serial = WiFiSerial;
     PutCh(WiFiSerial->read());
 //      serial->write(WiFiSerial->read());
@@ -1316,9 +1377,4 @@ bool LOADparms(char *filename)
   memcpy(&MIPSconfigData, &MCS, MCS.Size);
   return true;
 }
-
-
-
-
-
 
