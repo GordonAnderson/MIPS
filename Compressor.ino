@@ -35,6 +35,8 @@ volatile int       C_NormAmpMode = 0;             // If set to 1 then the normal
 
 CompressorState CState;
 CompressorSwitchState CSState;
+char CompressorSelectedSwitch;
+int CompressorSelectedSwitchLevel;
 int CurrentPass;
 
 int CStackLevel;
@@ -105,8 +107,15 @@ int CompressorProcessLoop(int Count)
 FreqSweep fSweep[2] = {{100000,100000,200000,20,30,30,10,0,0,SS_IDLE},
                        {100000,100000,200000,20,30,30,10,0,0,SS_IDLE}};
 
+// The ISR sets the sweep state and exits
+void ARBTWAVEsweepISR(void)
+{
+  if(fSweep[0].State == SS_IDLE) fSweep[0].State = SS_START;
+  if(fSweep[1].State == SS_IDLE) fSweep[1].State = SS_START;
+}
+
 // This function is called in the Twave and ARB polling loops and processes frequency/voltage sweep requests. The FreqSweep
-// data structure contains all of the needed parameters. This code looks at the modules present to determine if in Twave or ARB.
+// data structure contains all of the needed parameters. This code looks at the modules present to determine if its Twave or ARB.
 void ProcessSweep(void)
 {
   int           chan;
@@ -128,10 +137,10 @@ void ProcessSweep(void)
       }
       if(NumberOfARBchannels > 0)
       {
-        fSweep[chan].OrginalFreq = ARBarray[chan].Frequency;
-        fSweep[chan].OrginalVoltage = ARBarray[chan].Voltage;
-        ARBarray[chan].Frequency = fSweep[chan].StartFreq;
-        ARBarray[chan].Voltage = fSweep[chan].StartVoltage;        
+        fSweep[chan].OrginalFreq = ARBarray[chan]->Frequency;
+        fSweep[chan].OrginalVoltage = ARBarray[chan]->Voltage;
+        ARBarray[chan]->Frequency = fSweep[chan].StartFreq;
+        ARBarray[chan]->Voltage = fSweep[chan].StartVoltage;        
       }
       fSweep[chan].SweepStartTime = RightNow;
       fSweep[chan].CurrentSweepTime = RightNow;
@@ -146,8 +155,8 @@ void ProcessSweep(void)
       }
       if(NumberOfARBchannels > 0)
       {
-        ARBarray[chan].Frequency = fSweep[chan].OrginalFreq;
-        ARBarray[chan].Voltage = fSweep[chan].OrginalVoltage;        
+        ARBarray[chan]->Frequency = fSweep[chan].OrginalFreq;
+        ARBarray[chan]->Voltage = fSweep[chan].OrginalVoltage;        
       }
       fSweep[chan].State = SS_IDLE;
     }
@@ -170,8 +179,8 @@ void ProcessSweep(void)
       }
       if(NumberOfARBchannels > 0)
       {
-        ARBarray[chan].Frequency = rnf;
-        ARBarray[chan].Voltage = rnv;        
+        ARBarray[chan]->Frequency = rnf;
+        ARBarray[chan]->Voltage = rnv;        
       }
       fSweep[chan].CurrentSweepTime = RightNow;
     }
@@ -335,8 +344,8 @@ void StartSweepTWSW(int chan)
     SendNAK;
     return;
   }
-  if((chan == 1) || (chan == 3)) fSweep[0].State = SS_START;
-  if((chan == 2) || (chan == 3)) fSweep[1].State = SS_START;
+  if((chan == 1) || (chan == 3)) if(fSweep[0].State == SS_IDLE) fSweep[0].State = SS_START;
+  if((chan == 2) || (chan == 3)) if(fSweep[1].State == SS_IDLE) fSweep[1].State = SS_START;
   SendACK;
 }
 

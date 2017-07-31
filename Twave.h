@@ -86,6 +86,8 @@ typedef struct
   // Added Feb 20, 2016
   char    TWgateDI;            // External gate for Twave output
   int8_t  TWgateLevel;         // External gate for Twave output level
+  // Added June 9, 2017
+  bool    EnableTest;          // Enable the test mode for rev 5 only at this time.
 } TwaveData;
 
 extern TwaveData TD;
@@ -123,6 +125,7 @@ void sendTWAVEguard2Voltage(int channel);
 void setTWAVEguard2Voltage(char *chan, char *voltage);
 void getTWAVEdir(int channe);
 void setTWAVEdir(char *chan, char *dirstr);
+void SetTWenableTest(char *flag);
 
 // Compressor host command prototypes
 void SetTWCmode(char *mode);

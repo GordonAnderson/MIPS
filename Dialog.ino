@@ -73,6 +73,7 @@ void DialogButtonPress(DialogBox *d)
         case D_YESNO:
         case D_FWDREV:
         case D_ONOFF:
+        case D_OPENCLOSE:
         case D_INT:
         case D_INT8:
         case D_UINT8:
@@ -156,6 +157,7 @@ void DialogValueAdjust(DialogBox *d, int8_t change)
       if (*(uint8_t *)d->Entry[d->Selected].Value < d->Entry[d->Selected].Min) *(uint8_t *)d->Entry[d->Selected].Value = d->Entry[d->Selected].Min;
       break;
     case D_ONOFF:
+    case D_OPENCLOSE:
     case D_YESNO:
     case D_FWDREV:
       *(bool *)d->Entry[d->Selected].Value += change * d->Entry[d->Selected].StepSize;
@@ -289,8 +291,12 @@ void DisplayDialogEntry(Window *w, DialogBoxEntry *de, bool HighLight)
       else p("REV");
       break;
     case D_ONOFF:
-      if (*(bool *)de->Value) p("ON ");
+      if (*(bool *)de->Value) p(" ON");
       else p("OFF");
+      break;
+    case D_OPENCLOSE:
+      if (*(bool *)de->Value) p(" OPEN");
+      else p("CLOSE");
       break;
     case D_LIST:
       if (de->Value != NULL) p("%*.*s", (int)de->StepSize, (int)de->StepSize, (char *)de->Value);
@@ -400,7 +406,7 @@ void DisplayDialogEntryNames(Window *w, DialogBoxEntry *de, bool HighLight)
   if (HighLight) tft.setTextColor(w->Bcolor, w->Fcolor);
   else tft.setTextColor(w->Fcolor, w->Bcolor);
   SetWindowTextPos(w, de->X, de->Y);
-  p(de->Name);
+  p((char *)de->Name);
 }
 
 void PrintDialog(DialogBox *d, int X, int Y, char *text)

@@ -94,6 +94,18 @@ Encoder Encoder::setStepSize(short int Step)
   return *this;
 }
 
+void Encoder::SetChange(int value)
+{
+  if (Encoder::ValuePtr != NULL) *Encoder::ValuePtr = value;
+}
+void Encoder::SetPB(void)
+{
+  if (Encoder::callbackPushButton != NULL) Encoder::callbackPushButton();
+}
+void Encoder::SetRotate(void)
+{
+  if (Encoder::callbackChange != NULL) Encoder::callbackChange();
+}
 
 /* encoder routine. Expects encoder with four state changes between detents */
 /* and both pins open on detent */

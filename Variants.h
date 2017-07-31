@@ -16,10 +16,15 @@
 #include "ARB.h"
 #include "WiFi.h"
 #include "HOFAIMS.h"
+#include "DAC.h"
+#include "RFamp.h"
 
 //#define TestMode
 //#define TestFilament
 //#define TestTwave
+
+extern bool Suspend;
+extern bool EnableSerialNavigation;
 
 #define EnableSerial
 #define SerialBAUD    9600
@@ -73,6 +78,8 @@ extern RFdriverData  RFDD_A_Rev_1;
 extern RFdriverData  RFDD_B_Rev_1;
 
 extern DCbiasData  DCbD_250_Rev_1;
+
+extern DCbiasData  DCbD_250_Rev_2;
                             
 extern DCbiasData  DCbD_50_Rev_1;
 
@@ -87,6 +94,10 @@ extern ARBdata  ARB_Rev_1;
 extern WiFiData  WiFi_Rev_1;
 
 extern HOFAIMSdata  HOFAIMS_Rev_1;
+
+extern DACdata DAC_Rev1;
+
+extern RFAdata RFA_Rev1;
 
 // List of all posible board addresses. These addresses are those of the EEPROM on the modules
 extern char *BoardAddressList;

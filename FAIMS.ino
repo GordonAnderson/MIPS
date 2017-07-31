@@ -423,10 +423,10 @@ void SaveFAIMSSettings(void)
 {
   if (FieldDriven)
   {
-    if(DCbiasBoards[1])
+    if(DCbDarray[1] != NULL)
     {
       SelectBoard(1);
-      WriteEEPROM(&DCbDarray[1], DCbDarray[1].EEPROMadr, 0, sizeof(DCbiasData));
+      WriteEEPROM(DCbDarray[1], DCbDarray[1]->EEPROMadr, 0, sizeof(DCbiasData));
       SelectBoard(0);
     }
   }

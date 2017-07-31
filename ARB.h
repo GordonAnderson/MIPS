@@ -11,7 +11,9 @@
 #define ARBcompress digitalWrite(ARBmode,HIGH)
 
 // TWI commands and constants
-#define TWI_ARB_ADD         0x32
+//#define TWI_ARB_ADD         0x32    // This is the TWI address for the ARB module's Arduino
+#define TWI_ARB_ADD         0x40      // This is the TWI address for the ARB module's Arduino for channels 1 and 2
+                                      // use 0x42 for channels 3 and 4. (40 = 64, 42 = 66)
 
 #define TWI_SET_FREQ        0x01      // Set frequency, Hz, 16 bit unsigned word
 #define TWI_SET_WAVEFORM    0x02      // Set waveform type, 8 bit unsigned type
@@ -42,9 +44,13 @@
 #define TWI_SET_COMP_EXT    0x17      // This flag will enable the hardware line to define normal/compression modes
                                       // true will enable, when the hardware line is high then we are in compress mode.
 #define TWI_SET_EXT_CLOCK   0x18      // This command enables external (off board) clock. accepts true or false, true = external clock
+#define TWI_SET_BRD_BIAS    0x19      // This command sets the board bias voltage, 1 byte board number, 1 float with value
+#define TWI_SET_PWR         0x20      // This command turns on and off power supply. accepts true or false, true = on
+#define TWI_SET_TST_ENABLE  0x21      // This command enables voltage testing and shutdown. accepts true or false, true = enable
 
 #define TWI_READ_REQ_FREQ   0x81      // Returns requested frequency
 #define TWI_READ_ACT_FREQ   0x82      // Returns actual frequency
+#define TWI_READ_STATUS     0x83      // Returns status byte
 
 // Waveform types, used in TWI command
 #define TWI_WAVEFORM_SIN    0x01
@@ -67,6 +73,23 @@ enum WaveFormTypes
   ARB_PULSE,
   ARB_ARB
 };
+
+typedef struct
+{
+  char  Mode[7];
+  int   Freq;
+  float Amplitude;
+  float Offset;
+  float OffsetA;
+  float OffsetB;
+  float Aux;
+  int   BufferLength;
+  int   NumBuffers;
+  int   Direction;
+  int   WFT;
+  int   Enable;
+  bool  ARBwaveformUpdate;
+} ARBstate;
 
 // One struct for each ARB board
 typedef struct
@@ -101,7 +124,7 @@ typedef struct
   char          ARBdirDI;          // Sync input in TWAVE mode or trigger in AARB mode
   int8_t        ARBdirLevel;       // Sync level, 0,CHANGE,RISING, or FALLING
   // Compressor variables
-  bool          UseCommonClock;     // Flag set to true to use a common clock, this will cause both modules is set each others value
+  bool          UseCommonClock;     // Flag set to true to use a common clock, this will cause both modules to set each others value
   bool          CompressorEnabled;  // True if the compressor mode has been enabled
   uint8_t       Corder;             // Compressor order, 1 to 20
   int8_t        NumPasses;          // Total number of passes through device
@@ -115,9 +138,13 @@ typedef struct
   int8_t        CswitchLevel;       // Digital output level control
   // Flags
   bool          ARBcommonOffset;    // If true only one board provides offset for both channels
+  // Dual output board offset, supported only on rev 3 arb system
+  bool          DualOutputs;        // True for dual output boards installed for one ARB
+  float         OffsetA;            // Output set A offset
+  float         OffsetB;            // Output set B offset
 } ARBdata;
 
-extern ARBdata  ARBarray[2];
+extern ARBdata  *ARBarray[4];
 extern DialogBoxEntry ARBCompressorEntries2[];
 extern DialogBox ARBCompressorDialog;
 extern MIPStimer *ARBclock;
@@ -160,14 +187,27 @@ void SetARBchannel(void);
 void SetARBchanRange(void);
 void SetARBwfType(char *sMod, char *Swft);
 void GetARBwfType(int module);
+void SetARBUseCommonClock(char *module, char *flag);
+void SetARBcommonOffset(char *flag);
+void SetARBtwiADD(int module, int add);
+void SetARBDualBoard(char *module, char *sval);
+void SetARBoffsetBoardA(char *module, char *val);
+void GetARBoffsetBoardA(int module);
+void SetARBoffsetBoardB(char *module, char *val);
+void GetARBoffsetBoardB(int module);
 
 // Compressor proto types
+void SetARBCompressorEnabled(char *flag);
 void SetARBCmode(char *mode);
 void GetARBCorder(void);
 void SetARBCorder(int ival);
+void GetARBCtriggerDelay(void);
 void SetARBCtriggerDelay(char *str);
+void GetARBCcompressTime(void);
 void SetARBCcompressTime(char *str);
+void GetARBCnormalTime(void);
 void SetARBCnormalTime(char *str);
+void GetARBCnoncompressTime(void);
 void SetARBCnoncompressTime(char *str);
 void ARBCtrigger(void);
 void SetARBCswitch(char *mode);

@@ -65,21 +65,21 @@ void ARBswitchTimerISR(void)
   {
     case CSS_OPEN_REQUEST:
       // Open switch and set timer to close
-      SetOutput(ARBarray[0].Cswitch,ARBarray[0].CswitchLevel);
+      SetOutput(CompressorSelectedSwitch,CompressorSelectedSwitchLevel);
       CSState = CSS_CLOSE;
       CompressorTimer.setTIOBeffect(C_GateOpenTime + C_SwitchTime,TC_CMR_BCPB_TOGGLE);
      break;
     case CSS_CLOSE_REQUEST:
       // Close switch and set timer to close
-      ClearOutput(ARBarray[0].Cswitch,ARBarray[0].CswitchLevel);
+      ClearOutput(CompressorSelectedSwitch,CompressorSelectedSwitchLevel);
       CSState = CSS_OPEN;
       CompressorTimer.setTIOBeffect(C_GateOpenTime + C_SwitchTime,TC_CMR_BCPB_TOGGLE);
       break;
     case CSS_OPEN:
-      SetOutput(ARBarray[0].Cswitch,ARBarray[0].CswitchLevel);
+      SetOutput(CompressorSelectedSwitch,CompressorSelectedSwitchLevel);
       break;
     case CSS_CLOSE:
-      ClearOutput(ARBarray[0].Cswitch,ARBarray[0].CswitchLevel);  
+      ClearOutput(CompressorSelectedSwitch,CompressorSelectedSwitchLevel);  
       break;
     default:
       break;
@@ -90,35 +90,35 @@ void ARBswitchTimerISR(void)
 void ARBCsetV(void)
 {
    int b=SelectedBoard();
-   SetFloat(0,TWI_SET_RANGE, ARBarray[0].Voltage);
+   SetFloat(0,TWI_SET_RANGE, ARBarray[0]->Voltage);
    SelectBoard(b);   
 }
 // Set twave channel 2 voltage to the value defined in the channel 2 data structure
 void ARBCsetv(void)
 {
    int b=SelectedBoard();
-   SetFloat(1,TWI_SET_RANGE, ARBarray[1].Voltage);
+   SetFloat(1,TWI_SET_RANGE, ARBarray[1]->Voltage);
    SelectBoard(b);     
 }
 // Set the twave channel 1 voltage to the value defined in the channel 2 data structure
 void ARBCsetV1toV2(void)
 {
    int b=SelectedBoard();
-   SetFloat(0,TWI_SET_RANGE, ARBarray[1].Voltage);
+   SetFloat(0,TWI_SET_RANGE, ARBarray[1]->Voltage);
    SelectBoard(b);       
 }
 // Set the twave channel 2 voltage to the value defined in the channel 1 data structure
 void ARBCsetV2toV1(void)
 {
    int b=SelectedBoard();
-   SetFloat(1,TWI_SET_RANGE, ARBarray[0].Voltage);
+   SetFloat(1,TWI_SET_RANGE, ARBarray[0]->Voltage);
    SelectBoard(b);         
 }
 // Sets the compression order
 void ARBCsetOrder(void)
 {
    int b=SelectedBoard();
-   SetByte(CompressBoard,TWI_SET_COMP_ORDER, ARBarray[0].Corder);
+   SetByte(CompressBoard,TWI_SET_COMP_ORDER, ARBarray[0]->Corder);
    SelectBoard(b);           
 }
 
@@ -147,6 +147,7 @@ void ARBcompressorTimerISR(void)
       ARBnormal;
       C_NextEvent += C_Tn;
       CState = CS_NORMAL;
+      OP = 'X';
       break;
     case CS_NORMAL:
     case CS_NONCOMPRESS:
@@ -202,7 +203,6 @@ void ARBcompressorTimerISR(void)
 
 void ARBcompressorTriggerISR(void)
 {
-  AtomicBlock< Atomic_RestoreState > a_Block;
   // Clear and setup variables
   ARBnormal;             // Put system in normal mode
   ARBgetNextOperationFromTable(true);
@@ -217,10 +217,31 @@ void ARBcompressorTriggerISR(void)
   CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
   CompressorTimer.enableTrigger();
   CompressorTimer.softwareTrigger();  
+  CompressorTimer.setPriority(0);
+  // Do not exit until the compressor table has finished
+ }
+
+// Reads value from table and updates index. If no value
+// found returns false and value set to 1, default.
+bool ARBgetValueFromTable(int *index, int *value)
+{
+   bool valfound = false;
+   
+   *value = 1;
+   if(isDigit(TwaveCompressorTable[*index]))
+   {
+     valfound = true;
+     // If here then get the value, it has to be an integer
+     *value = int(TwaveCompressorTable[(*index)++] - '0');
+     while(isDigit(TwaveCompressorTable[*index])) *value = *value * 10 + int(TwaveCompressorTable[(*index)++] - '0');
+   }
+   return valfound;
 }
 
 char ARBgetNextOperationFromTable(bool init)
 {
+  bool valfound;
+  char portCH;
   int index,b;
   static int tblindex=0;
   static char OP;
@@ -245,13 +266,7 @@ char ARBgetNextOperationFromTable(bool init)
     {
       if(TwaveCompressorTable[tblindex] == 0) return(0);
       OP = TwaveCompressorTable[tblindex++];
-      count = 1;  // Default to count of 1
-      if(isDigit(TwaveCompressorTable[tblindex]))
-      {
-        // If here then get the value, it has to be an integer
-        count = int(TwaveCompressorTable[tblindex++] - '0');
-        while(isDigit(TwaveCompressorTable[tblindex])) count = count * 10 + int(TwaveCompressorTable[tblindex++] - '0');
-      }
+      valfound = ARBgetValueFromTable(&tblindex, &count);
       break;
     }
     if((OP=='N')||(OP=='C'))
@@ -268,6 +283,17 @@ char ARBgetNextOperationFromTable(bool init)
     }
     if(OP == 'g') //Time to open gate
     {
+      if(valfound)
+      {
+        CompressorSelectedSwitch = ARBarray[0]->Cswitch;
+        CompressorSelectedSwitchLevel = ARBarray[0]->CswitchLevel;
+      }
+      else
+      {
+        CompressorSelectedSwitch = TwaveCompressorTable[tblindex++];
+        CompressorSelectedSwitchLevel = HIGH;
+        ARBgetValueFromTable(&tblindex, &count);
+      }
       C_GateOpenTime = (((float)count) / 1000.0) * C_clock;
       count = 0;
       CSState = CSS_OPEN_REQUEST;
@@ -275,6 +301,17 @@ char ARBgetNextOperationFromTable(bool init)
     }
     if(OP == 'G') //Time to close gate
     {
+      if(valfound)
+      {
+        CompressorSelectedSwitch = ARBarray[0]->Cswitch;
+        CompressorSelectedSwitchLevel = ARBarray[0]->CswitchLevel;
+      }
+      else
+      {
+        CompressorSelectedSwitch = TwaveCompressorTable[tblindex++];
+        CompressorSelectedSwitchLevel = HIGH;
+        ARBgetValueFromTable(&tblindex, &count);
+      }
       C_GateOpenTime = (((float)count) / 1000.0) * C_clock;
       count = 0;
       CSState = CSS_CLOSE_REQUEST;
@@ -282,36 +319,55 @@ char ARBgetNextOperationFromTable(bool init)
     }
     if(OP == 'S')
     {
-      if(count == 0) ClearOutput(ARBarray[0].Cswitch,ARBarray[0].CswitchLevel);
-      if(count == 1) SetOutput(ARBarray[0].Cswitch,ARBarray[0].CswitchLevel);
+      // This command has two options, if S is followed by a value then use the switch bit
+      // defined in the ARB module data structure and the value defines open or close. If
+      // S is followed by a character then it defines a port bit to set as per the 
+      // value following the character
+      if(valfound)
+      {
+        if(count == 0) ClearOutput(ARBarray[0]->Cswitch,ARBarray[0]->CswitchLevel);
+        if(count == 1) SetOutput(ARBarray[0]->Cswitch,ARBarray[0]->CswitchLevel);        
+      }
+      else
+      {
+        portCH = TwaveCompressorTable[tblindex++];    // Get port charaster
+        ARBgetValueFromTable(&tblindex, &count);      // Get desired state
+        if(count == 0) ClearOutput(portCH,HIGH);
+        if(count == 1) SetOutput(portCH,HIGH);                
+      }
+      count = 0;
     }
     if(OP == 'O')
     {
       if((count >= 0) && (count <= 255))
       {
-         ARBarray[0].Corder = count;
-         ARBCsetOrder();
+         ARBarray[0]->Corder = count;
+         if(AcquireTWI()) ARBCsetOrder();
+         else TWIqueue(ARBCsetOrder);
       }
+      count = 0;
     }
     if(OP == 'V')
     {
       if((count >= 0) && (count <= 100))
       {
         if (SelectedARBboard == 0) arb.Voltage = count;
-        ARBarray[0].Voltage = count; 
+        ARBarray[0]->Voltage = count; 
         if(AcquireTWI()) ARBCsetV();
         else TWIqueue(ARBCsetV);
       }   
+      count = 0;
     }
     if(OP == 'v')
     {
       if((count >= 0) && (count <= 100))
       {
         if (SelectedARBboard == 1) arb.Voltage = count;
-        ARBarray[1].Voltage = count;
+        ARBarray[1]->Voltage = count;
         if(AcquireTWI()) ARBCsetv();
         else TWIqueue(ARBCsetv);
       }      
+      count = 0;
     }
     if(OP == 'F')
     {
@@ -319,25 +375,29 @@ char ARBgetNextOperationFromTable(bool init)
       {
         if((count > 100) && (count <= 40000))
         {
-           ARBarray[index].Frequency = count;
-           SetARBcommonClock(count);
+           ARBarray[index]->Frequency = count;
+           SetARBcommonClock(ARBarray[index], count);
         }   
       }      
+      count = 0;
     }
     if(OP == 'c')
     {
-      arb.Tcompress = ARBarray[0].Tcompress = count;
-      C_Tc  = (ARBarray[0].Tcompress / 1000.0) * C_clock;
+      arb.Tcompress = ARBarray[0]->Tcompress = count;
+      C_Tc  = (ARBarray[0]->Tcompress / 1000.0) * C_clock;
+      count = 0;
     }
     if(OP == 'n')
     {
-      arb.Tnormal = ARBarray[0].Tnormal = count;
-      C_Tn  = (ARBarray[0].Tnormal / 1000.0) * C_clock;
+      arb.Tnormal = ARBarray[0]->Tnormal = count;
+      C_Tn  = (ARBarray[0]->Tnormal / 1000.0) * C_clock;
+      count = 0;
     }
     if(OP == 't')
     {
-      arb.TnoC = ARBarray[0].TnoC = count;
-      C_Tnc = (ARBarray[0].TnoC / 1000.0) * C_clock;
+      arb.TnoC = ARBarray[0]->TnoC = count;
+      C_Tnc = (ARBarray[0]->TnoC / 1000.0) * C_clock;
+      count = 0;
     }
     if(OP == 's') ARBclock->stop();                            // Stop the clock
     if(OP == 'r') ARBclock->start(-1, 0, true);                // Restart the clock
@@ -350,6 +410,7 @@ char ARBgetNextOperationFromTable(bool init)
       if(i != -1) tblindex = i;
     }    
   }
+  count = 0;
 }
 
 void ARBcompressor_init(void)
@@ -357,23 +418,21 @@ void ARBcompressor_init(void)
   int            i;
   DialogBoxEntry *de;
   
-  if(!ARBarray[0].CompressorEnabled) return;  // Exit if the compressor is not enabled
-  ARBarray[0].UseCommonClock = true;          // If we are in compressor mode then we must use a common clock
-  ARBarray[1].UseCommonClock = true;
+  if(!ARBarray[0]->CompressorEnabled) return;  // Exit if the compressor is not enabled
+  ARBarray[0]->UseCommonClock = true;          // If we are in compressor mode then we must use a common clock
+  ARBarray[1]->UseCommonClock = true;
   // Enable the compressor hardware mode contol line in the compress ARB module
   pinMode(ARBmode,OUTPUT);
   SetBool(0,TWI_SET_COMP_EXT,false);
   SetBool(1,TWI_SET_COMP_EXT,false);
   SetBool(CompressBoard,TWI_SET_COMP_EXT,true);
   // Clear the switch output
-  ClearOutput(ARBarray[0].Cswitch,ARBarray[0].CswitchLevel);
+  ClearOutput(ARBarray[0]->Cswitch,ARBarray[0]->CswitchLevel);
   // Enable the compressor menu selection 
   de = GetDialogEntries(ARBentriesPage2, "Compressor");
   if(de != NULL) de->Type = D_DIALOG;
   // Setup the trigger line and ISR
   CtrigInput = new DIhandler;
-  CtrigInput->detach();
-  CtrigInput->attached(ARBarray[0].Ctrig, ARBarray[0].CtrigLevel, ARBcompressorTriggerISR);
   ARBupdateMode();
   ARBupdateCorder();
   ARBsetSwitch();
@@ -381,18 +440,43 @@ void ARBcompressor_init(void)
 
 void ARBcompressor_loop(void)
 {
-  if(!ARBarray[0].CompressorEnabled) return;  // Exit if the compressor is not enabled
+  static int init = -1;
+
+  if(init == -1)
+  {
+    CtrigInput->detach();
+    CtrigInput->setPriority(ARBarray[0]->Ctrig,0);
+    CtrigInput->attached(ARBarray[0]->Ctrig, ARBarray[0]->CtrigLevel, ARBcompressorTriggerISR);
+    init = 0;
+  }
+  if(!ARBarray[0]->CompressorEnabled) return;  // Exit if the compressor is not enabled
   // Calculate all the times in clock count units
-  C_Td  = (ARBarray[0].Tdelay / 1000.0) * C_clock;
-  C_Tc  = (ARBarray[0].Tcompress / 1000.0) * C_clock;
-  C_Tn  = (ARBarray[0].Tnormal / 1000.0) * C_clock;
-  C_Tnc = (ARBarray[0].TnoC / 1000.0) * C_clock;
+  C_Td  = (ARBarray[0]->Tdelay / 1000.0) * C_clock;
+  C_Tc  = (ARBarray[0]->Tcompress / 1000.0) * C_clock;
+  C_Tn  = (ARBarray[0]->Tnormal / 1000.0) * C_clock;
+  C_Tnc = (ARBarray[0]->TnoC / 1000.0) * C_clock;
   if (ActiveDialog == &ARBCompressorDialog) RefreshAllDialogEntries(&ARBCompressorDialog);  
 }
 
 //
 // ARB compressor host command functions
 //
+
+void SetARBCompressorEnabled(char *flag)
+{
+  String smode;
+
+  smode = flag;
+  if((smode == String("TRUE")) || (smode == String("FALSE")))
+  {
+     if(smode == String("TRUE")) ARBarray[0]->CompressorEnabled = true;
+     else  ARBarray[0]->CompressorEnabled = false;
+     SendACK;
+     return;
+  }
+  SetErrorCode(ERR_BADARG);
+  SendNAK;       
+}
 
 void SetARBCmode(char *mode)
 {
@@ -410,18 +494,25 @@ void SetARBCmode(char *mode)
 void GetARBCorder(void)
 {
   SendACKonly;
-  if (!SerialMute) serial->println(ARBarray[0].Corder);
+  if (!SerialMute) serial->println(ARBarray[0]->Corder);
 }
 
 void SetARBCorder(int ival)
 {
   if(RangeTest(ARBCompressorEntries,"Order",ival))
   {
-    ARBarray[0].Corder = ival;
+    ARBarray[0]->Corder = ival;
     arb.Corder = ival;
     ARBupdateCorder();
     SendACK;
   }
+}
+
+void GetARBCtriggerDelay(void)
+{
+  if(!IsARBmodule(0)) return;
+  SendACKonly;
+  if (!SerialMute) serial->println(ARBarray[0]->Tdelay);
 }
 
 void SetARBCtriggerDelay(char *str)
@@ -431,10 +522,17 @@ void SetARBCtriggerDelay(char *str)
   fval = strtof(str,NULL);
   if(RangeTest(ARBCompressorEntries,"Trig delay, mS",fval))
   {
-    ARBarray[0].Tdelay = fval;
+    ARBarray[0]->Tdelay = fval;
     arb.Tdelay = fval;
     SendACK;
   }
+}
+
+void GetARBCcompressTime(void)
+{
+  if(!IsARBmodule(0)) return;
+  SendACKonly;
+  if (!SerialMute) serial->println(ARBarray[0]->Tcompress);
 }
 
 void SetARBCcompressTime(char *str)
@@ -444,10 +542,17 @@ void SetARBCcompressTime(char *str)
   fval = strtof(str,NULL);
   if(RangeTest(ARBCompressorEntries,"Compress t, mS",fval))
   {
-    ARBarray[0].Tcompress = fval;
+    ARBarray[0]->Tcompress = fval;
     arb.Tcompress = fval;
     SendACK;
   }
+}
+
+void GetARBCnormalTime(void)
+{
+  if(!IsARBmodule(0)) return;
+  SendACKonly;
+  if (!SerialMute) serial->println(ARBarray[0]->Tnormal);
 }
 
 void SetARBCnormalTime(char *str)
@@ -457,10 +562,17 @@ void SetARBCnormalTime(char *str)
   fval = strtof(str,NULL);
   if(RangeTest(ARBCompressorEntries,"Normal t, mS",fval))
   {
-    ARBarray[0].Tnormal = fval;
+    ARBarray[0]->Tnormal = fval;
     arb.Tnormal = fval;
     SendACK;
   }
+}
+
+void GetARBCnoncompressTime(void)
+{
+  if(!IsARBmodule(0)) return;
+  SendACKonly;
+  if (!SerialMute) serial->println(ARBarray[0]->TnoC);
 }
 
 void SetARBCnoncompressTime(char *str)
@@ -470,7 +582,7 @@ void SetARBCnoncompressTime(char *str)
   fval = strtof(str,NULL);
   if(RangeTest(ARBCompressorEntries,"Normal t, mS",fval))
   {
-    ARBarray[0].TnoC = fval;
+    ARBarray[0]->TnoC = fval;
     arb.TnoC = fval;
     SendACK;
   }

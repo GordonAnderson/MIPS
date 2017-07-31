@@ -220,6 +220,7 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
   // Do not return, this function blocks and processes the encoder events in the following loop
   while (1)
   {
+    ProcessSerial();
     WDT_Restart(WDT);
     LDAClow;
     if (CalibrationDialog.Selected == 0)
@@ -254,7 +255,8 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
           if (DACZeroCounts > 65535) DACZeroCounts = 65535;
           if (CC->DACout != NULL)
           {
-            if (CC->DACaddr < 8) CC->ADCpointer(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
+//            if (CC->DACaddr < 8) CC->ADCpointer(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
+            if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
             else { AD5625(CC->DACaddr, CC->DACout->Chan, DACZeroCounts); delay(100);}
           }
           if (CC->ADCreadback != NULL) ADCZeroCounts = CC->ADCpointer(CC->ADCaddr, CC->ADCreadback->Chan, 100);
@@ -267,7 +269,8 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
           if (DACMidCounts > 65535) DACMidCounts = 65535;
           if (CC->DACout != NULL)
           {
-            if (CC->DACaddr < 8) CC->ADCpointer(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
+//            if (CC->DACaddr < 8) CC->ADCpointer(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
+            if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
             else { AD5625(CC->DACaddr, CC->DACout->Chan, DACMidCounts); delay(100);}
           }
           if (CC->ADCreadback != NULL) ADCMidCounts = CC->ADCpointer(CC->ADCaddr, CC->ADCreadback->Chan, 100);
@@ -312,8 +315,8 @@ void SelectBoard(int8_t Board)
   static uint32_t pin =g_APinDescription[BRDSEL].ulPin;
 
   AtomicBlock< Atomic_RestoreState > a_Block;
-  if (Board == 1) pio->PIO_CODR = pin;    // Set pin low;
-  else pio->PIO_SODR = pin;               // Set pin high;
+  if ((Board & 1) == 1) pio->PIO_CODR = pin;    // Set pin low;
+  else pio->PIO_SODR = pin;                     // Set pin high;
 }
 
 // Returns the current board selection
@@ -322,7 +325,7 @@ int SelectedBoard(void)
   static Pio *pio = g_APinDescription[BRDSEL].pPort;
   static uint32_t pin =g_APinDescription[BRDSEL].ulPin;
 
-  if((pio->PIO_ODSR & pin) != 0) return(1);
+  if((pio->PIO_ODSR & pin) == 0) return(1);
   return(0);
 }
 
@@ -387,7 +390,7 @@ void Reset_IOpins(void)
   digitalWrite(48, HIGH);
 }
 
-void Software_Reset()
+void Software_Reset(void)
 {
   //============================================================================================
   //   führt ein Reset des Arduino DUE aus...
@@ -398,6 +401,40 @@ void Software_Reset()
   const int RSTC_KEY = 0xA5;
   RSTC->RSTC_CR = RSTC_CR_KEY(RSTC_KEY) | RSTC_CR_PROCRST | RSTC_CR_PERRST;
   while (true);
+}
+
+// Reports the last reboot reason and the number of millisec the system has been up and running, this
+// time counter is reset every 50 days.
+void RebootStatus(void)
+{
+   SendACKonly;
+   uint32_t i = REG_RSTC_SR;  // Reads the boot flag
+   i >>= 8;
+   i &= 7;   
+   switch (i)
+   {
+       case 0:
+          serial->print("First power-up Reset, ");
+          break;
+       case 1:
+          serial->print("Return from Backup mode, ");
+          break;
+       case 2:
+          serial->print("Watchdog fault occurred, ");
+          break;
+       case 3:
+          serial->print("Processor reset required by the software, ");
+          break;
+       case 4:
+          serial->print("NRST pin detected low, ");
+          break;
+       default:
+          serial->print("Unknown!, ");
+          break;
+   }
+   serial->println(millis());
+
+   TraceReport();
 }
 
 // This function reads analog input on A8 and returns the value. A8 is connected to Vin through
@@ -503,7 +540,7 @@ void DigitalOut(int8_t MSB, int8_t LSB)
   SPI.transfer(SPI_CS, MSB);
   pio->PIO_CODR = pin;               // Set pin low;
   pio->PIO_SODR = pin;               // Set pin high;
-  delayMicroseconds(2);              // Test the need for tis delay
+  delayMicroseconds(2);              // Test the need for this delay
   SetAddress(0);
 }
 
@@ -864,7 +901,7 @@ int AD7994(int8_t adr, int8_t chan)
 }
 
 // This function reads one channel from the AD7998 ADC
-int AD7998_b(int8_t adr, int8_t chan)
+int AD7998_b (int8_t adr, int8_t chan)
 {
   unsigned int val;
   
@@ -895,7 +932,7 @@ int AD7998(int8_t adr, int8_t chan)
   AcquireTWI();
   while (1)
   {
-//    AtomicBlock< Atomic_RestoreState > a_Block;
+    //AtomicBlock< Atomic_RestoreState > a_Block;
     TWI_START();
     if ((iStat = TWI_WRITE(adr << 1)) == false) break;
     if ((iStat = TWI_WRITE(0x80 | chan << 4)) == false) break;
@@ -999,6 +1036,10 @@ void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali)
   AD5668(spiAdr, DACchan, vali, 0);
 }
 
+// Select only one more of operation!
+//#define useSPIclass
+#define useSPIinline
+//#define useSPIDMA
 void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali, int8_t Cmd)
 {
   uint8_t     buf[4];
@@ -1018,11 +1059,15 @@ void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali, int8_t Cmd)
     SPI.transfer(SPI_CS, 0, SPI_CONTINUE);
     SPI.transfer(SPI_CS, 0x00);
     SetAddress(0);
+    // Enable the DMA controller for SPI transfers
+    spiDMAinit();
   }
   val = vali;
   SPI.setDataMode(SPI_CS, SPI_MODE1);
   // Set the address
   SetAddress(spiAdr);
+// Option 1, send with SPI object
+#ifdef useSPIclass
   // Fill buffer with data
   buf[0] = Cmd;
   buf[1] = (DACchan << 4) | (val >> 12);
@@ -1030,6 +1075,37 @@ void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali, int8_t Cmd)
   buf[3] = (val << 4);
   // Send the data
   SPI.transfer(SPI_CS, buf, 4);
+#endif
+// Option 2, send with inline minimul code
+#ifdef useSPIinline
+  Spi* pSpi = SPI0;
+  uint32_t b;
+  static uint32_t ch = BOARD_PIN_TO_SPI_CHANNEL(SPI_CS);
+  pSpi->SPI_TDR = (uint32_t)Cmd | SPI_PCS(ch);
+  while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
+  b = pSpi->SPI_RDR;
+  pSpi->SPI_TDR = (uint32_t)(((DACchan << 4) | (val >> 12)) & 0xFF) | SPI_PCS(ch);
+  while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
+  b = pSpi->SPI_RDR;
+  pSpi->SPI_TDR = (uint32_t)((val >> 4) & 0xFF) | SPI_PCS(ch);
+  while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
+  b = pSpi->SPI_RDR;
+  pSpi->SPI_TDR = (uint32_t)((val << 4) & 0xFF) | SPI_PCS(ch) | SPI_TDR_LASTXFER;
+  while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
+  b = pSpi->SPI_RDR;
+#endif
+// Option 3, Send with DMA, will help on big buffers
+#ifdef useSPIDMA
+  static uint32_t ch = BOARD_PIN_TO_SPI_CHANNEL(SPI_CS);
+  uint32_t dbuf[4];
+  dbuf[0] = (uint32_t)Cmd | SPI_PCS(ch);
+  dbuf[1] = (uint32_t)(((DACchan << 4) | (val >> 12)) & 0xFF) | SPI_PCS(ch);
+  dbuf[2] = (uint32_t)((val >> 4) & 0xFF) | SPI_PCS(ch);
+  dbuf[3] = (uint32_t)((val << 4) & 0xFF) | SPI_PCS(ch) | SPI_TDR_LASTXFER;
+  spiDmaTX(&dbuf[0], 4);
+  spiDmaWait();
+#endif
+// Finished so clear the address to 0
   SetAddress(0);
 }
 
@@ -1103,7 +1179,7 @@ void  (*TWIqueued[MaxQueued])(void) = {NULL,NULL,NULL,NULL,NULL};
 // Returns false if it was busy.
 bool AcquireTWI(void)
 {
-  AtomicBlock< Atomic_RestoreState > a_Block;
+ // AtomicBlock< Atomic_RestoreState > a_Block;
   if(TWIbusy) return(false);
   TWIbusy = true;
   return(true);
@@ -1183,9 +1259,10 @@ void TriggerOut(char *cmd)
      TriggerOut(uS);
      return;
   }
-  if ((strcmp(cmd, "HIGH") == 0) || (strcmp(cmd, "LOW") == 0) || (strcmp(cmd, "PULSE") == 0))
+  if ((strcmp(cmd, "HIGH") == 0) || (strcmp(cmd, "LOW") == 0) || (strcmp(cmd, "PULSE") == 0) || (strcmp(cmd, "FollowS") == 0))
   {
     SendACK;
+    if (strcmp(cmd, "FollowS") == 0) TriggerFollowS();
     if (strcmp(cmd, "HIGH") == 0) digitalWrite(TRGOUT, LOW);
     if (strcmp(cmd, "LOW") == 0) digitalWrite(TRGOUT, HIGH);
     if (strcmp(cmd, "PULSE") == 0)
@@ -1209,11 +1286,32 @@ void TriggerOut(char *cmd)
   SendNAK;
 }
 
+void FollowSisr(void)
+{
+   static Pio *pioS = g_APinDescription[DI2].pPort;
+   static uint32_t pinS = g_APinDescription[DI2].ulPin;
+   static Pio *pioTrig = g_APinDescription[TRGOUT].pPort;
+   static uint32_t pinTrig = g_APinDescription[TRGOUT].ulPin;
+
+   if(pioS->PIO_PDSR & pinS) pioTrig->PIO_CODR = pinTrig;
+   else pioTrig->PIO_SODR = pinTrig;
+}
+
+void TriggerFollowS(void)
+{
+   static Pio *pioS = g_APinDescription[DI2].pPort;
+   static uint32_t pinS = g_APinDescription[DI2].ulPin;
+   
+   attachInterrupt(digitalPinToInterrupt(DI2), FollowSisr, CHANGE);
+   pioS->PIO_SCIFSR = pinS;
+   pioS->PIO_IFER = pinS;  // Enable the fast deglitch
+}
+
 // This function will pulse the trigger output 
 inline void TriggerOut(int microSec)
 {
-  static Pio *pio = pio = g_APinDescription[TRGOUT].pPort;
-  static uint32_t pin = pin = g_APinDescription[TRGOUT].ulPin;
+  static Pio *pio = g_APinDescription[TRGOUT].pPort;
+  static uint32_t pin = g_APinDescription[TRGOUT].ulPin;
   static uint32_t dwReg;
 
   AtomicBlock< Atomic_RestoreState > a_Block;
@@ -1286,7 +1384,7 @@ void DIOopsReport(void)
 {
   int  i;
   char chan;
-  
+
   for(i=0;i<8;i++)
   {
     chan = 'Q' + i;
@@ -1311,6 +1409,7 @@ void DIOopsISR(void)
   int  i,j;
   bool DIOset=false;
 
+  TRACE(9);
   for(i=0;i<8;i++)
   {
     if((dioops[i].Report) || (dioops[i].Mirror))
@@ -1428,7 +1527,7 @@ void DIOmirror(char *in, char *out)
 // interface.
 //
 // Serial commands:
-//  SDTRIGINP,input,active    Defines the trigger input Q - X and actibe level POS or NEG.
+//  SDTRIGINP,input,active    Defines the trigger input Q - X and active level POS or NEG.
 //  SDTRIGDLY,time            Defines the trigger delay in microseconds.
 //  SDTRIGPRD,period          Defines the trigger repeat time in microseconds.
 //  SDTRIGRPT,num             Defines the number of trigger repeats, 0 = forever
@@ -1561,6 +1660,7 @@ void SetDelayTrigModule(char *module)
 
   Module = module;
   if(Module == "ARB") DelayedTrigFunction = ARBsyncISR;
+  else if(Module == "SWEEP") DelayedTrigFunction = ARBTWAVEsweepISR;
   else
   {
     SetErrorCode(ERR_BADARG);
@@ -1782,5 +1882,752 @@ uint32_t read32(File f)
 //
 // End of BMP functions
 //
+
+// DMA spi transfer functions
+/** Disable DMA Controller. */
+static void dmac_disable() {
+  DMAC->DMAC_EN &= (~DMAC_EN_ENABLE);
+}
+/** Enable DMA Controller. */
+static void dmac_enable() {
+  DMAC->DMAC_EN = DMAC_EN_ENABLE;
+}
+/** Disable DMA Channel. */
+static void dmac_channel_disable(uint32_t ul_num) {
+  DMAC->DMAC_CHDR = DMAC_CHDR_DIS0 << ul_num;
+}
+/** Enable DMA Channel. */
+static void dmac_channel_enable(uint32_t ul_num) {
+  DMAC->DMAC_CHER = DMAC_CHER_ENA0 << ul_num;
+}
+/** Poll for transfer complete. */
+static bool dmac_channel_transfer_done(uint32_t ul_num) {
+  return (DMAC->DMAC_CHSR & (DMAC_CHSR_ENA0 << ul_num)) ? false : true;
+}
+
+//
+// SPI DMA functions, used for DAC output on DCbias modules
+//
+
+void spiDMAinit(void)
+{
+    pmc_enable_periph_clk(ID_DMAC);
+    dmac_disable();
+    DMAC->DMAC_GCFG = DMAC_GCFG_ARB_CFG_FIXED;
+    dmac_enable();  
+}
+
+void (*DMAisr)() = NULL;
+
+// DMA ISR is used to reenable the next buffer. This interrupt fires when
+// a buffer completes if defined a user ISR is called.
+void DMAC_Handler(void)
+{
+   if(DMAisr != NULL) DMAisr();
+}
+
+// The function sends a buffer to the SPI interface. The transfers are 32 bit
+// and the SPI defines the transfer width. The buffer contains a 32 bit word for
+// each transfer with the LSB being the data and the MSB are the chip select and 
+// flags.
+// Example use:
+//  uint32_t ch = BOARD_PIN_TO_SPI_CHANNEL(SPI_CS);
+//  uint32_t dbuf[4];
+//  dbuf[0] = (uint32_t)buf[0] | SPI_PCS(ch);
+//  dbuf[1] = (uint32_t)buf[1] | SPI_PCS(ch);
+//  dbuf[2] = (uint32_t)buf[2] | SPI_PCS(ch);
+//  dbuf[3] = (uint32_t)buf[3] | SPI_PCS(ch) | SPI_TDR_LASTXFER;
+//  spiDmaTX(&dbuf[0], 4);
+//  spiWait();
+//
+void spiDmaTX(uint32_t* src, uint16_t count,void (*isr)()) 
+{
+  dmac_channel_disable(SPI_DMAC_TX_CH);
+  DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_SADDR = (uint32_t)src;
+  DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_DADDR = (uint32_t)&SPI0->SPI_TDR;
+  DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_DSCR =  0;
+  DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_CTRLA = count |
+    DMAC_CTRLA_SRC_WIDTH_WORD | DMAC_CTRLA_DST_WIDTH_WORD;
+
+  DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_CTRLB =  DMAC_CTRLB_SRC_DSCR |
+    DMAC_CTRLB_DST_DSCR | DMAC_CTRLB_FC_MEM2PER_DMA_FC |
+    DMAC_CTRLB_SRC_INCR_INCREMENTING | DMAC_CTRLB_DST_INCR_FIXED;
+
+  DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_CFG = DMAC_CFG_DST_PER(SPI_TX_IDX) |
+      DMAC_CFG_DST_H2SEL | DMAC_CFG_SOD | DMAC_CFG_FIFOCFG_ALAP_CFG;
+
+  // If isr is != NULL then enable interrupts and call the isr routine
+  // when transfer completes
+  DMAisr = isr;
+  if(isr != NULL)
+  {
+      int i = DMAC->DMAC_EBCISR;
+
+      DMAC->DMAC_EBCIER |= 1 << (SPI_DMAC_TX_CH);
+
+      NVIC_ClearPendingIRQ(DMAC_IRQn);
+      NVIC_EnableIRQ(DMAC_IRQn);
+  }
+
+  dmac_channel_enable(SPI_DMAC_TX_CH);
+}
+
+void spiDmaWait(void)
+{
+   Spi* pSpi = SPI0;
+
+   while (!dmac_channel_transfer_done(SPI_DMAC_TX_CH)) {}
+   while ((pSpi->SPI_SR & SPI_SR_TXEMPTY) == 0) {}
+   uint8_t b = pSpi->SPI_RDR;
+}
+
+// The following function support the trace mode used to capature the the program's state and display the last 16
+// points captured. The TracePoints and TracePointTimes buffers are located in memory not used by the application, 
+// thai has to be done to make sure this memory is never touched by the system and thus preserved during reset and
+// watchdog timer reset. This requires editing the flash.ld linker file that is located in the linker scripts dir of
+// the arduino development enviornment. Edit the following line:
+//   ram (rwx)   : ORIGIN = 0x20070000, LENGTH = 0x00017F80 /* sram, 96K , was 18000, GAA updated*/
+
+
+bool     Tracing = false;
+uint8_t  TPpointer = 0;
+// These addresses are above the stack and not touched by the system
+uint8_t  *TracePoints = (uint8_t *)0x20087F80;
+uint32_t *TracePointTimes = (uint32_t *)0x20087FA0;
+
+// This function saves a trace point in the trace FIFO
+void TraceCapture(uint8_t tp)
+{
+   TracePoints[TPpointer] = tp;
+   TracePointTimes[TPpointer] = millis();
+   TPpointer++;
+   TPpointer &= 15;
+}
+
+// This function reports the trace data
+void TraceReport(void)
+{
+  uint8_t  i,strt;
+
+  strt = 0;
+  for(i=0;i<16;i++) if(TracePointTimes[i] >= TracePointTimes[strt]) strt = i;
+  strt++;
+  serial->println("Trace report.");
+  for(i=0;i<16;i++)
+  {
+    serial->print(TracePoints[strt & 15]);
+    serial->print(" @ ");
+    serial->println(TracePointTimes[strt & 15]);
+    strt++;
+  }
+}
+
+// This function is called by the command processor to enable the trace function and clear the buffers
+void TraceEnable(void)
+{
+  uint8_t i;
+  
+  for(i=0;i<16;i++)
+  {
+    TracePoints[i] = 0;
+    TracePointTimes[i] = 0;
+  }
+  TPpointer = 0;
+  Tracing = true;
+  SendACK;
+}
+
+// The following function support reading and writting the EEPROM module memory to
+// the SD card or to the MIPS host app using the USB interface.
+
+// Compute 8 bit CRC of buffer
+byte ComputeCRC(byte *buf, int bsize)
+{
+  byte generator = 0x1D;
+  byte crc = 0;
+
+  for(int i=0; i<bsize; i++)
+  {
+    crc ^= buf[i];
+    for(int j=0; j<8; j++)
+    {
+      if((crc & 0x80) != 0)
+      {
+        crc = ((crc << 1) ^ generator);
+      }
+      else
+      {
+        crc <<= 1;
+      }
+    }
+  }
+  return crc;
+}
+
+// Compute CRC one byte at a time
+void ComputeCRCbyte(byte *crc, byte by)
+{
+  byte generator = 0x1D;
+
+  *crc ^= by;
+  for(int j=0; j<8; j++)
+  {
+    if((*crc & 0x80) != 0)
+    {
+      *crc = ((*crc << 1) ^ generator);
+    }
+    else
+    {
+      *crc <<= 1;
+    }
+  }
+}
+
+// This function reads the EEPROM contents from the selected module and writes
+// the data to a file on the SD card. If the file is present it will be overwritten.
+// Returns 0 is operation completes with no errors.
+int SaveEEPROMtoSD(char *FileName, uint8_t board, uint8_t EEPROMadd)
+{
+  uint8_t buf[512];
+  File file;
+    
+  // Read the EEPROM
+  SelectBoard(board);
+  if(ReadEEPROM(buf, EEPROMadd, 0, 512) != 0) return ERR_EEPROMREAD;
+  // Write the data to SD card
+  // Test SD present flag, exit and NAK if no card or it failed to init
+  if(!SDcardPresent) return ERR_NOSDCARD;
+  SD.begin(_sdcs);
+  // Remove the existing default.cfg file
+  SD.remove(FileName);
+  // Open file and write config structure to disk
+  if(!(file=SD.open(FileName,FILE_WRITE))) return ERR_CANTCREATEFILE;
+  file.write((byte *)buf,512);
+  file.close();
+  return(0);
+}
+
+// This function writes the EEPROM contents on the selected module from the
+// the selected file on the SD card. 
+// Returns 0 is operation completes with no errors.
+int LoadEEPROMfromSD(char *FileName, uint8_t board, uint8_t EEPROMadd)
+{
+  uint8_t buf[512];
+  int     i,fVal;
+  File    file;
+    
+  // Read file from SD card
+  if(!SDcardPresent) return ERR_NOSDCARD;
+  SD.begin(_sdcs);
+  // Open the file
+  if(!(file=SD.open(FileName,FILE_READ))) return ERR_CANTOPENFILE;
+  // read the data
+  for(i=0;i<512;i++)
+  {
+    if((fVal = file.read()) == -1) break;
+    buf[i] = fVal;
+  }
+  file.close();
+  if(i != 512) return ERR_READINGSD;
+  // Write data to EEPROM
+  SelectBoard(board);  
+  if(WriteEEPROM(buf, EEPROMadd, 0, 512) != 0) return ERR_EEPROMWRITE;
+  return 0;
+}
+
+// This function saves the EEPROM data to the SD card.
+// This function is called by the serial command processor with the parameters
+// in the ring buffer. This routine expects the following:
+// FileName
+// Module address, A or B
+// EEPROM TWI address, hex
+void EEPROMtoSD(void)
+{
+   char   *Token,Module;
+   String sToken,FileName;
+   int    add,err,brd;
+
+   while(1)
+   {
+     // Read all the arguments
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     FileName = Token;
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     Module = toupper(Token[0]);
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sscanf(Token,"%x",&add);
+     if((Token = GetToken(true)) == NULL) break;
+     if(Token[0] != '\n') break;
+     // Test the Module range
+     if((Module != 'A') && (Module != 'B')) break;
+     // Now we can call the function!
+     brd = 0;
+     if(Module == 'B') brd = 1; 
+     if((err = SaveEEPROMtoSD((char *)FileName.c_str(), brd, add)) != 0)
+     {
+       SetErrorCode(err);
+       SendNAK;
+       return;
+     }
+     SendACK;
+     return;
+   }
+   // If here then we had bad arguments!
+  SetErrorCode(ERR_BADARG);
+  SendNAK;  
+}
+
+// This function restores the EEPROM data from the SD card.
+// This function is called by the serial command processor with the parameters
+// in the ring buffer. This routine expects the following:
+// FileName
+// Module address, A or B
+// EEPROM TWI address, hex
+void SDtoEEPROM(void)
+{
+   char   *Token,Module;
+   String sToken,FileName;
+   int    add,err,brd;
+
+   while(1)
+   {
+     // Read all the arguments
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     FileName = Token;
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     Module = toupper(Token[0]);
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sscanf(Token,"%x",&add);
+     if((Token = GetToken(true)) == NULL) break;
+     if(Token[0] != '\n') break;
+     // Test the Module range
+     if((Module != 'A') && (Module != 'B')) break;
+     // Now we can call the function!
+     brd = 0;
+     if(Module == 'B') brd = 1; 
+     if((err = LoadEEPROMfromSD((char *)FileName.c_str(), brd, add)) != 0)
+     {
+       SetErrorCode(err);
+       SendNAK;
+       return;
+     }
+     SendACK;
+     return;
+   }
+   // If here then we had bad arguments!
+  SetErrorCode(ERR_BADARG);
+  SendNAK;  
+}
+
+// Lists all files found on the SD card
+void ListFiles(void)
+{
+  File root, entry;
+
+  if (!SDcardPresent)
+  {
+    SetErrorCode(ERR_NOSDCARD);
+    SendNAK;
+    return;
+  }
+  SD.begin(_sdcs);
+  root = SD.open("/", FILE_READ);
+  SendACKonly;
+  root.rewindDirectory();
+  while (true)
+  {
+    if (!(entry = root.openNextFile())) break;
+    serial->print(entry.name());
+    serial->print(", ");
+    serial->println(entry.size());
+  }
+  root.close();  
+}
+
+void DeleteFile(char *FileName)
+{
+  if(!SDcardPresent)
+  {
+    SetErrorCode(ERR_NOSDCARD);
+    SendNAK;
+    return;
+  }
+  SD.begin(_sdcs);
+  // Remove the existing default.cfg file
+  SD.remove(FileName); 
+  SendACK; 
+}
+
+// This function will send the selected file to the USB port. The file is assumed to
+// be binary and its contents are converted to hex and send. after the ACK is sent.
+// After the ACK, the files size is sent as an ascii string with a EOL termination, then
+// the data block he send as ascii hex followed by a EOL, and finally the 8 bit CRC is
+// send as a byte followed by a EOL.
+void GetFile(char *FileName)
+{
+  byte     b,crc=0;
+  int      i,fVal,fsize;
+  File     file;
+  char     sbuf[3];
+  uint32_t start;
+    
+  // Open the file and read its size
+  // Read file from SD card
+  if(!SDcardPresent)
+  {
+    SetErrorCode(ERR_NOSDCARD);
+    SendNAK;
+    return;
+  }
+  SD.begin(_sdcs);
+  // Open the file
+  if(!(file=SD.open(FileName,FILE_READ)))
+  {
+    SetErrorCode(ERR_CANTOPENFILE);
+    SendNAK;
+    return;
+  }
+  SendACK;
+  serial->println(fsize = file.size());
+  // read the data
+  for(i=0; i<fsize; i++)
+  {
+    if((fVal = file.read()) == -1) break;
+    b = fVal;
+    ComputeCRCbyte(&crc,b);
+    sprintf(sbuf,"%02x",b);
+    serial->print(sbuf);
+    if((i>0) && ((i%1024) == 0))
+    {
+      // Halt and wait for "Next" request. Timeout after
+      // 10 sec with no ation and exit
+      start = millis();
+      while(RB.Commands == 0)
+      {
+         if(millis() > start + 10000)
+         {
+            serial->println("\nFile sending to host timedout!");
+            file.close();
+            return;
+         }
+         ReadAllSerial();
+      }
+      GetToken(false);
+      GetToken(false);
+    }
+  }
+  serial->println("");
+  serial->println(crc);
+  file.close();
+  serial->print(FileName);
+  serial->println(" file send to host!");
+}
+
+// The function will receive a file from the USB connected host. The file must be sent
+// in hex and use the following format:
+// First the file name and file size, in bytes (decimal) are sent. If the file can
+// be created and ACK is sent to the host otherwise a NAK is sent. The process stops
+// if a NAK is sent. 
+// If an ACK is sent to the host then the host will send the data for the body of the 
+// file in hex. After all the data is sent then a 8 bit CRC is sent, in decimal. If the
+// crc is correct the file will be saved.
+// If the file is already present it will be overwitten.
+void PutFile(char * FileName,char *Fsize)
+{
+  File   file;
+  String sToken;
+  int    numBytes,val,tcrc;
+  char   c,buf[3],*Token;
+  byte   b,crc=0;
+  uint32_t start;
+  
+  if(!SDcardPresent)
+  {
+    SetErrorCode(ERR_NOSDCARD);
+    SendNAK;
+    return;
+  }
+  SD.begin(_sdcs);
+  // Remove the existing default.cfg file
+  SD.remove(FileName);
+  // Open file and write config structure to disk
+  if(!(file=SD.open(FileName,FILE_WRITE)))
+  {
+    SetErrorCode(ERR_CANTCREATEFILE);
+    SendNAK;
+    return;
+  }
+  sToken = Fsize;
+  numBytes = sToken.toInt();
+  SendACK;
+  for(int i=0; i<numBytes; i++)
+  {
+    start = millis();
+    // Get two bytes from input ring buffer and scan to byte
+    while((c = RB_Get(&RB)) == 0xFF) { ReadAllSerial(); if(millis() > start + 10000) goto TimeoutExit; }
+    buf[0] = c;
+    while((c = RB_Get(&RB)) == 0xFF) { ReadAllSerial(); if(millis() > start + 10000) goto TimeoutExit; }
+    buf[1] = c;
+    buf[2] = 0;
+    sscanf(buf,"%x",&val);
+    b = val;
+    file.write(b);
+    ComputeCRCbyte(&crc,b);
+    WDT_Restart(WDT);
+    if((i>0) && (numBytes > 512) && (((i+1)%512)==0)) serial->println("Next");
+  }
+  file.close();
+  // Now we should see an EOL, \n
+  start = millis();
+  while((c = RB_Get(&RB)) == 0xFF) { ReadAllSerial(); if(millis() > start + 10000) goto TimeoutExit; }
+  if(c == '\n')
+  {
+    // Get CRC and test, if ok exit else delete file and exit
+    while((Token = GetToken(true)) == NULL) { ReadAllSerial(); if(millis() > start + 10000) goto TimeoutExit; }
+    sscanf(Token,"%d",&tcrc);
+    while((Token = GetToken(true)) == NULL) { ReadAllSerial(); if(millis() > start + 10000) goto TimeoutExit; }
+    if((Token[0] == '\n') && (crc == tcrc)) 
+    {
+       serial->print(FileName);
+       serial->println(" file received from host and saved.");
+       return;
+    }
+  }
+  serial->println("\nError during file receive from host!");
+  SD.remove(FileName);
+  return;
+TimeoutExit:
+  file.close();
+  SD.remove(FileName);
+  serial->println("\nFile receive from host timedout!");
+  return;
+}
+
+// This function will save all the module's EEPROM data to files on the SD card.
+// All modules found are saved with the following naming convention:
+// Name_board_add where
+// Name = first three chars for name found in EEPROM
+// board = A or B
+// add = hex address of EEPROM
+void SaveAlltoSD(void)
+{
+  char    filename[10];
+  uint8_t addr;
+  char    signature[20];
+  int     err;
+
+  // Loop through all the addresses looking for signatures
+  for (addr = 0x50; addr <= 0x56; addr  += 2)
+  {
+    // Set board select to A
+    ENA_BRD_A;
+    if (ReadEEPROM(signature, addr, 0, 20) == 0)
+    {
+      // Build file name
+      for(int i=0; i<3; i++) filename[i] = signature[2+i];
+      filename[3] = '_';
+      filename[4] = 'A';
+      filename[5] = '_';
+      sprintf(&filename[6],"%02x",addr);
+      // Save to SD
+      serial->print("Saving: ");
+      serial->println(filename);
+      err = SaveEEPROMtoSD(filename, 0, addr);
+      if(err != 0)
+      {
+        SetErrorCode(err);
+        SendNAK;
+        return;   
+      }
+    }
+    // Set board select to B
+    ENA_BRD_B;
+    if (ReadEEPROM(signature, addr, 0, 20) == 0)
+    {
+      // Build file name
+      for(int i=0; i<3; i++) filename[i] = signature[2+i];
+      filename[3] = '_';
+      filename[4] = 'B';
+      filename[5] = '_';
+      sprintf(&filename[6],"%02x",addr);
+      // Save to SD
+      serial->print("Saving: ");
+      serial->println(filename);
+      err = SaveEEPROMtoSD(filename, 1, addr);    
+      if(err != 0)
+      {
+        SetErrorCode(err);
+        SendNAK;
+        return;   
+      }
+    }
+  }
+  SendACK;
+}
+
+// This function will search the SD card for files with the following format:
+// Name_board_add where
+// Name = first three chars for name found in EEPROM
+// board = A or B
+// add = hex address of EEPROM
+// If found and the size is 512 then the files will be loaded into module EEPROM.
+void LoadAllfromSD(void)
+{
+  File root, entry;
+  int  board, addr;
+
+  if (!SDcardPresent)
+  {
+    SetErrorCode(ERR_NOSDCARD);
+    SendNAK;
+    return;
+  }
+  SD.begin(_sdcs);
+  root = SD.open("/", FILE_READ);
+  SendACKonly;
+  root.rewindDirectory();
+  while (true)
+  {
+    if (!(entry = root.openNextFile())) break;
+    // Test the name to see if its a valid filename
+    if((strlen(entry.name()) == 8) && (entry.name()[3] == '_') && (entry.name()[5] == '_') && (entry.size() == 512))
+    {
+      if((toupper(entry.name()[4]) == 'A') || (toupper(entry.name()[4]) == 'B'))
+      {
+        board = 0;
+        if(toupper(entry.name()[4]) == 'B') board = 1;
+        sscanf(&entry.name()[6],"%x",&addr);
+        serial->print("Writing: ");
+        serial->println(entry.name());
+        //entry.close();
+        int err = LoadEEPROMfromSD(entry.name(), board, addr);    
+        if(err != 0)
+        {
+          serial->print("Error writting EEPROM: ");
+          serial->println(err);
+        }
+      }
+    }
+  }
+  root.close();  
+  SendACK;
+}
+
+// This function will send the selected EEPROM contents to the host using the
+// active serial port. The data is converted to an ASCII hex block and sent using
+// the protocol described above. The MIPS host app is designed to use this function.
+// brd is A or B
+// add is 0x50, 0x52, 0x54, or 0x56
+void EEPROMtoSerial(char *brd, char *add)
+{
+  char sbuf[3];
+  int  addr,board;
+  byte buf[512];
+
+  sscanf(add,"%x",&addr);
+  // Check the inputs and exit if error
+  if(((toupper(brd[0]) != 'A') && (toupper(brd[0] != 'B')) || (addr < 0x50) || (addr > 0x56) || ((addr & 1) !=0)))
+  {
+      SetErrorCode(ERR_BADARG);
+      SendNAK;
+      return;       
+  }
+  board = 0;
+  if(toupper(brd[0]) == 'B') board = 1;
+  // Read the EEPROM data
+  SelectBoard(board);
+  if(ReadEEPROM(buf, addr, 0, 512) != 0) 
+  {
+    SetErrorCode(ERR_EEPROMREAD);
+    SendNAK;
+    return;
+  }
+  SendACK;
+  // Send the filesize
+  serial->println(512);
+  // Send the data as hex
+  for(int i=0; i<512; i++)
+  {
+    sprintf(sbuf,"%02x",buf[i]);
+    serial->print(sbuf);
+  }
+  serial->println("");
+  // Send the CRC then exit
+  serial->println(ComputeCRC(buf,512));
+}
+
+// This function will receive the selected EEPROM contents from the host using the
+// active serial port. The data is converted to an ASCII hex block and sent using
+// the protocol described above. The MIPS host app is designed to use this function.
+// brd is A or B
+// add is 0x50, 0x52, 0x54, or 0x56
+void SerialtoEEPROM(char *brd, char *add)
+{
+  char sbuf[3],*Token,c;
+  int  addr,board,numBytes,val,crc;
+  byte buf[512];
+  uint32_t start;
+
+  sscanf(add,"%x",&addr);
+  // Check the inputs and exit if error
+  if(((toupper(brd[0]) != 'A') && (toupper(brd[0] != 'B')) || (addr < 0x50) || (addr > 0x56) || ((addr & 1) !=0)))
+  {
+      SetErrorCode(ERR_BADARG);
+      SendNAK;
+      return;       
+  }
+  board = 0;
+  if(toupper(brd[0]) == 'B') board = 1;
+  SendACK;
+  start = millis();
+  // Receive the number of bytes
+  while((Token = GetToken(true)) == NULL) { ReadAllSerial(); if(millis() > start + 10000) goto TimeoutS2E; }
+  sscanf(Token,"%d",&numBytes); 
+  GetToken(true); // Get the \n and toss
+  // Read the data block
+  for(int i=0; i<numBytes; i++)
+  {
+    start = millis();
+    // Get two bytes from input ring buffer and scan to byte
+    while((c = RB_Get(&RB)) == 0xFF) { ReadAllSerial(); if(millis() > start + 10000) goto TimeoutS2E; }
+    sbuf[0] = c;
+    while((c = RB_Get(&RB)) == 0xFF) { ReadAllSerial(); if(millis() > start + 10000) goto TimeoutS2E; }
+    sbuf[1] = c;
+    sbuf[2] = 0;
+    sscanf(sbuf,"%x",&val);
+    buf[i & 511] = val;
+  }
+  start = millis();
+  // Now we should see an EOL, \n
+  while((c = RB_Get(&RB)) == 0xFF) { ReadAllSerial(); if(millis() > start + 10000) goto TimeoutS2E; }
+  if(c == '\n')
+  {
+    // Get CRC and test
+    while((Token = GetToken(true)) == NULL) { ReadAllSerial(); if(millis() > start + 10000) goto TimeoutS2E; }
+    sscanf(Token,"%d",&crc);
+    while((Token = GetToken(true)) == NULL) { ReadAllSerial(); if(millis() > start + 10000) goto TimeoutS2E; }
+    if((Token[0] == '\n') && (crc == ComputeCRC(buf,512)))
+    {
+      // Write the EEPROM buffer
+      SelectBoard(board);  
+      if(WriteEEPROM(buf, addr, 0, 512) == 0)
+      {
+        serial->println("EPROM data written!");
+        return;
+      }
+    }
+  }
+  serial->println("Unable to write to EEPROM!");
+  return;
+TimeoutS2E:
+  serial->println("\nEEPROM data receive from host timedout!");
+  return;
+}
 
 

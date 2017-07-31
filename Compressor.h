@@ -38,6 +38,8 @@ extern char *CswitchList;
 
 extern CompressorState CState;
 extern CompressorSwitchState CSState;
+extern char CompressorSelectedSwitch;
+extern int CompressorSelectedSwitchLevel;
 extern int CurrentPass;
 
 extern DIhandler *CtrigInput;

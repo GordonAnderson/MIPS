@@ -19,6 +19,7 @@
 #include "Hardware.h"
 #include "ClockGenerator.h"
 #include "DCbias.h"
+#include "DCbiasList.h"
 #include "ESI.h"
 #include "Twave.h"
 #include "FAIMS.h"
@@ -31,8 +32,8 @@
 
 extern ThreadController control;
 
-//Serial_ *serial = &SerialUSB;
 Stream *serial = &SerialUSB;
+//MIPSstream *mipsstream = &SerialUSB;
 bool SerialMute = false;
 //HardwareSerial *serial = &Serial;
 
@@ -68,8 +69,9 @@ Commands  CmdArray[] = 	{
   {"BIMAGE", CMDstr, 1, (char *)MIPSconfigData.BootImage}, // Set MIPS boot image
   {"ABOUT", CMDfunction, 0, (char *)About},              // Report about this MIPS system
   {"SMREV", CMDfunctionLine, 0, (char *)SetModuleRev},   // Set module rev level
-  {"RESET", CMDfunction, 0, (char *)Software_Reset},     // Reset the Due
-  {"SAVE",  CMDfunction, 0, (char *)SAVEparms},	         // Save MIPS configuration data to default.cfg on CD card
+  {"RESET", CMDfunction, 0, (char *)Software_Reset},     // Reset the Due  
+  {"STATUS", CMDfunction, 0, (char *)RebootStatus},      // Reports the last reboot status and time in millisec from boot
+  {"SAVE",  CMDfunction, 0, (char *)SAVEparms},	         // Save MIPS configuration data to default.cfg on SD card
   {"GCHAN", CMDfunctionStr, 1, (char *)GetNumChans},     // Report number for the selected system
   {"MUTE",  CMDfunctionStr, 1, (char *)Mute},            // Turns on and off the serial response from the MIPS system
   {"ECHO",  CMDbool, 1, (char *)&echoMode},              // Turns on and off the serial echo mode where the command is echoed to host, TRUE or FALSE
@@ -77,14 +79,14 @@ Commands  CmdArray[] = 	{
                                                          // supports, HIGH,LOW,PULSE
   {"DELAY", CMDfunction, 1, (char *)DelayCommand},       // Generates a delay in milliseconds. This is used by the macro functions
                                                          // to define delays in voltage ramp up etc.
-  {"GCMDS", CMDfunction, 0, (char *)GetCommands},	 // Send a list of all commands
+  {"GCMDS", CMDfunction, 0, (char *)GetCommands},	       // Send a list of all commands
   {"GAENA", CMDbool, 0, (char *)&MIPSconfigData.UseAnalog}, // Print the UseAnalog flag, true or false
   {"SAENA", CMDbool, 1, (char *)&MIPSconfigData.UseAnalog}, // Sets the UseAnalog flag, true or false
   {"THREADS", CMDfunction, 0, (char *)ListThreads},         // List all threads, there IDs, and there last runtimes
   {"STHRDENA", CMDfunctionStr, 2, (char *)SetThreadEnable}, // Set thread enable to true or false
   {"SDEVADD", CMDfunctionStr, 2, (char *)DefineDeviceAddress}, // Set device board and address
   {"RDEV", CMDfunction, 1, (char *)ReportAD7998},              // Read the ADC channel value, AD7998 device
-  {"RDEV2", CMDfunction, 1, (char *)ReportAD7994},              // Read the ADC channel value, AD7994 device
+  {"RDEV2", CMDfunction, 1, (char *)ReportAD7994},             // Read the ADC channel value, AD7994 device
   {"TBLTSKENA", CMDbool, 1, (char *)&TasksEnabled},            // Enables tasks in table mode, true or false
   {"ADC", CMDfunction, 1, (char *)ADCread},                    // Read and report ADC channel. Valid range 0 through 3
   {"LEDOVRD", CMDbool, 1, (char *)&LEDoverride},               // Override the LED operation is true, always false on startup
@@ -92,13 +94,28 @@ Commands  CmdArray[] = 	{
   {"DSPOFF", CMDbool, 1, (char *)&DisableDisplay},             // Print the UseAnalog flag, true or false
   {"CHKIMAGE",  CMDfunctionStr, 1, (char *)CheckImage},        // Reports the image file status
   {"LOADIMAGE",  CMDfunctionStr, 1, (char *)LoadImage},        // Loads an image file to the display
+  {"SSERIALNAV", CMDbool, 1, (char *)&EnableSerialNavigation}, // Set flag to TRUE to enable UI navigation from the host interface
+  {"TRACE", CMDfunction, 0, (char *)TraceEnable},              // Enable the trace function 
+  {"DIR", CMDfunction, 0, (char *)ListFiles},                  // List all file in the SD card
+  {"DEL", CMDfunctionStr, 1, (char *)DeleteFile},              // Delete file on the SD card
+  {"GET", CMDfunctionStr, 1, (char *)GetFile},                 // Dump file contents, hex, from SD card file
+  {"PUT", CMDfunctionStr, 2, (char *)PutFile},                 // Create file on SD card from host interface
+  {"SAVEMOD", CMDfunctionLine, 0, (char *)EEPROMtoSD},         // Save module EEPROM to SD file. Filename,Board (A or B),Add (hex)
+  {"LOADMOD", CMDfunctionLine, 0, (char *)SDtoEEPROM},         // Load module EEPROM from SD file. Filename,Board (A or B),Add (hex)
+  {"SAVEALL", CMDfunction, 0, (char *)SaveAlltoSD},            // Saves all the modules EEPROM data to the SD card
+  {"LOADALL", CMDfunction, 0, (char *)LoadAllfromSD},          // Loads all the modules EEPROM data from the SD card
+  {"GETEEPROM", CMDfunctionStr, 2, (char *)EEPROMtoSerial},    // Sends the selected EEPROM data to the host, Board( A or B), Add (Hex)
+  {"PUTEEPROM", CMDfunctionStr, 2, (char *)SerialtoEEPROM},    // Receives data from the host and writes to EEPROM, Board( A or B), Add (Hex)
+  {"SSPND", CMDbool, 1, (char *)&Suspend},                     // Suspend all tasks, susports real time control, TRUE or FALSE
+  {"GSPND", CMDbool, 0, (char *)&Suspend},                     // Returns suspend status, TRUE or FALSE
+  
   // Clock generation functions
   {"GWIDTH",  CMDint, 0, (char *)&PulseWidth},                // Report the pulse width in microseconds
   {"SWIDTH",  CMDint, 1, (char *)&PulseWidth},                // Set the pulse width in microseconds
   {"GFREQ",  CMDint, 0, (char *)&PulseFreq},                  // Report the pulse frequency in Hz
   {"SFREQ",  CMDint, 1, (char *)&PulseFreq},                  // Set the pulse frequency in Hz
   {"BURST",  CMDfunction, 1, (char *)&GenerateBurst},         // Generates a frequencyy burst on trig out line
-  // Delay trigger finctions. This supports delayed trigger and retriggering of supported modules
+  // Delay trigger functions. This supports delayed trigger and retriggering of supported modules
   {"SDTRIGINP", CMDfunctionStr, 2, (char *)SetDelayTrigInput},// Set delay trigger input (Q-X) and level, POS or NEG
   {"SDTRIGDLY",  CMDint, 1, (char *)&DtrigDelay},             // Set trigger delay in uS
   {"GDTRIGDLY",  CMDint, 0, (char *)&DtrigDelay},             // Returns trigger delay in uS
@@ -112,9 +129,9 @@ Commands  CmdArray[] = 	{
   // DC bias module commands
   {"SDCB", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&DCbiasSet))},      // Set voltage value
   {"GDCB", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasRead))},// Get Voltage value requested
-  {"GDCBV", CMDfunction, 1, (char *)DCbiasReadV},        // Get Voltage actual voltage value
-  {"SDCBOF", CMDfunctionStr, 2, (char *)DCbiasSetFloat}, // Set float voltage for selected board
-  {"GDCBOF", CMDfunction, 1, (char *)DCbiasReadFloat},   // Read float voltage for selected board
+  {"GDCBV", CMDfunction, 1, (char *)DCbiasReadV},                     // Get Voltage actual voltage value
+  {"SDCBOF", CMDfunctionStr, 2, (char *)DCbiasSetFloat},              // Set float voltage for selected board
+  {"GDCBOF", CMDfunction, 1, (char *)DCbiasReadFloat},                // Read float voltage for selected board
   {"GDCMIN", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasReadMin))}, // Read float voltage for selected board
   {"GDCMAX", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasReadMax))}, // Read float voltage for selected board
   {"SDCPWR", CMDfunctionStr, 1, (char *)DCbiasPowerSet},              // Sets the DC bias power, on or off
@@ -124,16 +141,31 @@ Commands  CmdArray[] = 	{
   {"GDCBALLV", CMDfunction, 0, (char *)DCbiasReportAllValues},        // Returns the DC bias voltage readback values for all channels in the system
   {"SDCBDELTA", CMDfunctionStr, 1, (char *)DCbiasDelta},              // Set all DC bias channels by a delta value
   {"SDCBCHNS", CMDfunction, 2, (char *)DCbiasSetNumBoardChans},       // Sets the number of channels on a DCbias board. Used for setup only.
-  {"SDCBONEOFF", CMDbool, 1, (char *)&DCbDarray[0].UseOneOffset},     // TRUE to enable use of one offset
-  {"DCBOFFRBENA", CMDbool, 1, (char *)&DCbDarray[0].OffsetReadback},  // TRUE to enable use of offset readback
+  {"SDCBONEOFF", CMDfunctionStr, 1, (char *)DCbiasUseOneOffset},      // TRUE to enable use of one offset
+  {"DCBOFFRBENA", CMDfunctionStr, 1, (char *)DCbiasOffsetReadback},   // TRUE to enable use of offset readback
   {"SDCBOFFENA", CMDfunctionStr, 2, (char *)DCbiasOffsetable},        // Set the DC bias channels offsetable flag, setup command
+  {"SDCBTEST", CMDbool, 1, (char *)&DCbiasTestEnable},                // Set to FALSE to disable readback testing
   // DC bias module profile commands
   {"SDCBPRO", CMDfunctionLine, 0, (char *)SetDCbiasProfile},          // Sets a DC bias profile
   {"GDCBPRO", CMDfunction, 1, (char *)GetDCbiasProfile},              // Reports the select DC bias profile
   {"ADCBPRO", CMDfunction, 1, (char *)SetApplyDCbiasProfile},         // Applies the select DC bias profile
   {"CDCBPRO", CMDfunction, 1, (char *)SetDCbiasProfileFromCurrent},   // Copy the current DC bias values to the select profile
-  {"TDCBPRO", CMDfunctionLine, 0, (char *)SetDCbiasProfileToggle},    // Enables toggeling between two profiles with user defined dwell time
+  {"TDCBPRO", CMDfunctionLine, 0, (char *)SetDCbiasProfileToggle},    // Enables toggeling between two profiles with user defined dwell time, mS
   {"TDCBSTP", CMDfunction, 0, (char *)StopProfileToggle},             // Stop the profile toggeling
+  // DC bias list functions, supports DMA high speed transfer
+  {"DSTATE", CMDfunctionLine, 0, (char *)DefineState},                // Define a state, name,ch,val....
+  {"SSTATE", CMDfunctionStr, 1, (char *)SetState},                    // Sets the DCbias channels to the values defined in named state
+  {"LSTATES", CMDfunction, 0, (char *)ListStateNames},                // List all the defined state names
+  {"RSTATE", CMDfunctionStr, 1, (char *)RemoveState},                 // Remove a state from the linked list
+  {"RSTATES", CMDfunction, 0, (char *)RemoveStates},                  // Clear the full linked list of states
+  {"GSTATE", CMDfunctionStr, 1, (char *)IsState},                     // Returns true is named state is in list, else false
+  {"DSEGMENT", CMDfunctionLine, 0, (char *)DefineSegment},            // Defines a segment with the following arguments: name, length, next, repeat count
+  {"ADDSEGTP", CMDfunctionLine, 0, (char *)AddSegmentTimePoint},      // Adds a time point to a segment, arguments: name,count, state1, state 2... (variable number of states)
+  {"ADDSEGTRG", CMDfunctionLine, 0, (char *)AddSegmentTrigger},       // Adds a trigger point to a segment, arguments: name,count,port,level
+  {"LSEGMENTS", CMDfunction, 0, (char *)ListSegments},                // List all the defined segments
+  {"RSEGMENT", CMDfunctionStr, 1, (char *)RemoveSegment},             // Remove a segment from the linked list
+  {"RSEGMENTS", CMDfunction, 0, (char *)RemoveSegments},              // Clear the full linked list of segments
+  {"PSEGMENTS", CMDfunction, 0, (char *)PlaySegments},                // Execute the segment list
   // RF generator module commands
   {"SRFFRQ", CMDfunction, 2, (char *)RFfreq},		 // Set RF frequency
   {"SRFVLT", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&RFvoltage))},	 // Set RF output voltage
@@ -153,17 +185,19 @@ Commands  CmdArray[] = 	{
   {"RPT", CMDfunctionStr, 2, (char *)DIOreport},     // Report an input state change
   {"MIRROR", CMDfunctionStr, 2, (char *)DIOmirror},  // Mirror an input to an output
   // ESI module commands
-  {"SHV", CMDfunctionStr, 2, (char *)SetESIchannel},     // Set channel high voltage
-  {"GHV", CMDfunction, 1, (char *)GetESIchannel},        // Returns the high voltage setpoint
-  {"GHVV", CMDfunction, 1, (char *)GetESIchannelV},      // Returns the actual high voltage output
-  {"GHVI", CMDfunction, 1, (char *)GetESIchannelI},      // Returns the output current in mA
-  {"GHVMAX", CMDfunction, 1, (char *)GetESIchannelMax},  // Returns the maximum high voltage outut value
-  {"GHVMIN", CMDfunction, 1, (char *)GetESIchannelMin},  // Returns the minimum high voltage outut value
-  {"SHVENA", CMDfunction, 1, (char *)SetESIchannelEnable},// Enables a selected channel
-  {"SHVDIS", CMDfunction, 1, (char *)SetESIchannelDisable},// Disables a selected channel
-  {"GHVSTATUS", CMDfunction, 1, (char *)GetESIstatus},     // Returns the selected channel's status, ON or OFF
+  {"SHV", CMDfunctionStr, 2, (char *)SetESIchannel},        // Set channel high voltage
+  {"GHV", CMDfunction, 1, (char *)GetESIchannel},           // Returns the high voltage setpoint
+  {"GHVV", CMDfunction, 1, (char *)GetESIchannelV},         // Returns the actual high voltage output
+  {"GHVI", CMDfunction, 1, (char *)GetESIchannelI},         // Returns the output current in mA
+  {"GHVMAX", CMDfunction, 1, (char *)GetESIchannelMax},     // Returns the maximum high voltage outut value
+  {"GHVMIN", CMDfunction, 1, (char *)GetESIchannelMin},     // Returns the minimum high voltage outut value
+  {"SHVENA", CMDfunction, 1, (char *)SetESIchannelEnable},  // Enables a selected channel
+  {"SHVDIS", CMDfunction, 1, (char *)SetESIchannelDisable}, // Disables a selected channel
+  {"GHVSTATUS", CMDfunction, 1, (char *)GetESIstatus},      // Returns the selected channel's status, ON or OFF
   {"SHVPSUP", CMDfunction, 2, (char *)SetESImodulePos},     // Sets a  modules positive supply voltage
   {"SHVNSUP", CMDfunction, 2, (char *)SetESImoduleNeg},     // Sets a  modules negative supply voltage
+  {"GHVITST", CMDbool, 0, (char *)&ESIcurrentTest},         // Returns TRUE is current testing is enabled, else FALSE
+  {"SHVITST", CMDbool, 1, (char *)&ESIcurrentTest},         // Set to TRUE to enable ESI current testing, FALSE to disable  
   // Table commands, tables enable pulse sequence generation
   {"STBLDAT", CMDfunction, 0, (char *)ParseTableCommand}, // Read the HVPS voltage table
   {"STBLCLK", CMDfunctionStr, 1, (char *)SetTableCLK},	  // Clock mode, EXT or INT
@@ -178,13 +212,13 @@ Commands  CmdArray[] = 	{
   {"STBLADV", CMDfunctionStr, 1, (char *)SetTableAdvance},// Set the table advance status, ON or OFF
   {"GTBLADV", CMDfunction, 0, (char *)GetTableAdvance},   // Get the table advance status, ON or OFF
   {"STBLVLT", CMDfun2int1flt, 3, (char *)SetTableEntryValue}, // Set a value in a loaded table
-  {"GTBLVLT", CMDfunction, 2, (char *)GetTableEntryValue},// Get a value from a loaded table
+  {"GTBLVLT", CMDfunction, 2, (char *)GetTableEntryValue},    // Get a value from a loaded table
   {"STBLCNT", CMDfun2int1flt, 3, (char *)SetTableEntryCount}, // Set a count value in a loaded table
-  {"STBLDLY", CMDint, 1, (char *)&InterTableDelay}, // Defines the inter table delay in milli seconds
-  {"SOFTLDAC",CMDbool, 1, (char *)&softLDAC},       // TRUE or FALSE, set to TRUE to force the used of software LDAC
+  {"STBLDLY", CMDint, 1, (char *)&InterTableDelay},        // Defines the inter table delay in milli seconds
+  {"SOFTLDAC",CMDbool, 1, (char *)&softLDAC},              // TRUE or FALSE, set to TRUE to force the used of software LDAC
   {"GTBLREPLY",CMDbool, 0, (char *)&TableResponse},        // Returns TRUE or FALSE state of enable table response flag
-  {"STBLREPLY",CMDbool, 1, (char *)&TableResponse},       // TRUE or FALSE, set to TRUE enable table response messages (default)
-  {"TBLRPT",CMDfunction,1, (char *)ReportTable},          // Report table as hex bytes
+  {"STBLREPLY",CMDbool, 1, (char *)&TableResponse},        // TRUE or FALSE, set to TRUE enable table response messages (default)
+  {"TBLRPT",CMDfunction,1, (char *)ReportTable},           // Report table as hex bytes
   // Macro commands
   {"MRECORD", CMDfunctionStr, 1, (char *) MacroRecord},    // Turn on macro recording into the filename argument
   {"MSTOP", CMDfunction, 0, (char *) MacroStop},           // Stop macro recording and close the file
@@ -204,6 +238,7 @@ Commands  CmdArray[] = 	{
   {"STWSEQ", CMDfunctionStr, 2, (char *)setTWAVEsequence},     // Set the TWAVE sequence
   {"GTWDIR", CMDfunction, 1, (char *)getTWAVEdir},             // Report the TWAVE waveform direction, FWD or REV
   {"STWDIR", CMDfunctionStr, 2, (char *)setTWAVEdir},          // Set the TWAVE waveform direction, FWD or REV
+  {"STBLRBT", CMDfunctionStr, 1, (char *)SetTWenableTest},     // Set the readback test enable flag, TRUE or FALSE
   // Twave compressor commands
   {"STWCTBL", CMDlongStr, 100, (char *)TwaveCompressorTable},  // Twave compressor table definition setting command
   {"GTWCTBL", CMDstr, 0, (char *)TwaveCompressorTable},        // Twave compressor table definition reporting command
@@ -248,17 +283,17 @@ Commands  CmdArray[] = 	{
   {"GFMPV", CMDfloat, 0, (char *)&KVoutP},                      // Returns FAIMS positive peak output voltage
   {"GFMNV", CMDfloat, 0, (char *)&KVoutN},                      // Returns FAIMS negative peak output voltage
   // FAIMS DC CV and Bias commands
-  {"SFMCV", CMDfunctionStr, 1, (char *)FAIMSsetCV},               // Sets FAIMS DC CV voltage setpoint
-  {"GFMCV", CMDfloat, 0, (char *)&faims.DCcv.VoltageSetpoint},    // Returns FAIMS DC CV voltage setpoint
-  {"GFMCVA", CMDfloat, 0, (char *)&DCcvRB},                       // Returns FAIMS DC CV voltage actual
-  {"SFMBIAS", CMDfunctionStr, 1, (char *)FAIMSsetBIAS},           // Sets FAIMS DC Bias voltage setpoint
-  {"GFMBIAS", CMDfloat, 0, (char *)&faims.DCbias.VoltageSetpoint},// Returns FAIMS DC Bias voltage setpoint
-  {"GFMBIASA", CMDfloat, 0, (char *)&DCbiasRB},                   // Returns FAIMS DC Bias voltage actual
-  {"SFMOFF", CMDfunctionStr, 1, (char *)FAIMSsetOffset},          // Sets FAIMS DC offset voltage setpoint
+  {"SFMCV", CMDfunctionStr, 1, (char *)FAIMSsetCV},                // Sets FAIMS DC CV voltage setpoint
+  {"GFMCV", CMDfloat, 0, (char *)&faims.DCcv.VoltageSetpoint},     // Returns FAIMS DC CV voltage setpoint
+  {"GFMCVA", CMDfloat, 0, (char *)&DCcvRB},                        // Returns FAIMS DC CV voltage actual
+  {"SFMBIAS", CMDfunctionStr, 1, (char *)FAIMSsetBIAS},            // Sets FAIMS DC Bias voltage setpoint
+  {"GFMBIAS", CMDfloat, 0, (char *)&faims.DCbias.VoltageSetpoint}, // Returns FAIMS DC Bias voltage setpoint
+  {"GFMBIASA", CMDfloat, 0, (char *)&DCbiasRB},                    // Returns FAIMS DC Bias voltage actual
+  {"SFMOFF", CMDfunctionStr, 1, (char *)FAIMSsetOffset},           // Sets FAIMS DC offset voltage setpoint
   {"GFMOFF", CMDfloat, 0, (char *)&faims.DCoffset.VoltageSetpoint},// Returns FAIMS DC offset voltage setpoint
   {"GFMOFFA", CMDfloat, 0, (char *)&DCoffsetRB},                   // Returns FAIMS DC offset voltage actual
   // FAIMS calibration commands   
-  //{"SFAIMSP", CMDfunction, 2, (char *)FAIMSphase},                // Set FAIMS harmonic phase to 0 or 180, bad idea!
+  //{"SFAIMSP", CMDfunction, 2, (char *)FAIMSphase},              // Set FAIMS harmonic phase to 0 or 180, bad idea!
   {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},     // Set FAIMS RF harmonic positive peak readback calibration
   {"SRFHNCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharNcal},     // Set FAIMS RF harmonic negative peak readback calibration
   {"SARCDIS",CMDbool, 1, (char *)&DiableArcDetect},               // TRUE or FALSE, set to TRUE disable arc detection
@@ -325,6 +360,10 @@ Commands  CmdArray[] = 	{
   {"GWFARB", CMDfunction, 1, (char *)GetARBwaveform},                // Returns an arbitrary waveform
   {"SWFTYP", CMDfunctionStr, 2, (char *)SetARBwfType},               // Sets the arbitrary waveform type
   {"GWFTYP", CMDfunction, 1, (char *)GetARBwfType},                  // Returns the arbitrary waveform type
+  {"SARBOFFA", CMDfunctionStr, 2, (char *)SetARBoffsetBoardA},       // For a dual output board ARB channel this commands sets the board A offset
+  {"GARBOFFA", CMDfunction, 1, (char *)GetARBoffsetBoardA},          // For a dual output board ARB channel this commands returns the board A offset
+  {"SARBOFFB", CMDfunctionStr, 2, (char *)SetARBoffsetBoardB},       // For a dual output board ARB channel this commands sets the board B offset
+  {"GARBOFFB", CMDfunction, 1, (char *)GetARBoffsetBoardB},          // For a dual output board ARB channel this commands returns the board B offset  
   // ARB conventional ARB mode commands
   {"SARBBUF", CMDfunction, 2, (char *)SetARBbufferLength},           // Sets ARB buffer length
   {"GARBBUF", CMDfunction, 1, (char *)GetARBbufferLength},           // Reports ARB buffer length
@@ -340,21 +379,34 @@ Commands  CmdArray[] = 	{
   {"SARBCMODE",CMDfunctionStr, 1, (char *)SetARBCmode},              // Set Twave compressor mode
   {"GARBCORDER",CMDfunction, 0, (char *)GetARBCorder},               // Report Twave compressor order
   {"SARBCORDER",CMDfunction, 1, (char *)SetARBCorder},               // Set Twave compressor order
-  {"GARBCTD",CMDfloat, 0, (char *)&ARBarray[0].Tdelay},              // Report Twave compressor trigger delay in mS
+  {"GARBCTD",CMDfunction, 0, (char *)GetARBCtriggerDelay},           // Report Twave compressor trigger delay in mS
   {"SARBCTD",CMDfunctionStr, 1, (char *)SetARBCtriggerDelay},        // Set Twave compressor trigger delay in mS
-  {"GARBCTC",CMDfloat, 0, (char *)&ARBarray[0].Tcompress},           // Report Twave compressor compress time in mS
+  {"GARBCTC",CMDfunction, 0, (char *)GetARBCcompressTime},           // Report Twave compressor compress time in mS
   {"SARBCTC",CMDfunctionStr, 1, (char *)SetARBCcompressTime},        // Set Twave compressor compress time in mS
-  {"GARBCTN",CMDfloat, 0, (char *)&ARBarray[0].Tnormal},             // Report Twave compressor normal time in mS
+  {"GARBCTN",CMDfunction, 0, (char *)GetARBCnormalTime},             // Report Twave compressor normal time in mS
   {"SARBCTN",CMDfunctionStr, 1, (char *)SetARBCnormalTime},          // Set Twave compressor normal time in mS
-  {"GARBCTNC",CMDfloat, 0, (char *)&ARBarray[0].TnoC},               // Report Twave compressor non compress time in mS
+  {"GARBCTNC",CMDfunction, 0, (char *)GetARBCnoncompressTime},       // Report Twave compressor non compress time in mS
   {"SARBCTNC",CMDfunctionStr, 1, (char *)SetARBCnoncompressTime},    // Set Twave compressor non compress time in mS
   {"TARBTRG",CMDfunction, 0, (char *)ARBCtrigger},                   // Force a Twave compressor trigger
   {"GARBCSW",CMDstr, 0, (char *)CswitchState},                       // Report Twave compressor Switch state
   {"SARBCSW",CMDfunctionStr, 1, (char *)SetARBCswitch},              // Set Twave compressor Switch state
   // ARB configuration commands  
-  {"SARBCCLK", CMDbool, 1, (char *)&ARBarray[0].UseCommonClock},     // Flag to indicate common clock mode for two ARB modules.
-  {"SARBCMP", CMDbool, 1, (char *)&ARBarray[0].CompressorEnabled},   // Flag to indicate ARB compressor mode is enabled.
-  {"SARBCOFF", CMDbool, 1, (char *)&ARBarray[0].ARBcommonOffset},    // Flag to all ARB channels use a common offset
+  {"SARBCCLK", CMDfunctionStr, 2, (char *)SetARBUseCommonClock},     // Flag to indicate common clock mode for the given ARB module.
+  {"SARBCMP", CMDfunctionStr, 1, (char *)SetARBCompressorEnabled},   // Flag to indicate ARB compressor mode is enabled.
+  {"SARBCOFF", CMDfunctionStr, 1, (char *)SetARBcommonOffset},       // Flag for all ARB channels use a common offset.
+  {"SARBADD",CMDfunction, 2, (char *)SetARBtwiADD},                  // Set the TWI address (base 10) for the ARB module.
+  {"SARBDBRD",CMDfunctionStr, 2, (char *)SetARBDualBoard},           // Sets module dual board flag to true or false.
+  // DAC module commands
+  {"SDACV", CMDfunctionStr, 2, (char *)SetDACValue},                 // Sets the named DAC channel's value  
+  {"GDACV", CMDfunctionStr, 1, (char *)GetDACValue},                 // Returns the named DAC channel's value  
+  {"SDACMAX", CMDfunctionStr, 2, (char *)SetDACMax},                 // Sets the named DAC channel's maximum  
+  {"GDACMAX", CMDfunctionStr, 1, (char *)GetDACMax},                 // Returns the named DAC channel's maximum  
+  {"SDACMIN", CMDfunctionStr, 2, (char *)SetDACMin},                 // Sets the named DAC channel's minimum  
+  {"GDACMIN", CMDfunctionStr, 1, (char *)GetDACMin},                 // Returns the named DAC channel's minimum    
+  {"SDACUN", CMDfunctionStr, 2, (char *)SetDACUnits},                // Sets the named DAC channel's units  
+  {"GDACUN", CMDfunctionStr, 1, (char *)GetDACUnits},                // Returns the named DAC channel's units  
+  {"SDACNM", CMDfun2int1str, 3, (char *)SetDACName},                 // Sets the DAC channel name defined by module and channel number 
+  {"GDACMN", CMDfunction, 2, (char *)GetDACName},                    // Returns the DAC channel name defined by module and channel number 
   // End of table marker
   {0},
 };
@@ -489,6 +541,7 @@ void GetNumChans(char *cmd)
   else if (strcmp(cmd, "FAIMS") == 0) FAIMSnumberOfChannels();
   else if (strcmp(cmd, "FIL") == 0) FilamentChannels();
   else if (strcmp(cmd, "ARB") == 0) ReportARBchannels();
+  else if (strcmp(cmd, "DAC") == 0) ReportDACchannels();
   else if (strcmp(cmd, "DIO") == 0)
   {
     SendACKonly;
@@ -519,6 +572,8 @@ void SerialInit(void)
   #endif
   //Serial_ *serial = &SerialUSB;
   SerialUSB.begin(0);
+  SerialUSB.printSetEOL("kk");
+//  mipsstream = &SerialUSB;
   //  serial->println("Initializing....");
   RB_Init(&RB);
 }
@@ -565,6 +620,12 @@ char *GetToken(bool ReturnComma)
   }
 }
 
+// Returns the last token returned for GetToken call
+char *LastToken(void)
+{
+  return Token;
+}
+
 void ExecuteCommand(Commands *cmd, int arg1, int arg2, char *args1, char *args2, float farg1)
 {
   if(echoMode) SelectedACKonlyString = ACKonlyString2;
@@ -603,7 +664,7 @@ void ExecuteCommand(Commands *cmd, int arg1, int arg2, char *args1, char *args2,
       }
       if (cmd->NumArgs == 1)  // If true then read the value
       {
-          strcpy(cmd->pointers.charPtr,args1);
+          strcpy((char *)cmd->pointers.charPtr,args1);
           SendACK;
           break;
       }
@@ -646,6 +707,9 @@ void ExecuteCommand(Commands *cmd, int arg1, int arg2, char *args1, char *args2,
       break;
     case CMDfun2int1flt:
       if (cmd->NumArgs == 3) cmd->pointers.func2int1flt(arg1, arg2, farg1);
+      break;
+    case CMDfun2int1str:
+      if (cmd->NumArgs == 3) cmd->pointers.func2int1str(arg1, arg2, args1);
       break;
     default:
       SendNAK;
@@ -736,7 +800,7 @@ int ProcessCommand(void)
       // string directly to the provided pointer and exit. This function must not block
       if (CmdArray[i].Type == CMDlongStr)
       {
-        lstrptr = CmdArray[i].pointers.charPtr;
+        lstrptr = (char *)CmdArray[i].pointers.charPtr;
         lstrindex = 0;
         lstrmax = CmdArray[i].NumArgs;
         lstrmode = true;
@@ -762,6 +826,7 @@ int ProcessCommand(void)
       break;
     case PCarg3:
       sscanf(Token, "%f", &farg1);
+      sscanf(Token, "%s", Sarg1);
       state = PCend;
       break;
     case PCend:
@@ -850,6 +915,7 @@ char RB_Next(Ring_Buffer *rb)
 
 void PutCh(char ch)
 {
+  if((int)ch == 255) return;  // Never put a null in the buffer!
   RB_Put(&RB, ch);
 }
 

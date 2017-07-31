@@ -44,16 +44,8 @@
 //        3.) If any output exceeds 100 volts the red LED will flash.
 //
 // To do list: --------------------------------------------------------------------------------------
-//   1.) MIPS configuration menu and data structure, things that are needed
-//        1.) MIPS config menu options:
-//            - MIPS box name (this will require a new UI construct to do)
-//            - Save all, saves all the boards and the MIPS config data
-//   2.) Add macro command to list a table out the serial port
-//   3.) Commands to add
-//        - Add report all voltages to the DCbias module.
-//   4.) Add three point calibration to FAIMS high voltage levels 
-//   5.) Make the USB id text indicate GAACE
-//   6.) Add the FAIMS serial commands
+//   1.) Add three point calibration to FAIMS high voltage levels 
+//   2.) Make the USB id text indicate GAACE
 //
 //     
 // Revision history and notes *********************************************************************************
@@ -436,6 +428,70 @@
 //          power settings.
 //      7.) Added Auto tune and retune response messages.
 //      8.) Turning off the display now disables the button and reports to host button press and rotation.
+//  1.80, March 20, 2017
+//      1.) Rised the max filament power to 20 watts.
+//      2.) Fixed type in auto tune response message.
+//      3.) Added rf channel to response message for auto tune.
+//      4.) Added logic to test for auti tune in process if commanded again
+//  1.81, March 29, 2017
+//      1.) Added the DAC module drivers
+//  1.82, April 1, 2017
+//      1.) Allow module EEPROM address to be user defined for all modules
+//  1.83, April 26, 2017
+//      1.) Added support for 4 ARB channels
+//      2.) Added support for RF quad module (need to add serial commands)
+//      3.) Updated ARB multi-pass table code to support and DIO for switches (not tested)
+//      4.) Added support for up to 4 DC bias modules.
+//  1.84, May 9, 2017
+//      1.) Added .5 sec requirement of ESI overcurrent, this is to stop false detections
+//      2.) Changed the DAC value reporting to include 3 places after the decimal point
+//      3.) Add the voltage state linked list
+//      4.) Make the mod described here: https://forum.voltivo.com/showthread.php?tid=8138
+//          This fixed a bug causing MIPS to reboot when the USB cable is pulled while sending data from MIPS.
+//  1.85, May 30, 2017
+//      1.) Add the TRACE capability. This requires editing the linker file to free memory at the end of
+//          sram. This memory saves the trace data and allows printing the buffer. Also added the STATUS
+//          command to print the last reboot reason and the trace buffer.
+//      2.) Added a host command to enable remote navigation of the UI, this supports operation without
+//          a front panel control.
+//  1.86, June 10, 2017
+//      1.) Updated / finished the states capability and the segments. This code is used to support the
+//          Thermo project but has general utility.
+//      2.) Added rev 5 ot the Twave driver. This rev is designed to support the 500V Twave module and
+//          adds monitoring to shutdown the system in the event of a voltage readback error.
+//      3.) Tested and fixed a few bugs in the ARB 4 module driver code.
+//  1.87, June 16, 2017
+//      1.) Added SWEEP to the drlayed trigger function.
+//      2.) Fixed a bug in the DIhandeler library.
+//  1.88, July 1, 2017
+//      1.) Minor bug fixes to the DCbias States and Segments code.
+//      2.) Minor updates to improve performance of the DIhandeler.
+//      3.) Updated the ARB common clock command to take affect without the need to reboot.
+//      4.) Added the DCbias readback testing disable command.
+//      5.) Added ESI over current alarm disable command.
+//  1.89, July 4, 2017
+//      1.) Added the TRIGOUT,FollowS command. This debounces the S input and reflects it to the trigger
+//          output. This can then be used to clock the Q input for table mode.
+//  1.90, July 19, 2017
+//      1.) Added a number of SD card file management commands:
+//          - DIR - returns a list of files and there size
+//          - DEL,filename - allows you to delete a file
+//          - GET and PUT functions that work with the MIPS host app to read and write files to SD
+//      2.) Added module EEPROM saving and restore function to SD files
+//          - SAVEMOD,filename,board (A or B),eeprom address (hex) - save the selected EEPROM to SD
+//          - LOADMOD,filename,board (A or B),eeprom address (hex) - loads the selected file to EEPROM from SD
+//          - SAVEALL - Saves all module's eeprom data to files, one file per eeprom found with the board
+//                      and address coded into the name.
+//          - LOADALL - Loads all the module's eeprom with files saved by SAVEALL
+//      3.) Updated the display off command to clear the display when re-enabled.
+//  1.91, July 24, 2017
+//      1.) Added commands to allow reading and writing EEPROM module conifuration memory.
+//      2.) Finished debug of all commands in V1.90 and enable file transfer to support
+//          large files.
+//      3.) Updated the ARB driver to support dual output boards and independant bias for each board.
+//  1.92, July 29, 2017
+//      1.) Fixed a bug in the ARB compression table code that caused non repeatable performance. Still
+//          have work to do on the Twave compression table code
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
@@ -450,8 +506,9 @@
 // Serial.println(); will print '\r' and '\n', 
 //
 // Gordon Anderson
-// GAA Custom Engineering,LLC
+// GAA Custom Electronics, LLC
 // gaa@owt.com
+// 509.628.6851 (cell)
 // 509.588.5410
 //
 #include "SD.h"
@@ -472,6 +529,7 @@
 #include "DIO.h"
 #include "Twave.h"
 #include "DCbias.h"
+#include "DCbiasList.h"
 #include "FAIMS.h"
 #include "ESI.h"
 #include "ARB.h"
@@ -496,7 +554,9 @@
 
 // Define my names for the native USB driver
 #define  USB_PRODUCT      "MIPS, native USB"
-#define  USB_MANUFACTURER "GAA Custom Engineering, LLC"
+#define  USB_MANUFACTURER "GAA Custom Electronics, LLC"
+
+bool Suspend = false;
 
 // These values are defaulted to 1000 in Variant.h, The RFdriver needs this PWM
 // frequency set to 50KHz for its adjustable power supply. Not sure if this overrides
@@ -512,7 +572,7 @@ bool DisableDisplay = false;
 bool LEDoverride = false;
 int  LEDstate = 0;
 
-char Version[] = "Version 1.79, Mar 9, 2017";
+const char Version[] PROGMEM = "Version 1.92, July 29, 2017";
 
 // ThreadController that will controll all threads
 ThreadController control = ThreadController();
@@ -524,6 +584,8 @@ Encoder enc;
 int encValue = 0;
 bool ButtonPressed = false;
 bool ButtonRotated = false;
+
+bool EnableSerialNavigation=false;
 
 extern Menu HardwareTestMenu;
 extern DialogBox TwaveDialog;
@@ -689,7 +751,7 @@ void DisplayAbout(void)
 //TWI_RESET();
 //Wire.begin();
    PrintDialog(&MIPSabout, 1, y++, "MIPS Version:");
-   PrintDialog(&MIPSabout, 2, y++, &Version[8]);
+   PrintDialog(&MIPSabout, 2, y++, (char *)&Version[8]);
    PrintDialog(&MIPSabout, 1, y, "MIPS Name:");
    PrintDialog(&MIPSabout, 11, y++, MIPSconfigData.Name);
    if(MIPSconfigData.UseWiFi) PrintDialog(&MIPSabout, 1, y++,"WiFi module enabled");
@@ -818,6 +880,7 @@ void RestoreMIPSSettings(void)
 // This function will add the menu entry to the MIPS main menu.
 // This is used by modules as they init to add them selfs to
 // the system.
+void AddMainMenuEntry(MenuEntry *me);
 void AddMainMenuEntry(MenuEntry *me)
 {
   int   i;
@@ -971,6 +1034,14 @@ void ProcessLED()
     else PB_GREEN_OFF;
     return;
   }
+  // If in suspend mode let LED glow orange
+  if(Suspend)
+  {
+    PB_RED_ON;
+    PB_GREEN_ON;
+    PB_BLUE_OFF;    
+    return;
+  }
   if (PBledMode == NOTHING) return;
   if (PBledMode == ON)
   {
@@ -1033,6 +1104,7 @@ void test(void)
 
 void setup()
 {
+//  int i = REG_RSTC_SR;  // Reads the boot flag
   analogReadResolution(12);
   Reset_IOpins();
   ClearDOshiftRegs();
@@ -1056,7 +1128,7 @@ void setup()
 
 //test();
 
-  MIPSsystemLoop();
+//  MIPSsystemLoop();
 
   SPI.setClockDivider(21);
   pinMode(_sdcs,OUTPUT);
@@ -1074,11 +1146,14 @@ void setup()
   }
   SPI.setClockDivider(11);    // If SD card init fails it will slow down the SPI interface
 
+  MIPSsystemLoop();
+
   if(bmpDraw(MIPSconfigData.BootImage, 0, 0))
   {
     DisableDisplay = true;
     tft.disableDisplay(DisableDisplay);
   }
+  else MIPSconfigData.BootImage[0] = 0;
   // Setup the hardware pin directions. Note setting pinMode to output
   // will drive the output pin high.
   Init_IOpins();
@@ -1153,21 +1228,26 @@ void MIPSsystemLoop(void)
   #endif
   if (ReadVin() < 10.0)
   {
-    // Set all control lines to input, this will keep the systems from souring power to
-    // the boards through driven outputs.
+    tft.disableDisplay(false);
+    // Set all control lines to input, this will keep the systems from sourcing power to
+    // the modules through driven outputs.
     FilamentShutdown();
     ClearDOshiftRegs();
     Reset_IOpins();
     // Display a message on the screen that MIPS power is off.
     tft.fillScreen(ILI9340_BLACK);
     tft.setRotation(1);
-    tft.setCursor(0, 0);
-    tft.setTextColor(ILI9340_WHITE, ILI9340_BLACK);
-    tft.setTextSize(2);
-    tft.println("");
-    tft.println("MIPS power is off!");
-    tft.println("USB powering controller!");
-    tft.println("Apply power to operate...");
+    if(strlen(MIPSconfigData.BootImage) <= 0)
+    {
+       tft.setCursor(0, 0);
+       tft.setTextColor(ILI9340_WHITE, ILI9340_BLACK);
+       tft.setTextSize(2);
+       tft.println("");
+       tft.println("MIPS power is off!");
+       tft.println("USB powering controller!");
+       tft.println("Apply power to operate...");
+    }
+//    bmpDraw(MIPSconfigData.BootImage, 0, 0);
     // Wait for power to appear and then reset the system.
     while (ReadVin() < 10.0) WDT_Restart(WDT);
     Software_Reset();
@@ -1203,26 +1283,30 @@ void ScanHardware(void)
     if (ReadEEPROM(signature, addr, 0, 100) == 0)
     {
       // Test the signature and init the system if the signature is known
+      if (strcmp(&signature[2], "DAC") == 0) DAC_init(0,addr);
       if (strcmp(&signature[2], "Twave") == 0) Twave_init(0,addr);
-      if (strcmp(&signature[2], "RFdriver") == 0) RFdriver_init(0);
-      if (strcmp(&signature[2], "DCbias") == 0) DCbias_init(0);
-      if (strcmp(&signature[2], "ESI") == 0) ESI_init(0);
-      if (strcmp(&signature[2], "Filament") == 0) Filament_init(0);
+      if (strcmp(&signature[2], "RFdriver") == 0) RFdriver_init(0,addr);
+      if (strcmp(&signature[2], "DCbias") == 0) DCbias_init(0,addr);
+      if (strcmp(&signature[2], "ESI") == 0) ESI_init(0,addr);
+      if (strcmp(&signature[2], "Filament") == 0) Filament_init(0,addr);
       if (strcmp(&signature[2], "ARB") == 0) ARB_init(0,addr);
       if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(0,addr);
+      if (strcmp(&signature[2], "RFamp") == 0) RFA_init(0,addr);
     }
     // Set board select to B
     ENA_BRD_B;
     if (ReadEEPROM(signature, addr, 0, 100) == 0)
     {
       // Test the signature and init the system if the signature is known
+      if (strcmp(&signature[2], "DAC") == 0) DAC_init(1,addr);
       if (strcmp(&signature[2], "Twave") == 0) Twave_init(1,addr);
-      if (strcmp(&signature[2], "RFdriver") == 0) RFdriver_init(1);
-      if (strcmp(&signature[2], "DCbias") == 0) DCbias_init(1);
-      if (strcmp(&signature[2], "ESI") == 0) ESI_init(1);
-      if (strcmp(&signature[2], "Filament") == 0) Filament_init(1);
+      if (strcmp(&signature[2], "RFdriver") == 0) RFdriver_init(1,addr);
+      if (strcmp(&signature[2], "DCbias") == 0) DCbias_init(1,addr);
+      if (strcmp(&signature[2], "ESI") == 0) ESI_init(1,addr);
+      if (strcmp(&signature[2], "Filament") == 0) Filament_init(1,addr);
       if (strcmp(&signature[2], "ARB") == 0) ARB_init(1,addr);
       if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(1,addr);
+      if (strcmp(&signature[2], "RFamp") == 0) RFA_init(1,addr);
     }
   }
   // Now look for the FAIMS board. This is done last because field driven FAIMS mode is selected if
@@ -1249,15 +1333,49 @@ void ScanHardware(void)
   if(MIPSconfigData.UseAnalog) Analog_init();
 }
 
-// This function process all the serial IO and commands
-void ProcessSerial(void)
+// This function allows using a host computer to navigate the MIPS UI,
+// This feature has to first be enabled using a host command to enable.
+bool SerialNavigation(char c)
+{   
+    if(!EnableSerialNavigation) return false;
+    switch ((int)c)
+    {
+      case 9:
+         enc.SetPB();
+         return true;
+      case 28:
+         enc.SetChange(1); 
+         enc.SetRotate();
+         return true;
+      case 29:
+         enc.SetChange(10); 
+         enc.SetRotate();
+         return true;
+      case 30:
+         enc.SetChange(-1); 
+         enc.SetRotate();
+         return true;
+      case 31:
+         enc.SetChange(-10); 
+         enc.SetRotate();
+         return true;
+      default:
+         return false;
+         break;
+    }
+    return false;
+}    
+
+void ReadAllSerial(void)
 {
+  WDT_Restart(WDT);
   // Put serial received characters in the input ring buffer
   while (SerialUSB.available() > 0) 
   {
     ResetFilamentSerialWD();
     serial = &SerialUSB;
-    PutCh(SerialUSB.read());
+    char c = SerialUSB.read();
+    if(!SerialNavigation(c)) PutCh(c);
   }
   #ifdef EnableSerial
   if((!MIPSconfigData.UseWiFi) || (wifidata.SerialPort!=0))
@@ -1275,24 +1393,77 @@ void ProcessSerial(void)
     ResetFilamentSerialWD();
     serial = WiFiSerial;
     PutCh(WiFiSerial->read());
-//      serial->write(WiFiSerial->read());
+  } 
+}
+
+// This function process all the serial IO and commands
+void ProcessSerial(void)
+{
+  // Put serial received characters in the input ring buffer
+  while (SerialUSB.available() > 0) 
+  {
+    ResetFilamentSerialWD();
+    serial = &SerialUSB;
+    char c = SerialUSB.read();
+    if(!SerialNavigation(c)) PutCh(c);
+    // WDT_Restart(WDT);      // Could get stuck here!
+  }
+  #ifdef EnableSerial
+  if((!MIPSconfigData.UseWiFi) || (wifidata.SerialPort!=0))
+  {
+    while (Serial.available() > 0) 
+    {
+      ResetFilamentSerialWD();
+      serial = &Serial;
+      PutCh(Serial.read());
+    }
+  }
+  #endif
+  while (WiFiSerial->available() > 0) 
+  {
+    ResetFilamentSerialWD();
+    serial = WiFiSerial;
+    PutCh(WiFiSerial->read());
+//  serial->write(WiFiSerial->read());
   }
   ProcessEthernet();
   // If there is a command in the input ring buffer, process it!
-  while(RB_Commands(&RB) > 0) {ProcessCommand(); WDT_Restart(WDT);}      // Process until flag that there is nothing to do
-                                                                         // kick the watchdog timer in case we get stuck here
+  while(RB_Commands(&RB) > 0) // Process until flag that there is nothing to do
+  {
+//    if((RB.Count == 0) && (RB_Commands(&RB) > 0))  // Not sure this is needed! Added and removed May 17, 2017
+//    {
+//      // This should not happen, if it does reset the command counter
+//      RB.Commands = 0;
+//    }
+    ProcessCommand(); 
+    WDT_Restart(WDT); // kick the watchdog timer in case we get stuck here
+  }      
+                                                                         
   DIOopsReport();
 }
 
 // Main processing loop
 void loop()
 {
+  static bool DisableDisplayStatus = false;
+
+  if((!DisableDisplay) && (DisableDisplayStatus))
+  {
+    // Here is the display was disabled and it now going to be enabled.
+    // Clear the display and reprint the current menu or dialog.
+    tft.disableDisplay(DisableDisplay);
+    tft.fillScreen(ILI9340_BLACK);
+    if(ActiveMenu != NULL) MenuDisplay(ActiveMenu);
+    if(ActiveDialog != NULL) DialogBoxDisplay(ActiveDialog);
+  }
+  DisableDisplayStatus = DisableDisplay;
   tft.disableDisplay(DisableDisplay);
   WDT_Restart(WDT);
   // run ThreadController
   // this will check every thread inside ThreadController,
   // if it should run. If yes, he will run it;
-  control.run();
+  if(!Suspend) control.run();
+  else  ProcessLED();
   // Process any encoder event
   if (ButtonRotated)
   {
@@ -1303,6 +1474,7 @@ void loop()
   }
   if (ButtonPressed)
   {
+    Suspend = false;
     delay(10);
     ButtonPressed = false;
     encValue = 0;

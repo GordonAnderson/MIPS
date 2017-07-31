@@ -67,7 +67,15 @@ extern int ErrorCode;
 #define ERR_NOTOFFSETABLE           111     // DC bias module is not offsetable
 #define ERR_INTERNAL                112     // Internal error such as can't allocate resource
 #define ERR_BMPERROR                113     // BMP file error
-
+#define ERR_TUNEINPROCESS           114     // Auto tune is already in process
+#define ERR_NOARB                   115     // No ARB module in system
+#define ERR_CANTALLOCATE            116     // Can't allocate needed memory
+#define ERR_PROFILENOTDEFINED       117     // DC bias profile not defined
+#define ERR_NAMEINLIST              118     // Name already in linked list
+#define ERR_NAMENOTFOUND            119     // Name already in linked list
+#define ERR_EEPROMREAD              120     // Error Reading from EEPROM on module
+#define ERR_READINGSD               121     // Error Reading data from SD card
+#define ERR_NOTSUPPORTED            122     // Not supported by hardware
 #endif
 
 

@@ -3,6 +3,7 @@
 #define ESI_H_
 
 extern float MaxESIvoltage;
+extern bool  ESIcurrentTest;
 
 typedef struct
 {

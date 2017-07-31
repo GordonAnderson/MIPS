@@ -16,6 +16,7 @@ extern int  DtrigPeriod;
 extern int  DtrigNumber;
 extern int  DtrigCurrentNum;
 extern bool DtrigEnable;
+extern bool TWIbusy;
 
 
 typedef struct
@@ -155,6 +156,29 @@ extern PBledStates  PBledMode;
 #define SetTRGOUT      digitalWrite(TRGOUT, LOW);
 #define ResetTRGOUT    digitalWrite(TRGOUT, HIGH);
 
+// DMA definitions used for DAC spi DMA to speed up the DAC output process
+/** Use SAM3X DMAC if nonzero */
+#define USE_SAM3X_DMAC 1
+/** Use extra Bus Matrix arbitration fix if nonzero */
+#define USE_SAM3X_BUS_MATRIX_FIX 0
+/** Time in ms for DMA receive timeout */
+#define SAM3X_DMA_TIMEOUT 100
+/** chip select register number */
+#define SPI_CHIP_SEL 3
+/** DMAC receive channel */
+#define SPI_DMAC_RX_CH  1
+/** DMAC transmit channel */
+#define SPI_DMAC_TX_CH  0
+/** DMAC Channel HW Interface Number for SPI TX. */
+#define SPI_TX_IDX  1
+/** DMAC Channel HW Interface Number for SPI RX. */
+#define SPI_RX_IDX  2
+
+void spiDMAinit(void);
+void spiDmaTX(uint32_t* src, uint16_t count,void (*isr)() = NULL);
+void spiDmaWait(void);
+
+
 // Prototypes
 void  GenerateBurst(int num);
 void  QueueBurst(int num);
@@ -164,7 +188,8 @@ void  ReportAD7998(int chan);
 void  ReportAD7994(int chan);
 void  Init_IOpins(void);
 void  Reset_IOpins(void);
-void  Software_Reset();
+void  Software_Reset(void);
+void  RebootStatus(void);
 float ReadVin(void);
 void  SetOutput(char chan, int8_t active);
 void  ClearOutput(char chan, int8_t active);
@@ -211,6 +236,29 @@ void SetDelayTrigModule(char *module);
 
 bool bmpDraw(char *filename, uint8_t x, uint8_t y);
 void bmpReport(char *filename);
+
+extern bool     Tracing;
+extern uint8_t  TPpointer;
+extern uint8_t  *TracePoints;
+extern uint32_t *TracePointTimes;
+
+#define TRACE(a) {if(Tracing) TraceCapture(a);}
+
+void TraceCapture(uint8_t tp);
+void TraceReport(void);
+void TraceEnable(void);
+
+// SD file io commands
+void ListFiles(void);
+void DeleteFile(char *FileName);
+void GetFile(char *FileName);
+void PutFile(char * FileName,char *Fsize);
+void EEPROMtoSD(void);
+void SDtoEEPROM(void);
+void SaveAlltoSD(void);
+void LoadAllfromSD(void);
+void EEPROMtoSerial(char *brd, char *add);
+void SerialtoEEPROM(char *brd, char *add);
 
 //void ShutterEnable(char *state);
 

@@ -353,7 +353,7 @@ volatile bool TableOnce = false;      // If true the table will play one time th
 volatile bool softLDAC = false;       // If true forces the use of software LDAC
 bool TableResponse = true;            // This flag is true to enable table status response
 
-int  Chan2Brd[16];
+uint8_t  Chan2Brd[32];
 
 bool ValueChange = false;
 
@@ -1083,7 +1083,7 @@ int ParseEntry(int Count, char *TK)
             {
                if((TK = NextToken()) == NULL) break;
                TE->Value = TK[0];
-               if(TK[0] == 't') Token2int(&TE->Value);
+               if(TK[0] == 't') Token2int(&TE->Value);  // This line makes no sense
             }
         }
         else
@@ -1103,6 +1103,7 @@ int ParseEntry(int Count, char *TK)
             buf[1] = ((TE->Chan & 7) << 4) | (val >> 12);
             buf[2] = (val >> 4);
             buf[3] = (val << 4);
+
         }
         if((TK = NextToken()) == NULL) break;  // get next token to process
         // If this token is a : then another channel value pair follow
@@ -1236,14 +1237,15 @@ void ProcessTables(void)
             }
             #endif
             // Process any serial commands
+            TRACE(7);
             ProcessSerial();
             serial->flush();
-            //if (serialEventRun) serialEventRun();   // This happens when loop returns, do it here to imitate loop
             // If full command processing in table mode is enabled then run tasks.
             if(TasksEnabled)
             {
                delayMicroseconds(100);
                control.run();
+               TRACE(8);
             }
             else
             {
@@ -1308,14 +1310,16 @@ void SetupTimer(void)
         NS.Count[(int)NS.Ptr] = 0;
         NS.Ptr++;
     }
-    // Setup the channel to board number array this is used in tabel processing for speed!
+    // Setup the channel to board number array this is used in table processing for speed!
     int i;
-    if(DCbiasBoards[0])
+    if(DCbDarray[0] != NULL)
     {
        for(i=0;i<8;i++) Chan2Brd[i] = 0; 
        for(i=0;i<8;i++) Chan2Brd[i+8] = 1; 
+       for(i=0;i<8;i++) Chan2Brd[i+16] = 0; 
+       for(i=0;i<8;i++) Chan2Brd[i+24] = 1; 
     }
-    else if(DCbiasBoards[1])
+    else if(DCbDarray[1] != NULL)
     {
        for(i=0;i<8;i++) Chan2Brd[i] = 1;      
     }
@@ -1364,6 +1368,11 @@ void SetupTimer(void)
     }
     SPI.setClockDivider(SPI_CS,6);
     SPI.setDataMode(SPI_CS, SPI_MODE1);
+    Spi* pSpi = SPI0;
+    pSpi->SPI_CSR[BOARD_PIN_TO_SPI_CHANNEL(SPI_CS)] &= 0xFFFFFF;  // Set DLYBCT delay between bytes to zero
+ //   pSpi->SPI_CSR[BOARD_PIN_TO_SPI_CHANNEL(SPI_CS)] &= 0x00FF0F;  // Set DLYBCT delay between bytes to zero
+ //   pSpi->SPI_CSR[BOARD_PIN_TO_SPI_CHANNEL(SPI_CS)] |= 8 << 4;    // Set 16 bit transfer mode
+
     // If using the S input and a soft timer enable the clock
     if(ClockMode == EXTS) ClockSsetup();
     // Define the initial max counter value based on first table
@@ -1398,9 +1407,9 @@ inline void StopTimer(void)
 {
     // Exit and do nothing if no tables are loaded
     if(TablesLoaded[CT] <= 0) return;
-    DIhTrig.detach();
     // Stop the timer
     MPT.stop();
+    DIhTrig.detach();
     if(ClockMode == EXTS) ClockSstop();
 }
 
@@ -1513,6 +1522,7 @@ void ClockSstop(void)
 inline void SetupNextEntry(void)
 {
    static int   i,k;
+   int SPIadd,cSPIadd;
    static bool  DIOchange;
    static Pio *pio = g_APinDescription[ADDR0].pPort;
 
@@ -1520,8 +1530,9 @@ inline void SetupNextEntry(void)
     DIOchange=false;
     // Set the address
 SetupNextEntryAgain:  // sorry
-    pio->PIO_CODR = 7;                          // Set all bits low
-    pio->PIO_SODR = DCbDarray[0].DACspi & 7;    // Set bits high
+    pio->PIO_CODR = 7;                                    // Set all bits low
+    if(DCbDarray[0] != NULL) SPIadd = pio->PIO_SODR = DCbDarray[0]->DACspi & 7;    // Set address for channels 0 through 15
+    else if(DCbDarray[1] != NULL) SPIadd = pio->PIO_SODR = DCbDarray[1]->DACspi & 7;
     // Timer count where these values are set
     MPTtc.TC_RA = TEheader->Count;
     MPTtc.TC_RC = Theader->MaxCount;
@@ -1586,16 +1597,56 @@ SetupNextEntryAgain2:
                 if(DIOchange) DOrefresh;
                 return;
             }
-            // If Chan is 0 to 15 its a DC bias output so send to DAC
-            if((Tentry[i].Chan >= 0) && (Tentry[i].Chan <= 15))
+            // If Chan is 0 to 31 its a DC bias output so send to DAC
+            if((Tentry[i].Chan >= 0) && (Tentry[i].Chan <= 31))
             {
+              // See if the SPI address is correct, if not update
+              if(Tentry[i].Chan <= 15)
+              {
+                cSPIadd = 2; // Just in case
+                if(DCbDarray[0] != NULL) cSPIadd = DCbDarray[0]->DACspi & 7;
+                else if(DCbDarray[1] != NULL) cSPIadd = DCbDarray[1]->DACspi & 7;
+                if(SPIadd != cSPIadd)
+                {
+                   pio->PIO_CODR = 7;
+                   SPIadd = pio->PIO_SODR = cSPIadd;
+                }
+              }
+              else if(Tentry[i].Chan <= 31)
+              {
+                cSPIadd = 0; // Just in case
+                if(DCbDarray[2] != NULL) cSPIadd = DCbDarray[2]->DACspi & 7;
+                if(SPIadd != cSPIadd)
+                {
+                   pio->PIO_CODR = 7;
+                   SPIadd = pio->PIO_SODR = cSPIadd;
+                }                
+              }
               //DCbiasDACupdate(Tentry[i].Chan, Tentry[i].Value);
               SelectBoard(Chan2Brd[Tentry[i].Chan]);
               k=Tentry[i].Value;
               SPI.transfer(SPI_CS, (uint8_t *)&k, 4);
+/*  This inline code did not give significant speed increase.
+              static Spi* pSpi = SPI0;
+              static uint32_t b;
+              static uint32_t ch = BOARD_PIN_TO_SPI_CHANNEL(SPI_CS);
+              uint16_t *buf = (uint16_t *)&Tentry[i].Value;
+              pSpi->SPI_TDR = (uint32_t)buf[0] | SPI_PCS(ch);
+              while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
+              b = pSpi->SPI_RDR;
+              pSpi->SPI_TDR = (uint32_t)buf[1] | SPI_PCS(ch) | SPI_TDR_LASTXFER;
+              while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
+              b = pSpi->SPI_RDR;
+//              pSpi->SPI_TDR = (uint32_t)buf[2] | SPI_PCS(ch);
+//             while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
+//              b = pSpi->SPI_RDR;
+//              pSpi->SPI_TDR = (uint32_t)buf[3] | SPI_PCS(ch) | SPI_TDR_LASTXFER;
+//              while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
+//              b = pSpi->SPI_RDR;
+*/
             }
             // if Chan is A through P its a DIO to process
-            else if((Tentry[i].Chan >= 'A') &&(Tentry[i].Chan <= 'P'))
+            else if((Tentry[i].Chan >= 'A') && (Tentry[i].Chan <= 'P'))
             {
                 DIOchange = true;
                 SDIO_Set_Image(Tentry[i].Chan,Tentry[i].Value);
@@ -1638,18 +1689,27 @@ SetupNextEntryAgain2:
 
 void Dummy_ISR(void)
 {
+  TRACE(3);
 }
 
 void Trigger_ISR(void)
 {
+  static Pio *pio = g_APinDescription[BRDSEL].pPort;
+  static uint32_t pin =g_APinDescription[BRDSEL].ulPin;
+
+   uint32_t csb = pio->PIO_ODSR & pin;
+   TRACE(4);
    if(MPT.getRAcounter() == 0)
    {
+     ValueChange = true;
      if((MIPSconfigData.Rev <= 1) || (softLDAC))// Rev 1 used software control of LDAC
      {
        LDAClow;
        LDAChigh;
      }
      SetupNextEntry();
+     if(csb == 0)  pio->PIO_CODR = pin;
+     else pio->PIO_SODR = pin; 
    }
    if(ClockMode == EXTS)
    {
@@ -1664,6 +1724,11 @@ void Trigger_ISR(void)
 // data is latched and the next values are written.
 inline void RAmatch_Handler(void)
 {
+  static Pio *pio = g_APinDescription[BRDSEL].pPort;
+  static uint32_t pin =g_APinDescription[BRDSEL].ulPin;
+
+  uint32_t csb = pio->PIO_ODSR & pin;
+  TRACE(5);
   ValueChange = true;
   ProcessTriggerOut();
   ProcessBurst();
@@ -1673,19 +1738,26 @@ inline void RAmatch_Handler(void)
     LDAChigh;
   }
   SetupNextEntry();
+  if(csb == 0)  pio->PIO_CODR = pin;
+  else pio->PIO_SODR = pin; 
 }
 
 // This interrupt happens when the counter reaches max count saved in RC. The function updates
 // max count.
 inline void RCmatch_Handler(void)
 {
-    ValueChange = true;
+  static Pio *pio = g_APinDescription[BRDSEL].pPort;
+  static uint32_t pin =g_APinDescription[BRDSEL].ulPin;
+
+    uint32_t csb = pio->PIO_ODSR & pin;
+    TRACE(6);
     if(StopRequest == true)
     {
         StopTimer();
         StopRequest = false;
         return;
     }
+    ValueChange = true;
     // If compare register A is zero then at this point call setup next,
     // also if rev 1 pulse LDAC as well
     if(MPT.getRAcounter() == 0)
@@ -1698,6 +1770,8 @@ inline void RCmatch_Handler(void)
         LDAChigh;
       }
       SetupNextEntry();
+      if(csb == 0)  pio->PIO_CODR = pin;
+      else pio->PIO_SODR = pin; 
     }
 }
 

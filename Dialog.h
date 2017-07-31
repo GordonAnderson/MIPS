@@ -20,6 +20,7 @@ enum DialogTypes
   D_BINARY8,
   D_YESNO,
   D_ONOFF,
+  D_OPENCLOSE,
   D_FWDREV,
   D_FUNCTION,
   D_LIST,                       // Select from a list of options
@@ -34,7 +35,7 @@ enum DialogTypes
 
 typedef struct
 {
-  char        *Name;            // Dialog box entry text
+  const char  *Name PROGMEM;    // Dialog box entry text
   int8_t      X,Y;              // Dialog box entry location
   DialogTypes Type;             // Entry type
   float       Min;

@@ -20,6 +20,13 @@
 // for SPI data, SPI clock, Strobe, Select provide the interface to the Due controller.
 // On board jumpers allow on board of external clock.
 //
+// Firmwave revs do not always match the hardware board versions.
+// Use Rev 1 firmware for Rev 1 hardware module
+// Use Rev 2 firmware for Rev 2 hardware module
+// Use Rev 3 firmware for Rev 3 hardware module
+// Use Rev 4 firmware for Rev 4 hardware module (format to rev 3 and then use the SMREV command to set to rev 4)
+// Use Rev 5 firmware for Rev 4.1 hardware module (500 volt operation)
+//
 // Added features:
 //    0.) Added support for 2 twave boards.
 //    1.) Added menu option to allow sync trigger input.
@@ -91,6 +98,12 @@ MIPStimer TwaveClk(TMR_TwaveClk);
 #define  DAC_Guard1          2
 #define  DAC_Guard2          3
 
+// ADC channel assignment
+#define  ADC_PulseVoltage    0
+#define  ADC_RestingVoltage  1
+#define  ADC_Guard1          2
+#define  ADC_Guard2          3
+
 #define   TWreset  ADDR0
 #define   TWload   ADDR1      // Only used on rev 1.0, upgraded to TWld on rev 2.0
 
@@ -102,6 +115,7 @@ MIPStimer TwaveClk(TMR_TwaveClk);
 
 #define   MinPulseVoltage        7
 #define   MinPulseVoltageRev4    5
+#define   MinPulseVoltageRev5    20
 #define   MinPulseVoltageSave    15
 
 MenuEntry METwaveMonitor =  {" Twave module", M_DIALOG, 0, 0, 0, NULL, &TwaveDialog , NULL, NULL};   // Rev 1 menu
@@ -118,11 +132,17 @@ int       TwaveModuleNumber     = 1;         // User interface selected module n
 TwaveData TDarray[2] = {Twave_Rev3, Twave_Rev3};
 int       SelectedTwaveModule = 0;           // Selected Twave module index, 0 or 1 for module 1 or 2
 int       TWboardAddress[2] = { -1, -1};     // Contains board A and B addresses, 0 or 1, if we have two boards its always 0,1. if its one board the could be 0,-1 or 1,-1
+// Voltage readbacks
+float     ReadbackPV[2] = {0,0};
+float     ReadbackG1[2] = {0,0};
+float     ReadbackG2[2] = {0,0};
+int16_t   TwaveTestDelay= 200;               // Hold off for testing delay when voltages are changed, 20 sec initial delay to allow disabling
 // To select the hardware board do the following: SelectBoard(TWboardAddress[SelectedTwaveBoard]);
 TwaveData TD;
 
 // CPLD SPI input register image variables.
 uint16_t  TWcpld[2] = {TWMdir | TWMload | TWMmode | TWMsrena | 0x0F, TWMdir | TWMload | TWMmode | TWMsrena | 0x0F};
+//uint16_t  TWcpld[2] = {TWMdir | TWMmode | TWMsrena | 0x0F, TWMdir | TWMmode | TWMsrena | 0x0F};
 
 DIhandler *DIdirTW[2];
 void (*TWdirISRs[2])(void) = {TW_1_DIR_ISR, TW_2_DIR_ISR};
@@ -137,7 +157,7 @@ void TW_1_GateOn(void)
 {
   int brd,mSdelay;
   
-  if(TDarray[0].Rev == 4)
+  if(TDarray[0].Rev >= 4)
   {
      TWcpld[TWboardAddress[0]] |= TWMsrena;
      TWcpldLoad(TWboardAddress[0]);
@@ -172,7 +192,7 @@ void TW_1_GateOff(void)
 {
   int brd,mSdelay;
   
-  if(TDarray[0].Rev == 4)
+  if(TDarray[0].Rev >= 4)
   {
      TWcpld[TWboardAddress[0]] &= ~TWMsrena;
      TWcpldLoad(TWboardAddress[0]);
@@ -228,7 +248,7 @@ void TW_2_GateOn(void)
 {
   int brd,mSdelay;
   
-  if(TDarray[1].Rev == 4)
+  if(TDarray[1].Rev >= 4)
   {
      TWcpld[TWboardAddress[1]] |= TWMsrena;
      TWcpldLoad(TWboardAddress[1]);
@@ -263,7 +283,7 @@ void TW_2_GateOff(void)
 {
   int brd,mSdelay;
   
-  if(TDarray[1].Rev == 4)
+  if(TDarray[1].Rev >= 4)
   {
      TWcpld[TWboardAddress[1]] &= ~TWMsrena;
      TWcpldLoad(TWboardAddress[1]);
@@ -315,7 +335,7 @@ void TW_2_GATE_ISR(void)
 
 void TW_1_DIR_ISR(void)
 {
-  if(TDarray[0].Rev == 4)
+  if(TDarray[0].Rev >= 4)
   {
      if(TDarray[0].Direction) TWcpld[TWboardAddress[0]] |= TWMdir;
      else TWcpld[TWboardAddress[0]] &= ~TWMdir;
@@ -341,7 +361,7 @@ void TW_1_DIR_ISR(void)
 }
 void TW_2_DIR_ISR(void)
 {
-  if(TDarray[1].Rev == 4)
+  if(TDarray[1].Rev >= 4)
   {
      if(TDarray[1].Direction) TWcpld[TWboardAddress[1]] |= TWMdir;
      else TWcpld[TWboardAddress[1]] &= ~TWMdir;
@@ -368,9 +388,24 @@ void TW_2_DIR_ISR(void)
 
 void TW_1_SYNC_ISR(void)
 {
-  if(TDarray[0].Rev == 4)
+  uint8_t  *b;
+
+  if(TDarray[0].Rev >= 4)
   {
+     b = (uint8_t *)&TWcpld[0];
+     b[0] = ~TDarray[0].Sequence;
+     TWcpld[0] |= TWMload;
+     TWcpld[0] |= TWMclear;
+     TWcpldLoad(1,false);
+     TWcpldLoad(0,true);
+     TWcpld[0] &= ~TWMload;
+     TWcpld[0] &= ~TWMclear;
+     return;
+    
+    
+    
     SetSequence(0);
+    //TWcpldSync();
     return;
   }
   AtomicBlock< Atomic_RestoreState > a_Block;
@@ -383,8 +418,21 @@ void TW_1_SYNC_ISR(void)
 }
 void TW_2_SYNC_ISR(void)
 {
-  if(TDarray[1].Rev == 4)
+  uint8_t  *b;
+
+  if(TDarray[1].Rev >= 4)
   {
+     b = (uint8_t *)&TWcpld[1];
+     b[0] = ~TDarray[1].Sequence;
+     TWcpld[1] |= TWMload;
+     TWcpld[1] |= TWMclear;
+     TWcpldLoad(0,false);
+     TWcpldLoad(1,true);
+     TWcpld[1] &= ~TWMload;
+     TWcpld[1] &= ~TWMclear;
+     return;
+
+    
     SetSequence(1);
     return;
   }
@@ -407,7 +455,7 @@ float MaxTwaveVoltage = 0;  // This value is set to the highest Twave output vol
 void SetVelocity(int ModuleIndex)
 {
 //  SelectBoard(TWboardAddress[ModuleIndex]);
-  if (TDarray[ModuleIndex].Rev == 4)
+  if (TDarray[ModuleIndex].Rev >= 4)
   {
     FS7140setup(TDarray[ModuleIndex].CLOCKadr,TDarray[ModuleIndex].Velocity);   
   }
@@ -458,7 +506,7 @@ void SetSequence(int ModuleIndex)
   int     numTry = 0;
   uint8_t *b;
 
-  if(TDarray[ModuleIndex].Rev == 4)
+  if(TDarray[ModuleIndex].Rev >= 4)
   {
     b = (uint8_t *)&TWcpld[TWboardAddress[ModuleIndex]];
     // Load image with sequence in lower 8 bits and set the Load bit
@@ -520,7 +568,8 @@ void SetPulseVoltage(int ModuleIndex)
   int   DACcounts;
   float MinPV;
 
-  if(TDarray[ModuleIndex].Rev == 4) MinPV = MinPulseVoltageRev4;
+  if(TDarray[ModuleIndex].Rev == 5) MinPV = MinPulseVoltageRev5;
+  else if(TDarray[ModuleIndex].Rev == 4) MinPV = MinPulseVoltageRev4;
   else MinPV = MinPulseVoltage;
   //  SelectBoard(TWboardAddress[SelectedTwaveBoard]);
   if (TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint < (TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPV)) TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint = TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPV;
@@ -535,6 +584,7 @@ void SetPulseVoltage(int ModuleIndex, float voltage)
   float MinPV;
 
   if(TDarray[ModuleIndex].Rev == 4) MinPV = MinPulseVoltageRev4;
+  if(TDarray[ModuleIndex].Rev == 5) MinPV = MinPulseVoltageRev5;
   //  SelectBoard(TWboardAddress[SelectedTwaveBoard]);
   if (TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint < (TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPV)) TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint = TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPV;
   // Use calibration data to convert engineering units requested to DAC counts.
@@ -714,9 +764,9 @@ void TWcpldSync(void)
   TWcpld[1] |= TWMload;
   TWcpld[1] |= TWMclear;
   TWcpldLoad(0,false);
-  TWcpldLoad(1,false);
-  digitalWrite(TWstrobe,HIGH);
-  digitalWrite(TWstrobe,LOW);  
+  TWcpldLoad(1,true);
+//  digitalWrite(TWstrobe,HIGH);
+//  digitalWrite(TWstrobe,LOW);  
   TWcpld[0] &= ~TWMload;
   TWcpld[0] &= ~TWMclear;
   TWcpld[1] &= ~TWMload;
@@ -727,12 +777,13 @@ void CalibratePulse(void)
 {
   ChannelCal CC;
   char       Name[20];
+  DialogBoxEntry *de = GetDialogEntries(TwaveDialogEntries2, "Pulse voltage");
 
   SelectBoard(TWboardAddress[SelectedTwaveModule]);
   // Set up the calibration data structure
   CC.ADCpointer = &AD7998;
   CC.Min = 0;
-  CC.Max = 100;
+  CC.Max = de->Max;
   CC.DACaddr = TD.DACadr;
   CC.ADCaddr = TD.ADCadr;
   CC.DACout = &TD.TWCD[0].DCctrl;
@@ -740,7 +791,7 @@ void CalibratePulse(void)
   // Define this channels name
   sprintf(Name, "      Pulse V");
   // Calibrate this channel
-  ChannelCalibrate(&CC, Name, 20.0, 75.0);
+  ChannelCalibrate(&CC, Name, de->Max * 0.20, de->Max * 0.75);
   TDarray[SelectedTwaveModule] = TD;
 }
 
@@ -748,12 +799,13 @@ void CalibrateGuard1(void)
 {
   ChannelCal CC;
   char       Name[20];
+  DialogBoxEntry *de = GetDialogEntries(TwaveDialogEntries2, "Guard 1");
 
   SelectBoard(TWboardAddress[SelectedTwaveModule]);
   // Set up the calibration data structure
   CC.ADCpointer = &AD7998;
   CC.Min = 0;
-  CC.Max = 100;
+  CC.Max = de->Max;
   CC.DACaddr = TD.DACadr;
   CC.ADCaddr = TD.ADCadr;
   CC.DACout = &TD.TWCD[2].DCctrl;
@@ -761,7 +813,7 @@ void CalibrateGuard1(void)
   // Define this channels name
   sprintf(Name, "     Guard 1");
   // Calibrate this channel
-  ChannelCalibrate(&CC, Name, 10.0, 75.0);
+  ChannelCalibrate(&CC, Name, de->Max * 0.10, de->Max * 0.75);
   TDarray[SelectedTwaveModule] = TD;
 }
 
@@ -769,12 +821,13 @@ void CalibrateGuard2(void)
 {
   ChannelCal CC;
   char       Name[20];
+  DialogBoxEntry *de = GetDialogEntries(TwaveDialogEntries2, "Guard 2");
 
   SelectBoard(TWboardAddress[SelectedTwaveModule]);
   // Set up the calibration data structure
   CC.ADCpointer = &AD7998;
   CC.Min = 0;
-  CC.Max = 100;
+  CC.Max = de->Max;
   CC.DACaddr = TD.DACadr;
   CC.ADCaddr = TD.ADCadr;
   CC.DACout = &TD.TWCD[3].DCctrl;
@@ -782,7 +835,7 @@ void CalibrateGuard2(void)
   // Define this channels name
   sprintf(Name, "     Guard 2");
   // Calibrate this channel
-  ChannelCalibrate(&CC, Name, 10.0, 75.0);
+  ChannelCalibrate(&CC, Name, de->Max * 0.10, de->Max * 0.75);
   TDarray[SelectedTwaveModule] = TD;
 }
 
@@ -852,7 +905,7 @@ void Twave_init(int8_t Board, uint8_t addr)
     pinMode(TWld, OUTPUT);
   }
   // If rev 4.0 setup the CPLD control bits and update the minimum pulse voltage
-  if(TD.Rev == 4)
+  if(TD.Rev >= 4)
   {
     pinMode(TWstrobe, OUTPUT);
     pinMode(TWselect, OUTPUT);
@@ -860,7 +913,21 @@ void Twave_init(int8_t Board, uint8_t addr)
     digitalWrite(TWselect, LOW);
     de = GetDialogEntries(TwaveDialogEntries2, "Pulse voltage"); 
     de->Min = MinPulseVoltageRev4;
+    if(TD.Rev == 5) de->Min = MinPulseVoltageRev5;
   }
+  // If rev 4 of the frimware driver then set the voltage upper limits to 500V
+  if(TD.Rev == 5)
+  {
+    de = GetDialogEntries(TwaveDialogEntries2, "Pulse voltage");
+    de->Max = 500;
+    de->StepSize = 1;
+    de = GetDialogEntries(TwaveDialogEntries2, "Guard 1");
+    de->Max = 500;
+    de->StepSize = 1;
+    de = GetDialogEntries(TwaveDialogEntries2, "Guard 2");
+    de->Max = 500;
+    de->StepSize = 1;
+  }  
   SetPulseVoltage(Board);
   SetRestingVoltage();
   SetGuard1(Board);
@@ -886,8 +953,8 @@ void Twave_init(int8_t Board, uint8_t addr)
     // Setup the menu
     if (TD.Rev == 1) AddMainMenuEntry(&METwaveMonitor);
     if (TD.Rev == 1) DialogBoxDisplay(&TwaveDialog);
-    if ((TD.Rev == 2) || (TD.Rev == 3) || (TD.Rev == 4)) AddMainMenuEntry(&METwaveMonitor2);
-    if ((TD.Rev == 2) || (TD.Rev == 3) || (TD.Rev == 4))
+    if ((TD.Rev == 2) || (TD.Rev == 3) || (TD.Rev == 4) || (TD.Rev == 5)) AddMainMenuEntry(&METwaveMonitor2);
+    if ((TD.Rev == 2) || (TD.Rev == 3) || (TD.Rev == 4) || (TD.Rev == 5))
     {
       if (ActiveDialog == NULL)
       {
@@ -913,6 +980,85 @@ void Twave_init(int8_t Board, uint8_t addr)
   }
   NumberOfTwaveModules++;
   if (TD.Rev > 1) TwaveDialogEntries2[0].Max = NumberOfTwaveModules;
+}
+
+// This function reads the Pulse voltage and Guard readbacks and checks for a voltage
+// error. If an error is found the system shuts down and resquets a re start.
+void TwaveTests(void)
+{
+  int i;
+  uint16_t counts;
+  float val,error,MaxError;
+  bool  TwaveVerror;
+  
+  for (i = 0; i < 2; i++)
+  {
+    if (TwaveBoards[i])
+    {
+       SelectBoard(TWboardAddress[i]);
+       // Read the Pulse voltage and filter
+       AD7998(TDarray[i].ADCadr, TDarray[i].TWCD[ADC_PulseVoltage].DCmon.Chan);
+       counts = AD7998(TDarray[i].ADCadr, TDarray[i].TWCD[ADC_PulseVoltage].DCmon.Chan);
+       val = Counts2Value(counts, &TDarray[i].TWCD[ADC_PulseVoltage].DCmon);
+       ReadbackPV[i] = Filter * val + (1-Filter) * ReadbackPV[i];
+       // Read Guard 1 voltage and filter
+       AD7998(TDarray[i].ADCadr, TDarray[i].TWCD[ADC_Guard1].DCmon.Chan);
+       counts = AD7998(TDarray[i].ADCadr, TDarray[i].TWCD[ADC_Guard1].DCmon.Chan);
+       val = Counts2Value(counts, &TDarray[i].TWCD[ADC_Guard1].DCmon);
+       ReadbackG1[i] = Filter * val + (1-Filter) * ReadbackG1[i];
+       // Read Guard 2 voltage and filter
+       AD7998(TDarray[i].ADCadr, TDarray[i].TWCD[ADC_Guard2].DCmon.Chan);
+       counts = AD7998(TDarray[i].ADCadr, TDarray[i].TWCD[ADC_Guard2].DCmon.Chan);
+       val = Counts2Value(counts, &TDarray[i].TWCD[ADC_Guard2].DCmon);
+       ReadbackG2[i] = Filter * val + (1-Filter) * ReadbackG2[i];
+       // If rev 5 module and change delay has expired do the test
+       if(TDarray[i].Rev == 5)
+       {
+          if(TwaveTestDelay <= 0)
+          {
+            TwaveVerror = false;
+            // Look for error that is greater than 10% of setpoint or 2 volts, whatever is larger
+            error = abs(ReadbackPV[i] - TDarray[i].TWCD[ADC_PulseVoltage].VoltageSetpoint);
+            MaxError = TDarray[i].TWCD[ADC_PulseVoltage].VoltageSetpoint / 10;
+            if(MaxError < 5) MaxError = 5;
+            if(error > MaxError) TwaveVerror = true;
+            error = abs(ReadbackG1[i] - TDarray[i].TWCD[ADC_Guard1].VoltageSetpoint);
+            MaxError = TDarray[i].TWCD[ADC_Guard1].VoltageSetpoint / 10;
+            if(MaxError < 5) MaxError = 5;
+            if(error > MaxError) TwaveVerror = true;
+            error = abs(ReadbackG2[i] - TDarray[i].TWCD[ADC_Guard2].VoltageSetpoint);
+            MaxError = TDarray[i].TWCD[ADC_Guard2].VoltageSetpoint / 10;
+            if(MaxError < 5) MaxError = 5;
+            if(error > MaxError) TwaveVerror = true;
+            if((TwaveVerror) && (TDarray[i].EnableTest))
+            {
+              // Shutdown the system, set sequence to 0 and voltages to 0, issue error message and
+              // stop.
+              TDarray[i].Sequence = 0;
+              SetSequence(i);
+              TDarray[i].TWCD[DAC_PulseVoltage].VoltageSetpoint = 0;
+              SetPulseVoltage(i);
+              TDarray[i].TWCD[DAC_Guard1].VoltageSetpoint = 0;
+              SetGuard1(i);
+              TDarray[i].TWCD[DAC_Guard2].VoltageSetpoint = 0;
+              SetGuard2(i);
+              // Display error message
+              DisplayMessage("Twave Voltage Error!");
+              // Stop and run only the main system loop to detect power loss,
+              // also turn off the DCbias supply
+              digitalWrite(PWR_ON,HIGH);
+              while(1) 
+              {
+                WDT_Restart(WDT);  // Stop!
+                delay(10);
+                MIPSsystemLoop();
+              }
+            }
+          }
+          else TwaveTestDelay--;
+       }
+    }
+  }
 }
 
 // This is the main loop for the Twave function. This loop is called 10 times a sec.
@@ -947,23 +1093,26 @@ void Twave_loop(void)
       {
          CurrentPulseVoltage[i] = TDarray[i].TWCD[DAC_PulseVoltage].VoltageSetpoint;
          SetPulseVoltage(i);
+         TwaveTestDelay = 100;
       }
       if (TDarray[i].Rev == 1) SetRestingVoltage();
       if(TDarray[i].TWCD[DAC_Guard1].VoltageSetpoint != CurrentGuard1Voltage[i])
       {
          CurrentGuard1Voltage[i] = TDarray[i].TWCD[DAC_Guard1].VoltageSetpoint;
          SetGuard1(i);
+         TwaveTestDelay = 100;
       }
       if(TDarray[i].TWCD[DAC_Guard2].VoltageSetpoint != CurrentGuard2Voltage[i])
       {
          CurrentGuard2Voltage[i] = TDarray[i].TWCD[DAC_Guard2].VoltageSetpoint;
          SetGuard2(i);
+         TwaveTestDelay = 100;
       }
       if (TDarray[i].Rev == 2)
       {
         if (TDarray[i].Direction) digitalWrite(TWdirA, HIGH);
         else digitalWrite(TWdirA, LOW);
-      }
+       }
       if (TDarray[i].Rev == 3)
       {
         if (CurrentDirection[i] != TDarray[i].Direction)
@@ -984,7 +1133,7 @@ void Twave_loop(void)
           digitalWrite(TWld, HIGH);
         }
       }
-      if (TDarray[i].Rev == 4)
+      if (TDarray[i].Rev >= 4)
       {
         if (CurrentDirection[i] != TDarray[i].Direction)
         {
@@ -1045,6 +1194,7 @@ void Twave_loop(void)
       if (TDarray[i].TWCD[DAC_RestingVoltage].VoltageSetpoint > MaxTwaveVoltage) MaxTwaveVoltage = TDarray[i].TWCD[DAC_RestingVoltage].VoltageSetpoint;
     }
   }
+  TwaveTests();
   SelectBoard(TWboardAddress[SelectedTwaveModule]);
   // Display the monitored values based on the dialog box curently being displayed
   if (ActiveDialog == &TwaveDialog2) RefreshAllDialogEntries(&TwaveDialog2);
@@ -1328,6 +1478,23 @@ void setTWAVEdir(char *chan, char *dirstr)
   SendNAK;
 }
 
+// This command enables or disables the voltage readback tests performed on Twave rev 5 (500V) system only.
+// Valid values are TRUE and FALSE. This command sets the flag for both channels.
+void SetTWenableTest(char *flag)
+{
+  String  sFlag;
+
+  sFlag = flag;
+  if((sFlag != "TRUE") && (sFlag != "FALSE"))
+  {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;    
+  }
+  if(sFlag == "TRUE") TDarray[0].EnableTest = TDarray[1].EnableTest = true;
+  else TDarray[0].EnableTest = TDarray[1].EnableTest = false;
+  SendACK;
+}
+
 //
 // The following code supports the compressor mode of operation. This mode requires
 // two Twave boards in one MIPS system.
@@ -1426,7 +1593,7 @@ void UpdateMode(void)
 {
   uint8_t *b;
   
-  if(TDarray[0].Rev == 4)
+  if(TDarray[0].Rev >= 4)
   {
     // Rev 4.0 uses a CPLD for clock and compression logic
     uint8_t *b = (uint8_t *)&TWcpld[1];    // board address 1 is always the compressor channel
@@ -1434,9 +1601,11 @@ void UpdateMode(void)
     if(strcmp(Cmode,"Normal")==0) TWcpld[1] |= TWMmode;
     else TWcpld[1] &= ~TWMmode;
     TWcpld[1] |= TWMorder;
-    TWcpldLoad(1);
+    TWcpldLoad(1,true);
+//    digitalWrite(TWstrobe,HIGH);
+//    digitalWrite(TWstrobe,LOW);  
     TWcpld[1] &= ~TWMorder;
-    TWcpldSync();
+//    TWcpldSync();
     return;
   }
   if(strcmp(Cmode,"Normal")==0) ClockReset = 8;
@@ -1446,6 +1615,7 @@ void UpdateMode(void)
 void ConfigureTrig(void)
 {
   CtrigInput->detach();
+  CtrigInput->setPriority(TD.Ctrig, 8);
   CtrigInput->attached(TD.Ctrig, TD.CtrigLevel, CompressorTriggerISR);  
 }
 
@@ -1495,6 +1665,8 @@ void CompressorTimerISR(void)
   switch (CState)
   {
     case CS_COMPRESS:
+      C_NextEvent += C_Tn;
+      CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
       // If C_NormAmpMode is 1 or 2 then set the amplitude to TW1 level.
       if((C_NormAmpMode == 1) || (C_NormAmpMode == 2))
       {
@@ -1508,13 +1680,16 @@ void CompressorTimerISR(void)
       }
       // Next state is always normal
       ClockReset = 8;
-      C_NextEvent += C_Tn;
+//      C_NextEvent += C_Tn;
       CState = CS_NORMAL;
-      if(TDarray[0].Rev == 4)
+      if(TDarray[0].Rev >= 4)
       {
          TWcpld[1] |= TWMmode;
-         TWcpldSync();
+//         TWcpldSync();
+          TWcpldLoad(0,false);
+         TWcpldLoad(1,true);
       }
+      OP = 'X';
       break;
     case CS_NORMAL:
     case CS_NONCOMPRESS:
@@ -1527,11 +1702,14 @@ void CompressorTimerISR(void)
       {
         CState = CS_COMPRESS;
         C_NextEvent += C_Tc;
+        CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
         ClockReset = TDarray[0].Corder * 8;
-        if(TDarray[0].Rev == 4)
+        if(TDarray[0].Rev >= 4)
         {
           TWcpld[1] &= ~TWMmode;
-          TWcpldSync();
+          //TWcpldSync();
+          TWcpldLoad(0,false);
+          TWcpldLoad(1,true);
         }
         // If C_NormAmpMode is 1 or 2 then set the amplitude to TW2 level.
         if((C_NormAmpMode == 1) || (C_NormAmpMode == 2))
@@ -1549,17 +1727,21 @@ void CompressorTimerISR(void)
       {
         CState = CS_NONCOMPRESS;
         C_NextEvent += C_Tnc;
+        CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
         ClockReset = 8;
-        if(TDarray[0].Rev == 4)
+        if(TDarray[0].Rev >= 4)
         {
            TWcpld[1] |= TWMmode;
-           TWcpldSync();
+           //TWcpldSync();
+           TWcpldLoad(0,false);
+           TWcpldLoad(1,true);
         }
       }
       else if(OP == 'D')
       {
         CState = CS_DELAY;  // Delay, hold current mode during delay
         C_NextEvent += C_Delay;
+        CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
       }
       break;
     default:
@@ -1571,11 +1753,12 @@ void CompressorTimerISR(void)
     // Stop the timer
     CompressorTimer.stop();
     // Restore the mode
+    TWcpldLoad(0,false);
     UpdateMode();
     return;
   }
   // Update the timer
-  CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
+//  CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
 }
 
 // Called when we are going to start a compression cycle.
@@ -1583,20 +1766,24 @@ void CompressorTimerISR(void)
 // The B compare register is used for the switch or gate timing
 void CompressorTriggerISR(void)
 {
-  AtomicBlock< Atomic_RestoreState > a_Block;
+  uint32_t   start;
+  
+//  AtomicBlock< Atomic_RestoreState > a_Block;
   // Clear and setup variables
   ClockReset = 8;             // Put system in normal mode
   CurrentPass = 0;
-  if(TDarray[0].Rev == 4)
+  if(TDarray[0].Rev >= 4)
   {
     TWcpld[1] |= TWMmode;
-    TWcpldSync();
+    TWcpldLoad(1,true);
+    //TWcpldSync();
   }
   GetNextOperationFromTable(true);
   C_NextEvent = C_Td;
   CState = CS_TRIG;
   // Setup the timer used to generate interrupts
   CompressorTimer.begin();
+  CompressorTimer.setPriority(0);
   CompressorTimer.attachInterruptRA(CompressorTimerISR);
   CompressorTimer.attachInterruptRB(SwitchTimerISR);
   CompressorTimer.setTrigger(TC_CMR_EEVTEDG_NONE);
@@ -1604,7 +1791,8 @@ void CompressorTriggerISR(void)
   CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
   CompressorTimer.enableTrigger();
   CompressorTimer.softwareTrigger();
-}
+  CompressorTimer.setPriority(0);
+} 
 
 // Set twave channel 1 voltage to the value defined in the channel 1 data structure
 void TWCsetV(void)
@@ -1929,8 +2117,6 @@ void CompressorInit(void)
   if(de != NULL) de->Type = D_DIALOG;
   // Setup the trigger line and ISR
   CtrigInput = new DIhandler;
-  CtrigInput->detach();
-  CtrigInput->attached(TDarray[0].Ctrig, TDarray[0].CtrigLevel, CompressorTriggerISR);
   UpdateMode();
   SetSwitch();
 }
@@ -1939,6 +2125,15 @@ void CompressorInit(void)
 // will exit if the compressor flag is not set.
 void CompressorLoop(void)
 {
+  static int init = -1;
+
+  if(init == -1)
+  {
+    CtrigInput->detach();
+    CtrigInput->setPriority(TDarray[0].Ctrig, 0);
+    CtrigInput->attached(TDarray[0].Ctrig, TDarray[0].CtrigLevel, CompressorTriggerISR);
+    init = 0;
+  }
   if(!TDarray[0].CompressorEnabled) return;  // Exit if the compressor is not enabled
   // Calculate all the times in clock count units
   C_Td  = (TDarray[0].Tdelay / 1000.0) * C_clock;

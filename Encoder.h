@@ -30,6 +30,9 @@ class Encoder
     // Needs to be public, because the handlers are outside class:
     static void (*callbackChange)();
     static void (*callbackPushButton)();
+    static void SetChange(int value);
+    static void SetPB(void);
+    static void SetRotate(void);
 
     Encoder(void);
     Encoder start(int A, int B, int PB);

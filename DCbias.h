@@ -5,6 +5,7 @@ extern float MaxDCbiasVoltage;
 extern int   NumberOfDCChannels;
 extern bool  DCbiasUpdate;
 extern bool  DCbiasBoards[2];
+extern bool  DCbiasTestEnable;
 
 typedef struct
 {
@@ -24,7 +25,7 @@ typedef struct
   float   MaxVoltage;        // Defines board voltage range
   float   MinVoltage;  
   bool    Offsetable;        // True if this board is offsetable
-  int8_t  DACspi;            // SPI address dor control DAC
+  int8_t  DACspi;            // SPI address for control DAC
   // TWI device addresses
   uint8_t ADCadr;            // 8 channel ADC used for readback
   uint8_t DACadr;            // 4 channel DAC, channel A used for offset
@@ -35,7 +36,15 @@ typedef struct
   bool    OffsetReadback;        // True if the offset channel has readback. This is always on the last ADC channel
 } DCbiasData;
 
-extern DCbiasData  DCbDarray[2]; 
+typedef struct
+{
+  float Readbacks[8];       // Monitor voltage readback storage
+  // Variables used to determine changes in values
+  float DCbiasV[8];
+  float DCbiasO;
+} DCbiasState;
+
+extern DCbiasData  *DCbDarray[4];
 
 // Prototypes
 int   DCbiasValue2Counts(int chan, float value);
@@ -60,6 +69,8 @@ void  SetAllDCbiasChannels(void);
 void  DCbiasReportAllValues(void);
 void  DCbiasDelta(char *Value);
 void  DCbiasOffsetable(char *schan, char *state);
+void  DCbiasUseOneOffset(char *state);
+void  DCbiasOffsetReadback(char *state);
 
 void SetDCbiasProfile(void);
 void GetDCbiasProfile(int num);

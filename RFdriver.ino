@@ -5,6 +5,23 @@
 // in one MIPS system. Each RF driver can drive 2 high Q heads so a single MIPS system can drive
 // 4 high Q heads.
 //
+// Each drive channel has independent RF frequency and drive level controls. This driver monitors
+// the RF hrad voltage and current and calcualtes total power. Limits can be programmed by the user
+// tyo limit power and also limit drive level.
+//
+// Auto tune and re-tune features are present to help setup and adjustments as system warms up.
+//
+// The RF heads are driven with a square wave and this RF drive controls the supply voltage to the driving
+// FET(s) in the RF head. This adjusts the maximum RF voltage. The RF driver supports two modes of operation.
+// open loop and voltage controlled output level.
+//
+// The RF driver rev level sets the behavior of the RF voltage level readbacks:
+//  Rev 0 and Rev 1 = Linear readout using the data structures cal mx+b parameters.
+//  Rev 2 = Used for the eiceman project and this rev will only display the RF+ output. this
+//          readout is corrected for the acvite level sensors. This rev also changes the control loop
+//          to respond faster.
+//  Rev 3 = Convert to engineering units for the Linear tech level sensors, 5th order correction.
+//
 // Gordon Anderson
 //
 #include "RFdriver.h"
@@ -58,6 +75,7 @@ float Power;
 // Auto tune parameters
 bool TuneRequest = false;
 bool RetuneRequest = false;
+bool Tuning = false;
 bool TuneReport = false;
 int  TuneRFChan;
 int  TuneRFBoard;
@@ -74,7 +92,7 @@ DialogBoxEntry RFdriverDialogEntriesPage1[] = {
   {" RF channel", 0, 1, D_INT, 1, 2, 1, 21, false, "%2d", &Channel, NULL, SelectChannel},
   {" Freq, Hz", 0, 2, D_INT, 500000, 5000000, 1000, 16, false, "%7d", &RFCD.Freq, NULL, NULL},
   {" Drive %", 0, 3, D_FLOAT, 0, 100, 0.1, 18, false, "%5.1f", &RFCD.DriveLevel, NULL, NULL},
-  {" Vout Vpp", 0, 3, D_OFF, 0, 400, 1, 18, false, "%5.1f", &RFCD.Setpoint, NULL, NULL},
+  {" Vout Vpp", 0, 3, D_OFF, 0, 5000, 1, 18, false, "%5.1f", &RFCD.Setpoint, NULL, NULL},
   {" RF+ Vpp", 0, 5, D_FLOAT, 0, 1000, 0.1, 18, true, "%5.0f", &RFpVpp, NULL, NULL},
   {" RF- Vpp", 0, 6, D_FLOAT, 0, 1000, 0.1, 18, true, "%5.0f", &RFnVpp, NULL, NULL},
   {" Power, W", 0, 7, D_FLOAT, 0, 1000, 0.1, 18, true, "%5.1f", &Power, NULL, NULL},
@@ -181,6 +199,8 @@ void SetFirstRFPage(void)
 // Write the current board parameters to the EEPROM on the RFdriver board.
 void SaveRFdriverSettings(void)
 {
+  SelectedRFBoard = BoardFromSelectedChannel(SelectedRFChan);
+  SelectBoard(SelectedRFBoard);
   RFDD.Size = sizeof(RFdriverData);
   if (WriteEEPROM(&RFDD, RFDD.EEPROMadr, 0, sizeof(RFdriverData)) == 0)
   {
@@ -200,14 +220,17 @@ void RestoreRFdriverSettings(bool NoDisplay)
 {
   RFdriverData rfdd;
 
+  SelectedRFBoard = BoardFromSelectedChannel(SelectedRFChan);
+  SelectBoard(SelectedRFBoard);
   if (ReadEEPROM(&rfdd, RFDD.EEPROMadr, 0, sizeof(RFdriverData)) == 0)
   {
     if (strcmp(rfdd.Name, RFDD.Name) == 0)
     {
       // Here if the name matches so copy the data to the operating data structure
-      if(rfdd.Size > sizeof(RFdriverData)) rfdd.Size = sizeof(RFdriverData);
+      if(rfdd.Size != sizeof(RFdriverData)) rfdd.Size = sizeof(RFdriverData);
+      rfdd.EEPROMadr = RFDD.EEPROMadr;
       memcpy(&RFDD, &rfdd, rfdd.Size);
-      RFCD = RFDD.RFCD[SelectedRFChan];
+      RFCD = RFDD.RFCD[SelectedRFChan & 1];
       if (!NoDisplay) DisplayMessage("Parameters Restored!", 2000);
       SelectChannel();
     }
@@ -256,6 +279,15 @@ void SelectChannel(void)
   else strcpy(RFmode, "AUTO");
   RFmodeChange();
   RFgateChange();
+  // If rev 2 then do not display the RF- channel
+  if(RFDD.Rev == 2)
+  {
+    RFdriverDialogEntriesPage1[5].Type = D_OFF;
+  }
+  else
+  {
+    RFdriverDialogEntriesPage1[5].Type = D_FLOAT;    
+  }
   // Update the display
   if (ActiveDialog == &RFdriverDialog) DialogBoxDisplay(&RFdriverDialog);
 }
@@ -264,7 +296,7 @@ void SelectChannel(void)
 // The board parameter (0 or 1) defines the board select parameter where this card was found.
 // Up to two boards are supported. Board A, or 0, is always called first.
 // If only one board is installed it can be board 0 or 1.
-void RFdriver_init(int8_t Board)
+void RFdriver_init(int8_t Board, int8_t addr)
 {
   DialogBox *sd;
   
@@ -279,6 +311,12 @@ void RFdriver_init(int8_t Board)
   // If normal startup load the EEPROM parameters from the RF driver card.
   sd = ActiveDialog;
   ActiveDialog = NULL;
+  if(NumberOfRFChannels > 0)
+  {
+    Channel = 3;
+    SelectedRFChan = Channel - 1;
+  }
+  RFDDarray[Board].EEPROMadr = addr;
   if (NormalStartup)
   {
     RestoreRFdriverSettings(true);
@@ -320,6 +358,7 @@ void RFdriver_init(int8_t Board)
 void RFcontrol(void)
 {
   int board, chan;
+  float es,g;
 
   // Check the power and reduce the drive level if power is over its limit
   for (board = 0; board < 2; board++)
@@ -335,8 +374,12 @@ void RFcontrol(void)
       // If we are in auto mode (closed loop control) then adjust drive as needed to maintain Vpp
       if ((RFDDarray[board].RFCD[chan].RFmode == RF_AUTO) && (DIh[board][chan]->activeLevel()))
       {
-        if (((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) > RFDDarray[board].RFCD[chan].Setpoint) RFDDarray[board].RFCD[chan].DriveLevel -= .01;
-        else RFDDarray[board].RFCD[chan].DriveLevel += .01;
+        if(((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) > RFDDarray[board].RFCD[chan].Setpoint) es = ((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) / RFDDarray[board].RFCD[chan].Setpoint;
+        if(((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) < RFDDarray[board].RFCD[chan].Setpoint) es = RFDDarray[board].RFCD[chan].Setpoint / ((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2);
+        g = 1;
+        if(RFDDarray[board].Rev == 2) g = (es - 1.0) * 100;
+        if (((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) > RFDDarray[board].RFCD[chan].Setpoint) RFDDarray[board].RFCD[chan].DriveLevel -= .01 * g;
+        else RFDDarray[board].RFCD[chan].DriveLevel += .01 * g;
         if (RFDDarray[board].RFCD[chan].DriveLevel < 0) RFDDarray[board].RFCD[chan].DriveLevel = 0;
         if (RFDDarray[board].RFCD[chan].DriveLevel > RFDDarray[board].RFCD[chan].MaxDrive) RFDDarray[board].RFCD[chan].DriveLevel = RFDDarray[board].RFCD[chan].MaxDrive;
         if ((SelectedRFBoard == board) && ((SelectedRFChan & 1) == chan))
@@ -364,7 +407,6 @@ void RFcontrol(void)
 
 void RFdriver_tune(void)
 {
-   static bool   Tuning = false;
    static int    TuneStep = 100000, TuneState;
    static float  Max, Current, Last;
    static int    FreqMax, Freq;
@@ -381,7 +423,7 @@ void RFdriver_tune(void)
      TuneStep = 100000;
      Freq = 1000000;
      Last = Max = 0;
-     NumDown = 0;
+     NumDown = -MaxNumDown;
      TuneRequest = false;
      TuneState = TUNE_SCAN_DOWN;
      Nth = 20;
@@ -418,13 +460,18 @@ void RFdriver_tune(void)
           FreqMax = RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq;
         }
         if(Current <= (Last + 1)) NumDown++;
-        else NumDown = 0;
+        else 
+        {
+          NumDown = 0;
+          if(TuneStep == 100000) NumDown = -MaxNumDown;
+        }
         RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq -= TuneStep;
         if((NumDown >= MaxNumDown) || (RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq < 500000))
         {
           TuneState = TUNE_SCAN_UP;
           RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq = Freq;
           NumDown = 0;
+          if(TuneStep == 100000) NumDown = -MaxNumDown;
         }
         break;
      case TUNE_SCAN_UP:
@@ -434,13 +481,19 @@ void RFdriver_tune(void)
           FreqMax = RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq;
         }
         if(Current <= (Last +1)) NumDown++;
-        else NumDown = 0;
+        else 
+        {
+          NumDown = 0;
+          if(TuneStep == 100000) NumDown = -MaxNumDown;
+        }
         RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq += TuneStep;
         if((NumDown >= MaxNumDown) || (RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq > 5000000))
         {
           // Here we have found the peak for this step size, this
           // process repeats until step size is 1KHz
           Freq = FreqMax;
+          if(Freq < 500000) Freq = 500000;
+          if(Freq > 5000000) Freq = 5000000;
           RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq = Freq;
           if(TuneStep == 1000)
           {
@@ -449,7 +502,9 @@ void RFdriver_tune(void)
             DismissMessage();
             if(TuneReport && !SerialMute)
             {
-              serial->print("Auto tune compelete, frequency = ");
+              serial->print("Auto tune complete, channel = ");
+              serial->print(TuneRFChan + 1);
+              serial->print(", frequency = ");
               serial->println(Freq);
             }
             TuneReport = false;
@@ -476,6 +531,7 @@ void RFdriver_loop(void)
   static int LastFreq[2][2] = { -1, -1, -1, -1};
   static  int disIndex = 0;
 
+  TRACE(2);
   MaxRFVoltage = 0;
   SelectedRFBoard = BoardFromSelectedChannel(SelectedRFChan);
   SelectBoard(SelectedRFBoard);
@@ -559,44 +615,31 @@ void RFdriver_loop(void)
     {
       if(RFDD.Rev == 3)
       {
+         // Convert to engineering units for the Linear tech level sensors, 5th order correction.
          // y = -62.27195 + 2.06452*x - 0.025363*x^2 + 0.000161919*x^3 - 3.873611e-7*x^4 + 3.255975e-10*x^5
-         // y = 49.14388 - 1.28479*x + 0.01031666*x^2 - 0.00001091348*x^3
          Pv = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan], &RFDD.RFCD[i & 1].RFpADCchan);
          Pv = 3.255975e-10 * pow(Pv,5) - 3.873611e-7 * pow(Pv,4) + 0.000161919 * pow(Pv,3) - 0.025363 * pow(Pv,2) + 2.06452 * Pv - 62.27195;
          Nv = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan);
          Nv = 3.255975e-10 * pow(Nv,5) - 3.873611e-7 * pow(Nv,4) + 0.000161919 * pow(Nv,3) - 0.025363 * pow(Nv,2) + 2.06452 * Nv - 62.27195;
       }
-      else if(RFDD.Rev == 1)
+      else if(RFDD.Rev == 2)
       {
-        // Convert to engineering units for the Linear tech level sensors. Need 2nd order correction, y = 2x10^6 X^2 + 0.0145 X + 28.33
-        // This correction used with new small RF head. Installed first on Mike belovs system.
-        Pv = ((float)(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan]) * (float)(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan])) * 2e-6 - (float)(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan]) * 0.0145 + 28.33;
-        Nv = ((float)(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan]) * (float)(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan])) * 2e-6 - (float)(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan]) * 0.0145 + 28.33;
-        // Convert to engineering units for the Linear tech level sensors. Need 2nd order correction, y = 0.0011 X^2 + 0.1716 X - 42.853
-        // This correct used on high power RF heads, the above correct did not work for some reason. Need to figure out a better way to add these updates.
-//        Pv = Counts2Value(ADCvals[RFDD.RFCD[i].RFpADCchan.Chan], &RFDD.RFCD[i].RFpADCchan);
-//        Pv = Pv * Pv * (0.00113) + Pv * 0.1716 - 42.853;
-//        Nv = Counts2Value(ADCvals[RFDD.RFCD[i].RFnADCchan.Chan], &RFDD.RFCD[i].RFnADCchan);
-//        Nv = Nv * Nv * (0.0011) + Nv * 0.1716 - 42.853;
-        if (RFpVpps[SelectedRFBoard][i & 1] == 0) RFpVpps[SelectedRFBoard][i & 1] = Pv;
-        if (RFnVpps[SelectedRFBoard][i & 1] == 0) RFnVpps[SelectedRFBoard][i & 1] = Nv;
+        // This rev supports linear operation for high voltage, up to 4000Vp-p, this is equations is for the RF level detector circuit.
+        // Rev 2 also displays only the RF+ output. Used on the Eiceman project
+        Pv = (float)Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan], &RFDD.RFCD[i & 1].RFpADCchan) * 3.3312 + 136.28;
+        Nv = (float)Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan) * 3.3312 + 136.28;
+        if(Pv <= 180) Pv = Pv - ((180 - Pv) * 2.0);
+        Nv = Pv;  // Make them match for the control loop
       }
-      else
+      else if(RFDD.Rev <= 1)
       {
-        if (RFpVpps[SelectedRFBoard][i & 1] == 0) RFpVpps[SelectedRFBoard][i & 1] = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan], &RFDD.RFCD[i & 1].RFpADCchan);
-        if (RFnVpps[SelectedRFBoard][i & 1] == 0) RFnVpps[SelectedRFBoard][i & 1] = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan);
+        // This is a linear calibration using the data structure parameters
+        Pv = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan], &RFDD.RFCD[i & 1].RFpADCchan);
+        Nv = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan);
       }
       // Filter with 1st order difference equation
-      if(RFDD.Rev > 1)
-      {
-        RFpVpps[SelectedRFBoard][i & 1] = Filter * Pv + (1 - Filter) * RFpVpps[SelectedRFBoard][i & 1];
-        RFnVpps[SelectedRFBoard][i & 1] = Filter * Nv + (1 - Filter) * RFnVpps[SelectedRFBoard][i & 1];
-      }
-      else
-      {
-        RFpVpps[SelectedRFBoard][i & 1] = Filter * Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan], &RFDD.RFCD[i & 1].RFpADCchan) + (1 - Filter) * RFpVpps[SelectedRFBoard][i & 1];
-        RFnVpps[SelectedRFBoard][i & 1] = Filter * Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan) + (1 - Filter) * RFnVpps[SelectedRFBoard][i & 1];
-      }
+      RFpVpps[SelectedRFBoard][i & 1] = Filter * Pv + (1 - Filter) * RFpVpps[SelectedRFBoard][i & 1];
+      RFnVpps[SelectedRFBoard][i & 1] = Filter * Nv + (1 - Filter) * RFnVpps[SelectedRFBoard][i & 1];
       // Limit test
       if (RFpVpps[SelectedRFBoard][i & 1] < 0) RFpVpps[SelectedRFBoard][i & 1] = 0;
       if (RFnVpps[SelectedRFBoard][i & 1] < 0) RFnVpps[SelectedRFBoard][i & 1] = 0;
@@ -782,6 +825,13 @@ void RFautoTune(int channel)
 
   // If channel is invalid send NAK and exit
   if (!IsChannelValid(channel)) return;
+  // Exit if we are already tuning
+  if(Tuning)
+  {
+    SetErrorCode(ERR_TUNEINPROCESS);
+    SendNAK;
+    return;
+  }
   // Set the tune flag and exit
   SendACK;
   TuneRFChan = channel - 1;
@@ -797,6 +847,13 @@ void RFautoRetune(int channel)
 
   // If channel is invalid send NAK and exit
   if (!IsChannelValid(channel)) return;
+  // Exit if we are already tuning
+  if(Tuning)
+  {
+    SetErrorCode(ERR_TUNEINPROCESS);
+    SendNAK;
+    return;
+  }
   // Set the tune flag and exit
   SendACK;
   TuneRFChan = channel - 1;

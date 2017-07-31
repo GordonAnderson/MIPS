@@ -15,8 +15,8 @@
 #endif
 
 
-//extern Serial_ *serial;
 extern Stream *serial;
+//extern MIPSstream *serial;
 
 extern bool SerialMute;
 
@@ -63,12 +63,13 @@ enum CmdTypes
 {
   CMDstr,		        // Sends a string
   CMDint,			      // Sends an int
-  CMDfloat,			    // Sends an float
+  CMDfloat,			    // Sends a float
   CMDbool,          // Sends or receives a bool, TRUE or FALSE
   CMDfunction,		  // Calls a function with 0,1,or 2 int args
   CMDfunctionStr,		// Calls a function with pointer to str arg
   CMDfunctionLine,  // Calls a function with a full line in the ring buffer, function must get tokens
-  CMDfun2int1flt,		// Calls a function with 2 int args followed by 1 float arg
+  CMDfun2int1flt,   // Calls a function with 2 int args followed by 1 float arg
+  CMDfun2int1str,   // Calls a function with 2 int args followed by 1 string arg
   CMDlongStr,       // Fills the pointer the a long string, max length is defined by num args value
   CMDna
 };
@@ -87,7 +88,7 @@ enum PCstates
 
 union functions
 {
-  char  *charPtr;
+  const char *charPtr PROGMEM;
   int   *intPtr;
   float *floatPtr;
   bool  *boolPtr;
@@ -97,18 +98,19 @@ union functions
   void  (*func1str)(char *);
   void  (*func2str)(char *, char *);
   void  (*func2int1flt)(int, int, float);
+  void  (*func2int1str)(int, int, char *);
 };
 
 typedef struct
 {
-  const char  		*Cmd;
-  enum	CmdTypes	Type;
+  const     char  		 *Cmd;
+  enum	    CmdTypes	 Type;
   int   		NumArgs;
-  union functions pointers;
+  union     functions  pointers;
 } Commands;
 
 extern Ring_Buffer  RB;
-extern char Version[];
+extern const char Version[] PROGMEM;
 
 // Function prototypes
 void CheckImage(char *filename);
@@ -117,14 +119,15 @@ void SetThreadEnable(char *, char *);
 void ListThreads(void);
 void SerialInit(void);
 char *GetToken(bool ReturnComma);
+char *LastToken(void);
 int  ProcessCommand(void);
 void GetNumChans(char *cmd);
 void RB_Init(Ring_Buffer *);
-int RB_Size(Ring_Buffer *);
+int  RB_Size(Ring_Buffer *);
 char RB_Put(Ring_Buffer *, char);
 char RB_Get(Ring_Buffer *);
 char RB_Next(Ring_Buffer *);
-int RB_Commands(Ring_Buffer *);
+int  RB_Commands(Ring_Buffer *);
 void PutCh(char ch);
 void MacroRecord(char *filename);
 void MacroStop(void);

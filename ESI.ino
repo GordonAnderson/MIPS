@@ -47,6 +47,7 @@ int   ESIchannelLoaded = 1;          // ESI channel loaded into working data str
 bool  ESIboards[2] = {false,false};  // Defines the boards that are present in the system
 int   SelectedESIboard=0;            // Active board, 0 or 1 = A or B
 float MaxESIvoltage=0;               // This value is set to the highest ESI voltage
+bool  ESIcurrentTest=true;           // Flag to enable over current testing, true by default
 // Readback monitor buffers
 float ReadbackV[2][2];               // Readback voltage [board][channel]
 float ReadbackI[2][2];               // Readback currect [board][channel]
@@ -89,7 +90,6 @@ DialogBoxEntry ESIentriesR3[] = {
   {" Voltage"            , 0, 3, D_FLOAT    , -4000,4000,10,18, false, "%5.0f",   &esi.VoltageSetpoint, NULL, NULL},
   {" Monitor"            , 0, 4, D_FLOAT    , 0, 1, 1, 8,       true,  "%5.0f V", &ReadbackV[0][0], NULL, NULL},
   {""                    , 0, 4, D_FLOAT    , 0, 1, 1, 16,      true,  "%5.3f mA",&Imonitor[0], NULL, NULL},
-//  {" Monitor"            , 0, 4, D_FLOAT    , 0, 1, 1, 16,      true,  "%5.3f mA",&Imonitor[0], NULL, NULL},
   {" Limits"             , 0, 8, D_PAGE     , 0, 0, 0, 0,       false, NULL, ESIentriesLimitsR3, NULL, NULL},
   {" Save settings"      , 0, 9, D_FUNCTION , 0, 0, 0, 0,       false, NULL, NULL,SaveESIsettings, NULL},
   {" Restore settings"   , 0, 10,D_FUNCTION , 0, 0, 0, 0,       false, NULL, NULL,RestoreESIsettings, NULL},
@@ -355,6 +355,7 @@ void RestoreESIsettings(bool NoDisplay)
        if(strcmp(esi_data.Name,ESIarray[b].Name) == 0)
        {
          // Here if the name matches so copy the data to the operating data structure
+         esi_data.EEPROMadr = ESIarray[b].EEPROMadr;
          esi_data.ESIchan[0].Enable = false;
          esi_data.ESIchan[1].Enable = false;
          esi_data.Enable = false;
@@ -374,13 +375,14 @@ void RestoreESIsettings(bool NoDisplay)
 }
 
 // This function is called at powerup to initiaize the ESI board(s).
-void ESI_init(int8_t Board)
+void ESI_init(int8_t Board, int8_t addr)
 {
   // Flag the board as present
   ESIboards[Board] = true;
   // Set active board to board being inited
   SelectedESIboard = Board;
   SelectBoard(Board);
+  esidata.EEPROMadr = addr;
   // Init the esi structure
   esi   = esidata;
   esich = esidata.ESIchan[0];
@@ -436,6 +438,7 @@ void ESI_loop(void)
   static   float Setpoints[2][2] = {0,0,0,0};
   static   float SetpointsR3[2] = {0,0};
   static   bool Enabled[2] = {false,false};
+  static   int8_t ESIoverCurrentTimer[2] = {5,5};
   
   SelectBoard(SelectedESIboard);
   if (ActiveDialog == &ESIdialog)
@@ -476,7 +479,7 @@ void ESI_loop(void)
           {
             ESIrelay(0);
             delay(10);
-            ESIrelay(1);
+            (1);
           }
           else
           {
@@ -581,7 +584,7 @@ void ESI_loop(void)
       {
         if(ReadbackI[b][0] > ESIarray[b].ESIchan[0].MaxCurrent) 
         {
-          if(ESIarray[b].ESIchan[0].MaxCurrent > 0)
+          if((ESIarray[b].ESIchan[0].MaxCurrent > 0) && (ESIcurrentTest))
           {
             ESIarray[b].ESIchan[0].Enable = false;
             ESIarray[b].Enable = false;
@@ -590,7 +593,7 @@ void ESI_loop(void)
         }
         if(ReadbackI[b][1] > ESIarray[b].ESIchan[1].MaxCurrent) 
         {
-          if(ESIarray[b].ESIchan[1].MaxCurrent > 0)
+          if((ESIarray[b].ESIchan[1].MaxCurrent > 0) && (ESIcurrentTest))
           {
             ESIarray[b].ESIchan[1].Enable = false;
             ESIarray[b].Enable = false;
@@ -602,17 +605,23 @@ void ESI_loop(void)
       {
         if(SetpointsR3[b] >= 0) ReadbackV[b][0] = Setpoints[b][0];
         else ReadbackV[b][0] = Setpoints[b][1];
-        if(SetpointsR3[b] >=0 ) Imonitor[b] = (ReadbackI[b][0] - (SetpointsR3[b] / 40000)) / 1.53;
-        else Imonitor[b] = (ReadbackI[b][1] - (abs(SetpointsR3[b]) / 40000)) / 1.53;
+//        if(SetpointsR3[b] >=0 ) Imonitor[b] = (ReadbackI[b][0] - (SetpointsR3[b] / 40000)) / 1.53;
+//        else Imonitor[b] = (ReadbackI[b][1] - (abs(SetpointsR3[b]) / 40000)) / 1.53;
+        if(SetpointsR3[b] >=0 ) Imonitor[b] = (ReadbackI[b][0] - (SetpointsR3[b] / abs(ESIarray[b].ESIchan[0].MaxVoltage * 10))) / 1.53;
+        else Imonitor[b] = (ReadbackI[b][1] - (abs(SetpointsR3[b]) / abs(ESIarray[b].ESIchan[1].MaxVoltage *10))) / 1.53;
         if(Imonitor[b] < 0) Imonitor[b] = 0;
         if(ESIarray[b].ESIchan[0].MaxCurrent > 0)
         {
           if((Imonitor[b] > ESIarray[b].ESIchan[0].MaxCurrent) || (Imonitor[b] > ESIarray[b].ESIchan[1].MaxCurrent))
           {
-            ESIarray[b].ESIchan[0].Enable = ESIarray[b].ESIchan[1].Enable = false;
-            ESIarray[b].Enable = false;
-            DisplayMessageButtonDismiss("ESI excess current!");
+            if((--ESIoverCurrentTimer[b] <= 0) && (ESIcurrentTest))
+            {
+               ESIarray[b].ESIchan[0].Enable = ESIarray[b].ESIchan[1].Enable = false;
+               ESIarray[b].Enable = false;
+               DisplayMessageButtonDismiss("ESI excess current!");
+            }
           }
+          else ESIoverCurrentTimer[b] = 5;
         }
       }
     }
@@ -733,15 +742,18 @@ void GetESIchannel(int chan)
 // Reads the selected channels output voltage readback
 void GetESIchannelV(int chan)
 {
-  if(ESIarray[ESIchannel2board(chan)].Rev == 3)
-  {
-      SetErrorCode(ERR_BADCMD);
-      SendNAK;
-      return;    
-  }
+//  if(ESIarray[ESIchannel2board(chan)].Rev == 3)
+//  {
+//      SetErrorCode(ERR_BADCMD);
+//      SendNAK;
+//      return;    
+//  }
   if(!ValidESIchannel(chan)) return;
   SendACKonly;
-  if(!SerialMute) serial->println(ReadbackV[ESIchannel2board(chan)][(chan-1)&1]);
+  if(SerialMute) return;
+  if(ESIarray[ESIchannel2board(chan)].Rev == 3) serial->println(ReadbackV[ESIchannel2board(chan)][0]);
+  else serial->println(ReadbackV[ESIchannel2board(chan)][(chan-1)&1]);
+  //if(!SerialMute) serial->println(ReadbackV[ESIchannel2board(chan)][(chan-1)&1]);
 }
 
 // Reads the selected channels output current

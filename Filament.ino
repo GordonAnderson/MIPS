@@ -148,7 +148,7 @@ char Fmode[8] = "Ictrl";
 
 DialogBoxEntry FilamentEntriesPage2[] = {
   {" Mode"               , 0, 1, D_LIST , 0, 0, 7, 16, false, FmodeList, Fmode, NULL, FmodeChange},
-  {" Max power"          , 0, 2, D_FLOAT, 1, 12, 1, 18, false, "%5.0f", &FCD.MaxPower, NULL, NULL},
+  {" Max power"          , 0, 2, D_FLOAT, 1, 20, 1, 18, false, "%5.0f", &FCD.MaxPower, NULL, NULL},
   {" Ramp rate"          , 0, 3, D_FLOAT, 0, 1, 0.01, 18, false, "%5.3f", &FCD.RampRate, NULL, NULL},
   {" Current dir"        , 0, 4, D_OFF, 0, 1, 1, 19, false, NULL, &CurrentDir, NULL, CurrentDirChange},
   {" Cal Supply V"       , 0, 5, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalFilamentSupplyV, NULL},
@@ -320,7 +320,7 @@ int Channel2Index(int channel)
     return(1);
   }
   if((channel<0) || (channel>3)) return(-1);
-  return((channel - 1) & 1);
+  return(channel & 1);
 }
 
 // Called after the user selects a channel
@@ -388,6 +388,7 @@ void RestorFilamentSettings(bool NoDisplay)
     {
       // Here if the name matches so copy the data to the operating data structure
       if (fd.Size != sizeof(FilamentData)) fd.Size = sizeof(FilamentData);
+      fd.EEPROMadr = FD.EEPROMadr;
       memcpy(&FD, &fd, fd.Size);
       FCD = FD.FCD[Channel2Index(SelectedFilamentChan)];
       FCY = FD.FCyl[Channel2Index(SelectedFilamentChan)];
@@ -407,7 +408,7 @@ void RestorFilamentSettings(void)
 
 // This function is called on power up initilization. This function
 // will enable the filament driver module.
-void Filament_init(int8_t Board)
+void Filament_init(int8_t Board, int8_t addr)
 {
   DialogBoxEntry *de;
   
@@ -417,6 +418,7 @@ void Filament_init(int8_t Board)
   SelectedFilamentBoard = Board;
   SelectBoard(Board);
   // If normal startup load the EEPROM parameters from the Filament card.
+  FDarray[Board].EEPROMadr = addr;
   if (NormalStartup) RestorFilamentSettings(true);
   // Init the hardware here...
   pinMode(FDarray[Board].FCD[0].Fpwr, OUTPUT);
@@ -644,21 +646,21 @@ void Filament_loop(void)
   // If current sense resistance is not 0 then calculate the bias current
   if((FDarray[0].iSense != 0) && IsPowerON())
   {
-    if(DCbiasBoards[0]) b = 0;
+    if(DCbDarray[0] != NULL) b = 0;
     else b = 1;
     SelectBoard(b);
     // Read and average the ADC value for the current monitor
-    int SenseADC =  AD7998(DCbDarray[b].ADCadr, 7, 50);
-    float BiasV = Counts2Value(SenseADC,&DCbDarray[b].DCCD[7].DCmon) + DCbDarray[b].DCoffset.VoltageSetpoint;
-    if(DCbDarray[b].DCCD[7].VoltageSetpoint != LastVoltage)
+    int SenseADC =  AD7998(DCbDarray[b]->ADCadr, 7, 50);
+    float BiasV = Counts2Value(SenseADC,&DCbDarray[b]->DCCD[7].DCmon) + DCbDarray[b]->DCoffset.VoltageSetpoint;
+    if(DCbDarray[b]->DCCD[7].VoltageSetpoint != LastVoltage)
     {
-      LastVoltage = DCbDarray[b].DCCD[7].VoltageSetpoint;
-      BiasCurrent = ((DCbDarray[b].DCCD[7].VoltageSetpoint - BiasV) / float(FDarray[0].iSense)) * 1000000.0;
+      LastVoltage = DCbDarray[b]->DCCD[7].VoltageSetpoint;
+      BiasCurrent = ((DCbDarray[b]->DCCD[7].VoltageSetpoint - BiasV) / float(FDarray[0].iSense)) * 1000000.0;
     }
     else
     {
       float BCfilter = 0.05;
-      BiasCurrent = BCfilter * (((DCbDarray[b].DCCD[7].VoltageSetpoint - BiasV) / float(FDarray[0].iSense)) * 1000000.0) + (1-BCfilter) * BiasCurrent;
+      BiasCurrent = BCfilter * (((DCbDarray[b]->DCCD[7].VoltageSetpoint - BiasV) / float(FDarray[0].iSense)) * 1000000.0) + (1-BCfilter) * BiasCurrent;
     }
   }
   // Loop through all the filament channels and output all the control parmaeters and update
