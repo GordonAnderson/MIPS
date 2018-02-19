@@ -59,9 +59,10 @@ RFAstate *RFAstates[2] = {NULL,NULL};
 
 extern DialogBoxEntry RFAdialogEntriesPage2[];
 extern DialogBoxEntry RFAdialogEntriesPage3[];
+extern DialogBoxEntry RFAdialogEntriesCal[];
 
 DialogBoxEntry RFAdialogEntryDrive    = {"Drive         "     , 1, 4, D_FLOAT    , 0, 100, 0.1, 17, false, "%5.1f", &rfad.Drive, NULL, NULL};
-DialogBoxEntry RFAdialogEntrySetPoint = {"SetPoint, Vp-p"     , 1, 4, D_FLOAT    , 0, 1000,  1, 17, false, "%5.0f", &rfad.SetPoint, NULL, NULL};
+DialogBoxEntry RFAdialogEntrySetPoint = {"SetPoint, Vp-p"     , 1, 4, D_FLOAT    , 0, 4000,  1, 17, false, "%5.0f", &rfad.SetPoint, NULL, NULL};
 
 DialogBoxEntry RFAdialogEntriesPage1[] = {
   {"Module"             , 1, 0, D_INT      , 1, 1, 1, 20, false, "%2d", &RFAmodule, NULL, RFAmoduleSelected},
@@ -81,7 +82,7 @@ DialogBoxEntry RFAdialogEntriesPage2[] = {
   {"RF amp parameters"  , 1, 1, D_PAGE, 0, 0, 0, 0, false, NULL, RFAdialogEntriesPage3, NULL, NULL},
   {"DC bias outputs"    , 1, 2, D_PAGE, 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
   {"Invert"             , 1, 3, D_YESNO, 0, 1, 1, 19, false, NULL, &rfad.Invert, NULL, NULL},
-  {"Calibration"        , 1, 4, D_PAGE, 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
+  {"Calibration"        , 1, 4, D_PAGE, 0, 0, 0, 0, false, NULL, RFAdialogEntriesCal, NULL, NULL},
   {"Save settings"      , 1, 8, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SaveRFAsettings, NULL},
   {"Restore settings"   , 1, 9, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RestoreRFAsettings, NULL},
   {"First page"         , 1,10, D_PAGE, 0, 0, 0, 0, false, NULL, RFAdialogEntriesPage1, NULL, NULL},
@@ -103,6 +104,29 @@ DialogBoxEntry RFAdialogEntriesPage3[] = {
   {NULL},
 };
 
+// ADC raw values for calibration function
+int VpP1adc,VpP2adc,VnP1adc,VnP2adc;
+// Setpoint calibration values for calibration function
+float SP1,SP2, SP1V, SP2V;
+
+char *RFcalP1;
+char *RFcalP2;
+
+DialogBoxEntry RFAdialogEntriesCal[] = {
+  {"Calibrate V+"       , 1, 1, D_TITLE , 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
+  {RFcalP1              , 1, 2, D_FLOAT , 0, 100, 0.1, 17, false, "%5.1f", &rfad.Drive, RFdrvCalPrep, RFpP1read},
+  {RFcalP2              , 1, 3, D_FLOAT , 0, 100, 0.1, 17, false, "%5.1f", &rfad.Drive, RFdrvCalPrep, RFpP2read},
+  {"Calibrate V-"       , 1, 4, D_TITLE , 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
+  {RFcalP1              , 1, 5, D_FLOAT , 0, 100, 0.1, 17, false, "%5.1f", &rfad.Drive, RFdrvCalPrep, RFnP1read},
+  {RFcalP2              , 1, 6, D_FLOAT , 0, 100, 0.1, 17, false, "%5.1f", &rfad.Drive, RFdrvCalPrep, RFnP2read},
+  {"Calibrate SP"       , 1, 7, D_TITLE , 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
+  {" Point 1"           , 1, 8, D_FLOAT , 0, 4000, 1, 17, false, "%5.0f", &rfad.SetPoint, RFdrvCalPrep, RFspP1read},
+  {" Point 2"           , 1, 9, D_FLOAT , 0, 4000, 1, 17, false, "%5.0f", &rfad.SetPoint, RFdrvCalPrep, RFspP2read},
+  {"Calibrate"          , 1,10, D_PAGE  , 0, 0, 0, 0, false, NULL, RFAdialogEntriesPage2, RFampCalibrate, NULL},
+  {"Abort"              , 1,11, D_PAGE  , 0, 0, 0, 0, false, NULL, RFAdialogEntriesPage2, NULL, NULL},
+  {NULL},
+};
+
 DialogBox RFAdialog = {
   {
     "RF amp parameters",
@@ -112,6 +136,48 @@ DialogBox RFAdialog = {
 };
 
 MenuEntry MERFAmonitor = {" RF amp module", M_DIALOG,0,0,0,NULL,&RFAdialog,NULL,NULL};
+
+float GetAverageV(void)
+{
+  float V =  Counts2Value(AD7998(RFAarray[SelectedRFAboard]->ADCadr, RFAadcRFLA, 100),&RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLA]);
+  V += Counts2Value(AD7998(RFAarray[SelectedRFAboard]->ADCadr, RFAadcRFLB, 100),&RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLB]);
+  return(V/2.0);
+}
+uint8_t CaledFlag = 0;
+void RFdrvCalPrep(void) { RFAD->Drive = rfad.Drive = RFAD->SetPoint = rfad.SetPoint = 0; }
+void RFpP1read(void)    { SelectBoard(SelectedRFAboard); VpP1adc = AD7998(RFAarray[SelectedRFAboard]->ADCadr, RFAadcRFLA, 100); CaledFlag |= 1; }
+void RFpP2read(void)    { SelectBoard(SelectedRFAboard); VpP2adc = AD7998(RFAarray[SelectedRFAboard]->ADCadr, RFAadcRFLA, 100); CaledFlag |= 2; }
+void RFnP1read(void)    { SelectBoard(SelectedRFAboard); VnP1adc = AD7998(RFAarray[SelectedRFAboard]->ADCadr, RFAadcRFLB, 100); CaledFlag |= 4; }
+void RFnP2read(void)    { SelectBoard(SelectedRFAboard); VnP2adc = AD7998(RFAarray[SelectedRFAboard]->ADCadr, RFAadcRFLB, 100); CaledFlag |= 8; }
+void RFspP1read(void)   { SelectBoard(SelectedRFAboard); SP1 = rfad.SetPoint; SP1V = GetAverageV(); CaledFlag |= 16; }
+void RFspP2read(void)   { SelectBoard(SelectedRFAboard); SP2 = rfad.SetPoint; SP2V = GetAverageV(); CaledFlag |= 32; }
+void RFampCalibrate(void)
+{
+  RFAD->Drive = rfad.Drive = 0;
+  RFAD->SetPoint = rfad.SetPoint = 0;
+
+  if((CaledFlag & 0x03) == 0x03)
+  {
+     RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLA].m = (float)(VpP2adc - VpP1adc) / (RFAD->FullScale * 0.5);
+     RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLA].b = (float)VpP1adc - (RFAD->FullScale * 0.25) * RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLA].m;
+     CaledFlag &= ~0x03;
+  }
+  if((CaledFlag & 0x0C) == 0x0C)
+  {
+     RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLB].m = (float)(VnP2adc - VnP1adc) / (RFAD->FullScale * 0.5);
+     RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLB].b = (float)VnP1adc - (RFAD->FullScale * 0.25) * RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLB].m;
+     CaledFlag &= ~0x0C;
+  }
+  if((CaledFlag & 0x30) == 0x30)
+  {
+     int c1 = Value2Counts(SP1, &RFAarray[SelectedRFAboard]->DACchans[RFAdacSETPOINT]);
+     int c2 = Value2Counts(SP2, &RFAarray[SelectedRFAboard]->DACchans[RFAdacSETPOINT]);
+     // SP1 = (c1 - b)/m, SP2 = (c2 - b)/m
+     RFAarray[SelectedRFAboard]->DACchans[RFAdacSETPOINT].m = (float)(c1 - c2)/(SP1V - SP2V);
+     RFAarray[SelectedRFAboard]->DACchans[RFAdacSETPOINT].b = (float)c1 - SP1V * RFAarray[SelectedRFAboard]->DACchans[RFAdacSETPOINT].m;
+     CaledFlag &= ~0x30;
+  }
+}
 
 // Called when user user selects mode (open or closed) number and/or the UI updates
 void RFAmodeSelected(void)
@@ -300,6 +366,14 @@ void RFA_init(int8_t Board, int8_t addr)
   RFAarray[Board]->EEPROMadr = addr;
   // Restore parameters from module's memory
   if(NormalStartup) RestoreRFAsettings(true);
+  // Read the range and set the main menu and the calibration dialog text
+  RFcalP1 = new char [10];
+  RFcalP2 = new char [10];
+  sprintf(RFcalP1," %4.0f V", RFAarray[Board]->FullScale * .25);
+  sprintf(RFcalP2," %4.0f V", RFAarray[Board]->FullScale * .75);
+  RFAdialogEntriesCal[1].Name = RFAdialogEntriesCal[4].Name = RFcalP1;
+  RFAdialogEntriesCal[2].Name = RFAdialogEntriesCal[5].Name = RFcalP2;
+  RFAdialogEntrySetPoint.Max = RFAarray[Board]->FullScale;
   // Setup menu and start the thread
   if(NumberOfRFAchannels == 0)
   {
@@ -470,7 +544,7 @@ void RFA_loop(void)
   }
   RFAupdate = false;
   SelectBoard(SelectedRFAboard);
-  if (ActiveDialog == &RFAdialog) RefreshAllDialogEntries(&RFAdialog);
+  if ((ActiveDialog == &RFAdialog) && (ActiveDialog->Entry != RFAdialogEntriesCal)) RefreshAllDialogEntries(&RFAdialog);
   rfad = *RFAD;
 }
 
@@ -478,11 +552,54 @@ void RFA_loop(void)
 // Host serial commands
 // 
 
-// Calibration commands are used to set ranges, cal procedures need to
-// be done after the range is defined.
-//  Vpp range command, sets the full scale for the Vpp readbacks and
-//  for the setpoint command.
-//  DC output range commands, set the +- range for the DC outputs.
+// Add commands for the following:
+//  Define range
+//  Define the Quad radius
+//  Define the mz
 
+int RFAmodule2board(int Module)
+{
+  int b=-1;
 
+  if(Module == 1)
+  {
+    if(RFAarray[0] != NULL) b = 0;
+    if((RFAarray[0] == NULL) && (RFAarray[1] != NULL)) b = 1;
+  }
+  if((Module == 2) && (RFAarray[0] != NULL) && (RFAarray[1] != NULL)) b = 1;
+  if(b != -1) return(b);
+  SetErrorCode(ERR_BADCMD);
+  SendNAK;
+  return(b);
+}
+
+void RFAsetRange(char *Module, char *value)
+{
+  String token;
+  int b,mod;
+  float v;
+
+  token = Module;
+  mod = token.toInt();
+  if((b = RFAmodule2board(mod)) == -1) return;
+  token = value;
+  v = token.toFloat();
+  if((v < 500) || (v > 5000))
+  {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;   
+     return;
+  }
+  SendACK;
+  RFAarray[b]->FullScale = v;
+}
+
+void RFAgetRange(int Module)
+{
+  int b;
+  
+  if((b = RFAmodule2board(Module)) == -1) return;
+  SendACKonly;
+  if(!SerialMute) serial->println(RFAarray[b]->FullScale);
+}
 

@@ -22,10 +22,12 @@ DialogBoxEntry ARBCompressorEntries[] = {
 DialogBoxEntry ARBCompressorEntries2[] = {
   {" Trig input"          , 0, 1, D_DI     , 0, 0, 2, 21, false, NULL, &arb.Ctrig, NULL, ARBconfigureTrig},
   {" Trig level"          , 0, 2, D_DILEVEL, 0, 0, 4, 19, false, NULL, &arb.CtrigLevel, NULL, ARBconfigureTrig},
-  {" Force trigger"       , 0, 4, D_FUNCTION,0, 0, 0, 0,  false, NULL, NULL, ARBcompressorTriggerISR, ARBcompressorTriggerISR},
-  {" Switch output"       , 0, 6, D_DO     , 0, 0, 2, 21, false, NULL, &arb.Cswitch, NULL, ARBsetSwitch},
-  {" Switch level"        , 0, 7, D_DOLEVEL, 0, 0, 4, 19, false, NULL, &arb.CswitchLevel, NULL, ARBsetSwitch},
-  {" Switch state"        , 0, 8, D_LIST   , 0, 0, 5, 18, false, CswitchList, CswitchState, NULL, ARBsetSwitch},
+  {" Switch output"       , 0, 3, D_DO     , 0, 0, 2, 21, false, NULL, &arb.Cswitch, NULL, ARBsetSwitch},
+  {" Switch level"        , 0, 4, D_DOLEVEL, 0, 0, 4, 19, false, NULL, &arb.CswitchLevel, NULL, ARBsetSwitch},
+  {" Switch state"        , 0, 5, D_LIST   , 0, 0, 5, 18, false, CswitchList, CswitchState, NULL, ARBsetSwitch},
+  {" Cramp"               , 0, 6, D_INT    ,-200,200,1,19,false, "%4d", &arb.Cramp, NULL, NULL},
+  {" Cramp order"         , 0, 7, D_INT    , 1,100,1, 19, false, "%4d", &arb.CrampOrder, NULL, NULL},
+  {" Force trigger"       , 0, 9, D_FUNCTION,0, 0, 0, 0,  false, NULL, NULL, ARBcompressorTriggerISR, ARBcompressorTriggerISR},
   {" First page"          , 0, 10,D_PAGE   , 0, 0, 0, 0,  false, NULL, &ARBCompressorEntries, NULL, NULL},
   {" Return to ARB menu"  , 0, 11,D_DIALOG , 0, 0, 0, 0,  false, NULL, &ARBdialog, NULL, NULL},
   {NULL},
@@ -120,6 +122,34 @@ void ARBCsetOrder(void)
    int b=SelectedBoard();
    SetByte(CompressBoard,TWI_SET_COMP_ORDER, ARBarray[0]->Corder);
    SelectBoard(b);           
+}
+
+void ARBCsetCramp(void)
+{
+   int b=SelectedBoard();
+   Set16bitInt(CompressBoard, TWI_SET_CRAMP, ARBarray[0]->Cramp);
+   SelectBoard(b);             
+}
+
+void ARBCsetCrampOrder(void)
+{
+   int b=SelectedBoard();
+   Set16bitInt(CompressBoard, TWI_SET_CRAMPORDER, ARBarray[0]->CrampOrder);
+   SelectBoard(b);               
+}
+
+void ARBsetWFT1(void)
+{
+  int b=SelectedBoard();
+  SetWaveform(0, ARBarray[0]->wft);
+  SelectBoard(b);             
+}
+
+void ARBsetWFT2(void)
+{
+  int b=SelectedBoard();
+  SetWaveform(0, ARBarray[1]->wft);
+  SelectBoard(b);               
 }
 
 // Called when the timer reaches the desired time point.
@@ -218,7 +248,6 @@ void ARBcompressorTriggerISR(void)
   CompressorTimer.enableTrigger();
   CompressorTimer.softwareTrigger();  
   CompressorTimer.setPriority(0);
-  // Do not exit until the compressor table has finished
  }
 
 // Reads value from table and updates index. If no value
@@ -240,9 +269,9 @@ bool ARBgetValueFromTable(int *index, int *value)
 
 char ARBgetNextOperationFromTable(bool init)
 {
-  bool valfound;
-  char portCH;
-  int index,b;
+  bool   valfound;
+  char   portCH;
+  int    index,b;
   static int tblindex=0;
   static char OP;
   static int count = 0;
@@ -399,6 +428,38 @@ char ARBgetNextOperationFromTable(bool init)
       C_Tnc = (ARBarray[0]->TnoC / 1000.0) * C_clock;
       count = 0;
     }
+    if(OP == 'K')
+    {
+      // Set the Cramp rate
+      arb.Cramp = ARBarray[0]->Cramp = count;
+      if(AcquireTWI()) ARBCsetCramp();
+      else TWIqueue(ARBCsetCramp);
+      count = 0;
+    }
+    if(OP == 'k')
+    {
+      // Set the Cramp step size, or cramp order
+      arb.CrampOrder = ARBarray[0]->CrampOrder = count;
+      if(AcquireTWI()) ARBCsetCrampOrder();
+      else TWIqueue(ARBCsetCrampOrder);      
+      count = 0;
+    }
+    if(OP == 'W')
+    {
+      if(count < 1) count = 1;
+      if(count > 5) count = 5;
+      ARBarray[0]->wft = (WaveFormTypes)(count - 1);
+      if(AcquireTWI()) ARBsetWFT1();
+      else TWIqueue(ARBsetWFT1);      
+    }
+    if(OP == 'w')
+    {
+      if(count < 1) count = 1;
+      if(count > 5) count = 5;
+      ARBarray[1]->wft = (WaveFormTypes)(count - 1);
+      if(AcquireTWI()) ARBsetWFT2();
+      else TWIqueue(ARBsetWFT2);           
+    }
     if(OP == 's') ARBclock->stop();                            // Stop the clock
     if(OP == 'r') ARBclock->start(-1, 0, true);                // Restart the clock
     if(OP == 'o') C_SwitchTime = (count / 1000.0) * C_clock;   // Sets the switch open time
@@ -413,6 +474,7 @@ char ARBgetNextOperationFromTable(bool init)
   count = 0;
 }
 
+// Compressor init function, called on startup
 void ARBcompressor_init(void)
 {
   int            i;
@@ -428,9 +490,6 @@ void ARBcompressor_init(void)
   SetBool(CompressBoard,TWI_SET_COMP_EXT,true);
   // Clear the switch output
   ClearOutput(ARBarray[0]->Cswitch,ARBarray[0]->CswitchLevel);
-  // Enable the compressor menu selection 
-  de = GetDialogEntries(ARBentriesPage2, "Compressor");
-  if(de != NULL) de->Type = D_DIALOG;
   // Setup the trigger line and ISR
   CtrigInput = new DIhandler;
   ARBupdateMode();
@@ -438,9 +497,12 @@ void ARBcompressor_init(void)
   ARBsetSwitch();
 }
 
+// Compressor polling loop, called every 100 mS when the compressor is enabled.
 void ARBcompressor_loop(void)
 {
   static int init = -1;
+  static int CurrentCramp = -1000;
+  static int CurrentCrampOrder = -1;
 
   if(init == -1)
   {
@@ -456,6 +518,16 @@ void ARBcompressor_loop(void)
   C_Tn  = (ARBarray[0]->Tnormal / 1000.0) * C_clock;
   C_Tnc = (ARBarray[0]->TnoC / 1000.0) * C_clock;
   if (ActiveDialog == &ARBCompressorDialog) RefreshAllDialogEntries(&ARBCompressorDialog);  
+  if(CurrentCramp != ARBarray[0]->Cramp)
+  {
+    CurrentCramp = ARBarray[0]->Cramp;
+    Set16bitInt(CompressBoard, TWI_SET_CRAMP, CurrentCramp);
+  }
+  if(CurrentCrampOrder != ARBarray[0]->CrampOrder)
+  {
+    CurrentCrampOrder = ARBarray[0]->CrampOrder;
+    Set16bitInt(CompressBoard, TWI_SET_CRAMPORDER, CurrentCrampOrder);
+  }
 }
 
 //
@@ -467,6 +539,12 @@ void SetARBCompressorEnabled(char *flag)
   String smode;
 
   smode = flag;
+  if(ARBarray[0] == NULL)
+  {
+    SetErrorCode(ERR_INTERNAL);
+    SendNAK;       
+    return;    
+  }
   if((smode == String("TRUE")) || (smode == String("FALSE")))
   {
      if(smode == String("TRUE")) ARBarray[0]->CompressorEnabled = true;

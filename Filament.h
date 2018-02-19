@@ -61,6 +61,7 @@ typedef struct
                              // current monitoring.
   // Added the current direction flag for the firmware rev 2
   bool    Idir;              // Current direction
+  ADCchan Ecurrent;          // Emission current adc channel, requires rev 4 module
 } FilamentData;
 
 extern FilamentData  FDarray[2];

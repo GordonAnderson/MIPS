@@ -6,6 +6,15 @@ extern int   NumberOfDCChannels;
 extern bool  DCbiasUpdate;
 extern bool  DCbiasBoards[2];
 extern bool  DCbiasTestEnable;
+extern bool  AutoReset;
+
+// DCbias pulse channel variables
+extern bool  DCbiasPena;
+extern int   DCbiasPchan;
+extern float DCbiasPvoltage;
+extern int   DCbiasPdelay;
+extern int   DCbiasPwidth;
+
 
 typedef struct
 {
@@ -71,6 +80,9 @@ void  DCbiasDelta(char *Value);
 void  DCbiasOffsetable(char *schan, char *state);
 void  DCbiasUseOneOffset(char *state);
 void  DCbiasOffsetReadback(char *state);
+void  SetDCbiasADCtwiADD(int module, int add);
+void  SetDCbiasRange(int board, int range);
+void  SetDCbiasExtended(int board);
 
 void SetDCbiasProfile(void);
 void GetDCbiasProfile(int num);
@@ -79,6 +91,9 @@ void SetDCbiasProfileFromCurrent(int num);
 void StopProfileToggle(void);
 void SetDCbiasProfileToggle(void);
 
+void SetDCbiasPena(char *state);
+void SetDCbiasPtrigger(char *src);
+void GetDCbiasPtrigger(void);
 
 #endif
 

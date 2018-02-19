@@ -76,6 +76,10 @@ extern int ErrorCode;
 #define ERR_EEPROMREAD              120     // Error Reading from EEPROM on module
 #define ERR_READINGSD               121     // Error Reading data from SD card
 #define ERR_NOTSUPPORTED            122     // Not supported by hardware
+#define ERR_NOTINMANMODE            123     // Auto tune error, not in manual mode
+#define ERR_ADCNOTAVALIABLE         124     // ADC interface in use and not avaliable at this time
+#define ERR_ADCALREARYSETUP         125     // ADC interface is already setup
+#define ERR_ADCNOTSETUP             126     // ADC interface is not setup
 #endif
 
 

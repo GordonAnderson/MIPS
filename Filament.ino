@@ -68,9 +68,15 @@
 //    4.) Allow only one channel to be enabled at a time
 //    5.) Only allow polarity change when disabled
 //
+// Firmware rev levels and functions
+//  Rev 1 = Orginal 2 channel filament module
+//  Rev 2 = Current reversable single channel mode. Need to tie the two channels together.
+//  Rev 3 = Supports on module emission current monitoring, added on PCB rev 4.0
+//
 // Gordon Anderson
 // July 25, 2015
 // March 7,2017, revised to support firmware rev 2
+// August 31, 2017, revised to support firmware rev 3
 //
 #include <stdarg.h>
 #include "wire.h"
@@ -126,7 +132,8 @@ float Fpower;
 float BiasCurrent;
 
 extern DialogBoxEntry FilamentEntriesPage2[];
-extern DialogBox FilamentCycleDialog;
+extern DialogBoxEntry FilamentEntriesCalibration[];
+extern DialogBox      FilamentCycleDialog;
 
 DialogBoxEntry FilamentEntriesPage1[] = {
   {" Channel"            , 0, 1, D_INT  , 1, 2, 1, 21, false, "%2d", &Fchannel, NULL, SelectFilamentChannel},
@@ -144,16 +151,14 @@ DialogBoxEntry FilamentEntriesPage1[] = {
 };
 
 char *FmodeList = "Ictrl,IVctrl";
-char Fmode[8] = "Ictrl";
+char Fmode[8]   = "Ictrl";
 
 DialogBoxEntry FilamentEntriesPage2[] = {
   {" Mode"               , 0, 1, D_LIST , 0, 0, 7, 16, false, FmodeList, Fmode, NULL, FmodeChange},
   {" Max power"          , 0, 2, D_FLOAT, 1, 20, 1, 18, false, "%5.0f", &FCD.MaxPower, NULL, NULL},
   {" Ramp rate"          , 0, 3, D_FLOAT, 0, 1, 0.01, 18, false, "%5.3f", &FCD.RampRate, NULL, NULL},
   {" Current dir"        , 0, 4, D_OFF, 0, 1, 1, 19, false, NULL, &CurrentDir, NULL, CurrentDirChange},
-  {" Cal Supply V"       , 0, 5, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalFilamentSupplyV, NULL},
-  {" Cal Filament V"     , 0, 6, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalFilamentV, NULL},
-  {" Cal Filament I"     , 0, 7, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalFilamentI, NULL},
+  {" Calibration"        , 0, 5, D_PAGE, 0, 0, 0, 0, false, NULL, FilamentEntriesCalibration, NULL, NULL},
   {" Cycle menu"         , 0, 8, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FilamentCycleDialog, NULL, NULL},
   {" Save settings"      , 0, 9, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SaveFilamentSettings, NULL},
   {" Restore settings"   , 0,10, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RestorFilamentSettings, NULL},
@@ -164,6 +169,15 @@ DialogBoxEntry FilamentEntriesPage2[] = {
 DialogBox FilamentDialog = {
   {"Filament control params",ILI9340_BLACK, ILI9340_WHITE,2, 0, 0, 300, 220, B_DOUBLE, 12},
   M_SCROLLING, 0, 0,false, FilamentEntriesPage1
+};
+
+DialogBoxEntry FilamentEntriesCalibration[] = {
+  {" Cal Supply V"       , 0, 1, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalFilamentSupplyV, NULL},
+  {" Cal Filament V"     , 0, 2, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalFilamentV, NULL},
+  {" Cal Filament I"     , 0, 3, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalFilamentI, NULL},
+  {" Cal Emission I"     , 0, 4, D_OFF, 0, 0, 0, 0, false, NULL, NULL, CalEmissionI, NULL},
+  {" Return"             , 0,10, D_PAGE, 0, 0, 0, 0, false, NULL, FilamentEntriesPage2, NULL, NULL},
+  {NULL},
 };
 
 int CurrentCycle;
@@ -245,6 +259,22 @@ void CalFilamentI(void)
   FD.FCD[Channel2Index(SelectedFilamentChan)] = FCD;
 }
 
+void CalEmissionI(void)
+{
+  ChannelCal CC;
+  char *Name = "    Emission Current";
+
+  SelectBoard(SelectedFilamentBoard);
+  // Set up the calibration data structure
+  CC.ADCpointer = &AD7998;
+  CC.DACaddr = 0;
+  CC.ADCaddr = FD.ADCadr;
+  CC.DACout = NULL;
+  CC.ADCreadback = &FD.Ecurrent;
+  // Calibrate this channel
+  ChannelCalibrate(&CC, Name, 0, 100);
+}
+
 void FmodeChange(void)
 {
   String mode;
@@ -275,7 +305,7 @@ int8_t BoardFromSelectedFilamentChannel(int8_t SC)
   if(FilamentBoards[0]) Rev = FDarray[0].Rev;
   if(FilamentBoards[1]) Rev = FDarray[1].Rev;
   if(Rev == -1) return(-1);
-  if(Rev == 2)
+  if(Rev >= 2)
   {
     if(SC < 1)
     {
@@ -313,7 +343,7 @@ int Channel2Index(int channel)
 
   b = BoardFromSelectedFilamentChannel(channel);
   if(b == -1) return(-1);
-  if(FDarray[b].Rev == 2)
+  if(FDarray[b].Rev >= 2)
   {
     if((channel<0) || (channel>1)) return(-1);
     if(FDarray[b].Idir) return(0);
@@ -326,7 +356,7 @@ int Channel2Index(int channel)
 // Called after the user selects a channel
 void SelectFilamentChannel(void)
 {
-  if(FD.Rev == 2)
+  if(FD.Rev >= 2)
   {
     SelectedFilamentChan = (Fchannel - 1);
     SelectedFilamentBoard = BoardFromSelectedFilamentChannel(SelectedFilamentChan);
@@ -423,18 +453,26 @@ void Filament_init(int8_t Board, int8_t addr)
   // Init the hardware here...
   pinMode(FDarray[Board].FCD[0].Fpwr, OUTPUT);
   pinMode(FDarray[Board].FCD[1].Fpwr, OUTPUT);
-  // If current sense resisance value is 0 then turn off the display
+  // If current sense resisance value is 0 then turn off the display,
+  // Enable the display on rev 3
   de = GetDialogEntries(FilamentEntriesPage1, " Bias I, uA");
   if(de != NULL)
   {
     if(FDarray[Board].iSense == 0) de->Type = D_OFF;
     else de->Type = D_FLOAT;
+    if(FDarray[Board].Rev == 3) de->Type = D_FLOAT;
   }
-  // If Rev is 2 then enable the current direction option
-  if(FDarray[Board].Rev == 2)
+  // If Rev is 2 or greater then enable the current direction option
+  if(FDarray[Board].Rev >= 2)
   {
     de = GetDialogEntries(FilamentEntriesPage2, " Current dir");
     if(de != NULL) de->Type = D_FWDREV;
+  }
+  // If this is rev 3 then enable the emission current calibration option
+  if(FDarray[Board].Rev == 3)
+  {
+    de = GetDialogEntries(FilamentEntriesCalibration, " Cal Emission I");
+    if(de != NULL) de->Type = D_FUNCTION;
   }
   // Define the initial selected channel as 0 and setup
   Fchannel = 1;
@@ -451,7 +489,7 @@ void Filament_init(int8_t Board, int8_t addr)
     // Add threads to the controller
     control.add(&FilamentThread);
   }
-  if(FDarray[Board].Rev == 2) NumberOfFilamentChannels++;
+  if(FDarray[Board].Rev >= 2) NumberOfFilamentChannels++;
   else NumberOfFilamentChannels += 2;  // Always add two channels for each board if Rev is 1
   // Set the maximum number of channels in the selection menu
   FilamentEntriesPage1[0].Max = NumberOfFilamentChannels;
@@ -613,8 +651,8 @@ void Filament_loop(void)
     {
       FD.FCD[Channel2Index(SelectedFilamentChan)] = FCD;    // This stores any changes back to the selected channels data structure
       FD.FCyl[Channel2Index(SelectedFilamentChan)] = FCY;
-      // If this is rev 2 then write the 
-      if(FD.Rev == 2)
+      // If this is rev 2 or greater then set the channel parameters to the same values
+      if(FD.Rev >= 2)
       {
         FDarray[SelectedFilamentBoard].FCD[0].CurrentSetpoint = FDarray[SelectedFilamentBoard].FCD[1].CurrentSetpoint = FCD.CurrentSetpoint;
         FDarray[SelectedFilamentBoard].FCD[0].FilamentVoltage = FDarray[SelectedFilamentBoard].FCD[1].FilamentVoltage = FCD.FilamentVoltage;
@@ -712,6 +750,13 @@ void Filament_loop(void)
         // Read and filter all the readback and monitor values
         if (adcStatus == 0)
         {
+          // If this is rev 3 then read the emission current dar channel
+          if(FDarray[b].Rev == 3)
+          {
+             float BCfilter = 0.05;
+             float Ei = Counts2Value(ADCvals[FDarray[b].Ecurrent.Chan], &FDarray[b].Ecurrent);
+             BiasCurrent = BCfilter * Ei + (1-BCfilter) * BiasCurrent;    
+          }
           // Filament supply voltage
           FsupplyVsUF[b][c] = Counts2Value(ADCvals[FDarray[b].FCD[c].DCfsuplyMon.Chan], &FDarray[b].FCD[c].DCfsuplyMon);
           FsupplyVs[b][c] = Filter * FsupplyVsUF[b][c] + (1 - Filter) * FsupplyVs[b][c];
@@ -848,7 +893,7 @@ void SetFilamentCurrent(char *Chan, char *Current)
     return;
   }
   FDarray[b].FCD[Channel2Index(c - 1)].CurrentSetpoint = I;
-  if(FDarray[b].Rev == 2) FDarray[b].FCD[0].CurrentSetpoint = FDarray[b].FCD[0].CurrentSetpoint = I;
+  if(FDarray[b].Rev >= 2) FDarray[b].FCD[0].CurrentSetpoint = FDarray[b].FCD[0].CurrentSetpoint = I;
   if ((c - 1) == SelectedFilamentChan) FCD.CurrentSetpoint = I;
   SendACK;
 }
@@ -884,7 +929,7 @@ void SetFilamentSupplyVoltage(char *Chan, char *Voltage)
   }
   FDarray[b].FCD[Channel2Index(c - 1)].FilamentVoltage = V;
   if ((c - 1) == SelectedFilamentChan) FCD.FilamentVoltage = FDarray[b].FCD[Channel2Index(c - 1)].FilamentVoltage;
-  if(FDarray[b].Rev == 2) FDarray[b].FCD[0].FilamentVoltage = FDarray[b].FCD[0].FilamentVoltage = V;  
+  if(FDarray[b].Rev >= 2) FDarray[b].FCD[0].FilamentVoltage = FDarray[b].FCD[0].FilamentVoltage = V;  
   SendACK;
 }
 
@@ -952,7 +997,7 @@ void SetCurrentRampRate(char *chan, char *RampRate)
     return;
   }
   FDarray[b].FCD[Channel2Index(c - 1)].RampRate = fval;
-  if(FDarray[b].Rev == 2) FDarray[b].FCD[0].RampRate = FDarray[b].FCD[1].RampRate = fval;
+  if(FDarray[b].Rev >= 2) FDarray[b].FCD[0].RampRate = FDarray[b].FCD[1].RampRate = fval;
   if ((c - 1) == SelectedFilamentChan) FCD.RampRate = FDarray[b].FCD[Channel2Index(c - 1)].RampRate;
   SendACK;
 }
@@ -965,7 +1010,7 @@ void GetCerrentDirection(int channel)
 
   if (!IsFilamentChannelValid(channel)) return;
   b = BoardFromSelectedFilamentChannel(channel-1);
-  if(FDarray[b].Rev != 2)
+  if(FDarray[b].Rev < 2)
   {
     SetErrorCode(ERR_BADARG);
     SendNAK;
@@ -991,7 +1036,7 @@ void SetCurrentDirection(char *chan, char *dir)
   if (!IsFilamentChannelValid(channel)) return;
   b = BoardFromSelectedFilamentChannel(channel-1);
   res = dir;
-  if((FDarray[b].Rev != 2) || ((res != "FWD") && (res != "REV")))
+  if((FDarray[b].Rev < 2) || ((res != "FWD") && (res != "REV")))
   {
     SetErrorCode(ERR_BADARG);
     SendNAK;

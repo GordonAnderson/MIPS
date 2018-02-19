@@ -24,6 +24,24 @@
 //  - Board address points to module array, if only one board it can be board 0 or 1
 //  - Dynamically allocate the needed profile array and update all profile code
 //
+// November 3, 2017, to dos
+//  1.) Automatically remove the popup trip message when the power supply is reset
+//  2.) Add a automaic trip reset feature that will work as follows
+//        - If the supply trips wait 5 seconds and reset
+//        - If it trips 3 times in 30 seconds then leave it off
+//        - Turning on the power supply via UI or command will reset the logic
+//        - Enable with a serial command for auto reset
+//        - Implementation notes:
+//              bool      AutoReset       // Automatic trip reset enable if true
+//              bool      Tripped         // True when supply trips
+//              uint8_t   TrippedTimes    // Number of times the supply tripped
+//              uint32_t  TrippedTime     // Tripped time
+//              uint32_t  ResetTime       // Time to reset power supply if not 0
+//              When supply supply trips if time is 30 sec greater than TrippedTime set TrippedTime to time
+//              and set TrippedTimes to 1
+//              if Tripped and time is 5 sec greater the TrippedTime reset and inc TrippedTimes if TrippedTimes > 3
+//              do not auto reset
+//
 // Gordon Anderson
 //
 #include "DCbias.h"
@@ -59,6 +77,8 @@ int   CalChannel=1;             // User selected channel to calibrate
 float Readback[8];              // Displayed readback buffer
 float MaxDCbiasVoltage=0;       // This value is set to the highest DC bias voltage
 float Verror = 0;               // Used to detect if the DC bias supply is "stressed"
+int   VerrorCh = 0;             // Channel that has readback error
+char  mess[25];                 // Message buffer for readback error message
 float VerrorFiltered = 0;       // Used to trip supply is error level is exceeded
 int   MonitorDelay;             // Delay a number of loop interations before monitoring voltages for tripping PS
 
@@ -69,8 +89,16 @@ bool  DCbiasTestEnable = true;  // Set false to disable readback testing
 
 DCbiasData  *DCbDarray[4] = {NULL,NULL,NULL,NULL};
 DCbiasState *DCbiasStates[4] = {NULL,NULL,NULL,NULL};
-
 DCbiasData dcbd;    // Holds the selected channel's data
+
+// The following variables support automatic reset of a power supply trip
+#define   TrippedTries 3         // Number of times to try resetting in 30 secs
+bool      AutoReset=false;       // Automatic trip reset enable if true
+bool      Tripped=false;         // True when supply trips
+uint8_t   TrippedTimes=0;        // Number of times the supply tripped
+uint32_t  TrippedTime=0;         // Tripped time
+uint32_t  ResetTime=0;           // Time to reset power supply if not 0
+
 
 DialogBoxEntry DCDialogEntriesPage1[] = {
   {" Ch 1, V",  0, 1, D_FLOAT, dcbd.MinVoltage+dcbd.DCoffset.VoltageSetpoint, dcbd.MaxVoltage+dcbd.DCoffset.VoltageSetpoint, 1, 11, false, NULL, &dcbd.DCCD[0].VoltageSetpoint, NULL, NULL},
@@ -180,7 +208,7 @@ void SetupEntry(DCbiasData *dc, DialogBoxEntry *dbe)
   static char *Format1 = "%5.1f";
   static char *Format2 = "%5.0f";
   
-  if((dc->MaxVoltage - dc->MinVoltage) <= 100)
+  if((dc->MaxVoltage - dc->MinVoltage) <= 140)
   {
     for(i=0;i<=8;i++)
     {
@@ -442,6 +470,7 @@ float DCbiasCounts2Value(int chan, int counts)
 
 // This function sends the DAC counts to the selected channel.
 // This function is used by the time table generation code.
+// The function writes the DAC register but a LDAC pulse is needed to load the value
 // The channel value range is from 0 to maxchannel-1
 void DCbiasDACupdate(int chan, int counts)
 {
@@ -488,6 +517,19 @@ void DelayMonitoring(void)
 {
   MonitorDelay = 100;
   VerrorFiltered = 0;  // Reset the error filtered value
+}
+
+// Return the channel number 1 thur total channels based on
+// board address (0 to 3) and channel index (0 to 7)
+int DCBadd2chan(int brd, int ch)
+{
+  if(DCbDarray[brd] == NULL) return(0);  // this should never happen
+  if(brd == 0) return(ch+1);
+  if((DCbDarray[0] == NULL) && (brd == 1)) return(ch+1);
+  if(brd == 1)  return(ch+9);
+  if(brd == 2)  return(ch+17);
+  if(brd == 3)  return(ch+25);  
+  return(0);
 }
 
 // This function is called at powerup to initiaize the DC bias board(s).
@@ -558,7 +600,7 @@ void DCbias_init(int8_t Board, int8_t addr)
   NumberOfDCChannels += 8;
   DCDialogEntriesPage2[0].Max = NumberOfDCChannels;
   DCDialogEntriesPage2[1].Max = NumberOfDCChannels;
-  SetPowerSource();
+//  SetPowerSource();
   //serial->println(DCbDarray[0].DCCD[0].DCctrl.m);
   //serial->println(DCbDarray[0].DCCD[0].DCctrl.b);
   //serial->println(DCbDarray[0].DCCD[0].DCmon.m);
@@ -569,6 +611,7 @@ void DCbias_init(int8_t Board, int8_t addr)
 // Updated March 13, 2016: Only update the DACs when the values have changed.
 void DCbias_loop(void)
 {
+  static  bool  inited = false;
   float   errorPercentage,V;
   static  float offsetV;
   static  int disIndex = 0;
@@ -578,6 +621,8 @@ void DCbias_loop(void)
   uint16_t ADCvals[8];
 
   TRACE(1);
+  if(!inited) SetPowerSource();
+  inited = true;
   // Monitor power on output bit. If power comes on, hold all outputs at zero until power is stable, short delay.
   if(digitalRead(PWR_ON) != 0) 
   {
@@ -665,7 +710,7 @@ void DCbias_loop(void)
       if((TableMode == LOC) && (DCbiasTestEnable))
       {
        errorPercentage = (abs(DCbiasStates[b]->Readbacks[i] - DCbDarray[b]->DCCD[i].VoltageSetpoint) / DCbDarray[b]->MaxVoltage) * 100.0;
-       if(errorPercentage > Verror) Verror = errorPercentage;
+       if(errorPercentage > Verror) { Verror = errorPercentage; VerrorCh = DCBadd2chan(b,i); }
       }
     }
   }
@@ -676,6 +721,12 @@ void DCbias_loop(void)
   // If the VerrorFiltered value exceeds the threshold then turn off the DC bias power supply and popup a message
   if(IsPowerON())
   {
+    if(Tripped)
+    {
+      // If here then the power supply tripped and was reset
+      DismissMessageIfButton();     // Dismiss the popup message
+      Tripped = false;
+    }
     // Test the threshold
     if((VerrorFiltered > MIPSconfigData.VerrorThreshold) && (MIPSconfigData.VerrorThreshold > 0))
     {
@@ -683,7 +734,29 @@ void DCbias_loop(void)
       MIPSconfigData.PowerEnable = false;
       SetPowerSource();
       // Display a popup error message
-      DisplayMessageButtonDismiss("Output Voltage Error!");
+      sprintf(mess,"Output Verror, ch %1d",VerrorCh);
+      DisplayMessageButtonDismiss(mess);
+//      DisplayMessageButtonDismiss("Output Voltage Error!");
+      Tripped = true;
+      if(AutoReset)
+      {
+        // Here if auto reset is enabled
+        if(millis() > (TrippedTime + 45000))  // If it has not tripped in last 30 seconds then reset the number of tries
+        {
+          TrippedTime = millis();
+          TrippedTimes = 0;
+        }
+        if(TrippedTimes++ < TrippedTries) ResetTime = millis() + 5000;
+      }
+    }
+  }
+  if(ResetTime != 0)
+  {
+    if(millis() > ResetTime)
+    {
+      ResetTime = 0;
+      MIPSconfigData.PowerEnable = true;
+      SetPowerSource();
     }
   }
   SelectBoard(SelectedDCBoard);
@@ -1103,6 +1176,57 @@ void DCbiasSetNumBoardChans(int board, int num)
   SendNAK;
 }
 
+// Sets the DCbias board voltage range. This is a setup command used only in the factory
+void SetDCbiasRange(int board, int range)
+{
+  if((board >= 0) && (board <= 3))
+  {
+    if(DCbDarray[board] != NULL)
+    {
+      DCbDarray[board]->MaxVoltage = range;
+      DCbDarray[board]->MinVoltage = -range;
+      // Set the gains and offsets for the ADC and DAC channels for this board
+      for(int i=0; i < 8; i++)
+      {
+        DCbDarray[board]->DCCD[i].DCctrl.b = 32767;
+        DCbDarray[board]->DCCD[i].DCctrl.m = (32767.0 / (float) range) * 0.95;
+        DCbDarray[board]->DCCD[i].DCmon.b = 32767;
+        DCbDarray[board]->DCCD[i].DCmon.m = (32767.0 / (float) range) * 0.95;
+      }
+      DCbDarray[board]->DCoffset.DCctrl.b = 32767;
+      DCbDarray[board]->DCoffset.DCctrl.m = (-32767.0 / (float) range) * 0.95;
+      DCbDarray[board]->DCoffset.DCmon.b = 32767;
+      DCbDarray[board]->DCoffset.DCmon.m = (-32767.0 / (float) range) * 0.95;
+      SendACK;
+      return;
+    }
+  }
+  SetErrorCode(ERR_BADARG);
+  SendNAK;
+}
+
+// This command sets the TWI addresses for the DAC and ADC and the SPI address for the qctal DAC
+// for extended operation. The addressed set are:
+// SPI = 0
+// ADC = 0x20
+// DAC = 0x1A
+void SetDCbiasExtended(int board)
+{
+  if((board >= 0) && (board <= 3))
+  {
+    if(DCbDarray[board] != NULL)
+    {
+      DCbDarray[board]->DACspi = 0;
+      DCbDarray[board]->ADCadr = 0x20;
+      DCbDarray[board]->DACadr = 0x1A;
+      SendACK;
+      return;
+    }
+  }
+  SetErrorCode(ERR_BADARG);
+  SendNAK;
+}
+
 // This function will set all the DCbias channel values. This function is called with the
 // arguments in the input ring buffer. All channel must be defined or an error is returned.
 void SetAllDCbiasChannels(void)
@@ -1207,6 +1331,8 @@ void  DCbiasUseOneOffset(char *state)
   {
     if(strcmp(state,"TRUE")==0) DCbDarray[0]->UseOneOffset = true;
     else DCbDarray[0]->UseOneOffset = false;
+    SendACK;
+    return;
   }
   SetErrorCode(ERR_BADARG);
   SendNAK;  
@@ -1216,11 +1342,28 @@ void  DCbiasOffsetReadback(char *state)
 {
   if((strcmp(state,"TRUE")==0) || (strcmp(state,"FALSE")==0) || (DCbDarray[0] = NULL))
   {
+    SendACKonly;
     if(strcmp(state,"TRUE")==0) DCbDarray[0]->OffsetReadback = true;
     else DCbDarray[0]->OffsetReadback = false;
+    return;
   }
   SetErrorCode(ERR_BADARG);
   SendNAK;    
+}
+
+// Sets the ADC TWI address, radix 10
+void SetDCbiasADCtwiADD(int module, int add)
+{
+  int b;
+  
+  if((DCbDarray[module] == NULL) || (module < 0) || (module >3))
+  {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;    
+     return;    
+  }
+  DCbDarray[module]->ADCadr = add;
+  SendACK;  
 }
 
 // October 15, 2016. Added the DCbias profile capability. This allow up to 10 voltage
@@ -1465,32 +1608,192 @@ void StopProfileToggle(void)
   SendACK;
 }
 
-// 
-// DCbias module DMA high speed buffer transfer functions.
 //
-//   Need to be able to send updates to up to 4 DCbias modules. 
-//   DMA transfer can be done one module at a time. Channels do
-//   not need to be continous or even in order. Value and channel
-//   are in 32 bit word.
+// DCbias channel pulse generation function.
 //
-//   Structure idea (linked list)
-//     - Next  (point to next item in list)
-//     - Name
-//     - Module (DCbias module 1 - 4)
-//     - Number of chans (1 to 8 max)
-//     - Chan buffer (4 * number of channels in bytes, holds data to be DMAed)
-//     - Repeat Module, Number of chans, and Chan buffer for each module. -1 equals end of list
+//  This code allows you to define a number of parameters to enable generation of a pulse on
+//  one DCbias channel. The Channel will pulse from its current value to the user defined 
+//  value. The user can control the following parameters:
 //
-//   Host commands to:
-//      - Define a named set of updated values, Name,ch,value,ch,value... this simple
-//        command would allow be to build structure
-//      - Update command, updates values in a existing struct, no need to delete struct
-//      - Remove a named struct
-//      - Clear all
+//  Channel
+//  Voltage
+//  Delay from trigger, in uS
+//  Width, in uS
+//  Trigger source, Q thru X or t
+//  Enable/disable
 //
-//  Call a single function with a named structure to cause an update. Need to benchmark this performance.
-//  Use DMA complete interrupt to start the next module and flag complete.
+//  This function uses timer channel 5, same channel used for the profiles so these two capabilities
+//  can not be used together.
 //
-//  Timing control may be doable with the table capability? likely no
+//  Host commands, note: limited error checking!
 //
+//  SDCBPCH,channel
+//  GDCBPCH
+//  SDCBPV,voltage
+//  GDCBPV
+//  SDCBPD,delay
+//  GDCBPD
+//  SDCBPW,width
+//  GDCBPW
+//  SDCBPT,trigger
+//  GDCBPT
+//  SDCBPENA,true or false
+//  GDCBPENA
+//
+
+// DCbias pulse channel variables
+bool  DCbiasGening   = false;
+bool  DCbiasPena     = false;
+int   DCbiasPchan    = 1;
+float DCbiasPvoltage = 20;
+int   DCbiasPdelay   = 100;
+int   DCbiasPwidth   = 100;
+char  DCbiasPtrigger = 't';
+bool  SavedPulseTestEnable;
+
+DIhandler *DIDCbiasPulse = NULL;
+MIPStimer *DCbiasPulseTMR = NULL;
+
+// Interrupt service routine for the timer interrupt that happens
+// and the end of the timer count. This is the point that the pulse
+// ends the DC bias channel is reset to its default value
+void DCbiasPulseTMR_ISR(void)
+{
+  if(!DCbiasGening) return;
+  // Pulse LDAC
+  PulseLDAC;
+  ValueChange = true;
+  // Load the pulse value
+  int b=SelectedBoard();
+  DCbiasDACupdate(DCbiasPchan-1, DCbiasValue2Counts(DCbiasPchan-1, DCbiasPvoltage));
+  SelectBoard(b);
+  DCbiasTestEnable = SavedPulseTestEnable;
+  DCbiasGening = false;
+}
+
+// This function will raise the DCbias channel to the pulse value.
+// The pluse voltage value has to be loaded into the DAC, this
+// function will pulse LDAC and load the default value.
+void DCbiasPulseHigh(void)
+{
+  if(!DCbiasGening) return;
+  SavedPulseTestEnable = DCbiasTestEnable;
+  DCbiasTestEnable = false;
+  // Pulse LDAC
+  PulseLDAC;
+  ValueChange = true;
+  // Load the default value
+  int b=SelectedBoard();
+  int brd = DCbiasCH2Brd(DCbiasPchan-1);
+  if(brd != -1) DCbiasDACupdate(DCbiasPchan-1, DCbiasValue2Counts(DCbiasPchan-1, DCbDarray[brd]->DCCD[(DCbiasPchan-1) & 7].VoltageSetpoint));
+  SelectBoard(b);
+}
+
+// Interrupt service routine to trigger the DC bias pulse. This event
+// starts the pulse generation.
+// Setup the timer to generate the pulse.
+void DCbiasPulse_ISR(void)
+{
+  if(DCbiasPdelay < 0) DCbiasPdelay = 0;
+  if(DCbiasPwidth < 0) DCbiasPwidth = 0;
+  // Set RC count to delay time plus width
+  DCbiasPulseTMR->setRC(((DCbiasPdelay + DCbiasPwidth) * 105)/10);
+  // Set RA count to delay time
+  DCbiasPulseTMR->setRA((DCbiasPdelay * 105)/10);
+  // Start the timer
+  DCbiasPulseTMR->enableTrigger();
+  DCbiasPulseTMR->softwareTrigger();
+  // Load the pulse value into the DAC
+  int b=SelectedBoard();
+  DCbiasDACupdate(DCbiasPchan-1, DCbiasValue2Counts(DCbiasPchan-1, DCbiasPvoltage));
+  SelectBoard(b);
+  DCbiasGening = true;
+}
+
+// Enable / Disable the DCbias pulse output. This function is called from the
+// command processor. The trigger source has to be defined before this call
+// and will be ignored if changed after the system is enabled. Valid parameters
+// are TRUE or FALSE
+void SetDCbiasPena(char *state)
+{
+  String token;
+
+  token = state;
+  // Validate input values
+  if((token != "TRUE") && (token != "FALSE"))
+  {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;  
+     return;
+  }
+  if(token == "FALSE")
+  {
+    DCbiasPena = false;
+    if(DCbiasPulseTMR != NULL) DCbiasPulseTMR->stop();
+    if(DIDCbiasPulse != NULL)  DIDCbiasPulse->detach();
+    SendACK;
+    return;
+  }
+  // Load the default because we don't know the state
+  int b=SelectedBoard();
+  int brd = DCbiasCH2Brd(DCbiasPchan-1);
+  if(brd != -1) DCbiasDACupdate(DCbiasPchan-1, DCbiasValue2Counts(DCbiasPchan-1, DCbDarray[brd]->DCCD[(DCbiasPchan-1) & 7].VoltageSetpoint));
+  SelectBoard(b);
+  // Allocate handler and timer if null
+  if(DCbiasPulseTMR == NULL) DCbiasPulseTMR = new MIPStimer(TMR_DCbiasPulse);
+  DCbiasPulseTMR->stop();
+  DCbiasPulseTMR->begin();
+  DCbiasPulseTMR->attachInterruptRA(DCbiasPulseHigh);
+  DCbiasPulseTMR->attachInterrupt(DCbiasPulseTMR_ISR);
+  DCbiasPulseTMR->setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
+  DCbiasPulseTMR->setTrigger(TC_CMR_EEVTEDG_NONE);
+  DCbiasPulseTMR->setClock(TC_CMR_TCCLKS_TIMER_CLOCK2);   // 10.5 MHz clock
+  DCbiasPulseTMR->stopOnRC();
+  if(DCbiasPtrigger == 't')
+  {
+    // Queue trigger function to start the pulse
+    QueueTpulseFunction(DCbiasPulse_ISR,true);
+  }  
+  else
+  {
+     QueueTpulseFunction(DCbiasPulse_ISR,false);
+     if(DIDCbiasPulse == NULL) DIDCbiasPulse = new DIhandler;
+     if((DCbiasPulseTMR == NULL) || (DIDCbiasPulse == NULL))
+     {
+       SetErrorCode(ERR_INTERNAL);
+       SendNAK;  
+       return;
+     }
+     // Setup trigger
+     DIDCbiasPulse->detach();
+     DIDCbiasPulse->attached(DCbiasPtrigger, RISING, DCbiasPulse_ISR);
+  }
+  LDACrelease;
+  pinMode(LDAC,OUTPUT);
+  LDAChigh;
+  DCbiasPena = true;
+  SendACK;
+  return;
+}
+
+void SetDCbiasPtrigger(char *src)
+{
+  if(((src[0] >= 'Q') && (src[0] <= 'X')) || (src[0] == 't'))
+  {
+    DCbiasPtrigger = src[0];
+    SendACK;
+    return;
+  }
+  SetErrorCode(ERR_BADARG);
+  SendNAK;  
+}
+
+void GetDCbiasPtrigger(void)
+{
+  SendACKonly;
+  if(!SerialMute) serial->println(DCbiasPtrigger);  
+}
+
+// End of DCbias channel pulse generation function.
+
 

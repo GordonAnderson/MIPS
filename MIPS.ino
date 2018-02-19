@@ -5,7 +5,7 @@
 // Seidel Gomes, for details, go to https://github.com/ivanseidel/ArduinoThread. This is a round robin
 // tasking system. Basically every module in MIPS is its own task. The modules are discoved on power up
 // and there init functions are called. The modules then insert there menu option into the main system
-// menu. There are a couple of additional threads defined in this main loop, one for the LED light 
+// menu. There are a couple of additional threads defined in this main loop, one for the LED light
 // flashing and a system thread that monitors power.
 //
 // The code in the modules does not block unless it is desired to stop all other tasks. Very little is
@@ -20,12 +20,12 @@
 // General Notes:
 //  1.) When SAVE command is sent MIPS will save its configuration data structure to a file called
 //      default.cfg on the SD card. This file is automatially loaded on startup.
-//  2.) MIPS code uses a first order difference equation to filter the readback data. Here is the 
+//  2.) MIPS code uses a first order difference equation to filter the readback data. Here is the
 //      transfer function of this filter:
 //      Filter time constant is:
 //      TC in seconds = 1/(sample rate is samples per sec * filter value) * 2 * pi
 //  3.) The PWM output frequency needs to be increased from its default setting of 1000 Hz
-//      to 50KHz for the RF driver module. The module used the following PWM output pins, 
+//      to 50KHz for the RF driver module. The module used the following PWM output pins,
 //      5 and 7 for board A and 6 and 8 for board B. This can be changed my editing the
 //      variant.h file in the arduino source and changing two #defines:
 //            #define PWM_FREQUENCY		50000
@@ -44,28 +44,28 @@
 //        3.) If any output exceeds 100 volts the red LED will flash.
 //
 // To do list: --------------------------------------------------------------------------------------
-//   1.) Add three point calibration to FAIMS high voltage levels 
+//   1.) Add three point calibration to FAIMS high voltage levels
 //   2.) Make the USB id text indicate GAACE
 //
-//     
+//
 // Revision history and notes *********************************************************************************
 //
 //    V1.0, January 13, 2015
 //      1.) Orginal release
 //    V1.1, January 25, 2015
-//      1.) Cleaned up the code for the external trigger and tested. I added a ISR to disable the external trigger after it happens 
+//      1.) Cleaned up the code for the external trigger and tested. I added a ISR to disable the external trigger after it happens
 //          so the system will not be re-triggerable
 //      2.) I updated the DCbias board trip logic so it will turn off the outputs on the +- 50 volt board
 //      3.) Fixed a minor display bug in the case where two DC bias board are in the system
 //    V1.2, January 28, 2015
 //      1.) Fixed a table bug that prevented table nesting in the case where
-//          to channel entries are present just a nested table. Below is an example of a table 
+//          to channel entries are present just a nested table. Below is an example of a table
 //          that did not work:
 //              STBLDAT;0:[1:2,163:[2:2,0:3:0,326:3:300,815:3:0],3260:3:300,3423:3:0];
 //    V1.3, January 30, 2015
 //      1.) Fixed a number of bugs that prevented two DC bias modules from working in one MIPS system.
 //    V1.4, February 3, 2015
-//      1.) Added a delay to hold all DC bias DAC at zero until power is up and stable for 1 sec. The offset driver was 
+//      1.) Added a delay to hold all DC bias DAC at zero until power is up and stable for 1 sec. The offset driver was
 //          latching up on power up when set at 250 volts.
 //      2.) Updated the power on voltage test to average the voltage 100 times. It has a looping problem sometimes that
 //          I have not solved.
@@ -89,11 +89,11 @@
 //      4.) Added serial support for bluetooth module. The system will now automatically switch back and forth between
 //          serialUSB and serial. The bluetooth interface has problems with long strings, likely needs flow control.
 //          Adding 3mSec of delay between transmitted characters at 9600 baud fixes the problem.
-//      5.) Added the macro menu to MIPS config. This allows selecting and playing a macro and defining a 
+//      5.) Added the macro menu to MIPS config. This allows selecting and playing a macro and defining a
 //          macro to play at startup
 //      6.) Updated the Twave system to support the rev 2 module
 //    V1.9, May 29, 2015
-//      1.) Fixed the SendACK and SendNAK macros to end with \n\r instead of just \n, this is consistant with all other 
+//      1.) Fixed the SendACK and SendNAK macros to end with \n\r instead of just \n, this is consistant with all other
 //          serial responces and AMPS.
 //      2.) Redesiged FAIMS to support field driven FAIMS option, not tested yet
 //      3.) Updated the tack scheduler code so the execution time of the process is not added to the reoccurance time.
@@ -170,7 +170,7 @@
 //      1.) Updated startup code to require holding the button to enable default parameter startup.
 //      2.) Updated DCbias moudule to support one offset parameter for both modules.
 //      3.) Performed a lot of performance optomization on the DAC SPI for DC bias module,
-//          performance increased to about 5 to 7 uS per channel for update. Discoverted the 
+//          performance increased to about 5 to 7 uS per channel for update. Discoverted the
 //          digital IO is very slow on DUE so I used diret register access.
 //      4.) All DAC and DIO SPI are now interrupt safe with SPI in an interrupt
 //      5.) Added FAIMS arc detection sensitvity adjustment
@@ -219,7 +219,7 @@
 //      1.) Initial support for rev 3.0 controller. This version has the second output port on its own strobe or LDAC, this is jumper selectable.
 //          Initial support allows back compatibility but does not exploied the capability. Need additional upgrates, this was a quick fix.
 //  V1.40, April 20, 2016
-//      1.) Moved the WiFi enable to the MIPS data structure. 
+//      1.) Moved the WiFi enable to the MIPS data structure.
 //      2.) Added command to allow changing a time point count value in a loaded and executing table.
 //      3.) LED control on button, OFF, and select a colors for ON, and flashing
 //                LEDOVRD,<TRUE or FALSE> this will override the default LED driver
@@ -247,14 +247,14 @@
 //              GFREQ       Get frequency in Hz
 //              BURST,num   num = number of clocks to generate. num=-1 to run forever and 0 to stop without changing stored num
 //          Also able to trigger from the table. Add b command where parameter is the number of pulses
-//      4.) Need to add support for offset readback and checking. This needs to be an option and only used in cases where a channel is 
+//      4.) Need to add support for offset readback and checking. This needs to be an option and only used in cases where a channel is
 //          avaliable for readback. An output channel can be repurposed for offset readback.
-//          - To enable this capability move the offset HV opamp to the second board and 
-//            also add a readback module in channel 8 slot. Jumper the optput for this channel 8 (actuall 16) 
+//          - To enable this capability move the offset HV opamp to the second board and
+//            also add a readback module in channel 8 slot. Jumper the optput for this channel 8 (actuall 16)
 //            to the float input pin.
 //          - Need to add a flag for this mode, use DCBOFFRBENA,TRUE or FALSE. This is DCbias offset readback enable.
 //            Always used last channel for readback.
-//      5.) Need to connect output enable to Arduino output pin to keep outputs disabled during initalization. Two options for this 
+//      5.) Need to connect output enable to Arduino output pin to keep outputs disabled during initalization. Two options for this
 //          depending on MIPS controller hardware revision.
 //          - For revsion 2.2 and older there is a hardware bug that connects the buffered input in Arduino pin 46 (input W on MIPS)
 //            to the output buffer enable. On these version cut the trace from IC6 pin 9 and program pin 46 as output, also remove R16
@@ -271,7 +271,7 @@
 //      3.) Added the shutter control for Mike Belov's system. This is hard coded and still needs work to make
 //          a generic solution.
 //  V1.44, May 9, 2016
-//      1.) Updated filament cycle mode to accept 0 as forever in the number of cycles. 
+//      1.) Updated filament cycle mode to accept 0 as forever in the number of cycles.
 //      2.) Upded the Twave max order to 127
 //      3.) Added order = 0 to = stop
 //  V1.45, May15, 2016
@@ -312,7 +312,7 @@
 //      1.) Added the SDCBDELTA command.
 //      2.) Added 'F' frequency command to multi-pass compressor
 //      3.) Added looping to multi-pass compressor, ...[...]x... where x is the loop count
-//      4.) Added bias current monitoring capability to Filament module. Also added the serial commands to set 
+//      4.) Added bias current monitoring capability to Filament module. Also added the serial commands to set
 //          bias sense resistor, use 10k resistor on channel 8 of bias module.
 //      5.) Made all the delay values in twave 100 seconds maximum
 //      6.) Added the frezze mode to the compressor after a delay time. Do this is table as a starting point.
@@ -419,12 +419,12 @@
 //          as a single channel with current reveral capability. This has been developed and tested.
 //      2.) Added a watch dog timer mode on serial traffic, if there is no serial traffic the system will disable
 //          the filament driver channels.
-//      3.) Added to the loss of power detection logic a filament power shutdown. The detection gives a total of 35 mS of advance 
+//      3.) Added to the loss of power detection logic a filament power shutdown. The detection gives a total of 35 mS of advance
 //          notice.
 //      4.) Added the ability to display a graphics image on the display. and to startup with am image with the
 //          display disabled.
 //      5.) Added a tune complete message when auto tuning from a serial command.
-//      6.) Added a retune command to make fine adjustments to the tuning, move in 1KHz steps at the current 
+//      6.) Added a retune command to make fine adjustments to the tuning, move in 1KHz steps at the current
 //          power settings.
 //      7.) Added Auto tune and retune response messages.
 //      8.) Turning off the display now disables the button and reports to host button press and rotation.
@@ -492,6 +492,104 @@
 //  1.92, July 29, 2017
 //      1.) Fixed a bug in the ARB compression table code that caused non repeatable performance. Still
 //          have work to do on the Twave compression table code
+//      2.) Added table command to trigger the compression table, c:A for arb, c:T for twave.
+//      3.) Added the ARB cramp command and functions.
+//  1.93, August 10, 2017
+//      1.) Fixed a number of bug in the Twave rev 4.0 system:
+//          - CPLD updated to address several timing issues related to compression
+//          - Fixed order 0 to equal infinity
+//          - Gate function errors fixed
+//          - Dir function errors fixed
+//      2.) Updated the SD io functions to be interrupt safe
+//  1.94, August 16, 2017
+//      1.) Updated the ESI rev 3 module to ramp HV up and down and through 0 properly.
+//      2.) Added the RFdriver calibration parameter entry function.
+//  1.95, August 29, 2017
+//      1.) Added UUID reporting, returns a 128 bit ID in hex format. This number is unique to the CPU.
+//      2.) Fixed a table nesting looping bug.
+//      3.) Minor update to serial processing to stop message intermingling.
+//  1.96, September 3, 2017
+//      1.) Fixed interrupt problem in ARB module
+//      2.) Fixed DIhandeler setup issue that caused constant setup calls when input was NA (0)
+//      3.) Saved the board select state in the table function
+//      4.) Changed the RPT reporting to build the full string and send, sending in sections resulted
+//          in missing chars on the MALDI app, reason is not clear but this update fixed the issue.
+//      5.) Update the echo mode code to echo after the host sends enter
+//      6.) Added the CrampOrder to ARB module
+//      7.) Added Cramp and Cramp order commands to multi-pass compressor table, K and k
+//  1.98, September 15, 2017
+//      1.) Updated the ABOUT command to make it interrupt safe
+//      2.) Added protection to set ARB compressor flag command
+//  1.99, October 4, 2017
+//      1.) fixed a bug in the macro record function that caused the system to reboot. also updated this function
+//          so you can paste a macro commend into the terminal window.
+//  1.100, October 13, 2017
+//      1.) Fixed bug in the arb waveform edit function
+//      2.) Updated the output settings when entering the shutdown mode
+//  1.101, October 25, 2017
+//      1.) Added waveform type control to the multi-pass compression table for ARB module
+//      2.) Set initial RF drive to zero on startup for RF driver module.
+//  1.102, November 2, 2017
+//      1.) Fixed EXTS external trigger mode. Trigger had a lot of latency
+//      2.) Added power supply turn on delay needed for 24 channel DCbias versions.
+//  1.103, November 3, 2017
+//      1.) Fixed bug in DCbias module that caused voltage trip to fail, this bug was introduced in 1.102 with code desiged
+//          to delay DC power supply startup. Needed for 24 channel modules. Note, trip does not work with version 1.02!
+//      2.) Added DCbias module power supply trip auto reset option
+//  1.104, November 12, 2017
+//      1.) Added serial commands for RF driver mode control
+//  1.105, November 17, 2017
+//      1.) Updated the RF driver for the Grid system to improve the closed loop control
+//  1.106, November 25, 2017
+//      1.) Updated the RF driver to support rev 4, this is the RF coil driver. The update is a bit of a hack
+//          but this is a one off solution.
+//      2.) Fixed a nasty table nesting bug that has been in the table code forever. This bug only happens
+//          in complex nested tables.
+//  1.107, December 2, 2017
+//      1.) Fixed several bugs in table code that caused errors in nested loops.
+//      2.) Fixed bug in MIPS timer getstatus function that caused missing interrupts.
+//      3.) Added the ARB sync module software command
+//      4.) Added the following ARB commands to the table system:
+//              101 = aux channel 1
+//              102 = aux channel 2
+//              103 = aux channel 3
+//              104 = aux channel 4
+//              105 = offset channel 1a
+//              106 = offset channel 1b
+//              107 = offset channel 2a
+//              108 = offset channel 2b
+//  1.108, December 6, 2017
+//      1.) Fixed a table bug that caused time 0 events to be missed in a repeat construct if it ended with digital command.
+//          This was a SPI address register that did not properly represent the SPI address state thus causing the error.
+//  1.109, December 16, 2017
+//      1.) Added the backlight level control of the MIPS config menu, had to make config menu 2 pages
+//      2.) Fixed table bug in end of loop processing introduced in 1.106 updates
+//      3.) Adjusted the timer assigment to make the backlight work
+//  1.110, December 18, 2017
+//      1.) Fixed a bug in the MIPS timer class.
+//  1.111, December 31, 2017
+//      1.) Fixed a b ug the SD driver to allow compatability with SDHC cards
+//  1.112, January 13, 2018
+//      1.) Added channel number of voltage error message for DC bias module
+//      2.) Added display auto intensity control
+//      3.) Added ethernet adapter test command
+//      4.) Updated the clock selection for the DCbias list functions
+//  1.113, January 17, 2018
+//      1.) Added support for second laser trigger using AUX trigger output. This used the delay trigger
+//          function that can now be triggered by t and the AUX trigger will not exceed 60 Hz if using
+//          the internal clock function. This is a very specific mod for MALID2 only.
+//  1.114, January 19, 2018
+//      1.) Added support for display type H8347_DSP. Updated the display driver to support both types of
+//          displays. To use the H8347 short arduino due pin 49 to ground with a jumper.
+//      2.) Added the CPUTEMP command to return the CPU temp in degrees C
+//  1.115, January 31, 2018
+//      1.) Fixed bug in S trigger on DCbias list function
+//      2.) Added ability to loop forever on DCbias list function
+//      3.) Added abort to DCbias infinate looping
+//  1.116, Feburary 4, 2018
+//      1.) Added the DC bias channel pulse capability
+//  1.117, Feburary 14, 2018
+//      1.) Fixed a bug in the DCbias list functions where the board select was not being defined.
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
@@ -500,10 +598,10 @@
 //      1.) Update the display code to make it interupt safe when ISR uses SPI, done but turned off for compressor
 //      2.) Fix the DIO to allow command processing in table mode, this will require a pending update flag for
 //          the DIO, only update if no pending update
-//      3.) Consider re-implementing the table mode dialog box code. This should work after the SPI upgrades to 
+//      3.) Consider re-implementing the table mode dialog box code. This should work after the SPI upgrades to
 //          display driver from step 3.
 //
-// Serial.println(); will print '\r' and '\n', 
+// Serial.println(); will print '\r' and '\n',
 //
 // Gordon Anderson
 // GAA Custom Electronics, LLC
@@ -512,6 +610,7 @@
 // 509.588.5410
 //
 #include "SD.h"
+#include "utility/Sd2card.h"
 #include "SPI.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_ILI9340.h"
@@ -572,9 +671,11 @@ bool DisableDisplay = false;
 bool LEDoverride = false;
 int  LEDstate = 0;
 
-const char Version[] PROGMEM = "Version 1.92, July 29, 2017";
+uint32_t BrightTime=0;
 
-// ThreadController that will controll all threads
+const char Version[] PROGMEM = "Version 1.117, Feb 14,2018";
+
+// ThreadController that will control all threads
 ThreadController control = ThreadController();
 //MIPS Threads
 Thread MIPSsystemThread = Thread();
@@ -585,7 +686,7 @@ int encValue = 0;
 bool ButtonPressed = false;
 bool ButtonRotated = false;
 
-bool EnableSerialNavigation=false;
+bool EnableSerialNavigation = false;
 
 extern Menu HardwareTestMenu;
 extern DialogBox TwaveDialog;
@@ -607,31 +708,43 @@ MenuEntry MainMenuEntries[MaxMainMenuEntries] = {
   {" MIPS Configuration", M_DIALOG, 0, 0, 0, NULL, &MIPSconfig, NULL, NULL},
   {" About this system",  M_DIALOG, 0, 0, 0, NULL, &MIPSabout, NULL, DisplayAbout},
   {" Reset serial port",  M_FUNCTION, 0, 0, 0, NULL, NULL, SerialPortReset, NULL},
-  {""}};
-  
+  {""}
+};
+
 Menu MainMenu = {
-  {"MIPS main menu",ILI9340_BLACK,ILI9340_WHITE,2,0,0,300,220,B_DOUBLE,12},
-  M_SCROLLING,0,0,MainMenuEntries};
-  
+  {"MIPS main menu", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
+  M_SCROLLING, 0, 0, MainMenuEntries
+};
+
+extern DialogBoxEntry MIPSconfigEntriesP2[];
+
 // MIPS configuration dialog box
 DialogBoxEntry MIPSconfigEntries[] = {
-  {" Controller rev", 0, 1, D_INT,    1, 10, 1, 18, false, "%2d", &MIPSconfigData.Rev, NULL, NULL},
-  {" Config modules", 0, 2, D_DIALOG, 0, 0, 0, 0, false, NULL, &ModuleConfig, SetupModuleConfig, NULL},
-  {" Startup delay" , 0, 3, D_INT,    1, 100, 1, 17, false, "%3d", &MIPSconfigData.StartupDelay, NULL, NULL},
-  {" Startup hold"  , 0, 4, D_YESNO,  0, 1, 1, 18, false, NULL, &MIPSconfigData.StartupHold, NULL, NULL},
-  {" DCbias supply" , 0, 5, D_ONOFF,  0, 1, 1, 18, false, NULL, &MIPSconfigData.PowerEnable, NULL, NULL},
-  {" DCbias trip, %FS"  , 0, 6, D_FLOAT,  0, 100, 0.1, 18, false, "%5.1f", &MIPSconfigData.VerrorThreshold, NULL, NULL},
-  {" Reboot", 0, 7, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, Software_Reset, NULL},
-  {" Macro options", 0, 8, D_DIALOG, 0, 0, 0, 0, false, NULL, &MacroOptions, SetupMacroOptions, NULL},  
-  {" Save settings"      , 0, 9, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SaveMIPSSettings, NULL},
-  {" Restore settings"   , 0, 10, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RestoreMIPSSettings, NULL},
+  {" Controller rev"     , 0, 1, D_INT,    1, 10, 1, 21, false, "%2d", &MIPSconfigData.Rev, NULL, NULL},
+  {" Config modules"     , 0, 2, D_DIALOG, 0, 0, 0, 0, false, NULL, &ModuleConfig, SetupModuleConfig, NULL},
+  {" Startup delay"      , 0, 3, D_INT,    1, 100, 1, 20, false, "%3d", &MIPSconfigData.StartupDelay, NULL, NULL},
+  {" Startup hold"       , 0, 4, D_YESNO,  0, 1, 1, 21, false, NULL, &MIPSconfigData.StartupHold, NULL, NULL},
+  {" DCbias supply"      , 0, 5, D_ONOFF,  0, 1, 1, 20, false, NULL, &MIPSconfigData.PowerEnable, NULL, NULL},
+  {" DCbias trip, %%FS"  , 0, 6, D_FLOAT,  0, 100, 0.1, 18, false, "%5.1f", &MIPSconfigData.VerrorThreshold, NULL, NULL},
+  {" Reboot"             , 0, 7, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, Software_Reset, NULL},
+  {" Backlight, %%"      , 0, 8, D_INT,      5, 100, 1, 20, false, "%3d", &MIPSconfigData.BackLight, NULL, SetBackLight},
+  {" Next page"          , 0, 10, D_PAGE, 0, 0, 0, 0, false, NULL, MIPSconfigEntriesP2, NULL, NULL},
   {" Return to main menu", 0, 11, D_MENU, 0, 0, 0, 0, false, NULL, &MainMenu, NULL, NULL},
   {NULL},
 };
 
+DialogBoxEntry MIPSconfigEntriesP2[] = {
+  {" Macro options"     , 0, 1,  D_DIALOG,   0, 0, 0, 0, false, NULL, &MacroOptions, SetupMacroOptions, NULL},
+  {" Save settings"     , 0, 9,  D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SaveMIPSSettings, NULL},
+  {" Restore settings"  , 0, 10, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RestoreMIPSSettings, NULL},
+  {" First page"        , 0, 11, D_PAGE, 0, 0, 0, 0, false, NULL, MIPSconfigEntries, NULL, NULL},
+  {NULL},
+};
+
 DialogBox MIPSconfig = {
-  {"MIPS Configuration",ILI9340_BLACK,ILI9340_WHITE,2,0,0,300,220,B_DOUBLE,12},
-  M_SCROLLING,0,0,false,MIPSconfigEntries};
+  {"MIPS Configuration", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
+  M_SCROLLING, 0, 0, false, MIPSconfigEntries
+};
 
 DialogBoxEntry MIPSaboutEntries[] = {
   {"   Return to main menu  ", 0, 11, D_MENU, 0, 0, 0, 0, false, NULL, &MainMenu, NULL, NULL},
@@ -639,9 +752,10 @@ DialogBoxEntry MIPSaboutEntries[] = {
 };
 
 DialogBox MIPSabout = {
-  {"About this system",ILI9340_BLACK,ILI9340_WHITE,2,0,0,300,220,B_DOUBLE,12},
-  M_SCROLLING,0,0,false,MIPSaboutEntries};
-  
+  {"About this system", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
+  M_SCROLLING, 0, 0, false, MIPSaboutEntries
+};
+
 // MIPS module setup / config dialog box
 DialogBoxEntry ModuleConfigEntries[] = {
   {" Board addr", 0, 3, D_LIST, 0, 0, 10, 12, false, BoardAddressList, BoardAddress, NULL, NULL},
@@ -653,9 +767,10 @@ DialogBoxEntry ModuleConfigEntries[] = {
 };
 
 DialogBox ModuleConfig = {
-  {"Module Configuration",ILI9340_BLACK,ILI9340_WHITE,2,0,0,300,220,B_DOUBLE,12},
-  M_SCROLLING,0,0,false,ModuleConfigEntries};
-  
+  {"Module Configuration", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
+  M_SCROLLING, 0, 0, false, ModuleConfigEntries
+};
+
 // Macro dialog box supporting the following
 //  - Select and play a macro
 //  - Select a macro to play at power up
@@ -671,15 +786,29 @@ DialogBoxEntry MacroEntries[] = {
 };
 
 DialogBox MacroOptions = {
-  {"Macro options",ILI9340_BLACK,ILI9340_WHITE,2,0,0,300,220,B_DOUBLE,12},
-  M_SCROLLING,0,0,false,MacroEntries};
-  
+  {"Macro options", ILI9340_BLACK, ILI9340_WHITE, 2, 0, 0, 300, 220, B_DOUBLE, 12},
+  M_SCROLLING, 0, 0, false, MacroEntries
+};
+
 // This function is called before the macro menu loads.
 void SetupMacroOptions(void)
 {
   MacroNameList = MacroBuildList("NONE");
   MacroEntries[0].fmt = MacroNameList;
   MacroEntries[1].fmt = MacroNameList;
+}
+
+void SetBackLight(void)
+{
+  static bool inited = false;
+
+  if (!inited)
+  {
+    inited = true;
+    analogWriteResolution(12);
+    pinMode(BACKLIGHT, OUTPUT);
+  }
+  analogWrite(BACKLIGHT, (MIPSconfigData.BackLight * 4095) / 100);
 }
 
 void SerialPortReset(void)
@@ -698,142 +827,151 @@ void About(void)
   uint8_t addr;
   char    signature[100];
   int8_t  rev;
+  int     iStat;
 
-   SendACKonly;
-   if(SerialMute) return;
-   // Report the system version and name
-   serial->print("MIPS: ");
-   serial->println(Version);
-   serial->print("MIPS name: ");
-   serial->println(MIPSconfigData.Name);
-   if(MIPSconfigData.UseWiFi) serial->println("WiFi module enabled");
-   if(EthernetPresent) serial->println("Ethernet module enabled");
-   // Report all the modules and revisions
-   serial->println("System modules:");
-   serial->println("  Board,Address,Name,Rev");
-   for (addr = 0x50; addr <= 0x56; addr  += 2)
-   {
-      // Set board select to A
-      ENA_BRD_A;
-      if (ReadEEPROM(signature, addr, 0, 100) == 0)
-      {
-         serial->print("  a,");
-         serial->print(addr,HEX);
-         serial->print(",");
-         serial->print(&signature[2]);
-         serial->print(",");
-         rev = signature[22];
-         serial->println(rev);
-      }
-      // Set board select to B
-      ENA_BRD_B;
-      if (ReadEEPROM(signature, addr, 0, 100) == 0)
-      {
-         serial->print("  b,");
-         serial->print(addr,HEX);
-         serial->print(",");
-         serial->print(&signature[2]);
-         serial->print(",");
-         rev = signature[22];
-         serial->println(rev);
-      }
-   }
+  SendACKonly;
+  if (SerialMute) return;
+  int b = SelectedBoard();
+  // Report the system version and name
+  serial->print("MIPS: ");
+  serial->println(Version);
+  serial->print("MIPS name: ");
+  serial->println(MIPSconfigData.Name);
+  if (MIPSconfigData.UseWiFi) serial->println("WiFi module enabled");
+  if (EthernetPresent) serial->println("Ethernet module enabled");
+  // Report all the modules and revisions
+  serial->println("System modules:");
+  serial->println("  Board,Address,Name,Rev");
+  for (addr = 0x50; addr <= 0x56; addr  += 2)
+  {
+    // Set board select to A
+    ENA_BRD_A;
+    {
+      AtomicBlock< Atomic_RestoreState > a_Block;
+      iStat = ReadEEPROM(signature, addr, 0, 100);
+    }
+    if (iStat == 0)
+    {
+      serial->print("  a,");
+      serial->print(addr, HEX);
+      serial->print(",");
+      serial->print(&signature[2]);
+      serial->print(",");
+      rev = signature[22];
+      serial->println(rev);
+    }
+    // Set board select to B
+    ENA_BRD_B;
+    {
+      AtomicBlock< Atomic_RestoreState > a_Block;
+      iStat = ReadEEPROM(signature, addr, 0, 100);
+    }
+    if (iStat == 0)
+    {
+      serial->print("  b,");
+      serial->print(addr, HEX);
+      serial->print(",");
+      serial->print(&signature[2]);
+      serial->print(",");
+      rev = signature[22];
+      serial->println(rev);
+    }
+  }
+  SelectBoard(b);
 }
 
 // This function is called after the About dialog box is created. This function
 // needs to display all the about data.
 void DisplayAbout(void)
 {
-   uint8_t addr;
-   char    signature[100],buf[25];
-   int y=0;
+  uint8_t addr;
+  char    signature[100], buf[25];
+  int y = 0;
 
-//TWI_RESET();
-//Wire.begin();
-   PrintDialog(&MIPSabout, 1, y++, "MIPS Version:");
-   PrintDialog(&MIPSabout, 2, y++, (char *)&Version[8]);
-   PrintDialog(&MIPSabout, 1, y, "MIPS Name:");
-   PrintDialog(&MIPSabout, 11, y++, MIPSconfigData.Name);
-   if(MIPSconfigData.UseWiFi) PrintDialog(&MIPSabout, 1, y++,"WiFi module enabled");
-   if(EthernetPresent) PrintDialog(&MIPSabout, 1, y++,"Ethernet module enabled");
-   PrintDialog(&MIPSabout, 1, y++, "System modules:");
-   PrintDialog(&MIPSabout, 1, y++, "  Board,Addr,Name,Rev");
-   for (addr = 0x50; addr <= 0x56; addr  += 2)
-   {
-      // Set board select to A
-      ENA_BRD_A;
-      if (ReadEEPROM(signature, addr, 0, 100) == 0)
-      {
-         sprintf(buf,"  a,%x,%s,%d",addr,&signature[2],signature[22]);
-         PrintDialog(&MIPSabout, 1, y++, buf);
-      }
-      // Set board select to B
-      ENA_BRD_B;
-      if (ReadEEPROM(signature, addr, 0, 100) == 0)
-      {
-         sprintf(buf,"  b,%x,%s,%d",addr,&signature[2],signature[22]);
-         PrintDialog(&MIPSabout, 1, y++, buf);
-      }
-   }
+  PrintDialog(&MIPSabout, 1, y++, "MIPS Version:");
+  PrintDialog(&MIPSabout, 2, y++, (char *)&Version[8]);
+  PrintDialog(&MIPSabout, 1, y, "MIPS Name:");
+  PrintDialog(&MIPSabout, 11, y++, MIPSconfigData.Name);
+  if (MIPSconfigData.UseWiFi) PrintDialog(&MIPSabout, 1, y++, "WiFi module enabled");
+  if (EthernetPresent) PrintDialog(&MIPSabout, 1, y++, "Ethernet module enabled");
+  PrintDialog(&MIPSabout, 1, y++, "System modules:");
+  PrintDialog(&MIPSabout, 1, y++, "  Board,Addr,Name,Rev");
+  for (addr = 0x50; addr <= 0x56; addr  += 2)
+  {
+    // Set board select to A
+    ENA_BRD_A;
+    if (ReadEEPROM(signature, addr, 0, 100) == 0)
+    {
+      sprintf(buf, "  a,%x,%s,%d", addr, &signature[2], signature[22]);
+      PrintDialog(&MIPSabout, 1, y++, buf);
+    }
+    // Set board select to B
+    ENA_BRD_B;
+    if (ReadEEPROM(signature, addr, 0, 100) == 0)
+    {
+      sprintf(buf, "  b,%x,%s,%d", addr, &signature[2], signature[22]);
+      PrintDialog(&MIPSabout, 1, y++, buf);
+    }
+  }
 }
 
 // This function is called by the serial command processor. This function will set a modules rev level to the value
 // defined. All the parameters are pulled from the input ring buffer. The parameters are board,addr,rev
 void SetModuleRev(void)
 {
-   char    *Token;
-   char    *ptr;
-   String  sToken;
-   char    brd;
-   uint8_t addr,rev;
+  char    *Token;
+  char    *ptr;
+  String  sToken;
+  char    brd;
+  uint8_t addr, rev;
 
-   while(1)
-   {
-     // Read the board address
-     GetToken(true);
-     if((Token = GetToken(true)) == NULL) break;
-     brd = toupper(Token[0]);
-     // Read the hex address
-     GetToken(true);
-     if((Token = GetToken(true)) == NULL) break;
-     addr = strtol(Token,&ptr,16);
-     // Read the target rev level
-     GetToken(true);
-     if((Token = GetToken(true)) == NULL) break;
-     sToken = Token;
-     rev = sToken.toInt();
-     // Validate the parameters
-     if((brd != 'A') && (brd != 'B')) break;
-     if((addr != 0x50) && (addr != 0x52) && (addr != 0x54) && (addr != 0x56)) break;
-     // Write the rev number to EEPROM
-     if(brd == 'A') ENA_BRD_A;
-     else ENA_BRD_B;
-     if(WriteEEPROM(&rev, addr, 22, 1) != 0)
-     {
-        SetErrorCode(ERR_EEPROMWRITE);
-        SendNAK; 
-        return; 
-     }
-     SendACK;
-     return;
-   }
-   // If here then we had bad arguments!
+  while (1)
+  {
+    // Read the board address
+    GetToken(true);
+    if ((Token = GetToken(true)) == NULL) break;
+    brd = toupper(Token[0]);
+    // Read the hex address
+    GetToken(true);
+    if ((Token = GetToken(true)) == NULL) break;
+    addr = strtol(Token, &ptr, 16);
+    // Read the target rev level
+    GetToken(true);
+    if ((Token = GetToken(true)) == NULL) break;
+    sToken = Token;
+    rev = sToken.toInt();
+    // Validate the parameters
+    if ((brd != 'A') && (brd != 'B')) break;
+    if ((addr != 0x50) && (addr != 0x52) && (addr != 0x54) && (addr != 0x56)) break;
+    // Write the rev number to EEPROM
+    if (brd == 'A') ENA_BRD_A;
+    else ENA_BRD_B;
+    if (WriteEEPROM(&rev, addr, 22, 1) != 0)
+    {
+      SetErrorCode(ERR_EEPROMWRITE);
+      SendNAK;
+      return;
+    }
+    SendACK;
+    return;
+  }
+  // If here then we had bad arguments!
   SetErrorCode(ERR_BADARG);
-  SendNAK;  
+  SendNAK;
 }
 
 // Called after macro is selected to play
 void UIplayMacro(void)
 {
-  MacroPlay(PlayMacro,true);
+  MacroPlay(PlayMacro, true);
 }
 
 // This function is called before the module configuration menu is loaded.
 // This function fills the initial board address and name variables.
 void SetupModuleConfig(void)
 {
-  sprintf(BoardAddress,"%s", GetEntry(BoardAddressList,1));
-  sprintf(BoardName,"%s", GetEntry(BoardVariantsNames,1));
+  sprintf(BoardAddress, "%s", GetEntry(BoardAddressList, 1));
+  sprintf(BoardName, "%s", GetEntry(BoardVariantsNames, 1));
 }
 
 // This function is called to format a board's EEPROM.
@@ -843,38 +981,38 @@ void BoardFormat(void)
   uint8_t addr;
   uint8_t brd;
   int CurrentBoard;
-  
+
   // Scan the board number and board address from the BoardAddress string
   // Two board posibilities, A and B, and 4 addresses, 50,52,54, and 56.
-  if(BoardAddress[0] == 'A') brd = 0;
-  if(BoardAddress[0] == 'B') brd = 1;
-  if(strcmp(&BoardAddress[2], "0x50") == 0) addr = 0x50;
-  if(strcmp(&BoardAddress[2], "0x52") == 0) addr = 0x52;
-  if(strcmp(&BoardAddress[2], "0x54") == 0) addr = 0x54;
-  if(strcmp(&BoardAddress[2], "0x56") == 0) addr = 0x56;
+  if (BoardAddress[0] == 'A') brd = 0;
+  if (BoardAddress[0] == 'B') brd = 1;
+  if (strcmp(&BoardAddress[2], "0x50") == 0) addr = 0x50;
+  if (strcmp(&BoardAddress[2], "0x52") == 0) addr = 0x52;
+  if (strcmp(&BoardAddress[2], "0x54") == 0) addr = 0x54;
+  if (strcmp(&BoardAddress[2], "0x56") == 0) addr = 0x56;
   // Setup a pointer to the selected default data structure and get its size
-  BoardConfigData = BoardVariants[FindInList(BoardVariantsNames,BoardName)-1];
+  BoardConfigData = BoardVariants[FindInList(BoardVariantsNames, BoardName) - 1];
   // Write it to the selected board
   CurrentBoard = digitalRead(BRDSEL);  // Save current board select
-  if(brd == 0) ENA_BRD_A;              // Select board
+  if (brd == 0) ENA_BRD_A;             // Select board
   else ENA_BRD_B;
   // Write to EEPROM
-  if(WriteEEPROM(BoardConfigData,addr,0,*(int16_t *)BoardConfigData)==0) DisplayMessage("Module formatted!",2000);
-  else DisplayMessage("Unable to format!",2000);
-  digitalWrite(BRDSEL,CurrentBoard);   // Restore board select
+  if (WriteEEPROM(BoardConfigData, addr, 0, *(int16_t *)BoardConfigData) == 0) DisplayMessage("Module formatted!", 2000);
+  else DisplayMessage("Unable to format!", 2000);
+  digitalWrite(BRDSEL, CurrentBoard);  // Restore board select
 }
 
 void SaveMIPSSettings(void)
 {
-  
-  if(SAVEparms("default.cfg") == 0) DisplayMessage("Parameters Saved!",2000);
-  else DisplayMessage("Error saving!",2000);
+
+  if (SAVEparms("default.cfg") == 0) DisplayMessage("Parameters Saved!", 2000);
+  else DisplayMessage("Error saving!", 2000);
 }
 
 void RestoreMIPSSettings(void)
 {
-  if(LOADparms("default.cfg")) DisplayMessage("Parameters Restored!",2000);
-  else DisplayMessage("Unable to Restore!",2000);
+  if (LOADparms("default.cfg")) DisplayMessage("Parameters Restored!", 2000);
+  else DisplayMessage("Unable to Restore!", 2000);
 }
 
 // This function will add the menu entry to the MIPS main menu.
@@ -900,15 +1038,28 @@ void AddMainMenuEntry(MenuEntry *me)
 // Adafruit_ILI9340 tft = Adafruit_ILI9340(_cs, _dc, _mosi, _sclk, _rst, _miso);
 // Use hardware SPI
 Adafruit_ILI9340 tft = Adafruit_ILI9340(_cs, _dc, _rst);
+//HX8347 tft = HX8347(_cs, _dc, _rst);
 
 File myFile;
 
+// This function is called when the button is changed or pressed
+// to raise the intensity. If the intensity is less then 50% it is set
+// to 50% and a timer is started, after 30 seconds the intensity is
+// reduced to the user setting
+void DisplayIntensity(void)
+{
+  if(MIPSconfigData.BackLight >= 50) return;
+  analogWrite(BACKLIGHT, 2047);  // Set to 50%
+  BrightTime = millis(); 
+}
+
 void encChanged(void)
 {
-  if(DisableDisplay)
+  DisplayIntensity();
+  if (DisableDisplay)
   {
     // If serial is enabled then send message
-    if(!SerialMute) serial->println("Button rotated.");
+    if (!SerialMute) serial->println("Button rotated.");
     return;
   }
   ButtonRotated = true;
@@ -916,10 +1067,11 @@ void encChanged(void)
 
 void encPB(void)
 {
-  if(DisableDisplay)
+  DisplayIntensity();
+  if (DisableDisplay)
   {
     // If serial is enabled then send message
-    if(!SerialMute) serial->println("Button pressed.");
+    if (!SerialMute) serial->println("Button pressed.");
     return;
   }
   ButtonPressed = true;
@@ -932,33 +1084,33 @@ void encPB(void)
 //double timeout = 5.0;  // number of seconds for timeout
 double timeout = 8.0;  // number of seconds for timeout
 int timeout2 = 0;
-void WDT_Setup (){ 
+void WDT_Setup () {
 
-  #ifdef TestMode
+#ifdef TestMode
   return;
-  #endif
+#endif
 
-  timeout2 =(int)( timeout * 227); 
-  
+  timeout2 = (int)( timeout * 227);
+
   timeout2 = 0x0fff2000 + timeout2;
-  WDT_Enable(WDT,timeout2);  
-  
+  WDT_Enable(WDT, timeout2);
+
   // number of loops:
   // 0x0fff2000 0
   // 0x0fff200f 231
   // 0x0fff2fff 2981
-}  
-#endif      
+}
+#endif
 
 void Signon(void)
 {
   bool PBwasPressed = false;
-  
+
   // If the controll push button is pressed then wait for it to be released before
   // proceeding.
-  #ifndef TestMode
-  while(digitalRead(PB) == HIGH) PBwasPressed = true;
-  #endif
+#ifndef TestMode
+  while (digitalRead(PB) == HIGH) PBwasPressed = true;
+#endif
   delay(100); // bounce delay
   //
   tft.fillScreen(ILI9340_BLACK);
@@ -971,11 +1123,11 @@ void Signon(void)
   tft.println("  Power");
   tft.println("  Sources\n");
   tft.println(Version);
-  tft.println("GAA Custom Engineering, LLC\n\n");
+  tft.println("GAA Custom Electronics, LLC\n\n");
   tft.setTextSize(2);
   tft.setTextColor(ILI9340_GREEN, ILI9340_BLACK);
   tft.println("\nSystem initialized!");
-  if(MIPSconfigData.StartupHold)
+  if (MIPSconfigData.StartupHold)
   {
     tft.println("\nPress knob to load");
     tft.println("parameters and startup.");
@@ -983,16 +1135,16 @@ void Signon(void)
   else
   {
     tft.println("\nPress knob to startup");
-    if(PBwasPressed) tft.println("using default parameters.");
+    if (PBwasPressed) tft.println("using default parameters.");
   }
   ButtonPressed = false;
   int i = 0;
-  while(true)
+  while (true)
   {
-    if(i >= MIPSconfigData.StartupDelay) break;
-    if (ButtonPressed) 
+    if (i >= MIPSconfigData.StartupDelay) break;
+    if (ButtonPressed)
     {
-      if(!MIPSconfigData.StartupHold) if(PBwasPressed) NormalStartup = false; // if false don't load from EEPROM on cards, use defaults!
+      if (!MIPSconfigData.StartupHold) if (PBwasPressed) NormalStartup = false; // if false don't load from EEPROM on cards, use defaults!
       break;
     }
     PB_GREEN_ON;
@@ -1001,7 +1153,7 @@ void Signon(void)
     PB_GREEN_OFF;
     delay(500);
     WDT_Restart(WDT);
-    if(!MIPSconfigData.StartupHold) i++;
+    if (!MIPSconfigData.StartupHold) i++;
   }
   PB_GREEN_OFF;
 }
@@ -1012,12 +1164,12 @@ void Signon(void)
 // PBledStates  PBledMode;
 void ProcessLED()
 {
-  static int i=0;
+  static int i = 0;
 
   i ^= 1;   // Toggle i between 0 and 1
-  if(LEDoverride)
+  if (LEDoverride)
   {
-    if((i==1) && ((LEDstate & 8) !=0))
+    if ((i == 1) && ((LEDstate & 8) != 0))
     {
       // Blinking and this is off time!
       PB_RED_OFF;
@@ -1026,20 +1178,20 @@ void ProcessLED()
       return;
     }
     // Here if the LED override flag is set
-    if((LEDstate & 1) != 0) PB_RED_ON;
+    if ((LEDstate & 1) != 0) PB_RED_ON;
     else PB_RED_OFF;
-    if((LEDstate & 2) != 0) PB_BLUE_ON;
+    if ((LEDstate & 2) != 0) PB_BLUE_ON;
     else PB_BLUE_OFF;
-    if((LEDstate & 4) != 0) PB_GREEN_ON;
+    if ((LEDstate & 4) != 0) PB_GREEN_ON;
     else PB_GREEN_OFF;
     return;
   }
   // If in suspend mode let LED glow orange
-  if(Suspend)
+  if (Suspend)
   {
     PB_RED_ON;
     PB_GREEN_ON;
-    PB_BLUE_OFF;    
+    PB_BLUE_OFF;
     return;
   }
   if (PBledMode == NOTHING) return;
@@ -1090,30 +1242,35 @@ void yield(void)
 
 void testISR()
 {
-//   AtomicBlock< Atomic_RestoreState > a_Block;
-//   NVIC_SetPriority(TC1_IRQn, 15);
-   Timer1.setPriority(15);
-   for(int i=0;i<100;i++) delayMicroseconds(100);
+  //   AtomicBlock< Atomic_RestoreState > a_Block;
+  //   NVIC_SetPriority(TC1_IRQn, 15);
+  Timer1.setPriority(15);
+  for (int i = 0; i < 100; i++) delayMicroseconds(100);
 }
 
 void test(void)
 {
-   Timer1.attachInterrupt(testISR);
-   Timer1.start(100000); // Calls every 100ms
+  Timer1.attachInterrupt(testISR);
+  Timer1.start(100000); // Calls every 100ms
 }
 
 void setup()
 {
-//  int i = REG_RSTC_SR;  // Reads the boot flag
+  //  int i = REG_RSTC_SR;  // Reads the boot flag
   analogReadResolution(12);
   Reset_IOpins();
   ClearDOshiftRegs();
   SPI.setClockDivider(21);
-  pinMode(_sdcs,OUTPUT);
-  digitalWrite(_sdcs,HIGH);
+  pinMode(_sdcs, OUTPUT);
+  digitalWrite(_sdcs, HIGH);
   delay(100);
 
   // Init the display and setup all the hardware
+  pinMode(BACKLIGHT, INPUT_PULLUP);
+  // Pin 49 defines the display type, if grounded is the HX8347_DSP else ILI9340_DSP
+  pinMode(49,INPUT_PULLUP);
+  if(digitalRead(49) == HIGH) tft.SetDisplayType(ILI9340_DSP);
+  else tft.SetDisplayType(HX8347_DSP);
   tft.begin();
   tft.fillScreen(ILI9340_BLACK);
   tft.setRotation(1);
@@ -1123,32 +1280,45 @@ void setup()
   tft.println("Initializing....");
 
   SerialInit();
-
+  
   delay(250);
 
-//test();
+  //test();
 
-//  MIPSsystemLoop();
+  //  MIPSsystemLoop();
 
   SPI.setClockDivider(21);
-  pinMode(_sdcs,OUTPUT);
-  digitalWrite(_sdcs,HIGH);
+  pinMode(_sdcs, OUTPUT);
+  digitalWrite(_sdcs, HIGH);
+  delay(100);
+/*
+  Sd2Card card;
+  if(!card.init(4,_sdcs))
+  {
+    tft.println(card.errorCode());
+    delay(1000);
+  }
+  WDT_Restart(WDT);
+*/  
+  SD.begin(_sdcs);
+  WDT_Restart(WDT);
   delay(100);
   if (!SD.begin(_sdcs))
   {
     tft.println("SD disk failed to initalize!");
+    delay(1000);
     SDcardPresent = false;
   }
-  else 
+  else
   {
     SDcardPresent = true;
     LOADparms("default.cfg"); // Load the defaults if the file is present
   }
   SPI.setClockDivider(11);    // If SD card init fails it will slow down the SPI interface
-
+  SetBackLight();
+  DisplayIntensity();
   MIPSsystemLoop();
-
-  if(bmpDraw(MIPSconfigData.BootImage, 0, 0))
+  if (bmpDraw(MIPSconfigData.BootImage, 0, 0))
   {
     DisableDisplay = true;
     tft.disableDisplay(DisableDisplay);
@@ -1167,15 +1337,15 @@ void setup()
   enc.attachInterruptPushButton(encPB);
   // Start the SPI interface
   SPI.begin(SPI_CS);
-  SPI.setClockDivider(SPI_CS,8);   // Default divider is 21 and equals 4 MHz
-                                    // Increase speed for better performance of tables
+  SPI.setClockDivider(SPI_CS, 8);  // Default divider is 21 and equals 4 MHz
+  // Increase speed for better performance of tables
   // Start the TWI interface
   TWI_RESET();
 
   Wire.begin();
   Wire.setClock(100000);
-//  Timer3.attachInterrupt(RealTimeISR);
-//  Timer3.start(100000); // Calls every 100ms
+  //  Timer3.attachInterrupt(RealTimeISR);
+  //  Timer3.start(100000); // Calls every 100ms
   // Initial splash screen
   Signon();
   ButtonPressed = false;
@@ -1194,9 +1364,9 @@ void setup()
   control.add(&MIPSsystemThread);
   control.add(&LEDThread);
   // If a startup masco is defined, play it now
-  if(strlen(MIPSconfigData.StartupMacro) > 0)
+  if (strlen(MIPSconfigData.StartupMacro) > 0)
   {
-    MacroPlay(MIPSconfigData.StartupMacro,true);
+    MacroPlay(MIPSconfigData.StartupMacro, true);
   }
   Ethernet_init();
 }
@@ -1204,28 +1374,38 @@ void setup()
 // This task is called every 10 milliseconds and handels a number of tasks.
 void MIPSsystemLoop(void)
 {
+  if((BrightTime + 30000) < millis()) SetBackLight();
   float MaxVoltage;
-//WDT_Disable(WDT);
   // Process any serial commands
-  while(ProcessCommand()==0);  // Process until flag that there is nothing to do
+  // Not sure why this is here??
+  //  while(ProcessCommand()==0);  // Process until flag that there is nothing to do, removed Dec 2, 2017
   // Determine the maximum output voltage and set the proper button color
   MaxVoltage = MaxRFVoltage;
-  if(MaxDCbiasVoltage > MaxVoltage) MaxVoltage = MaxDCbiasVoltage;
-  if(MaxTwaveVoltage > MaxVoltage) MaxVoltage = MaxTwaveVoltage;
-  if(MaxFAIMSVoltage > MaxVoltage) MaxVoltage = MaxFAIMSVoltage;
-  if(MaxESIvoltage > MaxVoltage) MaxVoltage = MaxESIvoltage;
-    // Test output voltages and update the button LEDs to provide warning to user
+  if (MaxDCbiasVoltage > MaxVoltage) MaxVoltage = MaxDCbiasVoltage;
+  if (MaxTwaveVoltage > MaxVoltage) MaxVoltage = MaxTwaveVoltage;
+  if (MaxFAIMSVoltage > MaxVoltage) MaxVoltage = MaxFAIMSVoltage;
+  if (MaxESIvoltage > MaxVoltage) MaxVoltage = MaxESIvoltage;
+  // Test output voltages and update the button LEDs to provide warning to user
   // Blue LED on if voltgaes are enabled and above 0
-  if(MaxVoltage == 0) {PB_OFF(PB_RED);}
-  if(MaxVoltage >  0) {PB_ON(PB_BLUE);}
-  if(MaxVoltage > 50) {PB_ON(PB_RED);}
-  if(MaxVoltage > 75) {PB_FLASH(PB_RED);}
+  if (MaxVoltage == 0) {
+    PB_OFF(PB_RED);
+  }
+  if (MaxVoltage >  0) {
+    PB_ON(PB_BLUE);
+  }
+  if (MaxVoltage > 50) {
+    PB_ON(PB_RED);
+  }
+  if (MaxVoltage > 75) {
+    PB_FLASH(PB_RED);
+  }
   // Test Vin, if power is off then shut down the hardware control lines and print
   // and warding on the display. Process serial commands and stay in this loop until
   // power is reapplied. Reset when power is reapplied
-  #ifdef TestMode
+#ifdef TestMode
   return;
-  #endif
+#endif
+  if (!AcquireADC()) return;
   if (ReadVin() < 10.0)
   {
     tft.disableDisplay(false);
@@ -1237,21 +1417,25 @@ void MIPSsystemLoop(void)
     // Display a message on the screen that MIPS power is off.
     tft.fillScreen(ILI9340_BLACK);
     tft.setRotation(1);
-    if(strlen(MIPSconfigData.BootImage) <= 0)
+    if (strlen(MIPSconfigData.BootImage) <= 0)
     {
-       tft.setCursor(0, 0);
-       tft.setTextColor(ILI9340_WHITE, ILI9340_BLACK);
-       tft.setTextSize(2);
-       tft.println("");
-       tft.println("MIPS power is off!");
-       tft.println("USB powering controller!");
-       tft.println("Apply power to operate...");
+      tft.setCursor(0, 0);
+      tft.setTextColor(ILI9340_WHITE, ILI9340_BLACK);
+      tft.setTextSize(2);
+      tft.println("");
+      tft.println("MIPS power is off!");
+      tft.println("USB powering controller!");
+      tft.println("Apply power to operate...");
     }
-//    bmpDraw(MIPSconfigData.BootImage, 0, 0);
+    // Dim the display, we could be like this for a long time!
+    analogWrite(BACKLIGHT, 400);
+    //    bmpDraw(MIPSconfigData.BootImage, 0, 0);
     // Wait for power to appear and then reset the system.
     while (ReadVin() < 10.0) WDT_Restart(WDT);
+    ReleaseADC();
     Software_Reset();
   }
+  ReleaseADC();
 }
 
 // This function will scan through all the posible addresses for the EEPROMs that are loacted on
@@ -1268,13 +1452,13 @@ void ScanHardware(void)
   uint8_t addr;
   char    signature[100];
 
-  #ifdef TestFilament
+#ifdef TestFilament
   Filament_init(0);
-  #endif
-  #ifdef TestTwave
-  Twave_init(0,0x52);
-  Twave_init(1,0x52);
-  #endif
+#endif
+#ifdef TestTwave
+  Twave_init(0, 0x52);
+  Twave_init(1, 0x52);
+#endif
   // Loop through all the addresses looking for signatures
   for (addr = 0x50; addr <= 0x56; addr  += 2)
   {
@@ -1283,30 +1467,30 @@ void ScanHardware(void)
     if (ReadEEPROM(signature, addr, 0, 100) == 0)
     {
       // Test the signature and init the system if the signature is known
-      if (strcmp(&signature[2], "DAC") == 0) DAC_init(0,addr);
-      if (strcmp(&signature[2], "Twave") == 0) Twave_init(0,addr);
-      if (strcmp(&signature[2], "RFdriver") == 0) RFdriver_init(0,addr);
-      if (strcmp(&signature[2], "DCbias") == 0) DCbias_init(0,addr);
-      if (strcmp(&signature[2], "ESI") == 0) ESI_init(0,addr);
-      if (strcmp(&signature[2], "Filament") == 0) Filament_init(0,addr);
-      if (strcmp(&signature[2], "ARB") == 0) ARB_init(0,addr);
-      if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(0,addr);
-      if (strcmp(&signature[2], "RFamp") == 0) RFA_init(0,addr);
+      if (strcmp(&signature[2], "DAC") == 0) DAC_init(0, addr);
+      if (strcmp(&signature[2], "Twave") == 0) Twave_init(0, addr);
+      if (strcmp(&signature[2], "RFdriver") == 0) RFdriver_init(0, addr);
+      if (strcmp(&signature[2], "DCbias") == 0) DCbias_init(0, addr);
+      if (strcmp(&signature[2], "ESI") == 0) ESI_init(0, addr);
+      if (strcmp(&signature[2], "Filament") == 0) Filament_init(0, addr);
+      if (strcmp(&signature[2], "ARB") == 0) ARB_init(0, addr);
+      if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(0, addr);
+      if (strcmp(&signature[2], "RFamp") == 0) RFA_init(0, addr);
     }
     // Set board select to B
     ENA_BRD_B;
     if (ReadEEPROM(signature, addr, 0, 100) == 0)
     {
       // Test the signature and init the system if the signature is known
-      if (strcmp(&signature[2], "DAC") == 0) DAC_init(1,addr);
-      if (strcmp(&signature[2], "Twave") == 0) Twave_init(1,addr);
-      if (strcmp(&signature[2], "RFdriver") == 0) RFdriver_init(1,addr);
-      if (strcmp(&signature[2], "DCbias") == 0) DCbias_init(1,addr);
-      if (strcmp(&signature[2], "ESI") == 0) ESI_init(1,addr);
-      if (strcmp(&signature[2], "Filament") == 0) Filament_init(1,addr);
-      if (strcmp(&signature[2], "ARB") == 0) ARB_init(1,addr);
-      if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(1,addr);
-      if (strcmp(&signature[2], "RFamp") == 0) RFA_init(1,addr);
+      if (strcmp(&signature[2], "DAC") == 0) DAC_init(1, addr);
+      if (strcmp(&signature[2], "Twave") == 0) Twave_init(1, addr);
+      if (strcmp(&signature[2], "RFdriver") == 0) RFdriver_init(1, addr);
+      if (strcmp(&signature[2], "DCbias") == 0) DCbias_init(1, addr);
+      if (strcmp(&signature[2], "ESI") == 0) ESI_init(1, addr);
+      if (strcmp(&signature[2], "Filament") == 0) Filament_init(1, addr);
+      if (strcmp(&signature[2], "ARB") == 0) ARB_init(1, addr);
+      if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(1, addr);
+      if (strcmp(&signature[2], "RFamp") == 0) RFA_init(1, addr);
     }
   }
   // Now look for the FAIMS board. This is done last because field driven FAIMS mode is selected if
@@ -1330,115 +1514,107 @@ void ScanHardware(void)
   }
   WiFi_init();
   // The last thig we do is look for the analog input option
-  if(MIPSconfigData.UseAnalog) Analog_init();
+  if (MIPSconfigData.UseAnalog) Analog_init();
 }
 
 // This function allows using a host computer to navigate the MIPS UI,
 // This feature has to first be enabled using a host command to enable.
 bool SerialNavigation(char c)
-{   
-    if(!EnableSerialNavigation) return false;
-    switch ((int)c)
-    {
-      case 9:
-         enc.SetPB();
-         return true;
-      case 28:
-         enc.SetChange(1); 
-         enc.SetRotate();
-         return true;
-      case 29:
-         enc.SetChange(10); 
-         enc.SetRotate();
-         return true;
-      case 30:
-         enc.SetChange(-1); 
-         enc.SetRotate();
-         return true;
-      case 31:
-         enc.SetChange(-10); 
-         enc.SetRotate();
-         return true;
-      default:
-         return false;
-         break;
-    }
-    return false;
-}    
+{
+  if (!EnableSerialNavigation) return false;
+  switch ((int)c)
+  {
+    case 9:
+      enc.SetPB();
+      return true;
+    case 28:
+      enc.SetChange(1);
+      enc.SetRotate();
+      return true;
+    case 29:
+      enc.SetChange(10);
+      enc.SetRotate();
+      return true;
+    case 30:
+      enc.SetChange(-1);
+      enc.SetRotate();
+      return true;
+    case 31:
+      enc.SetChange(-10);
+      enc.SetRotate();
+      return true;
+    default:
+      return false;
+      break;
+  }
+  return false;
+}
 
 void ReadAllSerial(void)
 {
   WDT_Restart(WDT);
   // Put serial received characters in the input ring buffer
-  while (SerialUSB.available() > 0) 
+  while (SerialUSB.available() > 0)
   {
     ResetFilamentSerialWD();
     serial = &SerialUSB;
     char c = SerialUSB.read();
-    if(!SerialNavigation(c)) PutCh(c);
+    if (!SerialNavigation(c)) PutCh(c);
   }
-  #ifdef EnableSerial
-  if((!MIPSconfigData.UseWiFi) || (wifidata.SerialPort!=0))
+#ifdef EnableSerial
+  if ((!MIPSconfigData.UseWiFi) || (wifidata.SerialPort != 0))
   {
-    while (Serial.available() > 0) 
+    while (Serial.available() > 0)
     {
       ResetFilamentSerialWD();
       serial = &Serial;
       PutCh(Serial.read());
     }
   }
-  #endif
-  while (WiFiSerial->available() > 0) 
+#endif
+  while (WiFiSerial->available() > 0)
   {
     ResetFilamentSerialWD();
     serial = WiFiSerial;
     PutCh(WiFiSerial->read());
-  } 
+  }
 }
 
 // This function process all the serial IO and commands
 void ProcessSerial(void)
 {
   // Put serial received characters in the input ring buffer
-  while (SerialUSB.available() > 0) 
+  while (SerialUSB.available() > 0)
   {
     ResetFilamentSerialWD();
     serial = &SerialUSB;
     char c = SerialUSB.read();
-    if(!SerialNavigation(c)) PutCh(c);
-    // WDT_Restart(WDT);      // Could get stuck here!
+    if (!SerialNavigation(c)) PutCh(c);
   }
-  #ifdef EnableSerial
-  if((!MIPSconfigData.UseWiFi) || (wifidata.SerialPort!=0))
+#ifdef EnableSerial
+  if ((!MIPSconfigData.UseWiFi) || (wifidata.SerialPort != 0))
   {
-    while (Serial.available() > 0) 
+    while (Serial.available() > 0)
     {
       ResetFilamentSerialWD();
       serial = &Serial;
       PutCh(Serial.read());
     }
   }
-  #endif
-  while (WiFiSerial->available() > 0) 
+#endif
+  while (WiFiSerial->available() > 0)
   {
     ResetFilamentSerialWD();
     serial = WiFiSerial;
     PutCh(WiFiSerial->read());
-//  serial->write(WiFiSerial->read());
   }
   ProcessEthernet();
   // If there is a command in the input ring buffer, process it!
-  while(RB_Commands(&RB) > 0) // Process until flag that there is nothing to do
+  while (RB_Commands(&RB) > 0) // Process until flag that there is nothing to do
   {
-//    if((RB.Count == 0) && (RB_Commands(&RB) > 0))  // Not sure this is needed! Added and removed May 17, 2017
-//    {
-//      // This should not happen, if it does reset the command counter
-//      RB.Commands = 0;
-//    }
-    ProcessCommand(); 
-    WDT_Restart(WDT); // kick the watchdog timer in case we get stuck here
-  }      
-                                                                         
+    while (ProcessCommand() == 0) WDT_Restart(WDT);
+  }
+  SerialUSB.flush();     // Added 9/2/2017
   DIOopsReport();
 }
 
@@ -1447,14 +1623,14 @@ void loop()
 {
   static bool DisableDisplayStatus = false;
 
-  if((!DisableDisplay) && (DisableDisplayStatus))
+  if ((!DisableDisplay) && (DisableDisplayStatus))
   {
     // Here is the display was disabled and it now going to be enabled.
     // Clear the display and reprint the current menu or dialog.
     tft.disableDisplay(DisableDisplay);
     tft.fillScreen(ILI9340_BLACK);
-    if(ActiveMenu != NULL) MenuDisplay(ActiveMenu);
-    if(ActiveDialog != NULL) DialogBoxDisplay(ActiveDialog);
+    if (ActiveMenu != NULL) MenuDisplay(ActiveMenu);
+    if (ActiveDialog != NULL) DialogBoxDisplay(ActiveDialog);
   }
   DisableDisplayStatus = DisableDisplay;
   tft.disableDisplay(DisableDisplay);
@@ -1462,7 +1638,7 @@ void loop()
   // run ThreadController
   // this will check every thread inside ThreadController,
   // if it should run. If yes, he will run it;
-  if(!Suspend) control.run();
+  if (!Suspend) control.run();
   else  ProcessLED();
   // Process any encoder event
   if (ButtonRotated)
@@ -1492,25 +1668,25 @@ void loop()
 int SAVEparms(char *filename)
 {
   File file;
-  
+
   // Test SD present flag, exit and NAK if no card or it failed to init
-  if(!SDcardPresent) return(ERR_NOSDCARD);
+  if (!SDcardPresent) return (ERR_NOSDCARD);
   SD.begin(_sdcs);
   // Remove the existing default.cfg file
   SD.remove(filename);
   // Open file and write config structure to disk
-  if(!(file=SD.open(filename,FILE_WRITE))) return(ERR_CANTCREATEFILE);
+  if (!(file = SD.open(filename, FILE_WRITE))) return (ERR_CANTCREATEFILE);
   MIPSconfigData.Size = sizeof(MIPSconfigStruct);
-  file.write((byte *)&MIPSconfigData,sizeof(MIPSconfigStruct));
+  file.write((byte *)&MIPSconfigData, sizeof(MIPSconfigStruct));
   file.close();
-  return(0);
+  return (0);
 }
 
 void SAVEparms(void)
 {
   int iStat;
-  
-  if((iStat = SAVEparms("default.cfg")) == 0)
+
+  if ((iStat = SAVEparms("default.cfg")) == 0)
   {
     SendACK;
     return;
@@ -1522,26 +1698,26 @@ void SAVEparms(void)
 
 // This function load the MIPS config structure from the filename passed.
 // The size of the struct on disk is used, this allows the struct to grow
-// and new additional (at the bottom of the struct) will use the default 
+// and new additional (at the bottom of the struct) will use the default
 // values.
 // Returns true if all went well!
 bool LOADparms(char *filename)
 {
   File file;
   MIPSconfigStruct MCS;
-  int  i,fVal;
+  int  i, fVal;
   byte *b;
-  
+
   // Test SD present flag
-  if(!SDcardPresent) return false;
+  if (!SDcardPresent) return false;
   SD.begin(_sdcs);
   // Open the file
-  if(!(file=SD.open(filename,FILE_READ))) return false;
+  if (!(file = SD.open(filename, FILE_READ))) return false;
   // read the data
   b = (byte *)&MCS;
-  for(i=0;i<sizeof(MIPSconfigStruct);i++)
+  for (i = 0; i < sizeof(MIPSconfigStruct); i++)
   {
-    if((fVal = file.read()) == -1) break;
+    if ((fVal = file.read()) == -1) break;
     b[i] = fVal;
   }
   file.close();

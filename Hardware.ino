@@ -350,6 +350,7 @@ void Init_IOpins(void)
   pinMode(PWR_ON, OUTPUT);
   pinMode(LDACctrl, OUTPUT);
   pinMode(TRGOUT, OUTPUT);
+  pinMode(AUXTRGOUT, OUTPUT);
   digitalWrite(LDACctrl, HIGH);
   pinMode(RFON, OUTPUT);
   pinMode(DOMSBlatch,OUTPUT);
@@ -370,9 +371,9 @@ void Reset_IOpins(void)
 //  pinMode(RED_LED, INPUT);
   // Misc control lines
   pinMode(DAC0,INPUT);
-  pinMode(ADDR0, INPUT);
-  pinMode(ADDR1, INPUT);
-  pinMode(ADDR2, INPUT);
+//  pinMode(ADDR0, INPUT);
+//  pinMode(ADDR1, INPUT);
+//  pinMode(ADDR2, INPUT);
   pinMode(LDAC, INPUT);
   pinMode(SCL, INPUT);
   pinMode(BRDSEL, INPUT);
@@ -388,6 +389,17 @@ void Reset_IOpins(void)
   digitalWrite(8, LOW);
   digitalWrite(14, HIGH);
   digitalWrite(48, HIGH);
+
+  digitalWrite(ADDR0, LOW);
+  digitalWrite(ADDR1, LOW);
+  digitalWrite(ADDR2, LOW);
+
+  // Make sure LDAC is low
+  pinMode(LDACctrl,OUTPUT);
+  pinMode(LDAC, OUTPUT);
+  digitalWrite(LDAC, LOW);
+  digitalWrite(LDACctrl, HIGH);
+  
 }
 
 void Software_Reset(void)
@@ -589,7 +601,7 @@ int ReadEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count)
   AcquireTWI();
   num = count;
   bval = (byte *)src;
-  delay(10);
+//  delay(10);
   while (1)
   {
     Wire.beginTransmission(dadr | ((address >> 8) & 1));
@@ -1196,7 +1208,7 @@ void ReleaseTWI(void)
 
   if(busy) return;
   busy = true;
-//  AtomicBlock< Atomic_RestoreState > a_Block;
+  //AtomicBlock< Atomic_RestoreState > a_Block;
   if(TWIbusy)
   {
     for(i=0;i<MaxQueued;i++)
@@ -1205,6 +1217,7 @@ void ReleaseTWI(void)
       {
         function = TWIqueued[i];
         TWIqueued[i] = NULL;
+        TWIbusy=false; // Added Dec 2, 2017
         function();
         TWIqueued[i] = NULL;
       }
@@ -1230,7 +1243,7 @@ void TWIqueue(void (*TWIfunction)())
 }
 
 // Trigger output functions. These functions support pulsing the output in micro second units as
-// well as queueing up the function for later execution, this support using the trigger outlut
+// well as queueing up the function for later execution, this support using the trigger output
 // in a signal table.
 
 // This function is valid for rev 2.0 and above controllers. This command
@@ -1328,6 +1341,71 @@ inline void TriggerOut(int microSec)
     delayMicroseconds(microSec);
     pio->PIO_SODR = pin;         // Set output high
   }
+  PlayTpulseFunctions();
+}
+
+#define NUMQTF 5
+void  (*QuededTrigFunctionList[NUMQTF])() = {NULL,NULL,NULL,NULL,NULL};
+
+// This function adds or removes a function from a list of up to five
+// function pointers. These functions are called after the Trigger
+// pulse is generated. 
+// if add = true the function is added, if false its removed
+bool QueueTpulseFunction(void (*Tfunction)(), bool add)
+{
+  int i;
+  
+  if(add)
+  {
+    // First test if its already in the list
+    for(i=0;i<NUMQTF;i++) if(QuededTrigFunctionList[i] == Tfunction) return true;
+    // Add the function to the list
+    for(i=0;i<NUMQTF;i++)
+    {
+      if(QuededTrigFunctionList[i] == NULL) 
+      {
+        QuededTrigFunctionList[i] = Tfunction;
+        return true;
+      }
+    }
+    return false;
+  }
+  else
+  {
+    for(i=0;i<NUMQTF;i++)
+    {
+      if(QuededTrigFunctionList[i] == Tfunction) 
+      {
+        QuededTrigFunctionList[i] = NULL;
+        return true;
+      }
+    }
+    return false;  
+  }
+  return true;
+}
+
+// This function will call all the queued trigger functions
+void PlayTpulseFunctions(void)
+{
+  for(int i=0;i<NUMQTF;i++)
+  {
+    if(QuededTrigFunctionList[i] != NULL) QuededTrigFunctionList[i](); 
+  }
+}
+
+void AuxTrigger(void)
+{
+  static Pio *pio = g_APinDescription[AUXTRGOUT].pPort;
+  static uint32_t pin = g_APinDescription[AUXTRGOUT].ulPin;
+  static int16_t skip = 0;
+
+  AtomicBlock< Atomic_RestoreState > a_Block;
+  if(++skip > ((PulseFreq-1) / 60)) skip = 0;
+  if(skip != 0) return;
+  pio->PIO_CODR = pin;         // Set output high
+  delayMicroseconds(30);
+  pio->PIO_SODR = pin;         // Set output low  
 }
 
 bool TriggerOutQueued = false;
@@ -1380,22 +1458,24 @@ void ADCread(int chan)
 
 // This function is called from the main pooling loop and sends the
 // change messages when enabled.
+// Updated 9/2/2017 to first build a string and then send the full string, needed on the MALID system
+// to stop missing parts of the message.
 void DIOopsReport(void)
 {
   int  i;
   char chan;
+  char sbuf[50];
 
   for(i=0;i<8;i++)
   {
     chan = 'Q' + i;
     if((dioops[i].Report) && (dioops[i].Changed))
     {
-      serial->print("DIC,");
-      serial->print(chan);
-      if(dioops[i].ReportState == CHANGE) serial->print(",CHANGED,");
-      if(dioops[i].ReportState == RISING) serial->print(",RISING,");
-      if(dioops[i].ReportState == FALLING) serial->print(",FALLING,");
-      serial->println(millis());
+      uint32_t t = millis();
+      if(dioops[i].ReportState == CHANGE) sprintf(sbuf,"DIC,%c,CHANGED,%u\n",chan,t);
+      if(dioops[i].ReportState == RISING) sprintf(sbuf,"DIC,%c,RISING,%u\n",chan,t);
+      if(dioops[i].ReportState == FALLING) sprintf(sbuf,"DIC,%c,FALLING,%u\n",chan,t);
+      serial->print(sbuf);
       dioops[i].Changed = false;
     }
   }
@@ -1590,18 +1670,23 @@ void DelayedTriggerISR(void)
 
 // This function sets the delay trigger input and level. Any current trigger seetings and 
 // actions are stopped.
+// Valid trigger inputs are Q thru X, and t to be triggered by the Trigger output this
+// is used for the MALDI2 system
 void SetDelayTrigInput(char *input, char *level)
 {
   int di,dil;
   
   // Validate input values
-  di = FindInList(DIlist, input);
-  dil = FindInList(DILlist, level);
-  if((di == -1) || (dil == -1))
+  if(input[0] != 't')
   {
-    SetErrorCode(ERR_BADARG);
-    SendNAK;  
-    return;
+     di = FindInList(DIlist, input);
+     dil = FindInList(DILlist, level);
+     if((di == -1) || (dil == -1))
+     {
+       SetErrorCode(ERR_BADARG);
+       SendNAK;  
+       return;
+     }
   }
   // Allocate handler and timer if null
   if(DelayTriggerTMR == NULL)
@@ -1613,17 +1698,26 @@ void SetDelayTrigInput(char *input, char *level)
     DelayTriggerTMR->setClock(TC_CMR_TCCLKS_TIMER_CLOCK2);   // 10.5 MHz clock
   }
   DelayTriggerTMR->stop();
-  if(DIdelayedTrigger == NULL) DIdelayedTrigger = new DIhandler;
-  if((DelayTriggerTMR == NULL) || (DIdelayedTrigger == NULL))
-  {
-    SetErrorCode(ERR_INTERNAL);
-    SendNAK;  
-    return;
-  }
-  // Setup trigger
   DtrigEnable = false;
-  DIdelayedTrigger->detach();
-  DIdelayedTrigger->attached(input[0], dil-2, DelayedTriggerISR);
+  if(input[0] == 't')
+  {
+    // Queue trigger function to start the delay
+    QueueTpulseFunction(DelayedTriggerISR,true);
+  }  
+  else
+  {
+     QueueTpulseFunction(DelayedTriggerISR,false);
+     if(DIdelayedTrigger == NULL) DIdelayedTrigger = new DIhandler;
+     if((DelayTriggerTMR == NULL) || (DIdelayedTrigger == NULL))
+     {
+       SetErrorCode(ERR_INTERNAL);
+       SendNAK;  
+       return;
+     }
+     // Setup trigger
+     DIdelayedTrigger->detach();
+     DIdelayedTrigger->attached(input[0], dil-2, DelayedTriggerISR);
+  }
   SendACK;
   return;
 }
@@ -1661,6 +1755,8 @@ void SetDelayTrigModule(char *module)
   Module = module;
   if(Module == "ARB") DelayedTrigFunction = ARBsyncISR;
   else if(Module == "SWEEP") DelayedTrigFunction = ARBTWAVEsweepISR;
+  else if(Module == "ADC") DelayedTrigFunction = ADCtrigger;
+  else if(Module == "AUXTRIG") DelayedTrigFunction = AuxTrigger;
   else
   {
     SetErrorCode(ERR_BADARG);
@@ -2097,6 +2193,7 @@ int SaveEEPROMtoSD(char *FileName, uint8_t board, uint8_t EEPROMadd)
   // Write the data to SD card
   // Test SD present flag, exit and NAK if no card or it failed to init
   if(!SDcardPresent) return ERR_NOSDCARD;
+  AtomicBlock< Atomic_RestoreState > a_Block;
   SD.begin(_sdcs);
   // Remove the existing default.cfg file
   SD.remove(FileName);
@@ -2118,16 +2215,19 @@ int LoadEEPROMfromSD(char *FileName, uint8_t board, uint8_t EEPROMadd)
     
   // Read file from SD card
   if(!SDcardPresent) return ERR_NOSDCARD;
-  SD.begin(_sdcs);
-  // Open the file
-  if(!(file=SD.open(FileName,FILE_READ))) return ERR_CANTOPENFILE;
-  // read the data
-  for(i=0;i<512;i++)
   {
-    if((fVal = file.read()) == -1) break;
-    buf[i] = fVal;
+     AtomicBlock< Atomic_RestoreState > a_Block;
+     SD.begin(_sdcs);
+     // Open the file
+     if(!(file=SD.open(FileName,FILE_READ))) return ERR_CANTOPENFILE;
+     // read the data
+     for(i=0;i<512;i++)
+     {
+       if((fVal = file.read()) == -1) break;
+       buf[i] = fVal;
+     }
+     file.close();
   }
-  file.close();
   if(i != 512) return ERR_READINGSD;
   // Write data to EEPROM
   SelectBoard(board);  
@@ -2236,6 +2336,7 @@ void ListFiles(void)
     SendNAK;
     return;
   }
+  AtomicBlock< Atomic_RestoreState > a_Block;
   SD.begin(_sdcs);
   root = SD.open("/", FILE_READ);
   SendACKonly;
@@ -2258,6 +2359,7 @@ void DeleteFile(char *FileName)
     SendNAK;
     return;
   }
+  AtomicBlock< Atomic_RestoreState > a_Block;
   SD.begin(_sdcs);
   // Remove the existing default.cfg file
   SD.remove(FileName); 
@@ -2267,8 +2369,8 @@ void DeleteFile(char *FileName)
 // This function will send the selected file to the USB port. The file is assumed to
 // be binary and its contents are converted to hex and send. after the ACK is sent.
 // After the ACK, the files size is sent as an ascii string with a EOL termination, then
-// the data block he send as ascii hex followed by a EOL, and finally the 8 bit CRC is
-// send as a byte followed by a EOL.
+// the data block is sent as ascii hex followed by a EOL, and finally the 8 bit CRC is
+// sent as a byte followed by a EOL.
 void GetFile(char *FileName)
 {
   byte     b,crc=0;
@@ -2285,20 +2387,27 @@ void GetFile(char *FileName)
     SendNAK;
     return;
   }
-  SD.begin(_sdcs);
-  // Open the file
-  if(!(file=SD.open(FileName,FILE_READ)))
   {
-    SetErrorCode(ERR_CANTOPENFILE);
-    SendNAK;
-    return;
+    AtomicBlock< Atomic_RestoreState >   a_Block;
+    SD.begin(_sdcs);
+    // Open the file
+    if(!(file=SD.open(FileName,FILE_READ)))
+    {
+      SetErrorCode(ERR_CANTOPENFILE);
+      SendNAK;
+      return;
+    }
+    SendACK;
+    serial->println(fsize = file.size());
   }
-  SendACK;
-  serial->println(fsize = file.size());
   // read the data
   for(i=0; i<fsize; i++)
   {
-    if((fVal = file.read()) == -1) break;
+    {
+      AtomicBlock< Atomic_RestoreState >   a_Block;
+      fVal = file.read();
+    }
+    if(fVal == -1) break;
     b = fVal;
     ComputeCRCbyte(&crc,b);
     sprintf(sbuf,"%02x",b);
@@ -2312,6 +2421,7 @@ void GetFile(char *FileName)
       {
          if(millis() > start + 10000)
          {
+            AtomicBlock< Atomic_RestoreState >   a_Block;
             serial->println("\nFile sending to host timedout!");
             file.close();
             return;
@@ -2324,7 +2434,10 @@ void GetFile(char *FileName)
   }
   serial->println("");
   serial->println(crc);
-  file.close();
+  {
+    AtomicBlock< Atomic_RestoreState >   a_Block;
+    file.close();
+  }
   serial->print(FileName);
   serial->println(" file send to host!");
 }
@@ -2353,15 +2466,18 @@ void PutFile(char * FileName,char *Fsize)
     SendNAK;
     return;
   }
-  SD.begin(_sdcs);
-  // Remove the existing default.cfg file
-  SD.remove(FileName);
-  // Open file and write config structure to disk
-  if(!(file=SD.open(FileName,FILE_WRITE)))
   {
-    SetErrorCode(ERR_CANTCREATEFILE);
-    SendNAK;
-    return;
+    AtomicBlock< Atomic_RestoreState >   a_Block;
+    SD.begin(_sdcs);
+    // Remove the existing default.cfg file
+    SD.remove(FileName);
+    // Open file and write config structure to disk
+    if(!(file=SD.open(FileName,FILE_WRITE)))
+    {
+      SetErrorCode(ERR_CANTCREATEFILE);
+      SendNAK;
+      return;
+    }
   }
   sToken = Fsize;
   numBytes = sToken.toInt();
@@ -2377,12 +2493,18 @@ void PutFile(char * FileName,char *Fsize)
     buf[2] = 0;
     sscanf(buf,"%x",&val);
     b = val;
-    file.write(b);
+    {
+      AtomicBlock< Atomic_RestoreState >   a_Block;
+      file.write(b);
+    }
     ComputeCRCbyte(&crc,b);
     WDT_Restart(WDT);
     if((i>0) && (numBytes > 512) && (((i+1)%512)==0)) serial->println("Next");
   }
-  file.close();
+  {
+    AtomicBlock< Atomic_RestoreState >   a_Block;
+    file.close();
+  }
   // Now we should see an EOL, \n
   start = millis();
   while((c = RB_Get(&RB)) == 0xFF) { ReadAllSerial(); if(millis() > start + 10000) goto TimeoutExit; }
@@ -2400,11 +2522,17 @@ void PutFile(char * FileName,char *Fsize)
     }
   }
   serial->println("\nError during file receive from host!");
-  SD.remove(FileName);
+  {
+    AtomicBlock< Atomic_RestoreState >   a_Block;
+    SD.remove(FileName);
+  }
   return;
 TimeoutExit:
-  file.close();
-  SD.remove(FileName);
+  {
+    AtomicBlock< Atomic_RestoreState >   a_Block;
+    file.close();
+    SD.remove(FileName);
+  }
   serial->println("\nFile receive from host timedout!");
   return;
 }
@@ -2630,4 +2758,30 @@ TimeoutS2E:
   return;
 }
 
+void CPUtemp(void) 
+{
+  /* Enable ADC channel 15 and turn on temperature sensor */
+  ADC->ADC_CHER = 1 << 15;
+  ADC->ADC_ACR |= ADC_ACR_TSON;
+  /* Start conversion. */
+  ADC->ADC_CR = ADC_CR_START;
+  /* Wait for end of the conversion. */
+  while (ADC->ADC_ISR & ADC_ISR_EOC15 == ADC_ISR_EOC15);
+  delay(100); // Keep this delay      
+  /* Read the value. */ 
+  int mV = ADC->ADC_LCDR;
+  /* Start conversion. */
+  ADC->ADC_CR = ADC_CR_START;
+  /* Wait for end of the conversion. */
+  while (ADC->ADC_ISR & ADC_ISR_EOC15 == ADC_ISR_EOC15);
+  delay(100); // Keep this delay      
+  /* Read the value. */ 
+  mV = ADC->ADC_LCDR;
+  /* Disable channel 15. */
+  ADC->ADC_CHDR = 1 << 15; 
+
+  float treal = (( (3300 * mV)/4096 ) - 800) * 0.37736 + 25.5;
+  SendACKonly;
+  if(!SerialMute) serial->println(treal);
+}
 

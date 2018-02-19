@@ -30,7 +30,7 @@ extern int            NumberOfTwaveModules;
 #define   TWselect  14
 #define   TWstrobe  49
 // Bit masks
-#define   TWMclear   0x8000
+// #define   TWMclear   0x8000, intergrated into the load function
 #define   TWMdir     0x4000
 #define   TWMload    0x2000
 #define   TWMorder   0x1000
@@ -72,9 +72,9 @@ typedef struct
   bool    UseCommonClock;     // Flag set to true to use a common clock, this will cause both modules is set each others value
   // The following variables support the Twave compressor mode of operation
   bool    CompressorEnabled;   // True if the compressor mode has been enabled
-  uint8_t Corder;              // Compressor order, 1 to 20
+  uint8_t Corder;              // Compressor order, 1 to 255
   int8_t  NumPasses;           // Total number of passes through device
-  int8_t  CNth;                // Compress every Nth pass
+  int8_t  CNth;                // Compress every Nth pass (no longer used)
   float   Tdelay;              // Delay from trigger to start of compressor or pass, in millisec
   float   Tcompress;           // Time in compress mode, in millisec
   float   Tnormal;             // Time in normal mode, in millisec
@@ -88,6 +88,8 @@ typedef struct
   int8_t  TWgateLevel;         // External gate for Twave output level
   // Added June 9, 2017
   bool    EnableTest;          // Enable the test mode for rev 5 only at this time.
+  int     CompressRamp;        // Supports compression ramping, added August 5, 2017
+  int     CrampOrder;          // Order ramping step size, Added sept 5, 2017
 } TwaveData;
 
 extern TwaveData TD;

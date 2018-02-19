@@ -25,6 +25,7 @@
 
 extern bool Suspend;
 extern bool EnableSerialNavigation;
+extern uint32_t BrightTime;
 
 #define EnableSerial
 #define SerialBAUD    9600
@@ -33,15 +34,18 @@ extern bool EnableSerialNavigation;
 // If timer 6 is used then you can not have a RF driver at
 // board address of 0, or jumper position A. Timer 6 output
 // is the same pin used for RF drive channel 1 power control.
-#define    TMR_TrigOut  3       // Used to generate freq source on trigger output line
-#define    TMR_TwaveClk 7       // Used for the Twave clock in compressor mode
-//#define    TMR_TwaveClk 6     // Used for the Twave clock in compressor mode
-#define    TMR_TwaveCmp 4       // Used for the Twave multi pass compressor table
-#define    TMR_Table    8       // Used for the pulse sequence tables, must be 8 because of hardware needs
-#define    TMR_Profiles Timer5  // Used for the profile toggeling function
-#define    TMR_servos   4       // Used by the HOFAIMS module to drive the servos
-#define    TMR_ARBclock 6       // Used for common clock generation for ARB
-#define    TMR_DelayedTrigger 1 // Used by the delayed trigger capability
+// Display backlight pin uses timer 7 for the PWM signal
+// generation.
+#define    TMR_TrigOut        3       // Used to generate freq source on trigger output line
+#define    TMR_TwaveClk       2       // Used for the Twave clock in compressor mode
+#define    TMR_TwaveCmp       4       // Used for the Twave multi pass compressor table
+#define    TMR_Table          8       // Used for the pulse sequence tables, must be 8 because of hardware needs
+#define    TMR_Profiles       Timer5  // Used for the profile toggeling function
+#define    TMR_DCbiasPulse    5       // Used to generate a pulse on a DC bias channel
+#define    TMR_servos         4       // Used by the HOFAIMS module to drive the servos
+#define    TMR_ARBclock       6       // Used for common clock generation for ARB
+#define    TMR_DelayedTrigger 0 // Used by the delayed trigger capability
+#define    TMR_ADCclock       1       // Used by the ADC digitizer function
 
 // Table mode software clock input pin, use S (DI2), default
 #define    SoftClockDIO DI2
@@ -63,7 +67,11 @@ typedef struct
   bool     UseWiFi;           // If true then the WiFi module is tested for on power up
   char     BootImage[20];     // Defines a image (bmp) to load at boot up, if found and loaded then the display
                               // is diabled.
+  int      BackLight;         // Backlight level in percent
 } MIPSconfigStruct;
+
+void   DisplayIntensity(void);
+void   SetBackLight(void);
 
 extern MIPSconfigStruct MIPSconfigData;
 

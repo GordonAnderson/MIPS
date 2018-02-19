@@ -13,14 +13,18 @@ typedef struct
    uint8_t    WorkMode;
    uint8_t    Baud[3];
    uint8_t    Reserved;
+   uint8_t    IndependentID[3];
+   uint8_t    SubnetMask[4];
+   uint8_t    FirmwareVer;
    uint8_t    CheckSum;   
 } EConfig;
 
 #define ECONFIG  13   // Configuration line, pull low to enter config mode
 
 // Prototypes
-bool EloadConfig(EConfig *ec);
+bool EloadConfig(EConfig *ec, bool report = false);
 void Ethernet_init(void);
+void Ethernet_test(void);
 void ProcessEthernet(void);
 bool ScanIP(char *ips, uint8_t *ip);
 void PrintIP(uint8_t *ip);
@@ -31,6 +35,8 @@ bool isEthernetPresent(void);
 bool UpdateEthernetAdapter(void);
 void ReportEIP(void);
 void SetEIP(char *ips);
+void ReportSNEIP(void);
+void SetSNEIP(char *ips);
 void ReportEport(void);
 void SetEport(int port);
 void ReportEGATE(void);

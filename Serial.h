@@ -9,6 +9,7 @@
 
 #include <Arduino.h>
 
+
 #if defined(__SAM3X8E__)
 #undef __FlashStringHelper::F(string_literal)
 #define F(string_literal) string_literal
@@ -138,6 +139,8 @@ void MacroPlay(char *filename, bool optional = false);
 void Mute(char *cmd);
 void GetCommands(void);
 void DelayCommand(int dtime);
+void ReportUniqueID(void);
+void TWItalk(int brd, int TWIadd);
 
 // Prototypes for external functions called
 void SAVEparms(void);

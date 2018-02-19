@@ -7,6 +7,7 @@
  * Developed by: Gordon Anderson
  */
 #include "Arduino.h"
+#include <Wire.h>
 #include "SD.h"
 #include "Adafruit_ILI9340.h"
 #include "string.h"
@@ -27,6 +28,7 @@
 #include "WiFi.h"
 #include "ethernet.h"
 #include "arb.h"
+#include "adcdrv.h"
 #include "Variants.h"
 #include <ThreadController.h>
 
@@ -66,6 +68,7 @@ Commands  CmdArray[] = 	{
   {"GERR",  CMDint, 0, (char *)&ErrorCode},              // Report the last error code
   {"GNAME", CMDstr, 0, (char *)MIPSconfigData.Name},	   // Report MIPS system name
   {"SNAME", CMDstr, 1, (char *)MIPSconfigData.Name},     // Set MIPS system name
+  {"UUID", CMDfunction, 0, (char *)ReportUniqueID},      // Reports the microcontrollers unique ID, 128 bits, hex format  
   {"BIMAGE", CMDstr, 1, (char *)MIPSconfigData.BootImage}, // Set MIPS boot image
   {"ABOUT", CMDfunction, 0, (char *)About},              // Report about this MIPS system
   {"SMREV", CMDfunctionLine, 0, (char *)SetModuleRev},   // Set module rev level
@@ -88,7 +91,6 @@ Commands  CmdArray[] = 	{
   {"RDEV", CMDfunction, 1, (char *)ReportAD7998},              // Read the ADC channel value, AD7998 device
   {"RDEV2", CMDfunction, 1, (char *)ReportAD7994},             // Read the ADC channel value, AD7994 device
   {"TBLTSKENA", CMDbool, 1, (char *)&TasksEnabled},            // Enables tasks in table mode, true or false
-  {"ADC", CMDfunction, 1, (char *)ADCread},                    // Read and report ADC channel. Valid range 0 through 3
   {"LEDOVRD", CMDbool, 1, (char *)&LEDoverride},               // Override the LED operation is true, always false on startup
   {"LED",  CMDint, 1, (char *)&LEDstate},                      // Define the LEDs state you are looking for.
   {"DSPOFF", CMDbool, 1, (char *)&DisableDisplay},             // Print the UseAnalog flag, true or false
@@ -108,7 +110,8 @@ Commands  CmdArray[] = 	{
   {"PUTEEPROM", CMDfunctionStr, 2, (char *)SerialtoEEPROM},    // Receives data from the host and writes to EEPROM, Board( A or B), Add (Hex)
   {"SSPND", CMDbool, 1, (char *)&Suspend},                     // Suspend all tasks, susports real time control, TRUE or FALSE
   {"GSPND", CMDbool, 0, (char *)&Suspend},                     // Returns suspend status, TRUE or FALSE
-  
+  {"CPUTEMP", CMDfunction, 0, (char *)CPUtemp},                // Returns the CPU temp in degrees C, not an accurate reading 
+  {"TWITALK", CMDfunction, 2, (char *)TWItalk},                // Redirect the serial communications through a board and TWI address passed
   // Clock generation functions
   {"GWIDTH",  CMDint, 0, (char *)&PulseWidth},                // Report the pulse width in microseconds
   {"SWIDTH",  CMDint, 1, (char *)&PulseWidth},                // Set the pulse width in microseconds
@@ -123,9 +126,22 @@ Commands  CmdArray[] = 	{
   {"GDTRIGPRD",  CMDint, 0, (char *)&DtrigPeriod},            // Returns trigger delay repeat period in uS
   {"SDTRIGRPT",  CMDint, 1, (char *)&DtrigNumber},            // Defines the number of trigger repeats, 0 = forever
   {"GDTRIGRPT",  CMDint, 0, (char *)&DtrigNumber},            // Returns the number of trigger repeats, 0 = forever
-  {"SDTRIGMOD", CMDfunctionStr, 1, (char *)SetDelayTrigModule},// Defines the delay trigger module, ARB
+  {"SDTRIGMOD", CMDfunctionStr, 1, (char *)SetDelayTrigModule},// Defines the delay trigger module, ARB, ADC, SWEEP, AUXTRIG
   {"SDTRIGENA", CMDfunctionStr, 1, (char *)SetDelayTrigEnable},// TRUE enables the trigger FALSE disables
   {"GDTRIGENA", CMDbool, 0, (char *)&DtrigEnable},             // Returns the trigger delay enable status
+  // ADC functions
+  {"ADC", CMDfunction, 1, (char *)ADCread},                    // Read and report ADC channel. Valid range 0 through 3
+  {"ADCINIT", CMDfunction, 0, (char *)ADCprep},                // ADC vector recording setup
+  {"ADCTRIG", CMDfunction, 0, (char *)ADCsoftTrigger},         // ADC vector recording software trigger
+  {"ADCABORT", CMDfunction, 0, (char *)ADCabort},              // ADC system abort
+  {"SADCCHAN", CMDint, 1, (char *)&ADCchannel},                // Set ADC channel number
+  {"GADCCHAN", CMDint, 0, (char *)&ADCchannel},                // Get ADC channel number
+  {"SADCSAMPS", CMDint, 1, (char *)&ADCnumsamples},            // Set ADC number of samples
+  {"GADCSAMPS", CMDint, 0, (char *)&ADCnumsamples},            // Get ADC number of samples
+  {"SADCVECTS", CMDint, 1, (char *)&ADCvectors},               // Set ADC number of vectors
+  {"GADCVECTS", CMDint, 0, (char *)&ADCvectors},               // Get ADC number of vectors
+  {"SADCRATE", CMDint, 1, (char *)&ADCrate},                   // Set ADC sample rate in Hz
+  {"GADCRATE", CMDint, 0, (char *)&ADCrate},                   // Get ADC sample rate in Hz
   // DC bias module commands
   {"SDCB", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&DCbiasSet))},      // Set voltage value
   {"GDCB", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasRead))},// Get Voltage value requested
@@ -145,6 +161,10 @@ Commands  CmdArray[] = 	{
   {"DCBOFFRBENA", CMDfunctionStr, 1, (char *)DCbiasOffsetReadback},   // TRUE to enable use of offset readback
   {"SDCBOFFENA", CMDfunctionStr, 2, (char *)DCbiasOffsetable},        // Set the DC bias channels offsetable flag, setup command
   {"SDCBTEST", CMDbool, 1, (char *)&DCbiasTestEnable},                // Set to FALSE to disable readback testing
+  {"SDCBADCADD", CMDfunction, 2, (char *)SetDCbiasADCtwiADD},         // Set a modules ADC TWI address, radix 10
+  {"SDCBARST", CMDbool, 1, (char *)&AutoReset},                       // Set to TRUE to enable power supply auto reset
+  {"SDCBRNG", CMDfunction, 2, (char *)&SetDCbiasRange},               // Set the range for the DC bias board
+  {"SDCBEXT", CMDfunction, 1, (char *)&SetDCbiasExtended},            // Set the DCbias board for extended addressing, factory command
   // DC bias module profile commands
   {"SDCBPRO", CMDfunctionLine, 0, (char *)SetDCbiasProfile},          // Sets a DC bias profile
   {"GDCBPRO", CMDfunction, 1, (char *)GetDCbiasProfile},              // Reports the select DC bias profile
@@ -155,17 +175,33 @@ Commands  CmdArray[] = 	{
   // DC bias list functions, supports DMA high speed transfer
   {"DSTATE", CMDfunctionLine, 0, (char *)DefineState},                // Define a state, name,ch,val....
   {"SSTATE", CMDfunctionStr, 1, (char *)SetState},                    // Sets the DCbias channels to the values defined in named state
-  {"LSTATES", CMDfunction, 0, (char *)ListStateNames},                // List all the defined state names
+  {"LTRIG", CMDfunction, 0, (char *)ListStateNames},                // List all the defined state names
   {"RSTATE", CMDfunctionStr, 1, (char *)RemoveState},                 // Remove a state from the linked list
   {"RSTATES", CMDfunction, 0, (char *)RemoveStates},                  // Clear the full linked list of states
   {"GSTATE", CMDfunctionStr, 1, (char *)IsState},                     // Returns true is named state is in list, else false
   {"DSEGMENT", CMDfunctionLine, 0, (char *)DefineSegment},            // Defines a segment with the following arguments: name, length, next, repeat count
   {"ADDSEGTP", CMDfunctionLine, 0, (char *)AddSegmentTimePoint},      // Adds a time point to a segment, arguments: name,count, state1, state 2... (variable number of states)
   {"ADDSEGTRG", CMDfunctionLine, 0, (char *)AddSegmentTrigger},       // Adds a trigger point to a segment, arguments: name,count,port,level
+  {"ADDSEGSTRG", CMDfunctionLine, 0, (char *)AddSegmentStartTrigger}, // Defines the staryt trigger for a segment, arguments: name,source,level
   {"LSEGMENTS", CMDfunction, 0, (char *)ListSegments},                // List all the defined segments
   {"RSEGMENT", CMDfunctionStr, 1, (char *)RemoveSegment},             // Remove a segment from the linked list
   {"RSEGMENTS", CMDfunction, 0, (char *)RemoveSegments},              // Clear the full linked list of segments
   {"PSEGMENTS", CMDfunction, 0, (char *)PlaySegments},                // Execute the segment list
+  {"SABORT", CMDfunction, 0, (char *)AbortSegments},                  // Abort an executing the segment list
+  {"TSEGMENT", CMDfunction, 0, (char *)SoftTriggerSegment},           // Software trigger the segment is ready
+  // DC bias channel pulse commands
+  {"SDCBPCH", CMDint, 1, (char *)&DCbiasPchan},                       // Set DC bias pulse channel
+  {"GDCBPCH", CMDint, 0, (char *)&DCbiasPchan},                       // Get DC bias pulse channel
+  {"SDCBPV", CMDfloat, 1, (char *)&DCbiasPvoltage},                   // Set DC bias pulse voltage, in volts
+  {"GDCBPV", CMDfloat, 0, (char *)&DCbiasPvoltage},                   // Get DC bias pulse voltage, in volts
+  {"SDCBPD", CMDint, 1, (char *)&DCbiasPdelay},                       // Set DC bias pulse delay, in uS
+  {"GDCBPD", CMDint, 0, (char *)&DCbiasPdelay},                       // Get DC bias pulse delay, in uS
+  {"SDCBPW", CMDint, 1, (char *)&DCbiasPwidth},                       // Set DC bias pulse width, in uS
+  {"GDCBPW", CMDint, 0, (char *)&DCbiasPwidth},                       // Get DC bias pulse width, in uS
+  {"SDCBPT", CMDfunctionStr, 1, (char *)SetDCbiasPtrigger},           // Set DC bias pulse trigger source, Q-X or t
+  {"GDCBPT", CMDfunction, 0, (char *)GetDCbiasPtrigger},              // Get DC bias pulse trigger source, Q-X or t
+  {"SDCBPENA", CMDfunctionStr, 1, (char *)SetDCbiasPena},             // Set DC bias pulse enable, TRUE or FALSE
+  {"GDCBPENA", CMDbool, 0, (char *)&DCbiasPena},                      // Get DC bias pulse enable, TRUE or FALSE
   // RF generator module commands
   {"SRFFRQ", CMDfunction, 2, (char *)RFfreq},		 // Set RF frequency
   {"SRFVLT", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&RFvoltage))},	 // Set RF output voltage
@@ -176,9 +212,12 @@ Commands  CmdArray[] = 	{
   {"GRFDRV", CMDfunction, 1, (char *)RFdriveReport},     // Report RF drive level in percentage
   {"GRFVLT", CMDfunction, 1, (char *)RFvoltageReport},   // Report RF output voltage setpoint
   {"GRFPWR", CMDfunction, 1, (char *)RFheadPower},       // Report RF head power draw
+  {"GRFMODE", CMDfunction, 1, (char *)RFmodeReport},     // Report RF mode (MANUAL | AUTO) for the selected channel
+  {"SRFMODE", CMDfunctionStr, 2, (char *)RFmodeSet},     // Sets the RF mode (MANUAL | AUTO) for the selected channel
   {"GRFALL", CMDfunction, 0, (char *)RFreportAll},       // Reports Freq, RFVpp + and - for each RF channel in system
   {"TUNERFCH", CMDfunction, 1, (char *)RFautoTune},      // Auto tune the select RF channel
   {"RETUNERFCH", CMDfunction, 1, (char *)RFautoRetune},  // Auto retune the select RF channel, start and current freq and drive
+  {"SRFCAL", CMDfunctionLine, 1, (char *)RFcalParms},    // Sets the RF calibration parameters, channel,slope,intercept  
   // DIO commands
   {"SDIO", CMDfunctionStr, 2, (char *)SDIO_Serial},	 // Set DIO output bit
   {"GDIO", CMDfunctionStr, 1, (char *)GDIO_Serial},	 // Get DIO output bit
@@ -335,8 +374,11 @@ Commands  CmdArray[] = 	{
   {"SWIFIENA",  CMDbool, 1, (char *)&MIPSconfigData.UseWiFi},        // Set the WiFi enable flag
   {"SWIFISP",  CMDint, 1, (char *)&wifidata.SerialPort},             // Set the WiFi serial port
   // Ethernet commands
+  {"ENTEST", CMDfunction, 0, (char *)Ethernet_test},                 // Tests the eternet adapter connection
   {"GEIP", CMDfunction, 0, (char *)ReportEIP},                       // Report the ethernet adapter IP address
   {"SEIP", CMDfunctionStr, 1, (char *)SetEIP},                       // Set the ethernet adapter IP address
+  {"GESNIP", CMDfunction, 0, (char *)ReportSNEIP},                   // Report the ethernet adapter Subnet IP address
+  {"SESNIP", CMDfunctionStr, 1, (char *)SetSNEIP},                   // Set the ethernet adapter Subnet IP address
   {"GEPORT", CMDfunction, 0, (char *)ReportEport},                   // Report the ethernet adapter port number
   {"SEPORT", CMDfunction, 1, (char *)SetEport},                      // Set the ethernet adapter port number
   {"GEGATE", CMDfunction, 0, (char *)ReportEGATE},                   // Report the ethernet adapter gateway IP address
@@ -356,7 +398,7 @@ Commands  CmdArray[] = 	{
   {"SWFENA", CMDfunction, 1, (char *)SetWFenable},                   // Starts waveform generation 
   {"SWFDIR", CMDfunctionStr, 2, (char *)SetARBdirection},            // Sets the waveform direction, FWD or REV
   {"GWFDIR", CMDfunction, 1, (char *)GetARBdirection},               // Returns the waveform direction, FWD or REV
-  {"SWFARB", CMDfunctionLine, 0, (char *)SetARBwaveform},            // Sets an arbitrary waveform
+  {"SWFARB", CMDfunctionLine, 0, (char *)(static_cast<void (*)(void)>(SetARBwaveform))},            // Sets an arbitrary waveform
   {"GWFARB", CMDfunction, 1, (char *)GetARBwaveform},                // Returns an arbitrary waveform
   {"SWFTYP", CMDfunctionStr, 2, (char *)SetARBwfType},               // Sets the arbitrary waveform type
   {"GWFTYP", CMDfunction, 1, (char *)GetARBwfType},                  // Returns the arbitrary waveform type
@@ -364,6 +406,8 @@ Commands  CmdArray[] = 	{
   {"GARBOFFA", CMDfunction, 1, (char *)GetARBoffsetBoardA},          // For a dual output board ARB channel this commands returns the board A offset
   {"SARBOFFB", CMDfunctionStr, 2, (char *)SetARBoffsetBoardB},       // For a dual output board ARB channel this commands sets the board B offset
   {"GARBOFFB", CMDfunction, 1, (char *)GetARBoffsetBoardB},          // For a dual output board ARB channel this commands returns the board B offset  
+  {"ARBSYNC", CMDfunction, 0, (char *)ARBmoduleSync},                 // Issues a software sync, note, the modules have to be configured for external sync
+                                                                     // for this function to work    
   // ARB conventional ARB mode commands
   {"SARBBUF", CMDfunction, 2, (char *)SetARBbufferLength},           // Sets ARB buffer length
   {"GARBBUF", CMDfunction, 1, (char *)GetARBbufferLength},           // Reports ARB buffer length
@@ -410,6 +454,38 @@ Commands  CmdArray[] = 	{
   // End of table marker
   {0},
 };
+
+void TWItalk(int brd, int TWIadd)
+{
+  // Select the board and send the TWIadd the communications enable command
+  SelectBoard(brd);
+  AcquireTWI();
+  Wire.beginTransmission(TWIadd);
+  Wire.write(TWI_SERIAL);
+  {
+//    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
+  // Echo all communications through the TWI port
+  while(1)
+  {
+    WDT_Restart(WDT);
+    Wire.requestFrom(TWIadd,1);
+    if (Wire.available() > 0)
+    {
+      char c = Wire.read();
+      serial->write(c);
+    }
+    while (serial->available() > 0)
+    {
+      serial->write(serial->read());
+      Wire.beginTransmission(TWIadd);
+      Wire.write(serial->read());
+      Wire.endTransmission();
+    }
+  }
+  ReleaseTWI();
+}
 
 void CheckImage(char *filename)
 {
@@ -563,6 +639,48 @@ void GetNumChans(char *cmd)
     SendNAK;
     return;
   }
+}
+
+__attribute__ ((section (".ramfunc")))
+void _EEFC_ReadUniqueID( unsigned int * pdwUniqueID )
+{
+    unsigned int status ;
+  
+    /* Send the Start Read unique Identifier command (STUI) by writing the Flash Command Register with the STUI command.*/
+    EFC1->EEFC_FCR = (0x5A << 24) | EFC_FCMD_STUI;
+    do
+    {
+        status = EFC1->EEFC_FSR ;
+    } while ( (status & EEFC_FSR_FRDY) == EEFC_FSR_FRDY ) ;
+
+    /* The Unique Identifier is located in the first 128 bits of the Flash memory mapping. So, at the address 0x400000-0x400003. */
+    pdwUniqueID[0] = *(uint32_t *)IFLASH1_ADDR;
+    pdwUniqueID[1] = *(uint32_t *)(IFLASH1_ADDR + 4);
+    pdwUniqueID[2] = *(uint32_t *)(IFLASH1_ADDR + 8);
+    pdwUniqueID[3] = *(uint32_t *)(IFLASH1_ADDR + 12);
+
+    /* To stop the Unique Identifier mode, the user needs to send the Stop Read unique Identifier
+       command (SPUI) by writing the Flash Command Register with the SPUI command. */
+    EFC1->EEFC_FCR = (0x5A << 24) | EFC_FCMD_SPUI ;
+
+    /* When the Stop read Unique Unique Identifier command (SPUI) has been performed, the
+       FRDY bit in the Flash Programming Status Register (EEFC_FSR) rises. */
+    do
+    {
+        status = EFC1->EEFC_FSR ;
+    } while ( (status & EEFC_FSR_FRDY) != EEFC_FSR_FRDY ) ;
+}
+
+void ReportUniqueID(void)
+{
+   unsigned int adwUniqueID[5]; 
+
+   _EEFC_ReadUniqueID( adwUniqueID );
+   SendACKonly;
+   serial->print("ID: ");
+   for (byte b = 0 ; b < 4 ; b++)
+      serial->print ((unsigned int) adwUniqueID[b], HEX);
+   serial->println ();
 }
 
 void SerialInit(void)
@@ -721,18 +839,19 @@ void ExecuteCommand(Commands *cmd, int arg1, int arg2, char *args1, char *args2,
 // This function does not block and returns -1 if there was nothing to do.
 int ProcessCommand(void)
 {
-  char   *Token,ch;
-  int    i;
-  static int   arg1, arg2;
-  static float farg1;
-  static enum  PCstates state;
-  static int   CmdNum;
-  static char  delimiter=0;
+  char          *Token,ch;
+  int           i;
+  static int    arg1, arg2;
+  static float  farg1;
+  static enum   PCstates state;
+  static int    CmdNum;
+  static char   delimiter=0;
+  static String EchoString = "";
   // The following variables are used for the long string reading mode
-  static char *lstrptr = NULL;
-  static int  lstrindex;
-  static bool lstrmode = false;
-  static int lstrmax;
+  static char   *lstrptr = NULL;
+  static int    lstrindex;
+  static bool   lstrmode = false;
+  static int    lstrmax;
 
   // Wait for line in ringbuffer
   if(state == PCargLine)
@@ -740,13 +859,13 @@ int ProcessCommand(void)
     if(RB.Commands <= 0) return -1;
     CmdArray[CmdNum].pointers.funcVoid();
     state = PCcmd;
-    return 0;
+    return(0);
   }
   if(lstrmode)
   {
     ch = RB_Get(&RB);
     if(ch == 0xFF) return(-1);
-    if(ch == ',') return(0);
+    if(ch == ',')  return(0);
     if(ch == '\r') return(0);
     if(ch == '\n')
     {
@@ -765,11 +884,16 @@ int ProcessCommand(void)
   {
     if (strcmp(Token, "\n") != 0) 
     {
-      if(delimiter!=0) serial->print(delimiter);
-      serial->print(Token);
+      if(delimiter!=0) EchoString += delimiter;
+      EchoString += Token;
     }
-    if (strcmp(Token, "\n") == 0) delimiter=0;
-    else delimiter = ',';
+    if (strcmp(Token, "\n") == 0)
+    {
+      delimiter=0;
+      serial->print(EchoString);
+      EchoString = "";
+    }
+    else EchoString += ',';
   }
   switch (state)
   {
@@ -927,9 +1051,10 @@ void PutCh(char ch)
 // the host computer being saved in the macro file. If the file is already present it will be appended to.
 void MacroRecord(char *filename)
 {
-  char fname[30];
-  char ch;
-  char *TK;
+  char   fname[30];
+  char   ch;
+  char   *TK;
+  String cmd;
 
   if (!SDcardPresent)
   {
@@ -954,6 +1079,24 @@ void MacroRecord(char *filename)
     SendNAK;
     return;
   }
+  // Put all chars that in in the input ring buffer and write to the file
+  while((ch = RB_Get(&RB)) != 0xFF) 
+  {
+    if(ch == '\n')
+    {
+      if(cmd == "MSTOP")
+      {
+        MacroFile.write(ch);
+        MacroFile.close();
+        SendACK;
+        return;  
+      }
+      cmd = "";
+    }
+    else cmd += ch;
+    MacroFile.write(ch);
+    WDT_Restart(WDT);
+  }
   // Set the Macro record flag
   Recording = true;
   // Fall into a loop and record all received characters until the command
@@ -967,7 +1110,11 @@ void MacroRecord(char *filename)
       // Put the character in the input ring buffer then pull tokens
       // looking for MSTOP
       RB_Put(&RB, ch);
-      while (RB_Size(&RB) != 0)  if ((TK = GetToken(false)) != NULL) break;
+      while (RB_Size(&RB) != 0)
+      {
+        if ((TK = GetToken(false)) != NULL) break;
+        WDT_Restart(WDT);
+      }
       if (TK != NULL)
       {
         if (strcmp(TK, "MSTOP") == 0)
@@ -976,6 +1123,7 @@ void MacroRecord(char *filename)
           break;
         }
       }
+      WDT_Restart(WDT);
     }
   }
   MacroFile.close();

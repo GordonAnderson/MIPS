@@ -386,4 +386,21 @@ void GetStatusTWSW(int chan)
   }
 }
 
+bool CompressionTriggerQueued = false;
+int CompressionTriggerTarget = 0;
+
+void QueueCompressionTrigger(int num)
+{
+  CompressionTriggerQueued = true;
+  CompressionTriggerTarget = num;
+}
+
+void ProcessCompressionTrigger(void)
+{
+  if(!CompressionTriggerQueued) return;
+  CompressionTriggerQueued = false;
+  if(CompressionTriggerTarget == char('A')) ARBcompressorTriggerISR();
+  else if(CompressionTriggerTarget == char('T')) CompressorTriggerISR();
+}
+
 

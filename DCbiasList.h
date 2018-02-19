@@ -39,6 +39,9 @@ struct DCsegment
   char         name[10];
   DCsegment    *next;
   DCsegment    *repeat;
+  char         TriggerSource;   // Segment trigger source, Q, R, or S. If S is it started from ISR
+                                // If null then start from a software command
+  int          TriggerEdge;     // POS or Neg edge trigger, for Q, R, or S
   uint32_t     Length;          // Segment length in counts
   uint8_t      RepeatCount;     // Repeat count
   uint8_t      CurrentCount;
@@ -53,9 +56,12 @@ void PlaySegments(void);
 void DefineSegment(void);        // Defines a segment with the following arguments: name, next, repeat count
 void AddSegmentTimePoint(void);  // Adds a time point to a segment, arguments: name,count, state1, state 2... (variable number of states)
 void AddSegmentTrigger(void);
+void AddSegmentStartTrigger(void);
 void RemoveSegment(char *name);  // Removes the named segment
 void RemoveSegments(void);       // Removes all segments and frees memory
 void ListSegments(void);
+void SoftTriggerSegment(void);
+void AbortSegments(void);
 
 // Prototypes for the DCstates
 void DefineState(void);

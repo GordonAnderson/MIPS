@@ -97,6 +97,9 @@ void GetSweepTimeTWSW(int chan);
 void StartSweepTWSW(int chan);
 void StopSweepTWSW(int chan);
 void GetStatusTWSW(int chan);
+void QueueCompressionTrigger(int num);
+void ProcessCompressionTrigger(void);
+
 #endif
 
 

@@ -60,6 +60,10 @@ typedef struct
   uint8_t ADCadr;
   DACchan DACchans[4];       // 4 channels of DAC
   ADCchan ADCchans[8];       // 8 channels of ADC
+  // Configuration parameters
+  float   FullScale;         // Fule scale voltage Vp-p
+  float   Ro;                // Quad radius parameter, in mm
+  float   mz;                // Target m/z value
 } RFAdata;                    
 
 // This structure saves the current state of the RFamp module

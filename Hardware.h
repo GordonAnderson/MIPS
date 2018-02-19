@@ -112,6 +112,7 @@ extern PBledStates  PBledMode;
 //#define RED_LED_OFF   digitalWrite(RED_LED,HIGH)
 
 // Misc signals
+#define BACKLIGHT     3     // TFT display backlight control, pwm to control level
 #define LDAC          11
 #define TRIGGER       12
 #define LDACctrl      A11
@@ -128,12 +129,13 @@ extern PBledStates  PBledMode;
 #define PWR_ON        15    // Enables power supply on high voltage DC bias boards,
                             // low = on
 #define TRGOUT        A10   // Trigger output, this signal is inverted on controller
+#define AUXTRGOUT     A9    // Aux Trigger output, this signal is inverted on controller
 #define RFON          9     // Used by FAIMS to turn on RF on LED
 
 #define  ENA_BRD_A    digitalWrite(BRDSEL,HIGH)
 #define  ENA_BRD_B    digitalWrite(BRDSEL,LOW)
 
-// Digitial input pins
+// Digitial input pins, Q through X
 #define  DI0          30
 #define  DI1          12
 #define  DI2          50
@@ -225,6 +227,8 @@ void TriggerOut(int microSec);
 void QueueTriggerOut(int microSec);
 void ProcessTriggerOut(void);
 void ADCread(int chan);
+bool QueueTpulseFunction(void (*Tfunction)(), bool add);
+void PlayTpulseFunctions(void);
 
 void DIOopsReport(void);
 void DIOreport(char *port, char *mode);
@@ -236,6 +240,8 @@ void SetDelayTrigModule(char *module);
 
 bool bmpDraw(char *filename, uint8_t x, uint8_t y);
 void bmpReport(char *filename);
+
+void CPUtemp(void); 
 
 extern bool     Tracing;
 extern uint8_t  TPpointer;

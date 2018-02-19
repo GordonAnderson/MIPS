@@ -161,46 +161,46 @@ DialogBoxEntry ARBentriesSetup[] = {
 };
 
 DialogBoxEntry ARBwaveformEdit[] = {
-  {"Index    values (-100to100)", 0, 1, D_TITLE, 0, 0, 0, false, NULL, NULL, NULL, NULL},
-  {"00-03 ",  1, 2, D_INT, -100, 100, 1, 7, false, "%3d", &ARBwaveform[0], NULL, NULL},
-  {" "     , 11, 2, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[1], NULL, NULL},
-  {" "     , 15, 2, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[2], NULL, NULL},
-  {" "     , 19, 2, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[3], NULL, NULL},
+  {"Index  values(-100to100)", 0, 1, D_TITLE, 0, 0, 0, false, NULL, NULL, NULL, NULL},
+  {"00-03" ,  0, 2, D_INT, -100, 100, 1, 5, false, "%4d", &ARBwaveform[0], NULL, NULL},
+  {" "     ,  9, 2, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[1], NULL, NULL},
+  {" "     , 14, 2, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[2], NULL, NULL},
+  {" "     , 19, 2, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[3], NULL, NULL},
 
-  {"04-07 ",  1, 3, D_INT, -100, 100, 1, 7, false, "%3d", &ARBwaveform[4], NULL, NULL},
-  {" "     , 11, 3, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[5], NULL, NULL},
-  {" "     , 15, 3, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[6], NULL, NULL},
-  {" "     , 19, 3, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[7], NULL, NULL},
+  {"04-07" ,  0, 3, D_INT, -100, 100, 1, 5, false, "%4d", &ARBwaveform[4], NULL, NULL},
+  {" "     ,  9, 3, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[5], NULL, NULL},
+  {" "     , 14, 3, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[6], NULL, NULL},
+  {" "     , 19, 3, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[7], NULL, NULL},
 
-  {"08-11 ",  1, 4, D_INT, -100, 100, 1, 7, false, "%3d", &ARBwaveform[8], NULL, NULL},
-  {" "     , 11, 4, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[9], NULL, NULL},
-  {" "     , 15, 4, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[10], NULL, NULL},
-  {" "     , 19, 4, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[11], NULL, NULL},
+  {"08-11" ,  0, 4, D_INT, -100, 100, 1, 5, false, "%4d", &ARBwaveform[8], NULL, NULL},
+  {" "     ,  9, 4, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[9], NULL, NULL},
+  {" "     , 14, 4, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[10], NULL, NULL},
+  {" "     , 19, 4, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[11], NULL, NULL},
 
-  {"12-15 ",  1, 5, D_INT, -100, 100, 1, 7, false, "%3d", &ARBwaveform[12], NULL, NULL},
-  {" "     , 11, 5, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[13], NULL, NULL},
-  {" "     , 15, 5, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[14], NULL, NULL},
-  {" "     , 19, 5, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[15], NULL, NULL},
+  {"12-15" ,  0, 5, D_INT, -100, 100, 1, 5, false, "%4d", &ARBwaveform[12], NULL, NULL},
+  {" "     ,  9, 5, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[13], NULL, NULL},
+  {" "     , 14, 5, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[14], NULL, NULL},
+  {" "     , 19, 5, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[15], NULL, NULL},
 
-  {"16-19 ",  1, 6, D_INT, -100, 100, 1, 7, false, "%3d", &ARBwaveform[16], NULL, NULL},
-  {" "     , 11, 6, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[17], NULL, NULL},
-  {" "     , 15, 6, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[18], NULL, NULL},
-  {" "     , 19, 6, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[19], NULL, NULL},
+  {"16-19" ,  0, 6, D_INT, -100, 100, 1, 5, false, "%4d", &ARBwaveform[16], NULL, NULL},
+  {" "     ,  9, 6, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[17], NULL, NULL},
+  {" "     , 14, 6, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[18], NULL, NULL},
+  {" "     , 19, 6, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[19], NULL, NULL},
 
-  {"20-23 ",  1, 7, D_INT, -100, 100, 1, 7, false, "%3d", &ARBwaveform[20], NULL, NULL},
-  {" "     , 11, 7, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[21], NULL, NULL},
-  {" "     , 15, 7, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[22], NULL, NULL},
-  {" "     , 19, 7, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[23], NULL, NULL},
+  {"20-23" ,  0, 7, D_INT, -100, 100, 1, 5, false, "%4d", &ARBwaveform[20], NULL, NULL},
+  {" "     ,  9, 7, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[21], NULL, NULL},
+  {" "     , 14, 7, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[22], NULL, NULL},
+  {" "     , 19, 7, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[23], NULL, NULL},
 
-  {"24-27 ",  1, 8, D_INT, -100, 100, 1, 7, false, "%3d", &ARBwaveform[24], NULL, NULL},
-  {" "     , 11, 8, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[25], NULL, NULL},
-  {" "     , 15, 8, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[26], NULL, NULL},
-  {" "     , 19, 8, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[27], NULL, NULL},
+  {"24-27" ,  0, 8, D_INT, -100, 100, 1, 5, false, "%4d", &ARBwaveform[24], NULL, NULL},
+  {" "     ,  9, 8, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[25], NULL, NULL},
+  {" "     , 14, 8, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[26], NULL, NULL},
+  {" "     , 19, 8, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[27], NULL, NULL},
 
-  {"28-31 ",  1, 9, D_INT, -100, 100, 1, 7, false, "%3d", &ARBwaveform[28], NULL, NULL},
-  {" "     , 11, 9, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[29], NULL, NULL},
-  {" "     , 15, 9, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[30], NULL, NULL},
-  {" "     , 19, 9, D_INT, -100, 100, 1, 1, false, "%3d", &ARBwaveform[31], NULL, NULL},
+  {"28-31" ,  0, 9, D_INT, -100, 100, 1, 5, false, "%4d", &ARBwaveform[28], NULL, NULL},
+  {" "     ,  9, 9, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[29], NULL, NULL},
+  {" "     , 14, 9, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[30], NULL, NULL},
+  {" "     , 19, 9, D_INT, -100, 100, 1, 1, false, "%4d", &ARBwaveform[31], NULL, NULL},
 
   {" Return to ARB menu", 0, 11, D_PAGE, 0, 0, 0, 0, false, NULL, ARBentriesPage1, EditBuffer2Waveform, NULL},
   {NULL},
@@ -216,7 +216,6 @@ DialogBox ARBdialog = {
 };
 
 MenuEntry MEARBmodule = {" ARB module", M_DIALOG, 0, 0, 0, NULL, &ARBdialog, NULL, NULL};
-
 
 // ISRs
 void ARB_1_DIR_ISR(void)
@@ -299,6 +298,10 @@ void SetModeMenus(bool paint = true)
     de = GetDialogEntries(ARBentriesPage2, "Offset A");
     de[0].Type = de[1].Type = D_OFF;
     if(arb.DualOutputs) de[0].Type = de[1].Type = D_FLOAT;
+    // Enable the compressor menu only on board 0 (the first channel)
+    de = GetDialogEntries(ARBentriesPage2, "Compressor");
+    if(de != NULL) de->Type = D_OFF;
+    if((de != NULL) && (ARBarray[0]->CompressorEnabled) && (SelectedARBboard == 0)) de->Type = D_DIALOG;
   }
   else
   {
@@ -354,7 +357,10 @@ void SetChannelRangeMessage(int board, int channel, int strtI, int stpI, float v
   Wire.write(b[1]);
   Wire.write(b[2]);
   Wire.write(b[3]);
-  Wire.endTransmission();
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
   ReleaseTWI();
 }
 
@@ -369,7 +375,10 @@ void SetBufferLength(int board, int BufferLength)
   Wire.write(TWI_SET_BUFFER_LEN);
   Wire.write(b[0]);
   Wire.write(b[1]);
-  Wire.endTransmission();
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
   ReleaseTWI();
 }
 
@@ -384,7 +393,10 @@ void SetNumBuffers(int board, int NumBuffers)
   Wire.write(TWI_SET_NUM_BUFFER);
   Wire.write(b[0]);
   Wire.write(b[1]);
-  Wire.endTransmission();  
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
   ReleaseTWI();
 }
 
@@ -411,11 +423,12 @@ String GetWaveformString(WaveFormTypes wft)
 // Accepts a waveform type descriptive string and retuns the type
 WaveFormTypes GetWaveformType(String WaveformString)
 {
-  if (WaveformString == String("SIN")) return (ARB_SIN);
-  else if (WaveformString == String("RAMP")) return (ARB_RAMP);
-  else if (WaveformString == String("TRI")) return (ARB_TRIANGLE);
+  if (WaveformString == String("SIN"))        return (ARB_SIN);
+  else if (WaveformString == String("RAMP"))  return (ARB_RAMP);
+  else if (WaveformString == String("TRI"))   return (ARB_TRIANGLE);
   else if (WaveformString == String("PULSE")) return (ARB_PULSE);
-  else if (WaveformString == String("ARB")) return (ARB_ARB);
+  else if (WaveformString == String("ARB"))   return (ARB_ARB);
+  return(ARB_SIN);
 }
 
 // Copies the edit buffer waveform to the modules storage buffer.
@@ -424,7 +437,7 @@ void EditBuffer2Waveform(void)
 {
   int i;
 
-  for (i = 0; i < arb.PPP; i++) arb.WaveForm[i] = ARBwaveform[i];
+  for (i = 0; i < ppp; i++) ARBarray[SelectedARBboard]->WaveForm[i] = arb.WaveForm[i] = ARBwaveform[i];
   // Set flag to cause ARB waveform update in the processing loop.
   ARBstates[SelectedARBboard]->ARBwaveformUpdate = true;
 }
@@ -433,7 +446,7 @@ void Waveform2EditBuffer(void)
 {
   int i;
 
-  for (i = 0; i < arb.PPP; i++) ARBwaveform[i] = arb.WaveForm[i];
+  for (i = 0; i < ppp; i++) ARBwaveform[i] = arb.WaveForm[i];
 }
 
 // Update the dialog box and display
@@ -441,14 +454,16 @@ void SelectARBmodule(bool paint = true)
 {
   String wft_string;
 
-  wft_string = GetWaveformString(ARB->wft);
-  strcpy(WFT, wft_string.c_str());
+//  wft_string = GetWaveformString(ARB->wft);  // Moved these two lines 9/1/17
+//  strcpy(WFT, wft_string.c_str());
   if(ARBmodule == 1)
   {
     if(ARBarray[0] != NULL) SelectedARBboard = 0;
     else SelectedARBboard = 1;
   }
   else SelectedARBboard = ARBmodule - 1;
+  wft_string = GetWaveformString(ARB->wft);
+  strcpy(WFT, wft_string.c_str());
   SelectBoard(SelectedARBboard);
   arb = *ARB;
   SetModeMenus(paint);
@@ -461,8 +476,11 @@ void SetBool(int board, int cmd, bool flag)
   Wire.beginTransmission(ARBarray[board]->ARBadr);
   Wire.write(cmd);
   Wire.write(flag);
-  Wire.endTransmission();
-  ReleaseTWI();  
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
+  ReleaseTWI();
 }
 
 void SetByte(int board, int cmd, byte bval)
@@ -472,7 +490,26 @@ void SetByte(int board, int cmd, byte bval)
   Wire.beginTransmission(ARBarray[board]->ARBadr);
   Wire.write(cmd);
   Wire.write(bval);
-  Wire.endTransmission();
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
+  ReleaseTWI();
+}
+
+void Set16bitInt(int board, int cmd, int ival)
+{
+  SelectBoard(board);
+  AcquireTWI();
+  uint8_t *b = (uint8_t *)&ival;
+  Wire.beginTransmission(ARBarray[board]->ARBadr);
+  Wire.write(cmd);
+  Wire.write(b[0]);
+  Wire.write(b[1]);
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
   ReleaseTWI();  
 }
 
@@ -487,7 +524,10 @@ void SetFloat(int board, int cmd, float fval)
   Wire.write(b[1]);
   Wire.write(b[2]);
   Wire.write(b[3]);
-  Wire.endTransmission();
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
   ReleaseTWI();  
 }
 
@@ -527,7 +567,10 @@ void SetFrequency(int board, int freq)
   Wire.write(b[0]);
   Wire.write(b[1]);
   Wire.write(b[2]);
-  Wire.endTransmission();
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
   ReleaseTWI();
 }
 
@@ -545,7 +588,10 @@ void SetAmplitude(int board, float Voltage)
   Wire.write(TWI_SET_REF);
   Wire.write(i & 0xFF);
   Wire.write((i >> 8) & 0xFF);
-  Wire.endTransmission();
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
   ReleaseTWI();
 
   SetFloat(board, TWI_SET_RANGE, Voltage);
@@ -553,7 +599,7 @@ void SetAmplitude(int board, float Voltage)
 
 // This command support the dual output amplifier board option. Each board
 // can have a seperate offset. Add = 0 or 1 for board A or B.
-void SetBoardBias(int board, int add, float Voltage)
+void SetBoardBias(int board, int add, float Voltage, uint8_t cmd)
 {
   uint8_t *b;
 
@@ -561,13 +607,16 @@ void SetBoardBias(int board, int add, float Voltage)
   SelectBoard(board);
   AcquireTWI();
   Wire.beginTransmission(ARBarray[board]->ARBadr);
-  Wire.write(TWI_SET_BRD_BIAS);
+  Wire.write(cmd);
   Wire.write(add);
   Wire.write(b[0]);
   Wire.write(b[1]);
   Wire.write(b[2]);
   Wire.write(b[3]);
-  Wire.endTransmission();
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
   ReleaseTWI();
 }
 
@@ -599,7 +648,10 @@ void SetWaveform(int board, WaveFormTypes wft)
       Wire.write(TWI_WAVEFORM_SIN);
       break;
   }
-  Wire.endTransmission();
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
   ReleaseTWI();
 }
 
@@ -615,14 +667,20 @@ void SetARBwaveform(int board)
   Wire.write(0);
   Wire.write(16);
   for (i = 0; i < 16; i++) Wire.write(ARBarray[board]->WaveForm[i]);
-  Wire.endTransmission(); 
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
 
   Wire.beginTransmission(ARBarray[board]->ARBadr);
   Wire.write(TWI_SET_VECTOR);
   Wire.write(16);
   Wire.write(16);
   for (i = 0; i < 16; i++) Wire.write(ARBarray[board]->WaveForm[i+16]);
-  Wire.endTransmission(); 
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
   ReleaseTWI();
 }
 
@@ -694,7 +752,7 @@ void ARB_init(int8_t Board, int8_t addr)
   // If there are already two or more channels add 2 to the board number
   if(NumberOfARBchannels >= 16) Board += 2;
   // Allocate the module data structure based on board number passed
-  ARBarray[Board] = new ARBdata;
+  ARBarray[Board]  = new ARBdata;
   ARBstates[Board] = new ARBstate;
   // Fill the array with default data
   *ARBarray[Board] = ARB_Rev_1;
@@ -711,14 +769,14 @@ void ARB_init(int8_t Board, int8_t addr)
   ARBstates[Board]->Direction = -2;
   ARBstates[Board]->WFT = -2;
   ARBstates[Board]->Enable = -2;
-  ARBstates[Board]->ARBwaveformUpdate =true;
+  ARBstates[Board]->ARBwaveformUpdate = true;
   // Set active board to board being inited
   SelectedARBboard = Board;
   SelectBoard(Board);
-  ARB->EEPROMadr = addr;
+  ARB->EEPROMadr   = addr;
   ARBsyncIN[Board] = new DIhandler;
-  DIdirARB[Board] = new DIhandler;
-  // If normal startup load the EEPROM parameters from the Filament card.
+  DIdirARB[Board]  = new DIhandler;
+  // If normal startup load the EEPROM parameters from the ARB module card.
   if (NormalStartup)
   {
     RestorARBsettings(true);
@@ -781,7 +839,7 @@ void ARB_loop(void)
       *ARB = arb;
       WFS = WFT;
       ARB->wft = GetWaveformType(WFS);  // In case this value changed
-      ARBdialog.Changed = false;
+      ActiveDialog->Changed = false;
     }
     // If the mode has changed then update the display with the new mode
     arb=*ARB;
@@ -905,8 +963,11 @@ void ARB_loop(void)
       if ((ARBarray[b]->ARBsyncIn != ARBsyncIN[b]->di) || (ARBarray[b]->ARBsyncLevel != ARBsyncIN[b]->mode) || FirstPass)
       {
          ARBsyncIN[b]->detach();
-         bstate = ARBsyncIN[b]->attached(ARBarray[b]->ARBsyncIn, ARBarray[b]->ARBsyncLevel, ARBsyncISR);
-         SetBool(b, TWI_SET_SYNC_ENA, bstate);
+         if((int)ARBarray[b]->ARBsyncIn != 0)
+         {
+            bstate = ARBsyncIN[b]->attached(ARBarray[b]->ARBsyncIn, ARBarray[b]->ARBsyncLevel, ARBsyncISR);
+            SetBool(b, TWI_SET_SYNC_ENA, bstate);
+         }
       }
       if ((ARBarray[b]->ARBdirDI != DIdirARB[b]->di) || (ARBarray[b]->ARBdirLevel != DIdirARB[b]->mode) || FirstPass)
       {
@@ -976,6 +1037,7 @@ int ARBmoduleToBoard(int Module, bool report)
   return(b);
 }
 
+// Sets the TWI address, radix 10
 void SetARBtwiADD(int module, int add)
 {
   int b;
@@ -1094,7 +1156,7 @@ void GetARBMode(int module)
   
   if((b = ARBmoduleToBoard(module,true)) == -1) return;
   SendACKonly;
-  serial->println(ARBarray[b]->Mode);
+  if(!SerialMute) serial->println(ARBarray[b]->Mode);
 }
 
 void SetWFfreq(int module, int freq)
@@ -1102,7 +1164,7 @@ void SetWFfreq(int module, int freq)
    int b;
   
    if((b = ARBmoduleToBoard(module,true)) == -1) return;
-   if(((strcmp(ARBarray[b]->Mode,"TWAVE") == 0) && (freq >= 0) && (freq <= 45000)) || ((strcmp(ARBarray[b]->Mode,"ARB") == 0) && (freq >= 0) && (freq <= 1500000)))
+   if(((strcmp(ARBarray[b]->Mode,"TWAVE") == 0) && (freq >= 1000) && (freq <= 45000)) || ((strcmp(ARBarray[b]->Mode,"ARB") == 0) && (freq >= 1000) && (freq <= 1500000)))
    {
       ARBarray[b]->Frequency = freq;
       SetFrequency(b,freq);
@@ -1595,6 +1657,209 @@ void GetARBoffsetBoardB(int module)
    if(!SerialMute) serial->println(ARBarray[b]->OffsetB);  
 }
 
+void ARBmoduleSync(void)
+{
+  ARBsyncISR();
+}
+
+// The following functions are used by the pulse sequence generator (table mode) to send commands
+// to the ARB modules. The following commands are supported:
+// Aux (boards 0 thru 3)
+// OffsetA (boards 0 and 1)
+// OffsetB (boards 0 and 1)
+//  101 = aux channel 1
+//  102 = aux channel 2
+//  103 = aux channel 3
+//  104 = aux channel 4
+//  105 = offset channel 1a
+//  106 = offset channel 1b
+//  107 = offset channel 2a
+//  108 = offset channel 2b
+// The ARB uses a TWI interface and this same interfrace is extensively used in the MIPS apps via
+// most modules. A TWI acquire and release system is used to insure exclusive use of the TWI interface,
+// if the interface is busy then the actions are queued to run as soon as the blocking function releases 
+// the interface. This logic greatly complicate the ARB table functions shown below.
+
+// Bit flag:
+// 0 set if ARB brd 0 needs update
+// 1 set if ARB brd 0 needs update
+// 2 set if ARB brd 0 needs update
+// 3 set if ARB brd 0 needs update
+int8_t ARBupdatesSent = 0;
+
+void UpdateAux(int8_t brd, float val, bool FlushQueued)
+{
+  static float vals[4];
+  static bool  Queued[4] = {false,false,false,false};
 
 
+  if(FlushQueued)
+  {
+    // If here assume the TWI interface is avalible so send any queued data
+    int b=SelectedBoard();
+    for(int i=0; i<4; i++) 
+    {
+      if(Queued[i])
+      {
+         SetFloat(i, TWI_UPDATE_AUX, vals[i]);     
+         ARBupdatesSent |= 1 << i;
+      }
+    }
+    SelectBoard(b); 
+    Queued[0] = Queued[1] = Queued[2] = Queued[3] = false;
+    return;
+  }
+  if((brd < 0) || (brd > 3)) return;
+  // Acquire the TWI interface
+  if(AcquireTWI())
+  {
+    // Here if TWI interface is avalible
+    int b=SelectedBoard();
+    SetFloat(brd, TWI_UPDATE_AUX, val);
+    SelectBoard(b);           
+    ARBupdatesSent |= 1 << brd;
+  }
+  else
+  {
+    // If here TWI is in use so queue up this request
+    vals[brd] = val;
+    Queued[brd] = true;
+    QueueARBupdate();
+  } 
+}
+
+void UpdateOffsetA(int8_t brd, float val, bool FlushQueued)
+{
+  static float vals[2];
+  static bool  Queued[2] = {false,false};
+
+  if(FlushQueued)
+  {
+    // If here assume the TWI interface is avalible so send any queued data
+    int b=SelectedBoard();
+    for(int i=0; i<2; i++) 
+    {
+      if(Queued[i])
+      {
+         SetBoardBias(i, 0, vals[i], TWI_UPDATE_BRD_BIAS); 
+         ARBupdatesSent = 1 << i;        
+      }
+    }
+    SelectBoard(b); 
+    Queued[0] = Queued[1] = false;
+    return;
+  }
+  if((brd < 0) || (brd > 1)) return;
+  // Acquire the TWI interface
+  if(AcquireTWI())
+  {
+    // Here if TWI interface is avalible
+    int b=SelectedBoard();
+    SetBoardBias(brd, 0, val, TWI_UPDATE_BRD_BIAS);    
+    SelectBoard(b);           
+    ARBupdatesSent |= 1 << brd;
+  }
+  else
+  {
+    // If here TWI is in use so queue up this request
+    vals[brd] = val;
+    Queued[brd] = true;
+    QueueARBupdate();
+  }
+}
+
+void UpdateOffsetB(int8_t brd, float val, bool FlushQueued)
+{
+  static float vals[2];
+  static bool  Queued[2] = {false,false};
+
+  if(FlushQueued)
+  {
+    // If here assume the TWI interface is avalible so send any queued data
+    int b=SelectedBoard();
+    for(int i=0; i<2; i++) 
+    {
+      if(Queued[i])
+      {
+        SetBoardBias(i, 1, vals[i], TWI_UPDATE_BRD_BIAS); 
+        ARBupdatesSent = 1 << i;
+      }
+    }
+    SelectBoard(b); 
+    Queued[0] = Queued[1] = false;
+    return;
+  }
+  if((brd < 0) || (brd > 1)) return;
+  // Acquire the TWI interface
+  if(AcquireTWI())
+  {
+    // Here if TWI interface is avalible
+    int b=SelectedBoard();
+    SetBoardBias(brd, 1, val, TWI_UPDATE_BRD_BIAS);    
+    SelectBoard(b);           
+    ARBupdatesSent |= 1 << brd;
+  }
+  else
+  {
+    // If here TWI is in use so queue up this request
+    vals[brd] = val;
+    Queued[brd] = true;
+    QueueARBupdate();
+  }
+}
+
+void ProcessQueuedARB(void)
+{
+  UpdateAux(0,0,true);
+  UpdateOffsetA(0,0,true);
+  UpdateOffsetB(0,0,true);
+  QueueARBupdate(true);
+}
+
+void QueueARBupdate(bool Release)
+{
+  static bool Queued = false;
+
+  if(Release)
+  {
+    Queued = false;
+    return;
+  }
+  if(Queued) return;
+  Queued = true;
+  TWIqueue(ProcessQueuedARB);
+}
+
+// Called at LDAC generation time, send the update command if updates have happened
+void ProcessARB(void)
+{
+  if(ARBupdatesSent == 0) return;
+  // If the TWI is not avalible then queue this function to
+  // execute when it is free
+  if(!AcquireTWI())
+  {
+    TWIqueue(ProcessARB);
+    return;
+  }
+  // Send the update command to each ARB board that has updates pending
+  for(int i=0; i<4; i++)
+  {
+      if(ARBupdatesSent & (1 << i))
+      {
+         // Save current board select and then select the board
+         int b=SelectedBoard();
+         SelectBoard(i);
+         Wire.beginTransmission(ARBarray[i]->ARBadr);
+         Wire.write(TWI_LOAD_UPDATES);
+         {
+            AtomicBlock< Atomic_RestoreState > a_Block;
+            Wire.endTransmission();
+         } 
+         // Restore the board select
+         SelectBoard(b);
+      }
+  }   
+  ARBupdatesSent = 0;
+  ReleaseTWI();
+}
 

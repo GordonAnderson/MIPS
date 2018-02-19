@@ -47,6 +47,16 @@
 #define TWI_SET_BRD_BIAS    0x19      // This command sets the board bias voltage, 1 byte board number, 1 float with value
 #define TWI_SET_PWR         0x20      // This command turns on and off power supply. accepts true or false, true = on
 #define TWI_SET_TST_ENABLE  0x21      // This command enables voltage testing and shutdown. accepts true or false, true = enable
+#define TWI_SET_CRAMP       0x22      // This command sets the cpression order ramp variable, 16 bit int, -200 to 200
+#define TWI_SET_CRAMPORDER  0x23      // This command sets the cpression order ramp step size, 16 bit int, 1 to 200
+
+// The following commands are used for the pulse sequence generator. The update
+// commands send the data that is queued and loaded when the load updates command is sent to the ARB
+#define TWI_UPDATE_AUX      0x24      // Updates the aux output, -50 to 50, float
+#define TWI_UPDATE_BRD_BIAS 0x25      // This command sets the board bias voltage, 1 byte board number, 1 float with value
+#define TWI_LOAD_UPDATES    0x26      // Updated values are loaded into the hardware via this command
+
+#define TWI_SERIAL          0x27      // This command enables the TWI port to process serial commands
 
 #define TWI_READ_REQ_FREQ   0x81      // Returns requested frequency
 #define TWI_READ_ACT_FREQ   0x82      // Returns actual frequency
@@ -142,6 +152,8 @@ typedef struct
   bool          DualOutputs;        // True for dual output boards installed for one ARB
   float         OffsetA;            // Output set A offset
   float         OffsetB;            // Output set B offset
+  int           Cramp;              // Order ramping
+  int           CrampOrder;         // Order ramping step size
 } ARBdata;
 
 extern ARBdata  *ARBarray[4];
@@ -157,9 +169,17 @@ void SelectARBmodule(bool);
 void SetFrequency(void);
 void SetAmplitude(void);
 void SetOffset(void);
+void SetBoardBias(int board, int add, float Voltage, uint8_t cmd = TWI_SET_BRD_BIAS);
 void SetWaveform(void);
 void SetDirection(void);
 void SetARBwaveform(void);
+
+void UpdateAux(int8_t brd, float val, bool FlushQueued);
+void UpdateOffsetA(int8_t brd, float val, bool FlushQueued);
+void UpdateOffsetB(int8_t brd, float val, bool FlushQueued);
+void ProcessQueuedARB(void);
+void QueueARBupdate(bool Release = false);
+void ProcessARB(void);
 
 void ReportARBchannels(void);
 void SetARBbufferLength(int module, int len);
@@ -195,6 +215,7 @@ void SetARBoffsetBoardA(char *module, char *val);
 void GetARBoffsetBoardA(int module);
 void SetARBoffsetBoardB(char *module, char *val);
 void GetARBoffsetBoardB(int module);
+void ARBmoduleSync(void);
 
 // Compressor proto types
 void SetARBCompressorEnabled(char *flag);

@@ -1,7 +1,7 @@
 //
 // Twave
 //
-// This file supports the Twave driver card, rev 1.0, 2.0, and 3.0.
+// This file supports the Twave driver card, rev 1.0, 2.0, 3.0, 4.0 and 5.0.
 // While support is still present for rev 1.0 this version has been retired.
 //
 // This version of the Twave driver does not use the readback ADC. 
@@ -9,16 +9,17 @@
 // Needed to lower frequency below the 250KHz limit of the clock generator chip. Setup
 // Timer channel 6 to output on pin 5, that is on connector EXT2 pin 9. Jumper EXT2 pin 9
 // to pin 14 and then this signal can be found on pin 14 of IC10. This hardware mod is
-// required for rev 2.0. 
+// required for rev 2.0. Also required to use timer channel 6 for clock generation on 
+// Rev 2.0
 //
 // Support added for Twave driver module rev 3.0. December 19. 2015 This version
-// uses a clock chip that will function over the required rance.
+// uses a clock chip that will function over the required range.
 //
 // Rev 4.0 of the Twave module adds a Coolrunner CPLD to the hardware. This allows
 // all the compressor clock logic to be moved into hardware on the module. The CPLD
 // has a 16 bit SPI interface used to control all the options. Hardware signals
 // for SPI data, SPI clock, Strobe, Select provide the interface to the Due controller.
-// On board jumpers allow on board of external clock.
+// On board jumpers allow on board or external clock.
 //
 // Firmwave revs do not always match the hardware board versions.
 // Use Rev 1 firmware for Rev 1 hardware module
@@ -90,7 +91,8 @@ extern bool NormalStartup;
 // This timer is also used to generate the software clock in the compressor mode.
 // 6,4 works
 //MIPStimer TwaveClk(6);
-MIPStimer TwaveClk(TMR_TwaveClk);
+//MIPStimer TwaveClk(TMR_TwaveClk);
+MIPStimer *TwaveClk = NULL;
 
 // DAC channel assignment
 #define  DAC_PulseVoltage    0
@@ -157,12 +159,18 @@ void TW_1_GateOn(void)
 {
   int brd,mSdelay;
   
-  if(TDarray[0].Rev >= 4)
+  if(TDarray[TWboardAddress[0]].Rev >= 4)
   {
+     if((TWcpld[TWboardAddress[0]] & TWMsrena) != 0) return;
+     AtomicBlock< Atomic_RestoreState > a_Block;  
      TWcpld[TWboardAddress[0]] |= TWMsrena;
+     int b=SelectedBoard();
+     SelectBoard(TWboardAddress[0]);
      TWcpldLoad(TWboardAddress[0]);
+     SelectBoard(b);
      return;
   }
+
   // Read and save board select then select the board and update the sequence to 0xFF
   brd = digitalRead(BRDSEL);
   ENA_BRD_A;
@@ -192,12 +200,18 @@ void TW_1_GateOff(void)
 {
   int brd,mSdelay;
   
-  if(TDarray[0].Rev >= 4)
+  if(TDarray[TWboardAddress[0]].Rev >= 4)
   {
+     if((TWcpld[TWboardAddress[0]] & ~TWMsrena) == 0) return;
+     AtomicBlock< Atomic_RestoreState > a_Block;  
      TWcpld[TWboardAddress[0]] &= ~TWMsrena;
+     int b=SelectedBoard();
+     SelectBoard(TWboardAddress[0]);
      TWcpldLoad(TWboardAddress[0]);
+     SelectBoard(b);
      return;
   }
+
 //  digitalWrite(TWld, LOW);  // Hold load line actice, this will stop the clocking
   // Read and save board select then select the board and update the sequence to 0xFF
   brd = digitalRead(BRDSEL);
@@ -230,28 +244,42 @@ void TW_1_GATE_ISR(void)
   bool level;
 
   level = DIgateTW[0]->activeLevel();  // Read input
-  if(((level) && (TDarray[0].TWgateLevel == HIGH)) || ((!level) && (TDarray[0].TWgateLevel == LOW)))
+  if((((level) && (TDarray[TWboardAddress[0]].TWgateLevel == HIGH)) || ((!level) && (TDarray[TWboardAddress[0]].TWgateLevel == LOW))) || 
+     (((level) && (TDarray[TWboardAddress[0]].TWgateLevel == RISING)) || ((!level) && (TDarray[TWboardAddress[0]].TWgateLevel == FALLING))))
   {
     // Gate Twave off, Hold load line active and set sequence to 0xFF
-    if(AcquireTWI()) TW_1_GateOff();
-    else TWIqueue(TW_1_GateOff);
+    if(TDarray[TWboardAddress[0]].Rev >= 4) TW_1_GateOff();
+    else
+    {
+       if(AcquireTWI()) TW_1_GateOff();
+       else TWIqueue(TW_1_GateOff);
+    }
   }
   else
   {
     // Gate Twave on, Set the sequence and pulse the load line
-    if(AcquireTWI()) TW_1_GateOn();
-    else TWIqueue(TW_1_GateOn);
+    if(TDarray[TWboardAddress[0]].Rev >= 4) TW_1_GateOn();
+    else
+    {
+       if(AcquireTWI()) TW_1_GateOn();
+       else TWIqueue(TW_1_GateOn);
+    }
   }
 }
 
 void TW_2_GateOn(void)
 {
   int brd,mSdelay;
-  
-  if(TDarray[1].Rev >= 4)
+
+  if(TDarray[TWboardAddress[1]].Rev >= 4)
   {
+     if((TWcpld[TWboardAddress[1]] & TWMsrena) != 0) return;
+     AtomicBlock< Atomic_RestoreState > a_Block;  
      TWcpld[TWboardAddress[1]] |= TWMsrena;
+     int b=SelectedBoard();
+     SelectBoard(TWboardAddress[1]);
      TWcpldLoad(TWboardAddress[1]);
+     SelectBoard(b);
      return;
   }
   // Read and save board select then select the board and update the sequence to 0xFF
@@ -282,11 +310,16 @@ void TW_2_GateOn(void)
 void TW_2_GateOff(void)
 {
   int brd,mSdelay;
-  
-  if(TDarray[1].Rev >= 4)
+
+  if(TDarray[TWboardAddress[1]].Rev >= 4)
   {
+     if((TWcpld[TWboardAddress[1]] & ~TWMsrena) == 0) return;
+     AtomicBlock< Atomic_RestoreState > a_Block;  
      TWcpld[TWboardAddress[1]] &= ~TWMsrena;
+     int b=SelectedBoard();
+     SelectBoard(TWboardAddress[1]);
      TWcpldLoad(TWboardAddress[1]);
+     SelectBoard(b);
      return;
   }
 //  digitalWrite(TWld, LOW);  // Hold load line active, this will stop the clocking
@@ -319,40 +352,57 @@ void TW_2_GATE_ISR(void)
   bool level;
 
   level = DIgateTW[1]->activeLevel();  // Read input
-  if(((level) && (TDarray[1].TWgateLevel == HIGH)) || ((!level) && (TDarray[1].TWgateLevel == LOW)))
+  if((((level) && (TDarray[1].TWgateLevel == HIGH)) || ((!level) && (TDarray[1].TWgateLevel == LOW))) || 
+     (((level) && (TDarray[1].TWgateLevel == RISING)) || ((!level) && (TDarray[1].TWgateLevel == FALLING))))
   {
     // Gate Twave off, Hold load line active and set sequence to 0xFF
-    if(AcquireTWI()) TW_2_GateOff();
-    else TWIqueue(TW_2_GateOff);
+    if(TDarray[TWboardAddress[1]].Rev >= 4) TW_2_GateOff();
+    else
+    {
+       if(AcquireTWI()) TW_2_GateOff();
+       else TWIqueue(TW_2_GateOff);      
+    }
   }
   else
   {
     // Gate Twave on, Set the sequence and pulse the load line
-    if(AcquireTWI()) TW_2_GateOn();
-    else TWIqueue(TW_2_GateOn);
+    if(TDarray[TWboardAddress[1]].Rev >= 4) TW_2_GateOn();
+    else
+    {
+       if(AcquireTWI()) TW_2_GateOn();
+       else TWIqueue(TW_2_GateOn);
+    }
   }
 }
 
 void TW_1_DIR_ISR(void)
 {
-  if(TDarray[0].Rev >= 4)
+  AtomicBlock< Atomic_RestoreState > a_Block;  
+  if((TDarray[0].TWdirLevel == HIGH) || (TDarray[0].TWdirLevel == RISING))
   {
+    if (DIdirTW[0]->activeLevel()) TDarray[0].Direction = true;
+    else TDarray[0].Direction = false;    
+  }
+  else
+  {
+    if (!DIdirTW[0]->activeLevel()) TDarray[0].Direction = true;
+    else TDarray[0].Direction = false;        
+  }
+  if(TDarray[TWboardAddress[0]].Rev >= 4)
+  {
+     if((TDarray[0].Direction) && ((TWcpld[TWboardAddress[0]] & TWMdir) != 0)) return;
+     if((!TDarray[0].Direction) && ((TWcpld[TWboardAddress[0]] & TWMdir) == 0)) return;
      if(TDarray[0].Direction) TWcpld[TWboardAddress[0]] |= TWMdir;
      else TWcpld[TWboardAddress[0]] &= ~TWMdir;
      // Update the CPLD
+     int b=SelectedBoard();
+     SelectBoard(TWboardAddress[0]);
      TWcpldLoad(TWboardAddress[0]);
+     SelectBoard(b);
      return;
-  }
-  if (DIdirTW[0]->activeLevel()) TDarray[0].Direction = true;
-  else TDarray[0].Direction = false;
-  if (0 == SelectedTwaveModule)
-  {
-    if (DIdirTW[0]->activeLevel()) TD.Direction = true;
-    else TD.Direction = false;
   }
   if (TDarray[0].Direction) digitalWrite(TWdirA, HIGH);
   else digitalWrite(TWdirA, LOW);
-  AtomicBlock< Atomic_RestoreState > a_Block;
   digitalWrite(TWld, LOW);
   delayMicroseconds(250);
   CompressorClockCycle();
@@ -361,24 +411,33 @@ void TW_1_DIR_ISR(void)
 }
 void TW_2_DIR_ISR(void)
 {
-  if(TDarray[1].Rev >= 4)
+  AtomicBlock< Atomic_RestoreState > a_Block;  
+  if((TDarray[TWboardAddress[1]].TWdirLevel == HIGH) || (TDarray[TWboardAddress[1]].TWdirLevel == RISING))
   {
+    if (DIdirTW[TWboardAddress[1]]->activeLevel()) TDarray[TWboardAddress[1]].Direction = true;
+    else TDarray[TWboardAddress[1]].Direction = false;    
+  }
+  else
+  {
+    if (!DIdirTW[TWboardAddress[1]]->activeLevel()) TDarray[TWboardAddress[1]].Direction = true;
+    else TDarray[TWboardAddress[1]].Direction = false;        
+  }
+  if(TDarray[TWboardAddress[1]].Rev >= 4)
+  {
+     if((TDarray[TWboardAddress[1]].Direction) && ((TWcpld[TWboardAddress[TWboardAddress[1]]] & TWMdir) != 0)) return;
+     if((!TDarray[TWboardAddress[1]].Direction) && ((TWcpld[TWboardAddress[TWboardAddress[1]]] & TWMdir) == 0)) return;
+     // Only update if there is a change
      if(TDarray[1].Direction) TWcpld[TWboardAddress[1]] |= TWMdir;
      else TWcpld[TWboardAddress[1]] &= ~TWMdir;
      // Update the CPLD
+     int b=SelectedBoard();
+     SelectBoard(TWboardAddress[1]);
      TWcpldLoad(TWboardAddress[1]);
+     SelectBoard(b);
      return;
   }
-  if (DIdirTW[1]->activeLevel()) TDarray[1].Direction = true;
-  else TDarray[1].Direction = false;
-  if (1 == SelectedTwaveModule)
-  {
-    if (DIdirTW[1]->activeLevel()) TD.Direction = true;
-    else TD.Direction = false;
-  }
-  if (TDarray[1].Direction) digitalWrite(TWdirB, HIGH);
+  if (TDarray[TWboardAddress[1]].Direction) digitalWrite(TWdirB, HIGH);
   else digitalWrite(TWdirB, LOW);
-  AtomicBlock< Atomic_RestoreState > a_Block;
   digitalWrite(TWld, LOW);
   delayMicroseconds(250);
   CompressorClockCycle();
@@ -392,21 +451,25 @@ void TW_1_SYNC_ISR(void)
 
   if(TDarray[0].Rev >= 4)
   {
+     AtomicBlock< Atomic_RestoreState > a_Block;
+     if((TwaveBoards[1]) && (TDarray[0].TWsyncDI == TDarray[1].TWsyncDI) && (TDarray[0].TWsyncLevel == TDarray[1].TWsyncLevel))
+     {
+        b = (uint8_t *)&TWcpld[1];
+        b[0] = ~TDarray[1].Sequence;
+        TWcpld[1] |= TWMload;
+     }
      b = (uint8_t *)&TWcpld[0];
      b[0] = ~TDarray[0].Sequence;
      TWcpld[0] |= TWMload;
-     TWcpld[0] |= TWMclear;
      TWcpldLoad(1,false);
      TWcpldLoad(0,true);
      TWcpld[0] &= ~TWMload;
-     TWcpld[0] &= ~TWMclear;
+     TWcpld[1] &= ~TWMload;
+     // Need to delay one clock period at this point to let the load happen in the hardware
+     delayMicroseconds(1000000/TDarray[0].Velocity);
+     TWcpldLoad(1,false);
+     TWcpldLoad(0,false);
      return;
-    
-    
-    
-    SetSequence(0);
-    //TWcpldSync();
-    return;
   }
   AtomicBlock< Atomic_RestoreState > a_Block;
   // Re-load the sequence generator
@@ -422,19 +485,17 @@ void TW_2_SYNC_ISR(void)
 
   if(TDarray[1].Rev >= 4)
   {
+     AtomicBlock< Atomic_RestoreState > a_Block;
+     if((TwaveBoards[0]) && (TDarray[0].TWsyncDI == TDarray[1].TWsyncDI) && (TDarray[0].TWsyncLevel == TDarray[1].TWsyncLevel)) return;
      b = (uint8_t *)&TWcpld[1];
      b[0] = ~TDarray[1].Sequence;
      TWcpld[1] |= TWMload;
-     TWcpld[1] |= TWMclear;
      TWcpldLoad(0,false);
      TWcpldLoad(1,true);
      TWcpld[1] &= ~TWMload;
-     TWcpld[1] &= ~TWMclear;
+     delayMicroseconds(1000000/TDarray[0].Velocity);
+     TWcpldLoad(1,false);
      return;
-
-    
-    SetSequence(1);
-    return;
   }
   AtomicBlock< Atomic_RestoreState > a_Block;
   // Re-load the sequence generator
@@ -464,9 +525,9 @@ void SetVelocity(int ModuleIndex)
     // Rev 3 supports the on module FS7140 clock chip.
     if(TDarray[0].CompressorEnabled)
     {
-      TwaveClk.attachInterrupt(CompressorClockISR);
-      TwaveClk.setFrequency((double)TDarray[0].Velocity);
-      TwaveClk.start(-1, 0, false);
+      TwaveClk->attachInterrupt(CompressorClockISR);
+      TwaveClk->setFrequency((double)TDarray[0].Velocity);
+      TwaveClk->start(-1, 0, false);
     }
     else FS7140setup(TDarray[ModuleIndex].CLOCKadr, TDarray[ModuleIndex].Velocity * 4);
   }
@@ -475,9 +536,9 @@ void SetVelocity(int ModuleIndex)
 #ifdef UseTimer
     // The 8 times multiplier is because the output toggles on each clock thus divides
     // by two and the rev 2 hardware has a 4x division.
-    TwaveClk.setFrequency((double)(TDarray[ModuleIndex].Velocity * 8));
-    TwaveClk.setTIOAeffect(1, TC_CMR_ACPA_TOGGLE);
-    TwaveClk.start(-1, 0, true);
+    TwaveClk->setFrequency((double)(TDarray[ModuleIndex].Velocity * 8));
+    TwaveClk->setTIOAeffect(1, TC_CMR_ACPA_TOGGLE);
+    TwaveClk->start(-1, 0, true);
 #else
     SetRef(8000000);
     CY_Init(TDarray[ModuleIndex].CLOCKadr);
@@ -487,11 +548,11 @@ void SetVelocity(int ModuleIndex)
   else // Rev 1
   {
 #ifdef UseTimer
-    // The 2 times multiplier is because the output toggles on each clock thus devides
+    // The 2 times multiplier is because the output toggles on each clock thus divides
     // by two.
-    TwaveClk.setFrequency((double)(TDarray[ModuleIndex].Velocity * 2));
-    TwaveClk.setTIOAeffect(1, TC_CMR_ACPA_TOGGLE);
-    TwaveClk.start(-1, 0, true);
+    TwaveClk->setFrequency((double)(TDarray[ModuleIndex].Velocity * 2));
+    TwaveClk->setTIOAeffect(1, TC_CMR_ACPA_TOGGLE);
+    TwaveClk->start(-1, 0, true);
 #else
     SetRef(8000000);
     CY_Init(TDarray[ModuleIndex].CLOCKadr);
@@ -516,6 +577,7 @@ void SetSequence(int ModuleIndex)
     TWcpldLoad(TWboardAddress[ModuleIndex]);
     // Clear the load bit in image register
     TWcpld[TWboardAddress[ModuleIndex]] &= ~TWMload;
+    TWcpldLoad(TWboardAddress[ModuleIndex],false);
     return;
   }
   if ((TDarray[ModuleIndex].Rev == 2) || (TDarray[ModuleIndex].Rev == 3))
@@ -528,16 +590,21 @@ void SetSequence(int ModuleIndex)
       delay(2);
     }
     AtomicBlock< Atomic_RestoreState > a_Block;
+    // These long delay are needed because the clr and load are synchronous and require a clock
+    // edge. This delay can be calculated from the clock frequency to improve performance.
+    // Clear and load may be able to happen at the same time.
     digitalWrite(TWclr, LOW);
     delayMicroseconds(1000);
     digitalWrite(TWclr, HIGH);
     delayMicroseconds(1000);
     digitalWrite(TWld, LOW);
     delayMicroseconds(1000);
-    CompressorClockCycle();
+    CompressorClockCycle();     // This is insuring the edge happens, should allow removing the delays.
+                                // This is only true if using the software generated clock. This logic needs to
+                                // include the proper tests
     CompressorClockReset();
     digitalWrite(TWld, HIGH);
-    delayMicroseconds(1000);
+    delayMicroseconds(1000);    // Do not see the need for this delay.
     return;
   }
   // Init the sequence generator pattern
@@ -691,7 +758,7 @@ DialogBox TwaveDialog = {{"Twave parameters", ILI9340_BLACK, ILI9340_WHITE, 2, 0
 // Rev 2.0/3.0/4.0 dialog options
 DialogBoxEntry TwaveDialogEntries2[] = {
   {" Twave module"       , 0, 1, D_INT, 1, 1, 1, 22, false, "%1d", &TwaveModuleNumber, NULL, SelectTwaveModule},
-  {" Clock freq, Hz"     , 0, 2, D_INT, 1000, 300000, 1000, 16, false, "%7d", &TD.Velocity, NULL, NULL},
+  {" Clock freq, Hz"     , 0, 2, D_INT, 3000, 300000, 1000, 16, false, "%7d", &TD.Velocity, NULL, NULL},
   {" Sequence"           , 0, 3, D_BINARY8, 0, 255, 1, 15, false, NULL, &TD.Sequence, NULL, NULL},
   {" Pulse voltage"      , 0, 4, D_FLOAT, MinPulseVoltage, 100, 0.1, 18, false, "%5.1f", &TD.TWCD[0].VoltageSetpoint, NULL, NULL},
   {" Wave dir"           , 0, 5, D_FWDREV, 0, 1, 1, 19, false, NULL, &TD.Direction, NULL, NULL},
@@ -746,6 +813,7 @@ void TWcpldLoad(int index, bool Strobe)
      digitalWrite(TWstrobe,LOW);
   }
   SetAddress(0);  
+  delayMicroseconds(2);
 }
 
 // This function will load the sequence into both twave channel and
@@ -760,17 +828,17 @@ void TWcpldSync(void)
   b = (uint8_t *)&TWcpld[1];
   b[0] = ~TDarray[1].Sequence;
   TWcpld[0] |= TWMload;
-  TWcpld[0] |= TWMclear;
+//  TWcpld[0] |= TWMclear;
   TWcpld[1] |= TWMload;
-  TWcpld[1] |= TWMclear;
+//  TWcpld[1] |= TWMclear;
   TWcpldLoad(0,false);
   TWcpldLoad(1,true);
-//  digitalWrite(TWstrobe,HIGH);
-//  digitalWrite(TWstrobe,LOW);  
   TWcpld[0] &= ~TWMload;
-  TWcpld[0] &= ~TWMclear;
+//  TWcpld[0] &= ~TWMclear;
   TWcpld[1] &= ~TWMload;
-  TWcpld[1] &= ~TWMclear;
+//  TWcpld[1] &= ~TWMclear;
+  TWcpldLoad(0,false);
+  TWcpldLoad(1,false);
 }
 
 void CalibratePulse(void)
@@ -889,6 +957,18 @@ void Twave_init(int8_t Board, uint8_t addr)
   {
     RestoreTwaveSettings(true);
   }
+  if(TwaveClk == NULL)
+  {
+    // Setup the timer channel based on board rev
+    if(TD.Rev <= 2)
+    {
+      #ifdef UseTimer
+      TwaveClk = new MIPStimer(6);    // These REVs have to use timer 6 for clock generation
+      #endif
+    }
+    if(TwaveClk == NULL) TwaveClk = new MIPStimer(TMR_TwaveClk);
+    if(TwaveClk == NULL) return;
+  }
   ActiveDialog = SavedDialog;
   // Set active board board being inited
   SelectedTwaveModule = Board;
@@ -914,6 +994,15 @@ void Twave_init(int8_t Board, uint8_t addr)
     de = GetDialogEntries(TwaveDialogEntries2, "Pulse voltage"); 
     de->Min = MinPulseVoltageRev4;
     if(TD.Rev == 5) de->Min = MinPulseVoltageRev5;
+    if(TD.Rev == 4)
+    {
+       de = GetDialogEntries(TwaveDialogEntries2, "Clock freq, Hz"); 
+       if(de != NULL)
+       {
+          de->Min = 5000;
+          de->Max = 2000000;
+       }
+    }
   }
   // If rev 4 of the frimware driver then set the voltage upper limits to 500V
   if(TD.Rev == 5)
@@ -1149,7 +1238,8 @@ void Twave_loop(void)
         if ((TDarray[i].TWdirDI != DIdirTW[i]->di) || (TDarray[i].TWdirLevel != DIdirTW[i]->mode))
         {
           DIdirTW[i]->detach();
-          DIdirTW[i]->attached(TDarray[i].TWdirDI, TDarray[i].TWdirLevel, TWdirISRs[i]);
+          DIdirTW[i]->attached(TDarray[i].TWdirDI, CHANGE, TWdirISRs[i]);
+//          DIdirTW[i]->attached(TDarray[i].TWdirDI, TDarray[i].TWdirLevel, TWdirISRs[i]);
         }
         if ((TDarray[i].TWsyncDI != DIsyncTW[i]->di) || (TDarray[i].TWsyncLevel != DIsyncTW[i]->mode))
         {
@@ -1183,7 +1273,11 @@ void Twave_loop(void)
         if (TDarray[0].UseCommonClock) // Make both clocks match if use common clock flag is set
         {
           TDarray[(i + 1) & 1].Velocity = TDarray[i].Velocity;
-          TD.Velocity = TDarray[i].Velocity;
+          CurrentVelocity[(i + 1) & 1] = TDarray[i].Velocity;
+          SelectBoard(TWboardAddress[(i + 1) & 1]);
+          SetVelocity((i + 1) & 1);
+          SelectBoard(TWboardAddress[i]);
+//          TD.Velocity = TDarray[i].Velocity;
         }
       }
       // Determine the highest Twave output voltage
@@ -1563,10 +1657,12 @@ DialogBoxEntry CompressorEntries[] = {
 DialogBoxEntry CompressorEntries2[] = {
   {" Trig input"          , 0, 1, D_DI     , 0, 0, 2, 21, false, NULL, &TD.Ctrig, NULL, ConfigureTrig},
   {" Trig level"          , 0, 2, D_DILEVEL, 0, 0, 4, 19, false, NULL, &TD.CtrigLevel, NULL, ConfigureTrig},
-  {" Force trigger"       , 0, 4, D_FUNCTION,0, 0, 0, 0,  false, NULL, NULL, CompressorTriggerISR, CompressorTriggerISR},
-  {" Switch output"       , 0, 6, D_DO     , 0, 0, 2, 21, false, NULL, &TD.Cswitch, NULL, SetSwitch},
-  {" Switch level"        , 0, 7, D_DOLEVEL, 0, 0, 4, 19, false, NULL, &TD.CswitchLevel, NULL, SetSwitch},
-  {" Switch state"        , 0, 8, D_LIST   , 0, 0, 5, 18, false, CswitchList, CswitchState, NULL, SetSwitch},
+  {" Switch output"       , 0, 3, D_DO     , 0, 0, 2, 21, false, NULL, &TD.Cswitch, NULL, SetSwitch},
+  {" Switch level"        , 0, 4, D_DOLEVEL, 0, 0, 4, 19, false, NULL, &TD.CswitchLevel, NULL, SetSwitch},
+  {" Switch state"        , 0, 5, D_LIST   , 0, 0, 5, 18, false, CswitchList, CswitchState, NULL, SetSwitch},
+  {" Cramp"               , 0, 7, D_OFF    , -200, 200 ,   1, 19, false, "%4d", &TD.CompressRamp, NULL, NULL},
+  {" Cramp order"         , 0, 8, D_OFF    , 1, 200 ,   1, 19, false, "%4d", &TD.CrampOrder, NULL, NULL},
+  {" Force trigger"       , 0, 9, D_FUNCTION,0, 0, 0, 0,  false, NULL, NULL, CompressorTriggerISR, CompressorTriggerISR},
   {" First page"          , 0, 10,D_PAGE   , 0, 0, 0, 0,  false, NULL, &CompressorEntries, NULL, NULL},
   {" Return to Twave menu", 0, 11,D_DIALOG , 0, 0, 0, 0,  false, NULL, &TwaveDialog2, NULL, NULL},
   {NULL},
@@ -1585,6 +1681,7 @@ volatile uint32_t  ClockArray[MaxOrder * 8];
 volatile int       ClockReset = 16;
 volatile int       ClockIndex = 0;
 volatile int       CR = 16;
+volatile int       CrampCounter = 0;
 volatile bool      C_ClockEnable = true;
 
 volatile Pio *pio;
@@ -1601,15 +1698,20 @@ void UpdateMode(void)
     if(strcmp(Cmode,"Normal")==0) TWcpld[1] |= TWMmode;
     else TWcpld[1] &= ~TWMmode;
     TWcpld[1] |= TWMorder;
+    if(TDarray[0].Corder == 0)
+    {
+      TWcpld[1] |= TWMhold;
+      b[0] = 2;
+    }
+    else TWcpld[1] &= ~TWMhold;
     TWcpldLoad(1,true);
-//    digitalWrite(TWstrobe,HIGH);
-//    digitalWrite(TWstrobe,LOW);  
     TWcpld[1] &= ~TWMorder;
-//    TWcpldSync();
+    TWcpldLoad(1,false);
     return;
   }
   if(strcmp(Cmode,"Normal")==0) ClockReset = 8;
   else ClockReset = TD.Corder * 8;
+  CrampCounter = 0;
 }
 
 void ConfigureTrig(void)
@@ -1665,8 +1767,6 @@ void CompressorTimerISR(void)
   switch (CState)
   {
     case CS_COMPRESS:
-      C_NextEvent += C_Tn;
-      CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
       // If C_NormAmpMode is 1 or 2 then set the amplitude to TW1 level.
       if((C_NormAmpMode == 1) || (C_NormAmpMode == 2))
       {
@@ -1680,13 +1780,12 @@ void CompressorTimerISR(void)
       }
       // Next state is always normal
       ClockReset = 8;
-//      C_NextEvent += C_Tn;
+      C_NextEvent += C_Tn;
+      CrampCounter = 0;
       CState = CS_NORMAL;
       if(TDarray[0].Rev >= 4)
       {
          TWcpld[1] |= TWMmode;
-//         TWcpldSync();
-          TWcpldLoad(0,false);
          TWcpldLoad(1,true);
       }
       OP = 'X';
@@ -1702,13 +1801,11 @@ void CompressorTimerISR(void)
       {
         CState = CS_COMPRESS;
         C_NextEvent += C_Tc;
-        CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
+        CrampCounter = 0;
         ClockReset = TDarray[0].Corder * 8;
         if(TDarray[0].Rev >= 4)
         {
           TWcpld[1] &= ~TWMmode;
-          //TWcpldSync();
-          TWcpldLoad(0,false);
           TWcpldLoad(1,true);
         }
         // If C_NormAmpMode is 1 or 2 then set the amplitude to TW2 level.
@@ -1727,13 +1824,11 @@ void CompressorTimerISR(void)
       {
         CState = CS_NONCOMPRESS;
         C_NextEvent += C_Tnc;
-        CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
         ClockReset = 8;
+        CrampCounter = 0;
         if(TDarray[0].Rev >= 4)
         {
            TWcpld[1] |= TWMmode;
-           //TWcpldSync();
-           TWcpldLoad(0,false);
            TWcpldLoad(1,true);
         }
       }
@@ -1741,7 +1836,6 @@ void CompressorTimerISR(void)
       {
         CState = CS_DELAY;  // Delay, hold current mode during delay
         C_NextEvent += C_Delay;
-        CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
       }
       break;
     default:
@@ -1753,12 +1847,11 @@ void CompressorTimerISR(void)
     // Stop the timer
     CompressorTimer.stop();
     // Restore the mode
-    TWcpldLoad(0,false);
+    if(TDarray[0].Rev >= 4) TWcpldLoad(0,false);
     UpdateMode();
     return;
   }
-  // Update the timer
-//  CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
+  CompressorTimer.setTIOAeffectNOIO(C_NextEvent,TC_CMR_ACPA_TOGGLE);
 }
 
 // Called when we are going to start a compression cycle.
@@ -1768,15 +1861,14 @@ void CompressorTriggerISR(void)
 {
   uint32_t   start;
   
-//  AtomicBlock< Atomic_RestoreState > a_Block;
+  AtomicBlock< Atomic_RestoreState > a_Block;  // uncommented, 8/22/17
   // Clear and setup variables
   ClockReset = 8;             // Put system in normal mode
+  CrampCounter = 0;
   CurrentPass = 0;
   if(TDarray[0].Rev >= 4)
   {
     TWcpld[1] |= TWMmode;
-    TWcpldLoad(1,true);
-    //TWcpldSync();
   }
   GetNextOperationFromTable(true);
   C_NextEvent = C_Td;
@@ -1797,41 +1889,45 @@ void CompressorTriggerISR(void)
 // Set twave channel 1 voltage to the value defined in the channel 1 data structure
 void TWCsetV(void)
 {
+//   Wire.setClock(400000);
    int b=SelectedBoard();
    SelectBoard(0);
-   SetPulseVoltage(0); 
+   SetPulseVoltage(0,TDarray[0].TWCD[DAC_PulseVoltage].VoltageSetpoint); 
    SelectBoard(b); 
+//   Wire.setClock(100000);
 }
 
 // Set twave channel 2 voltage to the value defined in the channel 2 data structure
 void TWCsetv(void)
 {
+//   Wire.setClock(400000);
    int b=SelectedBoard();
    SelectBoard(1);
-   SetPulseVoltage(1); 
+   SetPulseVoltage(1,TDarray[1].TWCD[DAC_PulseVoltage].VoltageSetpoint); 
    SelectBoard(b); 
+//   Wire.setClock(100000);
 }
 
 // Set the twave channel 2 voltage to the value defined in the channel 1 data structure
 void TWCsetV2toV1(void)
 {
-   Wire.setClock(400000);
+//   Wire.setClock(400000);
    int b=SelectedBoard();
    SelectBoard(1);
    SetPulseVoltage(1,TDarray[0].TWCD[DAC_PulseVoltage].VoltageSetpoint); 
    SelectBoard(b); 
-   Wire.setClock(100000);
+//   Wire.setClock(100000);
 }
 
 // Set the twave channel 1 voltage to the value defined in the channel 2 data structure
 void TWCsetV1toV2(void)
 {
-   Wire.setClock(400000);
+//   Wire.setClock(400000);
    int b=SelectedBoard();
    SelectBoard(0);
    SetPulseVoltage(0,TDarray[1].TWCD[DAC_PulseVoltage].VoltageSetpoint); 
    SelectBoard(b); 
-   Wire.setClock(100000);
+//   Wire.setClock(100000);
 }
 
 // This function reads the compressor table and return the next operation that will be performed.
@@ -1944,7 +2040,7 @@ char GetNextOperationFromTable(bool init)
     }
     if(OP == 'O')
     {
-      if((count >= 0) && (count <= 127))
+      if((count >= 0) && (count <= 255))
       {
          TDarray[0].Corder = count;
          TD.Corder = count;
@@ -2023,6 +2119,14 @@ char GetNextOperationFromTable(bool init)
     {
       C_NormAmpMode = count;
     }
+    if(OP == 'K')  
+    {
+       TDarray[0].CompressRamp = count;
+    }
+    if(OP == 'k')  
+    {
+       TDarray[0].CrampOrder = count;
+    }
     if(OP == '[')
     {
        CompressorLoopStart(tblindex);
@@ -2035,7 +2139,8 @@ char GetNextOperationFromTable(bool init)
   }
 }
 
-// This interrupt service routine generates the two clocks of each Twave module
+// This interrupt service routine generates the two clocks, one for each Twave channel (1 and 2).
+// The hardware have a divide by 4 so each clock require 4 transistions.
 void CompressorClockISR(void)
 {
   uint32_t i;
@@ -2059,7 +2164,29 @@ void CompressorClockISR(void)
   {
     CR = ClockReset;
     if((TD.Corder == 0) && (ClockIndex == 16)) ClockIndex = 8;  // for order = 0 the system will just hold its position.
-    else ClockIndex = 0;
+    else 
+    {
+      // This is the end of a compression cycle of the clock. Resetting the ClockIndex
+      // Starts the next cycle. Compression order ramping logic is applied here.
+      // ClockReset is order * 8 (8 clock cycles per one twave cycle), its = 8 for normal non-compress.
+      // ClockReset = 8 indicates normal mode.
+      ClockIndex = 0;
+      // Apply compression ramp logic here. Adjust the ClockReset counter.
+      if((TDarray[0].CompressRamp != 0) && (ClockReset != 8))
+      {
+         CrampCounter++;
+         if(CrampCounter >= abs(TDarray[0].CompressRamp))
+         {
+           CrampCounter = 0;
+           if(TDarray[0].CompressRamp < 0) ClockReset -= 8 * TDarray[0].CrampOrder;
+           else ClockReset += 8 * TDarray[0].CrampOrder;
+           if(ClockReset < 16) ClockReset = 16;
+           if(ClockReset > 8 * 255) ClockReset = 8 * 255;
+           CR = ClockReset;
+         } 
+      }
+      else CrampCounter = 0;
+    }
   }
 }
 
@@ -2105,9 +2232,9 @@ void CompressorInit(void)
       if(i < 8) ClockArray[i] |= g_APinDescription[CLOCK_B].ulPin;
     }
     // Setup the timer and the ISR for the clock
-    TwaveClk.attachInterrupt(CompressorClockISR);
-    TwaveClk.setFrequency((double)TDarray[0].Velocity);
-    TwaveClk.start(-1, 0, false);
+    TwaveClk->attachInterrupt(CompressorClockISR);
+    TwaveClk->setFrequency((double)TDarray[0].Velocity);
+    TwaveClk->start(-1, 0, false);
     //NVIC_SetPriority(TC7_IRQn, 0);
   }
   // Clear the switch output
@@ -2115,6 +2242,16 @@ void CompressorInit(void)
   // Enable the compressor menu selection 
   de = GetDialogEntries(TwaveDialogEntries2page2, "Compressor");
   if(de != NULL) de->Type = D_DIALOG;
+  // If rev 2 or 3 enable Cramp selection
+  if((TDarray[0].Rev == 2) || (TDarray[0].Rev == 3))
+  {
+     de = GetDialogEntries(CompressorEntries2, "Cramp");
+     if(de != NULL) 
+     {
+        de[0].Type = D_INT;
+        de[1].Type = D_INT;
+     }
+  }  
   // Setup the trigger line and ISR
   CtrigInput = new DIhandler;
   UpdateMode();

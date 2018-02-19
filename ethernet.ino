@@ -1,48 +1,22 @@
-/*
-  // This code will enable the ethernet to rs232 adapter
-  // Send 0x55 0xBB to read configuration from module
-typedef struct
-{
-   uint8_t    Dest_IP[4];
-   uint16_t   Dest_Port;
-   uint8_t    Mod_IP[4];
-   uint16_t   Mod_Port;
-   uint8_t    Gate_IP[4];   
-   uint8_t    WorkMode;
-   uint8_t    Baud[3];
-   uint8_t    SerialMode;
-   uint8_t    Reserved;
-   uint8_t    CheckSum;   
-} EConfig;
-*/
-/*  
-  delay(5000);
-  Serial1.begin(9600);
-  pinMode(13, OUTPUT);
-  digitalWrite(13,LOW);
-  delay(100);
-  Serial1.write(0x55);
-  Serial1.write(0xBB);
-  delay(1000);
-  while(Serial1.available() > 0)
-  {
-    SerialUSB.println(Serial1.read());
-  }
-//  uint8_t  einit[24] = {0x55,0xAA,0xC9,0x00,0xA8,0xC0,0x2A,0x20,0x07,0x00,0xA8,0xC0,0x8C,0x4E,0xC9,0x00,0xA8,0xC0,0x03,0x00,0xC2,0x01,0x03,0xBE};
-//  for(int i=0;i<24;i++) Serial1.write(einit[i]);
-  delay(100);
-  digitalWrite(13,HIGH);
-  Serial1.begin(115200);
-*/  
+//
+// File: Ethernet
+//
+// This file contains the driver for the USR-TCP232-T V2 Ethernet to RS232 module.
+// This code will enable the ethernet to rs232 adapter if found and the set the enabled
+// flag telling MIPS the module is present.
+// Notes:
+//   Send 0x55 0xBB to read configuration from module
+//
+// Gordon Anderson
 
 #include "ethernet.h"
 
 EConfig eConfig;
 bool EthernetPresent = false;
 
-// This function assumes the serial point has been initalized. The command 0x55 0xBB is sent and the
+// This function assumes the serial port has been initalized. The command 0x55 0xBB is sent and the
 // configuration data is read back. True is returned if success else false is returned.
-bool EloadConfig(EConfig *ec)
+bool EloadConfig(EConfig *ec, bool report)
 {
   EConfig  EC;
   int i;
@@ -53,26 +27,29 @@ bool EloadConfig(EConfig *ec)
   pinMode(ECONFIG, OUTPUT);
   digitalWrite(ECONFIG,LOW);
   delay(100);
-  // Send the command, 0x55 0xBB
+  // Send the command, 0x55 0xBC
   Serial1.write(0x55);
-  Serial1.write(0xBB);
+  Serial1.write(0xBC);
   delay(100);
-  // Read back 0x55 0xBB to detect start of data
+  // Read back 0x55 0xBC to detect start of data
   mtime = millis();
   lastC = 0;
+  if(report) serial->println("looking for 0x55, 0xBC");
   while(true)
   {
     if(millis() > mtime + 500) return false;
     if(Serial1.available() > 0) 
     {
       ch = Serial1.read();
-      if((lastC == 0x55) && (ch == 0xBB)) break;
+      if(report) serial->println(ch, 16);
+      if((lastC == 0x55) && (ch == 0xBC)) break;
       lastC = ch;
     }
   }
   // Read data into local structure
   ptr = (uint8_t *)&EC;
   mtime = millis();
+  if(report) serial->println("Reading config data");
   for(i=0;i<sizeof(EConfig);i++)
   {
     while(true)
@@ -81,16 +58,18 @@ bool EloadConfig(EConfig *ec)
       if(millis() > mtime + 500) return false;
     }
     ptr[i] = Serial1.read();
+    if(report) serial->println(ptr[i], 16);
   }
   // Verify the checksum
   chksum = 0;
   ptr = (uint8_t *)&EC;
   for(i=0;i<sizeof(EConfig)-1;i++) chksum += ptr[i];
-  if(chksum != EC.CheckSum) return false;
+  if(chksum != EC.CheckSum) { if(report) serial->println("Checksum error"); return false; }
   // Move data to passed in pointer
   memcpy((void *)ec,(void *)&EC,sizeof(EConfig));
   // Raise the config bit and exit
   digitalWrite(ECONFIG,HIGH);
+  if(report) serial->println("No errors");
   return true;
 }
 
@@ -105,7 +84,7 @@ bool EsendConfig(EConfig *ec)
   // Calculate the checksum and update the data structure
   ptr = (uint8_t *)ec;
   ec->CheckSum = 0;
-  for(i=0;i<sizeof(EConfig)-1;i++) ec->CheckSum += ptr[i];
+  for(i=0;i<sizeof(EConfig)-2;i++) ec->CheckSum += ptr[i];
   // Put system in config mode
   pinMode(ECONFIG, OUTPUT);
   digitalWrite(ECONFIG,LOW);
@@ -113,8 +92,9 @@ bool EsendConfig(EConfig *ec)
   // Send data to ethernet adapter
   //Serial1.flush();
   Serial1.write(0x55);
-  Serial1.write(0xAA);
-  for(i=0;i<sizeof(EConfig);i++)  Serial1.write(ptr[i]);
+  Serial1.write(0xBA);  //was AA
+  for(i=0;i<(sizeof(EConfig)-2);i++)  Serial1.write(ptr[i]);
+  Serial1.write(ec->CheckSum);
   // We should have a 'K' in the serial buffer so find it!
   mtime = millis();
   while(true)
@@ -184,6 +164,18 @@ void Ethernet_init(void)
   }
 }
 
+void Ethernet_test(void)
+{
+  // See if we can find a ethernet adapter
+  Serial1.begin(9600);
+  EthernetPresent = EloadConfig(&eConfig,true);
+  digitalWrite(ECONFIG,HIGH);
+  if(EthernetPresent)
+  {
+    Serial1.begin(115200);
+  }  
+}
+
 void ProcessEthernet(void)
 {
   if(!EthernetPresent) return;
@@ -247,6 +239,28 @@ void SetEIP(char *ips)
 {
   if(!isEthernetPresent()) return;
   if(ScanIP(ips, eConfig.Mod_IP)) 
+  {
+    UpdateEthernetAdapter();
+  }
+  else 
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+  }
+}
+
+void ReportSNEIP(void)
+{
+  if(!isEthernetPresent()) return;
+  SendACKonly;
+  if(!SerialMute) PrintIP(eConfig.SubnetMask);
+  if(!SerialMute) serial->println("");
+}
+
+void SetSNEIP(char *ips)
+{
+  if(!isEthernetPresent()) return;
+  if(ScanIP(ips, eConfig.SubnetMask)) 
   {
     UpdateEthernetAdapter();
   }

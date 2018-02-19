@@ -53,6 +53,8 @@ DCstate           *DCstateList = NULL;
 DCstate           *CurrentState;
 uint8_t           CurrentDCbiasModule;
 volatile bool     DCbiasStateBusy = false;
+volatile bool     StriggerReady = false;
+volatile bool     SegmentsAbort = false;
 
 // Sequences
 DCsegment           *DCsegmentList = NULL;
@@ -66,21 +68,68 @@ MIPStimer MPST(TMR_Table);               // timer used for segment generation
 // Segment real-time processing code
 //
 
+// Enabled for S input triggering of segment
+void TriggerSegmentISR(void)
+{
+  if(!StriggerReady) return;
+  MPST.softwareTrigger();
+}
+
 void RAmatchISR(void)
 {
   SetupNextTimePoint();
 }
 
+void SetupTriggerSource(void)
+{
+     // Setup this segment starting trigger
+     switch (CurrentSegment->TriggerSource)
+     {
+       case 0:    // Software trigger, via command
+         detachInterrupt(DI2);
+         MPST.setTrigger(TC_CMR_EEVTEDG_NONE);
+         break;
+       case 'Q':  // Q input trigger source
+         detachInterrupt(DI2);
+         if(CurrentSegment->TriggerEdge == POS) MPST.setTriggerQ(TC_CMR_EEVTEDG_RISING);
+         if(CurrentSegment->TriggerEdge == NEG) MPST.setTriggerQ(TC_CMR_EEVTEDG_FALLING);
+         break;
+       case 'R':  // R input trigger source
+         detachInterrupt(DI2);
+         if(CurrentSegment->TriggerEdge == POS) MPST.setTrigger(TC_CMR_EEVTEDG_RISING);
+         if(CurrentSegment->TriggerEdge == NEG) MPST.setTrigger(TC_CMR_EEVTEDG_FALLING);
+         break;
+       case 'S':  // S input trigger source, used ISR, not as deterministic
+         MPST.setTrigger(TC_CMR_EEVTEDG_NONE);
+         if(CurrentSegment->TriggerEdge == POS) attachInterrupt(DI2, TriggerSegmentISR, RISING);
+         if(CurrentSegment->TriggerEdge == NEG) attachInterrupt(DI2, TriggerSegmentISR, FALLING);
+         break;
+       default:
+          break;
+     }
+}
+
 void RCmatchISR(void)
 {
+   // If abort flag is set exit and report
+   if(SegmentsAbort)
+   {
+      MPST.stop();
+      CurrentSegment = NULL;
+      return;
+   }
    // Advance to next segment and clear the CurrentTimePoint
    CurrentTimePoint = 0;
    if(CurrentSegment->repeat == NULL) CurrentSegment = CurrentSegment->next;
    else
    {
-     CurrentSegment->CurrentCount++;
-     if(CurrentSegment->CurrentCount < CurrentSegment->RepeatCount) CurrentSegment = CurrentSegment->repeat;
-     else CurrentSegment = CurrentSegment->next;
+     if(CurrentSegment->RepeatCount == 0) CurrentSegment = CurrentSegment->repeat;
+     else
+     {
+       CurrentSegment->CurrentCount++;
+       if(CurrentSegment->CurrentCount < CurrentSegment->RepeatCount) CurrentSegment = CurrentSegment->repeat;
+       else CurrentSegment = CurrentSegment->next;
+     }
    }
    // If the CurrentSegment pointer is NULL we are done so stop the timer and exit
    if(CurrentSegment == NULL)
@@ -88,7 +137,14 @@ void RCmatchISR(void)
      // Stop timer, clean up, and exit
      MPST.stop();
    }
-   else SetupNextTimePoint();
+   else 
+   {
+     StriggerReady=false;
+     SetupTriggerSource();
+     // Setup the next time point
+     SetupNextTimePoint();
+     StriggerReady=true;
+   }
 }
 
 void PlaySegments(void)
@@ -117,27 +173,31 @@ void PlaySegments(void)
   pSpi->SPI_CSR[BOARD_PIN_TO_SPI_CHANNEL(SPI_CS)] |= 8 << 4;    // Set 16 bit transfer mode
   pSpi->SPI_CSR[BOARD_PIN_TO_SPI_CHANNEL(10)] &= 0xFFFFFF;
   // Setup the timer and start the first segment. The timer will be set for external trigger and stop
-  // on maximum count in RC. Clock is fixed at 10.5Mhz giving roughly 1uF per 11 counts. External trigger
+  // on maximum count in RC. Clock is fixed at 10.5Mhz giving roughly 1uS per 11 counts. External trigger
   // on R input and also fixed internal clock.
   MPST.detachInterrupt();
   MPST.begin(); 
   MPST.setPriority(15);
-  MPST.setTrigger(TC_CMR_EEVTEDG_RISING);
   MPST.setClock(TC_CMR_TCCLKS_TIMER_CLOCK2);
+  SetupTriggerSource();
   MPST.attachInterruptRA(RAmatchISR);
   MPST.attachInterrupt(RCmatchISR);
   LDACrelease;
   MPST.setTIOAeffect(1000,TC_CMR_ACPA_TOGGLE);
   MPST.stopOnRC(); 
+  SegmentsAbort = false;
   SetupNextTimePoint();
   MPST.enableTrigger();
-  MPST.softwareTrigger();
+  if(CurrentSegment->TriggerSource == 0) MPST.softwareTrigger();
   serial->println("Waiting for segments to complete.");
   while(CurrentSegment != NULL)
   {
+    ProcessSerial();
     WDT_Restart(WDT);
   }
+  if(SegmentsAbort) serial->println("Aborted!");
   serial->println("Segments complete.");
+  SegmentsAbort = false;
 }
 
 void DACsetup(void)
@@ -157,6 +217,7 @@ void DACsetup(void)
      // Start first transfer, set address and also board select
      pio->PIO_CODR = 7;                                  // Set all bits low
      pio->PIO_SODR = CurrentState->md[i].Address & 7;    // Set bit high
+     SelectBoard((CurrentState->md[i].Address & 0x80) >> 7);    // Added 2/14/18
      spiDmaTX(CurrentState->md[j].data, CurrentState->md[j].Count * 3, NextBufferISR);
      if((i+1) >= CurrentSegment->TimePoint[CurrentTimePoint]->NumStates) break;
      while(DCbiasStateBusy);
@@ -363,6 +424,7 @@ DMAC->DMAC_EBCIER = 0;
    // Start transfer
    CurrentDCbiasModule = i;
    SetAddress(CurrentState->md[i].Address);
+   SelectBoard((CurrentState->md[i].Address & 0x80) >> 7);    // Added 2/14/18
    spiDmaTX(CurrentState->md[i].data, CurrentState->md[i].Count * 3, NextBufferISR);
 }
 
@@ -401,6 +463,7 @@ void SetDBbiasState(DCstate *dcs)
 
     // Start first transfer, set address and also board select
     SetAddress(CurrentState->md[i].Address);
+    SelectBoard((CurrentState->md[i].Address & 0x80) >> 7);    // Added 2/14/18
     spiDmaTX(CurrentState->md[i].data, CurrentState->md[i].Count * 3, NextBufferISR);
 }
 
@@ -445,6 +508,8 @@ int ReadDCbiasState(void)
    {
       if((i==0) || (i==1)) dcs->md[i].Address = 2;
       else dcs->md[i].Address = 0;
+      // Use Address MSB to define the board address
+      if((i==1) || (i==3)) dcs->md[i].Address |= 0x80;    // Added 2/14/18
       dcs->md[i].Count = 0;
       dcs->md[i].data = NULL;
    }
@@ -634,6 +699,8 @@ int ReadSegment(void)
    dcs = new DCsegment;
    if(dcs == NULL) return ERR_CANTALLOCATE;
    // Init the structure
+   dcs->TriggerSource = 'R';
+   dcs->TriggerEdge = POS;
    dcs->next = NULL;
    dcs->repeat = NULL;
    dcs->RepeatCount = 0;
@@ -811,6 +878,7 @@ int ReadSegmentTrigger(void)
    return(0);
 }
 
+// This command defines a segments output trigger seginal generation
 void AddSegmentTrigger(void)
 {
    int  status;
@@ -829,6 +897,58 @@ void AddSegmentTrigger(void)
    SetErrorCode(status);
    SendNAK;
    return;    
+}
+
+int ReadSegmentTriggerSource(void)
+{
+   char           *Token,src;
+   int            level;
+   String         sToken;
+   DCsegment      *dcs;
+
+   // Find the named segment
+   GetToken(true); if((Token = GetToken(true)) == NULL) return ERR_BADARG;
+   if((dcs = FindInList(DCsegmentList, Token)) == NULL) return ERR_NAMENOTFOUND;
+   // Read trigger source
+   GetToken(true); if((Token = GetToken(true)) == NULL) return ERR_BADARG;
+   sToken = Token;
+   if(sToken == "SW") src = 0;
+   else if(sToken == "Q") src = 'Q';
+   else if(sToken == "R") src = 'R';
+   else if(sToken == "S") src = 'S';
+   else return ERR_BADARG;
+   // Read active edge
+   GetToken(true); if((Token = GetToken(true)) == NULL) return ERR_BADARG;
+   sToken = Token;
+   if(sToken == "POS") level = POS;
+   else if(sToken == "NEG") level = NEG;
+   else return ERR_BADARG;
+   // Set the parameters and exit
+   dcs->TriggerSource = src;
+   dcs->TriggerEdge = level;
+   return(0);
+}
+
+// This command defines the input signal used to trigger a segment
+// command line: ADDSEGSTRG,segname,SW | Q | R | S, POS | NEG
+void AddSegmentStartTrigger(void)
+{
+   int  status;
+   char *Token;
+   
+   status = ReadSegmentTriggerSource();
+   if(status == 0)
+   {
+      SendACK;
+      return;
+   }
+   // If here there was an error, get the last Token and if it was not "\n"
+   // then read tokens until we get a "\n"
+   Token = LastToken();
+   while(strcmp(Token,"\n") != 0) Token = GetToken(true);
+   SetErrorCode(status);
+   SendNAK;
+   return;      
 }
 
 // List all the segments and there time points
@@ -875,6 +995,28 @@ void ListSegments(void)
          dcs = dcs->next;
       } while(dcs != NULL);
    }
+}
+
+void AbortSegments(void)
+{
+  SegmentsAbort = true;
+  SendACK;
+}
+
+void SoftTriggerSegment(void)
+{
+  if(CurrentSegment != NULL)
+  {
+     if(CurrentSegment->TriggerSource == 0)
+     {
+        MPST.softwareTrigger();
+        SendACK;  
+        return;
+     }
+  }
+  SetErrorCode(ERR_NOTSUPPORTED);
+  SendNAK;
+  return;
 }
 
 // Removes the named segment

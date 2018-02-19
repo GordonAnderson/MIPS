@@ -63,6 +63,10 @@ void RFheadPower(int channel);
 void RFreportAll(void);
 void RFautoTune(int channel);
 void RFautoRetune(int channel);
+void RFcalParms(void);
+
+void RFmodeReport(int);
+void RFmodeSet(char *, char *);
 
 #endif
 

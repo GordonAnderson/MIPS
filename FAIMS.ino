@@ -28,7 +28,7 @@
 //        - Temp and tress coeef and limts
 //
 // December 2016
-//  1.) Set output A high when FAIMS generation is actibe.
+//  1.) Set output A high when FAIMS generation is active.
 //  2.) If input T is high then the system shuts down due to external Estop.
 //
 // Feburary 10, 2017

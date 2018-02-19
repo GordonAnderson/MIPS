@@ -192,6 +192,7 @@
 // STBLDAT;0:[A:1000,0:1:0,1000:1:5,1000:];
 // STBLDAT;0:[A:1000,0:A:1,1000:A:0,1000:];
 // STBLDAT;0:[A:1000,100:A:1,1000:A:0,1000:];
+// STBLDAT;0:[A:1000,100:A:1,1000:A:0:c:A,100000:];
 //
 // Examples to be tested
 //
@@ -283,6 +284,16 @@
 //      c.) Allow software trigger
 //      This could be independent of the first setup dialog. Replace the current popup message.
 //
+// Dec 2, 2017, add the following ARB commands to the table system:
+//  101 = aux channel 1
+//  102 = aux channel 2
+//  103 = aux channel 3
+//  104 = aux channel 4
+//  105 = offset channel 1a
+//  106 = offset channel 1b
+//  107 = offset channel 2a
+//  108 = offset channel 2b
+//
 //
 // attachInterrupt(digitalPinToInterrupt(DI2), ISRclk, RISING);
 //
@@ -353,12 +364,19 @@ volatile bool TableOnce = false;      // If true the table will play one time th
 volatile bool softLDAC = false;       // If true forces the use of software LDAC
 bool TableResponse = true;            // This flag is true to enable table status response
 
+// The following variables are used to support the loop time incrementing or decermenting. This capability
+// was added October 25, 2017
+int  TimeDelta = 0;                   // This time is added to the time sent to the timer 
+int  TimeDeltaMax = 0;                // This time is added to the time sent to the timer max count 
+
 uint8_t  Chan2Brd[32];
 
+bool DCbiasUpdaated = false;
 bool ValueChange = false;
 
 bool TasksEnabled = false;            // Setting this flag to tue will enable all tasks in table mode
 bool TableTriggered = false;          // This flag is set when the table is triggered and reset when its complete
+bool TimerRunning = false;
 
 int InterTableDelay = 3;
 
@@ -672,8 +690,8 @@ void SWTableTrg(void)
       }
 //    SetupNextEntry();  // Nov 3, 2016
     }
-    StartTimer();
     SendACK;
+    StartTimer();
 }
 
 // Report table current frequency setting
@@ -878,9 +896,9 @@ void ParseTableCommand(void)
         return;
     }
     // Init processing loop
-    ptr          = 0;    // Memory block pointer
+    ptr          = 0;        // Memory block pointer
     TablesLoaded[CT] = 0;    // Number of tables loaded
-    TestNesting = 0;     // Clear this error counter
+    TestNesting = 0;         // Clear this error counter
     iStat = 0;
     while(1)
     {
@@ -984,7 +1002,7 @@ void ParseTableCommand(void)
             {
                 TH->NumEntries++;
                 TablesLoaded[CT]++;
-                // Mark the next table tame with a 0 to flag the end
+                // Mark the next table name with a 0 to flag the end
                 TH = (TableHeader *) &(VoltageTable[CT][ptr]);
                 TH->TableName = 0;
                 //ReportTable(ptr);
@@ -1002,7 +1020,7 @@ void ParseTableCommand(void)
 }
 
 // This function parses the next table entry from the input string. Its called with the
-// current entry count and the first string token power already loaded with the token.
+// current entry count and the first string token pointer already loaded with the token.
 // This function returns the following complete codes:
 //
 //  PEprocessed, entry was processed and the next token is the next entry.
@@ -1059,7 +1077,7 @@ int ParseEntry(int Count, char *TK)
         else if(TK[0] == ']')
         {
             TestNesting--;
-            if(TestNesting <0)
+            if(TestNesting < 0)
             {
                 SetErrorCode(ERR_MISSINGOPENBRACKET);
                 break;
@@ -1073,37 +1091,40 @@ int ParseEntry(int Count, char *TK)
             if(TK[0] == ';') return PEEndTables;
             return PENewTable;
         }
-        else if(((TK[0] >= 'A') && (TK[0] <= 'P')) || (TK[0] == 't') || (TK[0] == 'b'))
+        else if(((TK[0] >= 'A') && (TK[0] <= 'P')) || (TK[0] == 't') || (TK[0] == 'b') || (TK[0] == 'c') || (TK[0] == 'd') || (TK[0] == 'p'))
         {
             // DIO channel number
             TE->Chan = TK[0];
             if(!ExpectColon()) break;
-            if((TE->Chan == 't') || (TE->Chan == 'b')) Token2int(&TE->Value);
+            if((TE->Chan == 't') || (TE->Chan == 'b') || (TE->Chan == 'd') || (TE->Chan == 'p')) Token2int(&TE->Value);
             else
             {
                if((TK = NextToken()) == NULL) break;
                TE->Value = TK[0];
-               if(TK[0] == 't') Token2int(&TE->Value);  // This line makes no sense
+//               if(TK[0] == 't') Token2int(&TE->Value);  // This line makes no sense
             }
         }
         else
         {
-            // DC bias channel number
+            // DC bias channel number or ARB commands (101 thru 108)
             sscanf(TK,"%d",&i);
             TE->Chan = i-1;
             if(!ExpectColon()) break;
             if(!Token2float(&fval)) break;
-            // Convert value to DAC counts
-            TE->Value = DCbiasValue2Counts(TE->Chan, fval);
-            // Make value into bit image the DAC wants to see. This will allow fast DAC updating
-            // in the table execute mode. June 23 2016
-            uint8_t  *buf = (uint8_t *)&TE->Value;
-            int val = TE->Value;
-            buf[0] = 0;         // DAC command
-            buf[1] = ((TE->Chan & 7) << 4) | (val >> 12);
-            buf[2] = (val >> 4);
-            buf[3] = (val << 4);
-
+            *((float *)(&TE->Value)) = fval;  // Put the float value in the 32 bit int, for the ARB commands
+            if((i>=1)&&(i<=32))
+            {
+               // Convert value to DAC counts
+               TE->Value = DCbiasValue2Counts(TE->Chan, fval);
+               // Make value into bit image the DAC wants to see. This will allow fast DAC updating
+               // in the table execute mode. June 23 2016
+               uint8_t  *buf = (uint8_t *)&TE->Value;
+               int val = TE->Value;
+               buf[0] = 0;         // DAC command
+               buf[1] = ((TE->Chan & 7) << 4) | (val >> 12);
+               buf[2] = (val >> 4);
+               buf[3] = (val << 4);
+            }
         }
         if((TK = NextToken()) == NULL) break;  // get next token to process
         // If this token is a : then another channel value pair follow
@@ -1166,7 +1187,6 @@ void AdvanceTableNumber(void)
 //
 void ProcessTables(void)
 {
-    uint32_t TimerStatus;
     int  InitialTableNum;
    
     InitialTableNum = CT;
@@ -1179,9 +1199,8 @@ void ProcessTables(void)
     // Setup the table mode and start timer
     while(1)
     {
+        if((BrightTime + 30000) < millis()) SetBackLight();
         WDT_Restart(WDT);
-        // Setup the timer
-//        SetupTimer();
         // Fall into a processing loop and remain in this loop until the timer completes
         LOCrequest = false;
         Aborted = false;
@@ -1200,9 +1219,8 @@ void ProcessTables(void)
                 if((!SerialMute) && (TableResponse)) serial->println("Table stoped by user");
                 break;
             }
-            TimerStatus = MPT.getStatus();
             // If the timer has been triggered update the displayed status
-            if(((TimerStatus & TC_SR_ETRGS)!=0) || SWtriggered)
+            if(MPT.checkStatusBit(TC_SR_ETRGS) || SWtriggered)
             {
               TableTriggered = true;
               SWtriggered = false;
@@ -1211,7 +1229,7 @@ void ProcessTables(void)
                if(StopRequest == true) break;
             }
             // Exit this loop when the timer is stoped.
-            if(((TimerStatus & TC_SR_CLKSTA)==0) || TableStopped)
+            if(!MPT.checkStatusBit(TC_SR_CLKSTA) || TableStopped)
             {
                 // Issue the table complete message
                 TableTriggered = false;
@@ -1243,8 +1261,12 @@ void ProcessTables(void)
             // If full command processing in table mode is enabled then run tasks.
             if(TasksEnabled)
             {
-               delayMicroseconds(100);
-               control.run();
+               // delayMicroseconds(100); 
+               // control.run();
+               // Changed nov 26, 2017
+               uint32_t now = millis();
+               delayMicroseconds(200);
+               while((now + InterTableDelay) > millis()) control.run();
                TRACE(8);
             }
             else
@@ -1370,9 +1392,6 @@ void SetupTimer(void)
     SPI.setDataMode(SPI_CS, SPI_MODE1);
     Spi* pSpi = SPI0;
     pSpi->SPI_CSR[BOARD_PIN_TO_SPI_CHANNEL(SPI_CS)] &= 0xFFFFFF;  // Set DLYBCT delay between bytes to zero
- //   pSpi->SPI_CSR[BOARD_PIN_TO_SPI_CHANNEL(SPI_CS)] &= 0x00FF0F;  // Set DLYBCT delay between bytes to zero
- //   pSpi->SPI_CSR[BOARD_PIN_TO_SPI_CHANNEL(SPI_CS)] |= 8 << 4;    // Set 16 bit transfer mode
-
     // If using the S input and a soft timer enable the clock
     if(ClockMode == EXTS) ClockSsetup();
     // Define the initial max counter value based on first table
@@ -1389,6 +1408,15 @@ void SetupTimer(void)
       if(TEheader->Count == 0) MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE);
       else MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE);
     }
+    //
+    // Adjust the system interrupt priorities, Rev 1.07 update
+    NVIC_SetPriority (SysTick_IRQn, 8);
+    NVIC_SetPriority(WIRE1_ISR_ID, 8);
+    NVIC_SetPriority(WIRE_ISR_ID, 8);
+    NVIC_SetPriority((IRQn_Type) ID_UOTGHS, 8UL);
+    //
+    TimeDelta = 0;
+    TimeDeltaMax = 0;
     SetupNextEntry();
     MPT.enableTrigger();
 }
@@ -1400,6 +1428,7 @@ void StartTimer(void)
     // Exit and do nothing if no tables are loaded
     if(TablesLoaded[CT] <= 0) return;
     // Start the timer
+    TimerRunning = true;
     MPT.softwareTrigger();
 }
 
@@ -1410,6 +1439,7 @@ inline void StopTimer(void)
     // Stop the timer
     MPT.stop();
     DIhTrig.detach();
+    TimerRunning = false;
     if(ClockMode == EXTS) ClockSstop();
 }
 
@@ -1418,14 +1448,11 @@ inline void StopTimer(void)
 // Return false if we reached the end of tables.
 inline bool AdvanceTablePointer(void)
 {
-    // If the current table is named then its on the nesting stack so remove it if its
+    // If the current table is named then its on the nesting stack so remove it if its 
     // repeat count has expired
     if((Theader->TableName != 0) && (Theader->TableName != 0xFF))
-        if(NS.Count[NS.Ptr-1] >= NS.Table[NS.Ptr-1]->RepeatCount) NS.Ptr--;
+        if((NS.Count[NS.Ptr-1] >= NS.Table[NS.Ptr-1]->RepeatCount)  && (NS.Table[NS.Ptr-1]->RepeatCount != 0)) NS.Ptr--;
     if(NS.Ptr < 0) NS.Ptr = 0;
-    // If the current table is named then its on the nesting stack so remove it
-//    if((Theader->TableName != 0) && (Theader->TableName != 0xFF)) NS.Ptr--;
-//    if(NS.Ptr < 0) NS.Ptr = 0;
     // All entries have been played so advance to next table
     Theader = (TableHeader *)((char *)TEheader + (sizeof(TableEntryHeader) + (sizeof(TableEntry) * TEheader->NumChans)));
     TEheader = (TableEntryHeader *)((char *)Theader + sizeof(TableHeader));
@@ -1489,7 +1516,8 @@ void ISRclk(void)
   static uint32_t pin =g_APinDescription[SoftClockDIO].ulPin;
 
   // Exit if counter is not enabled
-  if(!TableTriggered) return;
+//  if(!TableTriggered) return;
+  if(!TimerRunning) return;
   // Validate its a rising edge and debounce
   delayMicroseconds(1);    // Delay and then make sure the S input pin is high
   if((pio->PIO_PDSR & pin) == 0) return;  
@@ -1521,12 +1549,12 @@ void ClockSstop(void)
 
 inline void SetupNextEntry(void)
 {
-   static int   i,k;
+   static int   i,k,maxc;
    int SPIadd,cSPIadd;
    static bool  DIOchange;
    static Pio *pio = g_APinDescription[ADDR0].pPort;
 
-    ValueChange = true;
+//    ValueChange = true;
     DIOchange=false;
     // Set the address
 SetupNextEntryAgain:  // sorry
@@ -1536,6 +1564,9 @@ SetupNextEntryAgain:  // sorry
     // Timer count where these values are set
     MPTtc.TC_RA = TEheader->Count;
     MPTtc.TC_RC = Theader->MaxCount;
+//    if(TEheader->Count == 0) MPTtc.TC_RA = 0;
+//    else MPTtc.TC_RA = TEheader->Count + TimeDelta;
+//    MPTtc.TC_RC = Theader->MaxCount + TimeDeltaMax;
 SetupNextEntryAgain2:
     // Process the current entry, all channels
     while(1)
@@ -1555,7 +1586,7 @@ SetupNextEntryAgain2:
                 NS.Count[NS.Ptr-1]++;
                 if((NS.Count[NS.Ptr-1] >= NS.Table[NS.Ptr-1]->RepeatCount) && (NS.Table[NS.Ptr-1]->RepeatCount != 0))  // If repeat count is zero loop forever
                 {
-                    // Advance to the next table
+                    // Advance to the next table if loop counter has expired
                     if(!AdvanceTablePointer())
                     {
                         // All done so stop the timer
@@ -1563,6 +1594,7 @@ SetupNextEntryAgain2:
                         if(DIOchange) DOrefresh;   // Added Jan 15, 2015
                         return;
                     }
+                    TimeDelta = TimeDeltaMax = 0;
                     // Setup for the first event in the next table if there is a time 0
                     // event. This table's time zero event happens at the same time as the
                     // current tables top count.
@@ -1570,18 +1602,21 @@ SetupNextEntryAgain2:
                     {
                        // Update the DIO hardware if needed
                        if(DIOchange) DOrefresh;
-                       goto SetupNextEntryAgain;
+                       SPIadd = -1;
+                       goto SetupNextEntryAgain2;  // Changed from SetupNextEntryAgain on Nov 25, 2017
                        //SetupNextEntry();
                        //return;
                     }
                 }
                 else
                 {
+                    maxc = Theader->MaxCount;
                     // Replay the table on the top of the nesting stack.
                     Theader = NS.Table[NS.Ptr-1];
                     TEheader = (TableEntryHeader *)((char *)Theader + sizeof(TableHeader));
                     Tentry = (TableEntry *)((char *)TEheader + sizeof(TableEntryHeader));
                     TentryCount = 0;
+                    if(maxc > Theader->MaxCount) MPTtc.TC_RC = maxc;  // added november 25, 2017
                     // Setup for the first event in the next table if there is a time 0
                     // event. This table's time zero event happens at the same time as the
                     // current tables top count.
@@ -1589,7 +1624,8 @@ SetupNextEntryAgain2:
                     {
                        // Update the DIO hardware if needed
                        if(DIOchange) DOrefresh;
-                       goto SetupNextEntryAgain;
+                       SPIadd = -1;
+                       goto SetupNextEntryAgain2;  // Changed from SetupNextEntryAgain on Nov 25, 2017
                        //SetupNextEntry();
                        //return;
                     }
@@ -1623,27 +1659,24 @@ SetupNextEntryAgain2:
                 }                
               }
               //DCbiasDACupdate(Tentry[i].Chan, Tentry[i].Value);
+              DCbiasUpdaated = true;
+              int cb = SelectedBoard();               // Added 9/3/17
               SelectBoard(Chan2Brd[Tentry[i].Chan]);
               k=Tentry[i].Value;
               SPI.transfer(SPI_CS, (uint8_t *)&k, 4);
-/*  This inline code did not give significant speed increase.
-              static Spi* pSpi = SPI0;
-              static uint32_t b;
-              static uint32_t ch = BOARD_PIN_TO_SPI_CHANNEL(SPI_CS);
-              uint16_t *buf = (uint16_t *)&Tentry[i].Value;
-              pSpi->SPI_TDR = (uint32_t)buf[0] | SPI_PCS(ch);
-              while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
-              b = pSpi->SPI_RDR;
-              pSpi->SPI_TDR = (uint32_t)buf[1] | SPI_PCS(ch) | SPI_TDR_LASTXFER;
-              while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
-              b = pSpi->SPI_RDR;
-//              pSpi->SPI_TDR = (uint32_t)buf[2] | SPI_PCS(ch);
-//             while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
-//              b = pSpi->SPI_RDR;
-//              pSpi->SPI_TDR = (uint32_t)buf[3] | SPI_PCS(ch) | SPI_TDR_LASTXFER;
-//              while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
-//              b = pSpi->SPI_RDR;
-*/
+              SelectBoard(cb);                        // Added 9/3/17
+            }
+            else if((Tentry[i].Chan >= 100) && (Tentry[i].Chan <= 107))
+            {
+              // Here if ARB commands
+              if(Tentry[i].Chan == 100)      UpdateAux(0, *(float *)&Tentry[i].Value, false);     // 101
+              else if(Tentry[i].Chan == 101) UpdateAux(1, *(float *)&Tentry[i].Value, false);     // 102
+              else if(Tentry[i].Chan == 102) UpdateAux(2, *(float *)&Tentry[i].Value, false);     // 103
+              else if(Tentry[i].Chan == 103) UpdateAux(3, *(float *)&Tentry[i].Value, false);     // 104
+              else if(Tentry[i].Chan == 104) UpdateOffsetA(0, *(float *)&Tentry[i].Value, false); // 105
+              else if(Tentry[i].Chan == 105) UpdateOffsetB(0, *(float *)&Tentry[i].Value, false); // 106
+              else if(Tentry[i].Chan == 106) UpdateOffsetA(1, *(float *)&Tentry[i].Value, false); // 107
+              else if(Tentry[i].Chan == 107) UpdateOffsetB(1, *(float *)&Tentry[i].Value, false); // 108
             }
             // if Chan is A through P its a DIO to process
             else if((Tentry[i].Chan >= 'A') && (Tentry[i].Chan <= 'P'))
@@ -1651,9 +1684,24 @@ SetupNextEntryAgain2:
                 DIOchange = true;
                 SDIO_Set_Image(Tentry[i].Chan,Tentry[i].Value);
             }
+            // if Chan is d then the time count delta is adjusted and RA re-written
+            else if(Tentry[i].Chan == 'd')
+            {
+              TimeDelta += Tentry[i].Value;
+              MPTtc.TC_RA = TEheader->Count + TimeDelta;
+            }
+            // if Chan is p then the time count delta max is adjusted and RA re-written
+            else if(Tentry[i].Chan == 'p')
+            {
+              TimeDeltaMax += Tentry[i].Value;
+              MPTtc.TC_RC = Theader->MaxCount + TimeDeltaMax;
+            }
             // if Chan is t then this is a trigger out pulse so queue it up for next ISR
             else if(Tentry[i].Chan == 't') QueueTriggerOut(Tentry[i].Value);
+            // if Chan is b then this is a trigger burst pulse so queue it up for next ISR
             else if(Tentry[i].Chan == 'b') QueueBurst(Tentry[i].Value);
+            // if Chan is c then this is a trigger for the compression table, value = A for ARB, T for Twave
+            else if(Tentry[i].Chan == 'c') QueueCompressionTrigger(Tentry[i].Value);
         }
         break;
     }
@@ -1675,7 +1723,7 @@ SetupNextEntryAgain2:
         }
         else
         {
-          // If this table has a time 0 even then setup for it, nov 3, 2016
+          // If this table has a time 0 event then setup for it, nov 3, 2016
           if(TEheader->Count == 0) goto SetupNextEntryAgain2;
         }
     }
@@ -1701,7 +1749,7 @@ void Trigger_ISR(void)
    TRACE(4);
    if(MPT.getRAcounter() == 0)
    {
-     ValueChange = true;
+     if(DCbiasUpdaated) { ValueChange = true; DCbiasUpdaated = false; }
      if((MIPSconfigData.Rev <= 1) || (softLDAC))// Rev 1 used software control of LDAC
      {
        LDAClow;
@@ -1729,9 +1777,11 @@ inline void RAmatch_Handler(void)
 
   uint32_t csb = pio->PIO_ODSR & pin;
   TRACE(5);
-  ValueChange = true;
+  if(DCbiasUpdaated) { ValueChange = true; DCbiasUpdaated = false; }
   ProcessTriggerOut();
   ProcessBurst();
+  ProcessCompressionTrigger();
+  ProcessARB();
   if((MIPSconfigData.Rev <= 1) || (softLDAC)) // Rev 1 used software control of LDAC
   {
     LDAClow;
@@ -1757,13 +1807,15 @@ inline void RCmatch_Handler(void)
         StopRequest = false;
         return;
     }
-    ValueChange = true;
+     if(DCbiasUpdaated) { ValueChange = true; DCbiasUpdaated = false; }
     // If compare register A is zero then at this point call setup next,
     // also if rev 1 pulse LDAC as well
     if(MPT.getRAcounter() == 0)
     {
       ProcessTriggerOut();
       ProcessBurst();
+      ProcessCompressionTrigger();
+      ProcessARB();
       if((MIPSconfigData.Rev <= 1) || (softLDAC)) // Rev 1 used software control of LDAC
       {
         LDAClow;
@@ -1774,7 +1826,6 @@ inline void RCmatch_Handler(void)
       else pio->PIO_SODR = pin; 
     }
 }
-
 
 
 

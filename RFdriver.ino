@@ -21,6 +21,8 @@
 //          readout is corrected for the acvite level sensors. This rev also changes the control loop
 //          to respond faster.
 //  Rev 3 = Convert to engineering units for the Linear tech level sensors, 5th order correction.
+//  Rev 4 = Used for the RFcoilDriver board. This board has only one channel and used a AD7994 ADC.
+//          Used for the eiceman project. Suports only one board.
 //
 // Gordon Anderson
 //
@@ -90,13 +92,13 @@ void (*GateTriggerISRs[2][2])(void) = {RF_A1_ISR, RF_A2_ISR, RF_B1_ISR, RF_B2_IS
 
 DialogBoxEntry RFdriverDialogEntriesPage1[] = {
   {" RF channel", 0, 1, D_INT, 1, 2, 1, 21, false, "%2d", &Channel, NULL, SelectChannel},
-  {" Freq, Hz", 0, 2, D_INT, 500000, 5000000, 1000, 16, false, "%7d", &RFCD.Freq, NULL, NULL},
-  {" Drive %", 0, 3, D_FLOAT, 0, 100, 0.1, 18, false, "%5.1f", &RFCD.DriveLevel, NULL, NULL},
-  {" Vout Vpp", 0, 3, D_OFF, 0, 5000, 1, 18, false, "%5.1f", &RFCD.Setpoint, NULL, NULL},
-  {" RF+ Vpp", 0, 5, D_FLOAT, 0, 1000, 0.1, 18, true, "%5.0f", &RFpVpp, NULL, NULL},
-  {" RF- Vpp", 0, 6, D_FLOAT, 0, 1000, 0.1, 18, true, "%5.0f", &RFnVpp, NULL, NULL},
-  {" Power, W", 0, 7, D_FLOAT, 0, 1000, 0.1, 18, true, "%5.1f", &Power, NULL, NULL},
-  {" Next page", 0, 9, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SetNextRFPage, NULL},
+  {" Freq, Hz"  , 0, 2, D_INT, 500000, 5000000, 1000, 16, false, "%7d", &RFCD.Freq, NULL, NULL},
+  {" Drive %"   , 0, 3, D_FLOAT, 0, 100, 0.1, 18, false, "%5.1f", &RFCD.DriveLevel, NULL, NULL},
+  {" Vout Vpp"  , 0, 3, D_OFF, 0, 5000, 1, 18, false, "%5.0f", &RFCD.Setpoint, NULL, NULL},
+  {" RF+ Vpp"   , 0, 5, D_FLOAT, 0, 1000, 0.1, 18, true, "%5.0f", &RFpVpp, NULL, NULL},
+  {" RF- Vpp"   , 0, 6, D_FLOAT, 0, 1000, 0.1, 18, true, "%5.0f", &RFnVpp, NULL, NULL},
+  {" Power, W"  , 0, 7, D_FLOAT, 0, 1000, 0.1, 18, true, "%5.1f", &Power, NULL, NULL},
+  {" Next page" , 0, 9, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SetNextRFPage, NULL},
   {" Return to main menu", 0, 10, D_MENU, 0, 0, 0, 0, false, NULL, &MainMenu, NULL, NULL},
   {NULL},
 };
@@ -129,14 +131,18 @@ DialogBox RFdriverDialog = {
 
 MenuEntry MERFdriverMonitor = {" RF driver module", M_DIALOG, 0, 0, 0, NULL, &RFdriverDialog, NULL, NULL};
 
+// Called from the UI to enable auto tune, only works in manual mode
 void RFat(void)
 {
+  if(RFCD.RFmode != RF_MANUAL) return;
   TuneRFChan = SelectedRFChan;
   TuneRequest = true;  
 }
 
+// Called from the UI to enable auto retune, only works in manual mode
 void RFart(void)
 {
+  if(RFCD.RFmode != RF_MANUAL) return;
   TuneRFChan = SelectedRFChan;
   RetuneRequest = true;  
 }
@@ -280,7 +286,7 @@ void SelectChannel(void)
   RFmodeChange();
   RFgateChange();
   // If rev 2 then do not display the RF- channel
-  if(RFDD.Rev == 2)
+  if((RFDD.Rev == 2) || (RFDD.Rev == 4))
   {
     RFdriverDialogEntriesPage1[5].Type = D_OFF;
   }
@@ -330,9 +336,9 @@ void RFdriver_init(int8_t Board, int8_t addr)
   analogWriteResolution(12);
   SelectedRFBoard = Board;
   pinMode(RFDD.RFCD[0].PWMchan, OUTPUT);
-  analogWrite(RFDD.RFCD[0].PWMchan, (RFDD.RFCD[0].DriveLevel * PWMFS) / 100);
+  analogWrite(RFDD.RFCD[0].PWMchan, 0);
   pinMode(RFDD.RFCD[1].PWMchan, OUTPUT);
-  analogWrite(RFDD.RFCD[1].PWMchan, (RFDD.RFCD[1].DriveLevel * PWMFS) / 100);
+  analogWrite(RFDD.RFCD[1].PWMchan, 0);
   // Define the initial selected channel as 0 and setup
   Channel = 1;
   SelectChannel();
@@ -349,7 +355,13 @@ void RFdriver_init(int8_t Board, int8_t addr)
     // Add threads to the controller
     control.add(&RFdriverThread);
   }
-  NumberOfRFChannels += 2;  // Always add two channels for each board
+  if(RFDDarray[Board].Rev == 4) 
+  {
+    RFDD.RFCD[0].RFpADCchan.Chan = 2;
+    RFDD.RFCD[0].RFnADCchan.Chan = 3;
+    NumberOfRFChannels++;
+  }
+  else NumberOfRFChannels += 2;  // Always add two channels for each board
   // Set the maximum number of channels in the selection menu
   RFdriverDialogEntriesPage1[0].Max = NumberOfRFChannels;
 }
@@ -376,8 +388,12 @@ void RFcontrol(void)
       {
         if(((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) > RFDDarray[board].RFCD[chan].Setpoint) es = ((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) / RFDDarray[board].RFCD[chan].Setpoint;
         if(((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) < RFDDarray[board].RFCD[chan].Setpoint) es = RFDDarray[board].RFCD[chan].Setpoint / ((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2);
+
+        es = abs(RFDDarray[board].RFCD[chan].Setpoint - ((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2));
+        
         g = 1;
-        if(RFDDarray[board].Rev == 2) g = (es - 1.0) * 100;
+//        if(RFDDarray[board].Rev == 2) g = (es - 1.0) * 100;
+        if((RFDDarray[board].Rev == 2) || (RFDDarray[board].Rev == 4)) g = es * 0.05;
         if (((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) > RFDDarray[board].RFCD[chan].Setpoint) RFDDarray[board].RFCD[chan].DriveLevel -= .01 * g;
         else RFDDarray[board].RFCD[chan].DriveLevel += .01 * g;
         if (RFDDarray[board].RFCD[chan].DriveLevel < 0) RFDDarray[board].RFCD[chan].DriveLevel = 0;
@@ -525,7 +541,7 @@ void RFdriver_tune(void)
 // This function is called by the main loop every 100 millisec
 void RFdriver_loop(void)
 {
-  int i,j;
+  int i,j,iStat;
   uint16_t ADCvals[8];
   float V, I, Pv, Nv;
   static int LastFreq[2][2] = { -1, -1, -1, -1};
@@ -541,8 +557,9 @@ void RFdriver_loop(void)
     {
       // This stores any changes back to the selected channels data structure
       RFDD.RFCD[SelectedRFChan & 1] = RFCD;    
-     // Set the Drive level limit in the UI menu
-     RFdriverDialogEntriesPage1[2].Max = RFCD.MaxDrive;
+      // Set the Drive level limit in the UI menu
+      RFdriverDialogEntriesPage1[2].Max = RFCD.MaxDrive;
+      ActiveDialog->Changed = false;
     }
   }
   RFdriver_tune();
@@ -606,11 +623,21 @@ void RFdriver_loop(void)
     // Read the ADC monitor values for the selected channels.
     ValueChange = false;
     delay(1);
-    if ((i == 0) || (i == 2)) if ((AD7998(RFDD.ADCadr, ADCvals) != 0) || (ValueChange))  // this logic is not correct!
+    if ((i == 0) || (i == 2))   // Only read the board's ADC when first indexed
     {
+      if(RFDD.Rev == 4) iStat = AD7994(RFDD.ADCadr, ADCvals);
+      else iStat = AD7998(RFDD.ADCadr, ADCvals);
+      if((iStat != 0) || (ValueChange))
+      {
         i++;
         continue;
+      }
     }
+//    if ((i == 0) || (i == 2)) if ((AD7998(RFDD.ADCadr, ADCvals) != 0) || (ValueChange))  // this logic is not correct!
+//    {
+//        i++;
+//        continue;
+//    }
     if (DIh[SelectedRFBoard][i & 1]->test(RFDDarray[SelectedRFBoard].RFgateTrig[i & 1]))
     {
       if(RFDD.Rev == 3)
@@ -622,13 +649,15 @@ void RFdriver_loop(void)
          Nv = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan);
          Nv = 3.255975e-10 * pow(Nv,5) - 3.873611e-7 * pow(Nv,4) + 0.000161919 * pow(Nv,3) - 0.025363 * pow(Nv,2) + 2.06452 * Nv - 62.27195;
       }
-      else if(RFDD.Rev == 2)
+      else if((RFDD.Rev == 2) || (RFDD.Rev == 4))
       {
         // This rev supports linear operation for high voltage, up to 4000Vp-p, this is equations is for the RF level detector circuit.
         // Rev 2 also displays only the RF+ output. Used on the Eiceman project
-        Pv = (float)Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan], &RFDD.RFCD[i & 1].RFpADCchan) * 3.3312 + 136.28;
-        Nv = (float)Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan) * 3.3312 + 136.28;
-        if(Pv <= 180) Pv = Pv - ((180 - Pv) * 2.0);
+        Pv = (float)Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan], &RFDD.RFCD[i & 1].RFpADCchan);
+        Nv = (float)Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan);
+        // This code attempts to correct for nonlinear performance near 0
+        float Zc = (float)Counts2Value(0, &RFDD.RFCD[i & 1].RFpADCchan) / 0.8;
+        if(Pv <= Zc) Pv = Pv - (Zc - Pv) * 4.0;   
         Nv = Pv;  // Make them match for the control loop
       }
       else if(RFDD.Rev <= 1)
@@ -776,7 +805,7 @@ void RFvoltage(int channel, float Voltage)
   // If channel is invalid send NAK and exit
   if (!IsChannelValid(channel,false)) return;
   // If Drive value is invalid exit
-  if ((Voltage < 0) || (Voltage > 400.0)) return;
+  if ((Voltage < 0) || (Voltage > 5000.0)) return;
   i = BoardFromSelectedChannel(channel - 1);
   RFDDarray[i].RFCD[(channel - 1) & 1].Setpoint = Voltage;
   if (channel - 1 == SelectedRFChan) RFCD.Setpoint = Voltage;
@@ -792,7 +821,7 @@ void RFvoltage(char *Chan, char *Val)
   // If channel is invalid send NAK and exit
   if (!IsChannelValid(channel)) return;
   // If Drive value is invalid send NAK and exit
-  if ((Voltage < 0) || (Voltage > 400.0))
+  if ((Voltage < 0) || (Voltage > 4000.0))
   {
     SetErrorCode(ERR_BADARG);
     SendNAK;
@@ -803,6 +832,57 @@ void RFvoltage(char *Chan, char *Val)
   i = BoardFromSelectedChannel(channel - 1);
   RFDDarray[i].RFCD[(channel - 1) & 1].Setpoint = Voltage;
   if (channel - 1 == SelectedRFChan) RFCD.Setpoint = Voltage;
+}
+
+// Reports the selected channels mode, MANUAL or AUTO
+void RFmodeReport(int channel)
+{
+  // If channel is invalid send NAK and exit
+  if (!IsChannelValid(channel)) return;
+  // report the mode
+  SendACKonly;
+  if(SerialMute) return;
+  int i = BoardFromSelectedChannel(channel - 1);
+  if(RFDDarray[i].RFCD[(channel - 1) & 1].RFmode == RF_MANUAL) serial->println("MANUAL");
+  else serial->println("AUTO");
+}
+
+// Sets the selected channels mode, MANUAL or AUTO
+void RFmodeSet(char *chan, char *mode)
+{
+  int    channel;
+  String sToken;
+
+  sToken = chan;
+  channel = sToken.toInt();
+  // If channel is invalid send NAK and exit
+  if (!IsChannelValid(channel)) return;
+  sToken = mode;
+  if((sToken != "AUTO") && (sToken != "MANUAL"))
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;    
+  }
+  SendACK;
+  int i = BoardFromSelectedChannel(channel - 1);
+  if(sToken == "MANUAL") RFDDarray[i].RFCD[(channel - 1) & 1].RFmode = RF_MANUAL;
+  else 
+  {
+    RFDDarray[i].RFCD[(channel - 1) & 1].Setpoint = (RFpVpps[i][(channel - 1) & 1] + RFnVpps[i][(channel - 1) & 1]) / 2;
+    RFDDarray[i].RFCD[(channel - 1) & 1].RFmode = RF_AUTO;
+  }
+  // If this channel is displayed on tne MIPS UI then update
+  if((channel-1) == SelectedRFChan)
+  {
+    RFCD.Setpoint = RFDDarray[i].RFCD[(channel - 1) & 1].Setpoint;
+    RFCD.RFmode = RFDDarray[i].RFCD[(channel - 1) & 1].RFmode;
+    if(RFDDarray[i].RFCD[(channel - 1) & 1].RFmode == RF_MANUAL) strcpy(RFmode, "MANUAL");
+    else strcpy(RFmode, "AUTO");
+    RFmodeChange();
+    // If this page is being dispayed then refresh
+    if(ActiveDialog == &RFdriverDialog) DialogBoxDisplay(&RFdriverDialog);
+  }
 }
 
 // Report a channels frequency
@@ -832,6 +912,14 @@ void RFautoTune(int channel)
     SendNAK;
     return;
   }
+  // Exit if not in manual mode for this channel
+  i = BoardFromSelectedChannel(channel - 1);
+  if(RFDDarray[i].RFCD[(channel - 1) & 1].RFmode != RF_MANUAL)
+  {
+    SetErrorCode(ERR_NOTINMANMODE);
+    SendNAK;
+    return;    
+  }
   // Set the tune flag and exit
   SendACK;
   TuneRFChan = channel - 1;
@@ -853,6 +941,14 @@ void RFautoRetune(int channel)
     SetErrorCode(ERR_TUNEINPROCESS);
     SendNAK;
     return;
+  }
+  // Exit if not in manual mode for this channel
+  i = BoardFromSelectedChannel(channel - 1);
+  if(RFDDarray[i].RFCD[(channel - 1) & 1].RFmode != RF_MANUAL)
+  {
+    SetErrorCode(ERR_NOTINMANMODE);
+    SendNAK;
+    return;    
   }
   // Set the tune flag and exit
   SendACK;
@@ -940,9 +1036,47 @@ void RFreportAll(void)
   serial->println("");
 }
 
+// Sets the defined channels calibration parameters to the values passed. The 
+// parameters are in the ring buffer when this function is called.
+// channel,slope, intercept
+// This function sets the pos and neg monitor calibration to the same values.
+void RFcalParms(void)
+{
+   char   *Token;
+   String sToken;
+   int    ch,brd;
+   float  m,b;
 
-
-
-
-
+   while(1)
+   {
+     // Read all the arguments
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sToken = Token;
+     ch = sToken.toInt();
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sToken = Token;
+     m = sToken.toFloat();
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sToken = Token;
+     b = sToken.toFloat();
+     if((Token = GetToken(true)) == NULL) break;
+     if(Token[0] != '\n') break;
+     // Test the channel and exit if error
+     if (!IsChannelValid(ch,false)) break;
+     brd = BoardFromSelectedChannel(ch - 1);
+     RFDDarray[brd].RFCD[(ch-1) & 1].RFpADCchan.m = m;
+     RFDDarray[brd].RFCD[(ch-1) & 1].RFpADCchan.b = b;
+     RFDDarray[brd].RFCD[(ch-1) & 1].RFnADCchan.m = m;
+     RFDDarray[brd].RFCD[(ch-1) & 1].RFnADCchan.b = b;  
+     SendACK;
+     return;
+   }
+   // If here then we had bad arguments!
+  SetErrorCode(ERR_BADARG);
+  SendNAK;
+  
+}
 
