@@ -90,6 +90,7 @@ typedef struct
   bool    EnableTest;          // Enable the test mode for rev 5 only at this time.
   int     CompressRamp;        // Supports compression ramping, added August 5, 2017
   int     CrampOrder;          // Order ramping step size, Added sept 5, 2017
+  float   GateV;               // Gate voltage
 } TwaveData;
 
 extern TwaveData TD;
@@ -132,7 +133,6 @@ void SetTWenableTest(char *flag);
 // Compressor host command prototypes
 void SetTWCmode(char *mode);
 void GetTWCorder(void);
-bool RangeTest(DialogBoxEntry *des, char *EntryName, float fval);
 void SetTWCorder(int ival);
 void SetTWCtriggerDelay(char *str);
 void SetTWCcompressTime(char *str);
@@ -141,6 +141,9 @@ void SetTWCnoncompressTime(char *str);
 void TWCtrigger(void);
 void SetTWCswitch(char *mode);
 
+void SaveTWAVE2EEPROM(void);
+
 #endif
+
 
 

@@ -124,6 +124,7 @@ MenuEntry METwaveMonitor =  {" Twave module", M_DIALOG, 0, 0, 0, NULL, &TwaveDia
 MenuEntry METwaveMonitor2 = {" Twave module", M_DIALOG, 0, 0, 0, NULL, &TwaveDialog2, NULL, NULL};   // Rev 2 and 3 menu
 
 extern DialogBoxEntry TwaveDialogEntries2page2[];
+extern DialogBoxEntry TwaveDialogEntriesCalPage[];
 extern DialogBox      CompressorDialog;
 
 // Twave system variables
@@ -141,6 +142,9 @@ float     ReadbackG2[2] = {0,0};
 int16_t   TwaveTestDelay= 200;               // Hold off for testing delay when voltages are changed, 20 sec initial delay to allow disabling
 // To select the hardware board do the following: SelectBoard(TWboardAddress[SelectedTwaveBoard]);
 TwaveData TD;
+
+bool TW_1_gatedOff = false;
+bool TW_2_gatedOff = false;
 
 // CPLD SPI input register image variables.
 uint16_t  TWcpld[2] = {TWMdir | TWMload | TWMmode | TWMsrena | 0x0F, TWMdir | TWMload | TWMmode | TWMsrena | 0x0F};
@@ -170,13 +174,23 @@ void TW_1_GateOn(void)
      SelectBoard(b);
      return;
   }
-
+  // If the gate voltage is > 0 then set the pulse voltage to
+  // the gate voltage. If the gate voltage is 0 then stop the twave
+  if(TDarray[0].GateV > 7.0)
+  {
+    brd=SelectedBoard();
+    SelectBoard(0);
+    SetPulseVoltage(0);
+    SelectBoard(brd);
+    if(!TW_1_gatedOff) return;
+  }
   // Read and save board select then select the board and update the sequence to 0xFF
-  brd = digitalRead(BRDSEL);
-  ENA_BRD_A;
+  brd=SelectedBoard();
+  SelectBoard(0);
   MCP2300(TDarray[0].GPIOadr, ~TDarray[0].Sequence);
-  // Restore the board
-  digitalWrite(BRDSEL,brd);
+  TW_1_gatedOff = false;
+  SetPulseVoltage(0);   // Just in case it was reduced
+  SelectBoard(brd);
   // Pulse the load line
   digitalWrite(TWld, LOW);
   // Hold this long enough for a clock to happen, if used on board clock this is 
@@ -211,14 +225,22 @@ void TW_1_GateOff(void)
      SelectBoard(b);
      return;
   }
-
-//  digitalWrite(TWld, LOW);  // Hold load line actice, this will stop the clocking
+  // If the gate voltage is > 0 then set the pulse voltage to
+  // the default voltage. If the gate voltage is 0 then start the twave
+  if(TDarray[0].GateV > 7.0)
+  {
+    brd = SelectedBoard();
+    SelectBoard(0);
+    SetPulseVoltage(0,TDarray[0].GateV);
+    SelectBoard(brd);
+    return;
+  }
   // Read and save board select then select the board and update the sequence to 0xFF
-  brd = digitalRead(BRDSEL);
-  ENA_BRD_A;
+  brd = SelectedBoard();
+  SelectBoard(0);
   MCP2300(TDarray[0].GPIOadr, 0xFF);
-  // Restore the board
-  digitalWrite(BRDSEL,brd);
+  TW_1_gatedOff = true;
+  SelectBoard(brd);
   digitalWrite(TWld, LOW);
   // Hold this long enough for a clock to happen, if used on board clock this is 
   // 1/(clock freq *4). If software clock used in compressor then generate an edge
@@ -282,12 +304,23 @@ void TW_2_GateOn(void)
      SelectBoard(b);
      return;
   }
+  // If the gate voltage is > 0 then set the pulse voltage to
+  // the gate voltage. If the gate voltage is 0 then stop the twave
+  if(TDarray[1].GateV > 7.0)
+  {
+    brd=SelectedBoard();
+    SelectBoard(1);
+    SetPulseVoltage(1);
+    SelectBoard(brd);
+    if(!TW_2_gatedOff) return;
+  }
   // Read and save board select then select the board and update the sequence to 0xFF
-  brd = digitalRead(BRDSEL);
-  ENA_BRD_B;
+  brd=SelectedBoard();
+  SelectBoard(1);
   MCP2300(TDarray[1].GPIOadr, ~TDarray[1].Sequence);
-  // Restore the board
-  digitalWrite(BRDSEL,brd);
+  TW_2_gatedOff = false;
+  SetPulseVoltage(1);
+  SelectBoard(brd);
   // Pulse the load line
   digitalWrite(TWld, LOW);
   // Hold this long enough for a clock to happen, if used on board clock this is 
@@ -322,13 +355,22 @@ void TW_2_GateOff(void)
      SelectBoard(b);
      return;
   }
-//  digitalWrite(TWld, LOW);  // Hold load line active, this will stop the clocking
+  // If the gate voltage is > 0 then set the pulse voltage to
+  // the default voltage. If the gate voltage is 0 then start the twave
+  if(TDarray[1].GateV > 7.0)
+  {
+    brd = SelectedBoard();
+    SelectBoard(1);
+    SetPulseVoltage(1,TDarray[1].GateV);
+    SelectBoard(brd);
+    return;
+  }
   // Read and save board select then select the board and update the sequence to 0xFF
-  brd = digitalRead(BRDSEL);
-  ENA_BRD_B;
+  brd = SelectedBoard();
+  SelectBoard(1);
   MCP2300(TDarray[1].GPIOadr, 0xFF);
-  // Restore the board
-  digitalWrite(BRDSEL,brd);
+  TW_2_gatedOff = true;
+  SelectBoard(brd);
   digitalWrite(TWld, LOW);
   // Hold this long enough for a clock to happen, if used on board clock this is 
   // 1/(clock freq *4). If software clock used in compressor then generate an edge
@@ -725,6 +767,7 @@ void RestoreTwaveSettings(bool NoDisplay)
       // Here if the name matches so copy the data to the operating data structure
       memcpy(&TDarray[SelectedTwaveModule], &td, sizeof(TwaveData));
       if (!NoDisplay) DisplayMessage("Parameters Restored!", 2000);
+      if(isnan(TDarray[SelectedTwaveModule].GateV)) TDarray[SelectedTwaveModule].GateV = 0.0;
       SelectTwaveModule();
     }
     else if (!NoDisplay) DisplayMessage("Corrupted EEPROM data!", 2000);
@@ -776,17 +819,24 @@ DialogBox TwaveDialog2 = {{"Twave parameters", ILI9340_BLACK, ILI9340_WHITE, 2, 
 };
 
 DialogBoxEntry TwaveDialogEntries2page2[] = {
+  {" Calibrate"     , 0, 1, D_PAGE , 0, 0, 0, 0, false, NULL, &TwaveDialogEntriesCalPage, NULL, NULL},
+  {" Sync input"    , 0, 2, D_DI     , 0, 0, 2, 21, false, DIlist, &TD.TWsyncDI, NULL, NULL},
+  {" Sync level"    , 0, 3, D_DILEVEL, 0, 0, 4, 19, false, DILlist, &TD.TWsyncLevel, NULL, NULL},
+  {" Dir input"     , 0, 4, D_DI     , 0, 0, 2, 21, false, NULL, &TD.TWdirDI, NULL, NULL},
+  {" Dir level"     , 0, 5, D_DILEVEL, 0, 0, 4, 19, false, NULL, &TD.TWdirLevel, NULL, NULL},
+  {" Gate input"    , 0, 6, D_DI     , 0, 0, 2, 21, false, NULL, &TD.TWgateDI, NULL, NULL},
+  {" Gate level"    , 0, 7, D_DILEVEL, 0, 0, 4, 19, false, NULL, &TD.TWgateLevel, NULL, NULL},
+  {" Gate Voltage"  , 0, 8, D_FLOAT  , 0, 100, 0.1, 18, false, "%5.1f", &TD.GateV, NULL, NULL},
+  {" Compressor"    , 0, 10, D_OFF , 0, 0, 0, 0, false, NULL, &CompressorDialog, NULL,NULL},
+  {" Return to first page", 0, 11, D_PAGE , 0, 0, 0, 0, false, NULL, &TwaveDialogEntries2, NULL, NULL},
+  {NULL},
+};
+
+DialogBoxEntry TwaveDialogEntriesCalPage[] = {
   {" Cal Pulse V"   , 0, 1, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalibratePulse, NULL},
   {" Cal Guard 1"   , 0, 2, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalibrateGuard1, NULL},
   {" Cal Guard 2"   , 0, 3, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, CalibrateGuard2, NULL},
-  {" Sync input"    , 0, 4, D_DI     , 0, 0, 2, 21, false, DIlist, &TD.TWsyncDI, NULL, NULL},
-  {" Sync level"    , 0, 5, D_DILEVEL, 0, 0, 4, 19, false, DILlist, &TD.TWsyncLevel, NULL, NULL},
-  {" Dir input"     , 0, 6, D_DI     , 0, 0, 2, 21, false, NULL, &TD.TWdirDI, NULL, NULL},
-  {" Dir level"     , 0, 7, D_DILEVEL, 0, 0, 4, 19, false, NULL, &TD.TWdirLevel, NULL, NULL},
-  {" Gate input"    , 0, 8, D_DI     , 0, 0, 2, 21, false, NULL, &TD.TWgateDI, NULL, NULL},
-  {" Gate level"    , 0, 9, D_DILEVEL, 0, 0, 4, 19, false, NULL, &TD.TWgateLevel, NULL, NULL},
-  {" Compressor"    , 0, 10, D_OFF , 0, 0, 0, 0, false, NULL, &CompressorDialog, NULL,NULL},
-  {" Return to first page", 0, 11, D_PAGE , 0, 0, 0, 0, false, NULL, &TwaveDialogEntries2, NULL, NULL},
+  {" Return"        , 0, 10, D_PAGE , 0, 0, 0, 0, false, NULL, &TwaveDialogEntries2page2, NULL, NULL},
   {NULL},
 };
 
@@ -991,6 +1041,8 @@ void Twave_init(int8_t Board, uint8_t addr)
     pinMode(TWselect, OUTPUT);
     digitalWrite(TWstrobe, LOW);
     digitalWrite(TWselect, LOW);
+    de = GetDialogEntries(TwaveDialogEntries2page2, "Gate Voltage");
+    de->Type = D_OFF; 
     de = GetDialogEntries(TwaveDialogEntries2, "Pulse voltage"); 
     de->Min = MinPulseVoltageRev4;
     if(TD.Rev == 5) de->Min = MinPulseVoltageRev5;
@@ -2322,17 +2374,6 @@ void GetTWCorder(void)
   if (!SerialMute) serial->println(TDarray[0].Corder);
 }
 
-bool RangeTest(DialogBoxEntry *des, char *EntryName, float fval)
-{
-  DialogBoxEntry *de;
-  
-  de = GetDialogEntries(des, EntryName);
-  if((fval >= de->Min) && (fval <= de->Max)) return true;
-  SetErrorCode(ERR_BADARG);
-  SendNAK;
-  return false;
-}
-
 void SetTWCorder(int ival)
 {
   if(RangeTest(CompressorEntries,"Order",ival))
@@ -2415,4 +2456,33 @@ void SetTWCswitch(char *mode)
   SendNAK;
 }
 // End of compressor host command routines
+
+// This function saves the TWAVE module data to EEPROM. All detected TWAVE modules are saved.
+void SaveTWAVE2EEPROM(void)
+{
+  int  brd;
+  bool berr = false;
+  
+  brd = SelectedBoard();
+  for(int b=0; b<2; b++)
+  {
+    if(TwaveBoards[b])
+    {
+      SelectBoard(b);
+      if (WriteEEPROM(&TDarray[b], TwaveEEPROMaddr[b], 0, sizeof(TwaveData)) != 0) berr = true;
+    }
+  }
+  SelectBoard(brd);
+  if(berr)
+  {
+    SetErrorCode(ERR_EEPROMWRITE);
+    SendNAK;
+    return;
+  }
+  SendACK;
+}
+
+
+
+
 

@@ -50,7 +50,7 @@ int      NumberOfRFAchannels = 0;
 int      SelectedRFAboard=0;                                    // Active board, 0 or 1. This is also the index into the data array for RF amp
 int      RFAmodule = 1;                                         // Selected RFamp module
 bool     RFAupdate = true;                                      // Force all values to update
-uint16_t RFACPLDimage[2] = {1<<RFAcpldSTATUS,1<<RFAcpldSTATUS}; // CPLD control work image
+uint16_t RFACPLDimage[2] = {(1<<RFAcpldSTATUS) | (1<<RFAcpldRANGE),(1<<RFAcpldSTATUS) | (1<<RFAcpldRANGE)}; // CPLD control work image
 
 RFAdata  *RFAarray[2] = {NULL,NULL};       // Pointer to RF amp data arrays, one for each module. Allocated at init time
 RFAdata  rfad;                             // Copy of the selected channels data, must be static used in menu structs
@@ -556,6 +556,8 @@ void RFA_loop(void)
 //  Define range
 //  Define the Quad radius
 //  Define the mz
+//  Set and get resolving DC
+//  Set and get pole bias
 
 int RFAmodule2board(int Module)
 {
@@ -571,6 +573,49 @@ int RFAmodule2board(int Module)
   SetErrorCode(ERR_BADCMD);
   SendNAK;
   return(b);
+}
+
+void RFAsetPoleBias(char *Module, char *value)
+{
+  String token;
+  int    b,mod;
+  float  v;
+  char   vstr[100];
+
+  token = Module;
+  mod = token.toInt();
+  if((b = RFAmodule2board(mod)) == -1) return;
+  token = value;
+  v = token.toFloat();
+  DCbiasSetFloat("1", value);
+  RFAarray[b]->PoleBias = v;
+  // Channel 1 = ResolvingDC + PoleBias
+  // Channel 2 = -ResolvingDC + PoleBias
+  sprintf(vstr,"%7.3f", RFAarray[b]->ResolvingDC + RFAarray[b]->PoleBias);
+  DCbiasSet("1", vstr);
+  sprintf(vstr,"%7.3f", -RFAarray[b]->ResolvingDC + RFAarray[b]->PoleBias);
+  DCbiasSet("2", vstr);
+}
+
+void RFAsetResolvingDC(char *Module, char *value)
+{
+  String token;
+  int    b,mod;
+  float  v;
+  char   vstr[100];
+
+  token = Module;
+  mod = token.toInt();
+  if((b = RFAmodule2board(mod)) == -1) return;
+  token = value;
+  v = token.toFloat();
+  RFAarray[b]->ResolvingDC = v;
+  // Channel 1 = ResolvingDC + PoleBias
+  // Channel 2 = -ResolvingDC + PoleBias
+  sprintf(vstr,"%7.3f", RFAarray[b]->ResolvingDC + RFAarray[b]->PoleBias);
+  DCbiasSet("1", vstr);
+  sprintf(vstr,"%7.3f", -RFAarray[b]->ResolvingDC + RFAarray[b]->PoleBias);
+  DCbiasSet("2", vstr);
 }
 
 void RFAsetRange(char *Module, char *value)
@@ -602,4 +647,5 @@ void RFAgetRange(int Module)
   SendACKonly;
   if(!SerialMute) serial->println(RFAarray[b]->FullScale);
 }
+
 

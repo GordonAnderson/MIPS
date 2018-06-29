@@ -590,6 +590,40 @@
 //      1.) Added the DC bias channel pulse capability
 //  1.117, Feburary 14, 2018
 //      1.) Fixed a bug in the DCbias list functions where the board select was not being defined.
+//  1.118, February 19, 2018
+//      1.) Added the SER1ENA,TRUE or FALSE command that will enable the serial1 port for general IO
+//          Baud rate is fixed at 115200.
+//      2.) Added the Gate voltage to the Twave module, does not work with rev 4.0
+//  1.119, March 27, 2018
+//      1.) Extended ARB compression order to 65535
+//  1.120, April 7, 2018
+//      1.) Added display disable command to MIPS saved parameters
+//      2.) Added commands to for MIPS startup delay and display enable also copied to saved parameters
+//      3.) Added parameter save to FLASH as well as SD. If no SD then FLASH is used, FLASH is always 
+//          written with SD card
+//  1.121, April 15, 2018
+//      1.) Added module save to EEPROM capability, only RF is supported at this release
+//  1.122, May 3, 2018
+//      1.) Added the TWIRESET command
+//      2.) Added thge TWI hardware switch to use TWI hardware to access ADC instead of bit banging
+//      3.) Note; when TWI fails the communications timeout is long, the TWI_RESET function works and
+//          needs to be automatically called, maybe include an automatic retry?
+//  1.123, May 5, 2018
+//      1.) Table bug, when software triggered they was a delay the time of the table before the table would start.
+//  1.124, May 9, 2018
+//      1.) Improved the TWI reset function and perform on both board channels
+//      2.) Improved the ADC 7994 function to return error on TWI problem
+//      3.) Added Save module commands for most modules
+//  1.125, May 31, 2018
+//      1.) Update the AD7998 and AD7994 ADC TWI routine to disable interrupts through most of the function.
+//          this is needed to make it safe to pulse sequence generator interrupts that use the board select line.
+//          This can cause problems for time tables with narrow events!
+//  1.126, June 14, 2018
+//      1.) Added the TWI reset when bus lock up is detected on AD5625 DAC.
+//  1.127, June 18, 2018
+//      1.) Added the delete all function, DEL,*
+//      2.) Added the FAIMS step scan and scan serial commands
+//      3.) Added FAIMS output level lock host commands
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
@@ -609,6 +643,7 @@
 // 509.628.6851 (cell)
 // 509.588.5410
 //
+#include <DueFlashStorage.h>
 #include "SD.h"
 #include "utility/Sd2card.h"
 #include "SPI.h"
@@ -655,6 +690,9 @@
 #define  USB_PRODUCT      "MIPS, native USB"
 #define  USB_MANUFACTURER "GAA Custom Electronics, LLC"
 
+DueFlashStorage dueFlashStorage;
+const PROGMEM byte NonVolStorage[1000] = {};
+
 bool Suspend = false;
 
 // These values are defaulted to 1000 in Variant.h, The RFdriver needs this PWM
@@ -673,7 +711,7 @@ int  LEDstate = 0;
 
 uint32_t BrightTime=0;
 
-const char Version[] PROGMEM = "Version 1.117, Feb 14,2018";
+const char Version[] PROGMEM = "Version 1.127, June 18, 2018";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -974,8 +1012,44 @@ void SetupModuleConfig(void)
   sprintf(BoardName, "%s", GetEntry(BoardVariantsNames, 1));
 }
 
-// This function is called to format a board's EEPROM.
+// This function is called from the host command processor and the arguments are in the
+// serial input ring buffer on call. The arguments are case sesative and the same as the 
+// MIPS UI configure menu format options, example usage:
+//
+// FORMAT,A 0x50,RFdrvA R1
+void FormatEEPROM(void)
+{
+   char   *Token;
+
+   while(1)
+   {
+     // Read the address
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     strcpy(BoardAddress, Token);
+     // Read the board name
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     strcpy(BoardName,Token);
+     GetToken(true);
+     SendACKonly;
+     if(BoardFormatEEPROM()) serial->println("Module formatted!");
+     else serial->println("Unable to format");
+     return;
+   }
+   // If here then we had bad arguments!
+   SetErrorCode(ERR_BADARG);
+   SendNAK;  
+}
+
+// This function is called by the UI to format a board's EEPROM.
 void BoardFormat(void)
+{
+  if (BoardFormatEEPROM()) DisplayMessage("Module formatted!", 2000);
+  else DisplayMessage("Unable to format!", 2000);
+}
+
+bool BoardFormatEEPROM(void)
 {
   void *BoardConfigData;
   uint8_t addr;
@@ -997,9 +1071,13 @@ void BoardFormat(void)
   if (brd == 0) ENA_BRD_A;             // Select board
   else ENA_BRD_B;
   // Write to EEPROM
-  if (WriteEEPROM(BoardConfigData, addr, 0, *(int16_t *)BoardConfigData) == 0) DisplayMessage("Module formatted!", 2000);
-  else DisplayMessage("Unable to format!", 2000);
+  if (WriteEEPROM(BoardConfigData, addr, 0, *(int16_t *)BoardConfigData) != 0)
+  {
+    digitalWrite(BRDSEL, CurrentBoard);  // Restore board select
+    return false;
+  }
   digitalWrite(BRDSEL, CurrentBoard);  // Restore board select
+  return true;
 }
 
 void SaveMIPSSettings(void)
@@ -1264,13 +1342,12 @@ void setup()
   pinMode(_sdcs, OUTPUT);
   digitalWrite(_sdcs, HIGH);
   delay(100);
-
   // Init the display and setup all the hardware
   pinMode(BACKLIGHT, INPUT_PULLUP);
+  SetBackLight();
   // Pin 49 defines the display type, if grounded is the HX8347_DSP else ILI9340_DSP
   pinMode(49,INPUT_PULLUP);
-  if(digitalRead(49) == HIGH) tft.SetDisplayType(ILI9340_DSP);
-  else tft.SetDisplayType(HX8347_DSP);
+  tft.SetDisplayType(ILI9340_DSP); 
   tft.begin();
   tft.fillScreen(ILI9340_BLACK);
   tft.setRotation(1);
@@ -1280,26 +1357,12 @@ void setup()
   tft.println("Initializing....");
 
   SerialInit();
-  
   delay(250);
-
-  //test();
-
-  //  MIPSsystemLoop();
 
   SPI.setClockDivider(21);
   pinMode(_sdcs, OUTPUT);
   digitalWrite(_sdcs, HIGH);
   delay(100);
-/*
-  Sd2Card card;
-  if(!card.init(4,_sdcs))
-  {
-    tft.println(card.errorCode());
-    delay(1000);
-  }
-  WDT_Restart(WDT);
-*/  
   SD.begin(_sdcs);
   WDT_Restart(WDT);
   delay(100);
@@ -1312,8 +1375,9 @@ void setup()
   else
   {
     SDcardPresent = true;
-    LOADparms("default.cfg"); // Load the defaults if the file is present
+    //LOADparms("default.cfg"); // Load the defaults if the file is present
   }
+  LOADparms("default.cfg");   // Load the defaults if the file is present
   SPI.setClockDivider(11);    // If SD card init fails it will slow down the SPI interface
   SetBackLight();
   DisplayIntensity();
@@ -1586,6 +1650,7 @@ void ProcessSerial(void)
   // Put serial received characters in the input ring buffer
   while (SerialUSB.available() > 0)
   {
+//TriggerOut(1);
     ResetFilamentSerialWD();
     serial = &SerialUSB;
     char c = SerialUSB.read();
@@ -1669,6 +1734,13 @@ int SAVEparms(char *filename)
 {
   File file;
 
+  MIPSconfigData.DisableDisplay = DisableDisplay;
+  MIPSconfigData.signature = 0xA55AE99E;
+  {
+     AtomicBlock< Atomic_RestoreState > a_Block;
+     // Save to FLASH as well in case SD card fails or is not present
+     dueFlashStorage.writeAbs((uint32_t)NonVolStorage, (byte *)&MIPSconfigData, sizeof(MIPSconfigStruct));
+  }
   // Test SD present flag, exit and NAK if no card or it failed to init
   if (!SDcardPresent) return (ERR_NOSDCARD);
   SD.begin(_sdcs);
@@ -1708,21 +1780,40 @@ bool LOADparms(char *filename)
   int  i, fVal;
   byte *b;
 
-  // Test SD present flag
-  if (!SDcardPresent) return false;
-  SD.begin(_sdcs);
-  // Open the file
-  if (!(file = SD.open(filename, FILE_READ))) return false;
-  // read the data
-  b = (byte *)&MCS;
-  for (i = 0; i < sizeof(MIPSconfigStruct); i++)
+  while(1)
   {
-    if ((fVal = file.read()) == -1) break;
-    b[i] = fVal;
+    // Test SD present flag
+    if (!SDcardPresent) break;
+    SD.begin(_sdcs);
+    // Open the file
+    if (!(file = SD.open(filename, FILE_READ))) break;
+    // read the data
+    b = (byte *)&MCS;
+    for (i = 0; i < sizeof(MIPSconfigStruct); i++)
+    {
+      if ((fVal = file.read()) == -1) break;
+      b[i] = fVal;
+    }
+    file.close();
+    // Copy to MIPS config struct
+    memcpy(&MIPSconfigData, &MCS, MCS.Size);
+    DisableDisplay = MIPSconfigData.DisableDisplay;
+    return true;
   }
-  file.close();
-  // Copy to MIPS config struct
-  memcpy(&MIPSconfigData, &MCS, MCS.Size);
-  return true;
+  // If here then the SD card read failed so try loading from FLASH
+  b = (byte *)&MCS;
+  for(i=0;i<sizeof(MIPSconfigStruct);i++)
+  {
+    b[i] = dueFlashStorage.readAbs(((uint32_t)NonVolStorage) + i);  
+  }
+  // Check signature, if correct then update
+  if(MCS.signature == 0xA55AE99E)
+  {
+    memcpy(&MIPSconfigData, &MCS, MCS.Size);
+    DisableDisplay = MIPSconfigData.DisableDisplay;
+    return true;
+  }
+  return false;
 }
+
 

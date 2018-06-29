@@ -119,7 +119,7 @@ void ARBTWAVEsweepISR(void)
 void ProcessSweep(void)
 {
   int           chan;
-  unsigned int  RightNow;
+  uint32_t      RightNow;
   float         rnf,rnv;
 
   RightNow = millis();
@@ -402,5 +402,6 @@ void ProcessCompressionTrigger(void)
   if(CompressionTriggerTarget == char('A')) ARBcompressorTriggerISR();
   else if(CompressionTriggerTarget == char('T')) CompressorTriggerISR();
 }
+
 
 

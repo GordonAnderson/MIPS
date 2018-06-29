@@ -633,11 +633,7 @@ void RFdriver_loop(void)
         continue;
       }
     }
-//    if ((i == 0) || (i == 2)) if ((AD7998(RFDD.ADCadr, ADCvals) != 0) || (ValueChange))  // this logic is not correct!
-//    {
-//        i++;
-//        continue;
-//    }
+    if(iStat != 0) continue;
     if (DIh[SelectedRFBoard][i & 1]->test(RFDDarray[SelectedRFBoard].RFgateTrig[i & 1]))
     {
       if(RFDD.Rev == 3)
@@ -1079,4 +1075,32 @@ void RFcalParms(void)
   SendNAK;
   
 }
+
+// This function saves the RF driver module data to EEPROM. All detected RF modules are saved.
+// Write the current board parameters to the EEPROM on the RFdriver board.
+void SaveRF2EEPROM(void)
+{
+  int  brd;
+  bool berr = false;
+  
+  brd = SelectedBoard();
+  for(int b=0; b<2; b++)
+  {
+    if(RFdriverBoards[b])
+    {
+      SelectBoard(b);
+      if (WriteEEPROM(&RFDDarray[b], RFDDarray[b].EEPROMadr, 0, sizeof(RFdriverData)) != 0) berr = true;
+    }
+  }
+  SelectBoard(brd);
+  if(berr)
+  {
+    SetErrorCode(ERR_EEPROMWRITE);
+    SendNAK;
+    return;
+  }
+  SendACK;
+}
+
+
 

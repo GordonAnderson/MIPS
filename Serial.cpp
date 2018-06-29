@@ -22,6 +22,7 @@
 #include "DCbias.h"
 #include "DCbiasList.h"
 #include "ESI.h"
+#include "RFamp.h"
 #include "Twave.h"
 #include "FAIMS.h"
 #include "Filament.h"
@@ -94,6 +95,7 @@ Commands  CmdArray[] = 	{
   {"LEDOVRD", CMDbool, 1, (char *)&LEDoverride},               // Override the LED operation is true, always false on startup
   {"LED",  CMDint, 1, (char *)&LEDstate},                      // Define the LEDs state you are looking for.
   {"DSPOFF", CMDbool, 1, (char *)&DisableDisplay},             // Print the UseAnalog flag, true or false
+  {"STRTDLY", CMDint, 1, (char *)&MIPSconfigData.StartupDelay},// Startup delay in seconds
   {"CHKIMAGE",  CMDfunctionStr, 1, (char *)CheckImage},        // Reports the image file status
   {"LOADIMAGE",  CMDfunctionStr, 1, (char *)LoadImage},        // Loads an image file to the display
   {"SSERIALNAV", CMDbool, 1, (char *)&EnableSerialNavigation}, // Set flag to TRUE to enable UI navigation from the host interface
@@ -108,10 +110,22 @@ Commands  CmdArray[] = 	{
   {"LOADALL", CMDfunction, 0, (char *)LoadAllfromSD},          // Loads all the modules EEPROM data from the SD card
   {"GETEEPROM", CMDfunctionStr, 2, (char *)EEPROMtoSerial},    // Sends the selected EEPROM data to the host, Board( A or B), Add (Hex)
   {"PUTEEPROM", CMDfunctionStr, 2, (char *)SerialtoEEPROM},    // Receives data from the host and writes to EEPROM, Board( A or B), Add (Hex)
-  {"SSPND", CMDbool, 1, (char *)&Suspend},                     // Suspend all tasks, susports real time control, TRUE or FALSE
+  {"SSPND", CMDbool, 1, (char *)&Suspend},                     // Suspend all tasks, suspends real time control, TRUE or FALSE
   {"GSPND", CMDbool, 0, (char *)&Suspend},                     // Returns suspend status, TRUE or FALSE
   {"CPUTEMP", CMDfunction, 0, (char *)CPUtemp},                // Returns the CPU temp in degrees C, not an accurate reading 
   {"TWITALK", CMDfunction, 2, (char *)TWItalk},                // Redirect the serial communications through a board and TWI address passed
+  {"SSER1ENA", CMDbool, 1, (char *)&MIPSconfigData.Ser1ena},   // Set the Serial1 port enable, TRUE = general use
+  {"GSER1ENA", CMDbool, 0, (char *)&MIPSconfigData.Ser1ena},   // Get the Serial1 port enable status
+  {"SETADDRESS", CMDfunctionStr, 1, (char *)&SetMemAddress},   // Set memory address to read or write
+  {"WRITE", CMDfunctionStr, 2, (char *)&WriteMemory},          // Write to memory, BYTE,WORD,DWORD,INT,FLOAT
+  {"READ", CMDfunctionStr, 1, (char *)&ReadMemory},            // Read from memory, BYTE,WORD,DWORD,INT,FLOAT
+  {"FORMAT", CMDfunctionLine, 0, (char *)&FormatEEPROM},       // Format the EEPROM, args example,A 0x50,RFdrvA R1  
+  {"SAVEM", CMDfunctionStr, 1, (char *)&SaveModule},           // Save the defined module to EEPROM  
+  {"TWIRESET", CMDfunction, 0, (char *)TWIreset},              // Resets the TWI interface
+  {"TWIERROR",  CMDint, 0, (char *)&TWIfails},                 // Reports the numner of detected TWI failures 
+  {"STWIHDW", CMDbool, 1, (char *)&MIPSconfigData.TWIhardware}, // If true then the TWI hardware interface is used for ADC read functions
+  {"GTWIHDW", CMDbool, 0, (char *)&MIPSconfigData.TWIhardware}, // Returns the surrent status.
+  
   // Clock generation functions
   {"GWIDTH",  CMDint, 0, (char *)&PulseWidth},                // Report the pulse width in microseconds
   {"SWIDTH",  CMDint, 1, (char *)&PulseWidth},                // Set the pulse width in microseconds
@@ -162,9 +176,12 @@ Commands  CmdArray[] = 	{
   {"SDCBOFFENA", CMDfunctionStr, 2, (char *)DCbiasOffsetable},        // Set the DC bias channels offsetable flag, setup command
   {"SDCBTEST", CMDbool, 1, (char *)&DCbiasTestEnable},                // Set to FALSE to disable readback testing
   {"SDCBADCADD", CMDfunction, 2, (char *)SetDCbiasADCtwiADD},         // Set a modules ADC TWI address, radix 10
+  {"SDCBDACADD", CMDfunction, 2, (char *)SetDCbiasDACtwiADD},         // Set a modules DAC TWI address, radix 10
   {"SDCBARST", CMDbool, 1, (char *)&AutoReset},                       // Set to TRUE to enable power supply auto reset
   {"SDCBRNG", CMDfunction, 2, (char *)&SetDCbiasRange},               // Set the range for the DC bias board
   {"SDCBEXT", CMDfunction, 1, (char *)&SetDCbiasExtended},            // Set the DCbias board for extended addressing, factory command
+  {"RDCBSPLY", CMDfunction, 1, (char *)&ReportDCbiasSuppplies},       // Report the DCbias board supply voltages. Requires AD5593 for this
+                                                                      // function to work.
   // DC bias module profile commands
   {"SDCBPRO", CMDfunctionLine, 0, (char *)SetDCbiasProfile},          // Sets a DC bias profile
   {"GDCBPRO", CMDfunction, 1, (char *)GetDCbiasProfile},              // Reports the select DC bias profile
@@ -175,7 +192,7 @@ Commands  CmdArray[] = 	{
   // DC bias list functions, supports DMA high speed transfer
   {"DSTATE", CMDfunctionLine, 0, (char *)DefineState},                // Define a state, name,ch,val....
   {"SSTATE", CMDfunctionStr, 1, (char *)SetState},                    // Sets the DCbias channels to the values defined in named state
-  {"LTRIG", CMDfunction, 0, (char *)ListStateNames},                // List all the defined state names
+  {"LTRIG", CMDfunction, 0, (char *)ListStateNames},                  // List all the defined state names
   {"RSTATE", CMDfunctionStr, 1, (char *)RemoveState},                 // Remove a state from the linked list
   {"RSTATES", CMDfunction, 0, (char *)RemoveStates},                  // Clear the full linked list of states
   {"GSTATE", CMDfunctionStr, 1, (char *)IsState},                     // Returns true is named state is in list, else false
@@ -218,6 +235,10 @@ Commands  CmdArray[] = 	{
   {"TUNERFCH", CMDfunction, 1, (char *)RFautoTune},      // Auto tune the select RF channel
   {"RETUNERFCH", CMDfunction, 1, (char *)RFautoRetune},  // Auto retune the select RF channel, start and current freq and drive
   {"SRFCAL", CMDfunctionLine, 1, (char *)RFcalParms},    // Sets the RF calibration parameters, channel,slope,intercept  
+  // RF amplifier / QUAD commands
+  {"SRFAPB", CMDfunctionStr, 2, (char *)RFAsetPoleBias},     // Sets the pole bias DC
+  {"SRFARDC", CMDfunctionStr, 2, (char *)RFAsetResolvingDC}, // Sets the resolving DC + and - voltages using DC bias channels 1 and 2
+  
   // DIO commands
   {"SDIO", CMDfunctionStr, 2, (char *)SDIO_Serial},	 // Set DIO output bit
   {"GDIO", CMDfunctionStr, 1, (char *)GDIO_Serial},	 // Get DIO output bit
@@ -321,6 +342,10 @@ Commands  CmdArray[] = 	{
   {"GFMPWR", CMDfloat, 0, (char *)&TotalPower},                 // Returns FAIMS total power in watts
   {"GFMPV", CMDfloat, 0, (char *)&KVoutP},                      // Returns FAIMS positive peak output voltage
   {"GFMNV", CMDfloat, 0, (char *)&KVoutN},                      // Returns FAIMS negative peak output voltage
+  {"SFMLOCK", CMDfunctionStr, 1, (char *)FAIMSsetLock},         // Sets FAIMS output level lock mode
+  {"GFMLOCK", CMDbool, 0, (char *)&Lock},                       // Returns FAIMS output level lock mode
+  {"SFMSP", CMDfunctionStr, 1, (char *)FAIMSsetLockSP},         // Sets FAIMS output level lock setpoint
+  {"GFMSP", CMDfloat, 0, (char *)&LockSetpoint},                // Returns FAIMS output level lock setpoint
   // FAIMS DC CV and Bias commands
   {"SFMCV", CMDfunctionStr, 1, (char *)FAIMSsetCV},                // Sets FAIMS DC CV voltage setpoint
   {"GFMCV", CMDfloat, 0, (char *)&faims.DCcv.VoltageSetpoint},     // Returns FAIMS DC CV voltage setpoint
@@ -331,8 +356,24 @@ Commands  CmdArray[] = 	{
   {"SFMOFF", CMDfunctionStr, 1, (char *)FAIMSsetOffset},           // Sets FAIMS DC offset voltage setpoint
   {"GFMOFF", CMDfloat, 0, (char *)&faims.DCoffset.VoltageSetpoint},// Returns FAIMS DC offset voltage setpoint
   {"GFMOFFA", CMDfloat, 0, (char *)&DCoffsetRB},                   // Returns FAIMS DC offset voltage actual
-  // FAIMS calibration commands   
-  //{"SFAIMSP", CMDfunction, 2, (char *)FAIMSphase},              // Set FAIMS harmonic phase to 0 or 180, bad idea!
+  // FAIMS CV Scan commands
+  {"SFMCVSTART", CMDfunctionStr, 1, (char *)FAIMSsetCVstart},      // Sets FAIMS DC CV scan start voltage
+  {"GFMCVSTART", CMDfloat, 0, (char *)&faims.CVstart},             // Returns FAIMS DC CV scan start voltage
+  {"SFMCVEND", CMDfunctionStr, 1, (char *)FAIMSsetCVend},          // Sets FAIMS DC CV scan end voltage
+  {"GFMCVEND", CMDfloat, 0, (char *)&faims.CVend},                 // Returns FAIMS DC CV scan end voltage
+  {"SFMDUR", CMDfunctionStr, 1, (char *)FAIMSsetDuration},         // Sets FAIMS DC CV scan duration in seconds
+  {"GFMDUR", CMDfloat, 0, (char *)&faims.Duration},                // Returns FAIMS DC CV scan duration in seconds
+  {"SFMLOOPS", CMDfunctionStr, 1, (char *)FAIMSsetLoops},          // Sets FAIMS DC CV scan loops
+  {"GFMLOOPS", CMDint, 0, (char *)&Loops},                         // Returns FAIMS DC CV scan loops
+  {"SFMSTRTLIN", CMDbool, 1, (char *)&FAIMSscan},                  // Sets FAIMS DC CV linear scan flag
+  {"GFMSTRTLIN", CMDbool, 0, (char *)&FAIMSscan},                  // Returns FAIMS DC CV linear scan flag
+  {"SFMSTPTM", CMDfunctionStr, 1, (char *)FAIMSsetStepTime},       // Sets FAIMS DC CV scan step duration
+  {"GFMSTPTM", CMDint, 0, (char *)&faims.StepDuration},            // Returns FAIMS DC CV scan step duration
+  {"SFMSTEPS", CMDfunctionStr, 1, (char *)FAIMSsetSteps},          // Sets FAIMS DC CV step scan number of steps
+  {"GFMSTEPS", CMDint, 0, (char *)&faims.Steps},                   // Returns FAIMS DC CV step scan number of steps
+  {"SFMSTRTSTP", CMDbool, 1, (char *)&FAIMSstepScan},              // Sets FAIMS DC CV step scan flag
+  {"GFMSTRTSTP", CMDbool, 0, (char *)&FAIMSstepScan},              // Returns FAIMS DC CV step scan flag
+  // FAIMS confuguration / calibration commands
   {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},     // Set FAIMS RF harmonic positive peak readback calibration
   {"SRFHNCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharNcal},     // Set FAIMS RF harmonic negative peak readback calibration
   {"SARCDIS",CMDbool, 1, (char *)&DiableArcDetect},               // TRUE or FALSE, set to TRUE disable arc detection
@@ -455,36 +496,83 @@ Commands  CmdArray[] = 	{
   {0},
 };
 
+uint32_t MemoryAddress;
+
+void SetMemAddress(char *address)
+{
+  sscanf(address,"%x",&MemoryAddress);
+  serial->println(MemoryAddress,16);    
+}
+
+void WriteMemory(char *type, char *val)
+{
+  String sType;
+
+  sType = type;
+  if(sType == "BYTE") sscanf(val,"%x",(uint8_t *)MemoryAddress);
+  else if(sType == "WORD") sscanf(val,"%x",(uint16_t *)MemoryAddress);
+  else if(sType == "DWORD") sscanf(val,"%x",(uint32_t *)MemoryAddress);
+  else if(sType == "INT") sscanf(val,"%d",(int *)MemoryAddress);
+  else if(sType == "FLOAT") sscanf(val,"%f",(float *)MemoryAddress);
+}
+
+void ReadMemory(char *type)
+{
+  String sType;
+
+  sType = type;
+  if(sType == "BYTE") serial->println(*(uint8_t *)MemoryAddress,16);    
+  else if(sType == "WORD") serial->println(*(uint16_t *)MemoryAddress,16);    
+  else if(sType == "DWORD") serial->println(*(uint32_t *)MemoryAddress,16);    
+  else if(sType == "INT") serial->println(*(int *)MemoryAddress,16);    
+  else if(sType == "FLOAT") serial->println(*(float *)MemoryAddress,16);    
+}
+
 void TWItalk(int brd, int TWIadd)
 {
+  serial->println("Redirecting the serial host commands through the TWI port for the");
+  serial->println("selected  device. Press escape to exit this mode. If you don't know");
+  serial->println("what your doing do not use this function!");
   // Select the board and send the TWIadd the communications enable command
   SelectBoard(brd);
   AcquireTWI();
   Wire.beginTransmission(TWIadd);
   Wire.write(TWI_SERIAL);
-  {
-//    AtomicBlock< Atomic_RestoreState > a_Block;
-    Wire.endTransmission();
-  }
+  Wire.endTransmission();
   // Echo all communications through the TWI port
   while(1)
   {
     WDT_Restart(WDT);
-    Wire.requestFrom(TWIadd,1);
-    if (Wire.available() > 0)
+    Wire.requestFrom(TWIadd, 32);
+    while (int i = Wire.available())
     {
-      char c = Wire.read();
-      serial->write(c);
+      i = Wire.read();
+      if(i == -1) break;
+      if(i == 27)
+      {
+        // Exit per slave command
+         ReleaseTWI();
+         serial->println(" TWI redirection terminated by slave!");
+         return;
+      }
+      if(i != 120) serial->write((char) i);   
     }
     while (serial->available() > 0)
     {
-      serial->write(serial->read());
+      char c = serial->read();
       Wire.beginTransmission(TWIadd);
-      Wire.write(serial->read());
+      Wire.write(c);
       Wire.endTransmission();
+      if(c == 27)
+      {
+         ReleaseTWI();
+         serial->println("Exiting TWI redirection.");
+         return;
+      }
     }
   }
   ReleaseTWI();
+  serial->println("Exiting TWI redirection.");
 }
 
 void CheckImage(char *filename)
@@ -595,6 +683,24 @@ void Mute(char *cmd)
   }
   SetErrorCode(ERR_BADARG);
   SendNAK;
+}
+
+// This function saves the selected modules data to EEPROM.
+void SaveModule(char *Module)
+{
+  if (strcmp(Module, "RF") == 0) SaveRF2EEPROM();
+  else if (strcmp(Module, "DCB") == 0) SaveDCB2EEPROM();
+  else if (strcmp(Module, "ESI") == 0) SaveESI2EEPROM();
+  else if (strcmp(Module, "FAIMS") == 0) SaveFAIMS2EEPROM();
+  else if (strcmp(Module, "TWAVE") == 0) SaveTWAVE2EEPROM();
+  else if (strcmp(Module, "ARB") == 0) SaveARB2EEPROM();
+  else if (strcmp(Module, "FIL") == 0) SaveFIL2EEPROM();
+  else
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;
+  }  
 }
 
 // Generic get number of channels function, calls the proper routine based on parameter entered.
@@ -1294,6 +1400,7 @@ void MacroPlay(char *filename, bool silent)
   // Unmute the serial system
   for (i = 0; i < strlen(unmute); i++) RB_Put(&RB, unmute[i]);
 }
+
 
 
 

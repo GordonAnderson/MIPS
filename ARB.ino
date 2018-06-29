@@ -497,6 +497,21 @@ void SetByte(int board, int cmd, byte bval)
   ReleaseTWI();
 }
 
+void SetWord(int board, int cmd, uint16_t wval)
+{
+  SelectBoard(board);
+  AcquireTWI();
+  Wire.beginTransmission(ARBarray[board]->ARBadr);
+  Wire.write(cmd);
+  Wire.write(wval & 0xFF);
+  Wire.write((wval >> 8) & 0xFF);
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
+  ReleaseTWI();
+}
+
 void Set16bitInt(int board, int cmd, int ival)
 {
   SelectBoard(board);
@@ -1366,6 +1381,7 @@ void SetARBwfType(char *sMod, char *Swft)
      SendNAK;
      return;
    }
+   if(SelectedARBboard == b) strcpy(WFT,sMod);
    SendACK;
 }
 
@@ -1862,4 +1878,31 @@ void ProcessARB(void)
   ARBupdatesSent = 0;
   ReleaseTWI();
 }
+
+// This function saves the ARB module data to EEPROM. All detected ARB modules are saved.
+void SaveARB2EEPROM(void)
+{
+  int  brd;
+  bool berr = false;
+  
+  brd = SelectedBoard();
+  for(int b=0; b<4; b++)
+  {
+    if(ARBarray[b] != NULL)
+    {
+      SelectBoard(b);
+      if (WriteEEPROM(ARBarray[b], ARBarray[b]->EEPROMadr, 0, sizeof(ARBdata)) != 0) berr = true;
+    }
+  }
+  SelectBoard(brd);
+  if(berr)
+  {
+    SetErrorCode(ERR_EEPROMWRITE);
+    SendNAK;
+    return;
+  }
+  SendACK;
+}
+
+
 

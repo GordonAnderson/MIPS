@@ -67,8 +67,10 @@ void RFcalParms(void);
 
 void RFmodeReport(int);
 void RFmodeSet(char *, char *);
+void SaveRF2EEPROM(void);
 
 #endif
+
 
 
 

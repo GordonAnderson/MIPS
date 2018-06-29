@@ -692,6 +692,7 @@ void SWTableTrg(void)
     }
     SendACK;
     StartTimer();
+    if(MPT.getRAcounter() == 0) SetupNextEntry(); // added 5/5/18
 }
 
 // Report table current frequency setting
@@ -1226,7 +1227,7 @@ void ProcessTables(void)
               SWtriggered = false;
               // Here when triggered
                if((!SerialMute) && (TableResponse)) serial->println("TBLTRIG\n");
-               if(StopRequest == true) break;
+//               if(StopRequest == true) break;     // removed 5/5/18
             }
             // Exit this loop when the timer is stoped.
             if(!MPT.checkStatusBit(TC_SR_CLKSTA) || TableStopped)
@@ -1405,7 +1406,8 @@ void SetupTimer(void)
       // The Toggle A output on trigger has to happen because we do not get a counter 0 event when triggered externally.
       // This does cause an issue if we do not have time 0 value in the DAC latches. If we external trigger then we need to do the
       // first SetupNext call in the trigger ISR
-      if(TEheader->Count == 0) MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE);
+      // Added TC_CMR_ASWTRG_TOGGLE, 5/5/18 this fixes bug when SW trigger and time 0 point
+      if(TEheader->Count == 0) MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE | TC_CMR_ASWTRG_TOGGLE);
       else MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE);
     }
     //
@@ -1826,6 +1828,7 @@ inline void RCmatch_Handler(void)
       else pio->PIO_SODR = pin; 
     }
 }
+
 
 
 

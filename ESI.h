@@ -49,7 +49,10 @@ void SetESIchannelEnable(int chan);
 void SetESImodulePos(int module, int value);
 void SetESImoduleNeg(int module, int value);
 
+void SaveESI2EEPROM(void);
+
 #endif
+
 
 
 

@@ -69,6 +69,8 @@ extern DialogBox FAIMSPowerMenu;
 extern DialogBox FAIMSDCMenu;
 extern DialogBox FAIMScalMenu;
 extern DialogBox FAIMSEnvMenu;
+extern DialogBoxEntry FAIMSentriesDCMenu2[];
+extern DialogBoxEntry FAIMSentriesDCMenu3[];
 
 #define  PWMFS  4095          // Full scale PWM output value
 #define  FreqMultiplier 32
@@ -105,7 +107,10 @@ float  Drv2Power = 0;
 float  Drv3Power = 0;
 
 // FAIMS scan mode variables
+bool   FAIMSstepScanEnable = false;
+bool   FAIMSscanEnable = false;
 bool   FAIMSscan = false;      // True when the DCcv scan is requested
+bool   FAIMSstepScan = false;  // True when the DCcv step based scan is requested
 bool   FAIMSscanning = false;  // True when the system is scanning
 bool   FieldDriven = false;    // This flag is set if this is a field driven FAIMS system
 float  ScanTime = 0;           // This is how long the system has been scanning
@@ -133,6 +138,8 @@ float  DCcvRB     = 0;
 
 bool DiableArcDetect = false;
 void DelayArcDetect(void);
+
+DIhandler *FAIMSscanTrigger;
 
 //MIPS Threads
 Thread FAIMSThread  = Thread();
@@ -190,7 +197,8 @@ DialogBoxEntry FAIMSentriesEnvMenu[] = {
   {" Delta pressure"         , 0, 7, D_FLOAT   ,  0, 10, 0.1, 17, true, "%6.2f", &deltaPressure, NULL, NULL},
   {" Delta temp"             , 0, 8, D_FLOAT   ,  0, 10, 0.1, 18, true, "%5.2f", &deltaTemp, NULL, NULL},
   {" Correction, %"          , 0, 9, D_FLOAT   ,  0, 10, 0.1, 18, true, "%5.2f", &EnvCorrection, NULL, NULL},
-  {" Return to Tune menu"    , 0, 10, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSTuneMenu, NULL, NULL},
+  {" Return to Tune menu"    , 0, 10,\
+  D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSTuneMenu, NULL, NULL},
   {NULL},
 };
 
@@ -244,15 +252,38 @@ DialogBoxEntry FAIMSentriesDCMenu[] = {
   {""                        , 0, 2, D_FLOAT   , 0, 0, 0, 18, true, "%5.1f", &DCcvRB, NULL, NULL},
   {""                        , 0, 3, D_FLOAT   , 0, 0, 0, 18, true, "%5.1f", &DCoffsetRB, NULL, NULL},
   {" Curtain V"              , 0, 4, D_OFF     , -1000, 1000, 10, 18, false, "%5.0f", &ESIarray[1].VoltageSetpoint, NULL, NULL},
-  {" CV start"               , 0, 5, D_FLOAT   , -250, 250, 0.1, 18, false, "%5.1f", &faims.CVstart, NULL, NULL},
-  {" CV end"                 , 0, 6, D_FLOAT   , -250, 250, 0.1, 18, false, "%5.1f", &faims.CVend, NULL, NULL},
-  {" Duration"               , 0, 7, D_FLOAT   , 1, 10000, 1, 15, false, "%8.1f", &faims.Duration, NULL, NULL},
-  {" Scan"                   , 0, 8, D_ONOFF   , 0, 1, 1, 20, false, NULL, &FAIMSscan, NULL, NULL},
-  {" Loops"                  , 0, 9, D_INT     , 1, 100, 1, 20, false, "%3d", &Loops, NULL, NULL},
-  {" Calibration menu"       , 0, 10, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMScalMenu, NULL, NULL},
-  {" Return to FAIMS menu"   , 0, 11, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSMainMenu, NULL, NULL},
+  {" Linear scan"            , 0, 5, D_PAGE    , 0, 0, 0, 0, false, NULL, &FAIMSentriesDCMenu2, NULL, NULL},
+  {" Step scan"              , 0, 6, D_PAGE    , 0, 0, 0, 0, false, NULL, &FAIMSentriesDCMenu3, NULL, NULL},
+  {" Scan trigger"           , 0, 7, D_DI      , 0, 0, 2, 21, false, DIlist, &faims.ScanTrigger, NULL, NULL},
+  {" Trigger level"          , 0, 8, D_DILEVEL , 0, 0, 4, 19, false, DILlist, &faims.TriggerLevel, NULL, NULL},
+  {" Calibration menu"       , 0, 10, D_DIALOG , 0, 0, 0, 0, false, NULL, &FAIMScalMenu, NULL, NULL},
+  {" Return to FAIMS menu"   , 0, 11, D_DIALOG , 0, 0, 0, 0, false, NULL, &FAIMSMainMenu, NULL, NULL},
   {NULL},
 };
+
+// Linear scan menu
+DialogBoxEntry FAIMSentriesDCMenu2[] = {
+  {" CV start"               , 0, 1, D_FLOAT   , -250, 250, 0.1, 18, false, "%5.1f", &faims.CVstart, NULL, NULL},
+  {" CV end"                 , 0, 2, D_FLOAT   , -250, 250, 0.1, 18, false, "%5.1f", &faims.CVend, NULL, NULL},
+  {" Duration"               , 0, 3, D_FLOAT   , 1, 10000, 1, 15, false, "%8.1f", &faims.Duration, NULL, NULL},
+  {" Loops"                  , 0, 4, D_INT     , 1, 100, 1, 20, false, "%3d", &Loops, NULL, NULL},
+  {" Scan enable"            , 0, 5, D_ONOFF   , 0, 1, 1, 20, false, NULL, &FAIMSscanEnable, NULL, EnableFAIMSscan},
+  {" Return"                 , 0, 11, D_PAGE   , 0, 0, 0, 0, false, NULL, &FAIMSentriesDCMenu, NULL, NULL},
+  {NULL},
+};
+
+// Step based scan menu
+DialogBoxEntry FAIMSentriesDCMenu3[] = {
+  {" CV start"               , 0, 1, D_FLOAT   , -250, 250, 0.1, 18, false, "%5.1f", &faims.CVstart, NULL, NULL},
+  {" CV end"                 , 0, 2, D_FLOAT   , -250, 250, 0.1, 18, false, "%5.1f", &faims.CVend, NULL, NULL},
+  {" Step time, mS"          , 0, 3, D_INT     , 200, 10000, 1, 17, false, "%6d", &faims.StepDuration, NULL, NULL},
+  {" Step count"             , 0, 4, D_INT     , 1, 10000, 1, 19, false, "%4d", &faims.Steps, NULL, NULL},
+  {" Loops"                  , 0, 5, D_INT     , 1, 100, 1, 20, false, "%3d", &Loops, NULL, NULL},
+  {" Scan enable"            , 0, 6, D_ONOFF   , 0, 1, 1, 20, false, NULL, &FAIMSstepScanEnable, NULL, EnableFAIMSscan},
+  {" Return"                 , 0, 11, D_PAGE   , 0, 0, 0, 0, false, NULL, &FAIMSentriesDCMenu, NULL, NULL},
+  {NULL},
+};
+
 
 // This is the menu for the field driven mode when a DC bias board is detected at location B
 DialogBoxEntry FAIMSentriesDCMenuFD[] = {
@@ -269,6 +300,30 @@ DialogBoxEntry FAIMSentriesDCMenuFD[] = {
   {" Return to FAIMS menu"   , 0, 11, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSMainMenu, NULL, NULL},
   {NULL},
 };
+
+// This function is called after the scan is enabled. If external trigger is enabled then the
+// system will not start scanning until the trigger happen else its starts on this call.
+void EnableFAIMSscan(void)
+{
+  if((!FAIMSscanEnable)&&(!FAIMSstepScanEnable))
+  {
+    FAIMSscanTrigger->detach();
+    FAIMSscan = FAIMSstepScan = false;
+    return;
+  }
+  if(faims.ScanTrigger != 0)
+  {
+    // set up the trigger event
+    FAIMSscanTrigger->detach();
+    FAIMSscanTrigger->attached(faims.ScanTrigger, faims.TriggerLevel, FAIMSscanISR);
+  }
+  else
+  {
+    // If here we are starting the scan right now!
+    if(FAIMSscanEnable) FAIMSscan = true;
+    if(FAIMSstepScanEnable) FAIMSstepScan = true;
+  }
+}
 
 // This function is called when the user selects the RF voltage. This button will toggle output level 
 // control on and off.
@@ -324,10 +379,12 @@ void SetupNFDEntry(DCbiasData *dc)
 // Setup the min and max values for the user interface
   for(i=0;i<2;i++)
   {
-    FAIMSentriesDCMenu[i].Min = -250.0 + faims.DCoffset.VoltageSetpoint;
-    FAIMSentriesDCMenu[i].Max =  250.0 + faims.DCoffset.VoltageSetpoint;
-    FAIMSentriesDCMenu[8+i].Min = -250.0 + faims.DCoffset.VoltageSetpoint;
-    FAIMSentriesDCMenu[8+i].Max =  250.0 + faims.DCoffset.VoltageSetpoint;
+    FAIMSentriesDCMenu[i].Min  = -250.0 + faims.DCoffset.VoltageSetpoint;
+    FAIMSentriesDCMenu[i].Max  =  250.0 + faims.DCoffset.VoltageSetpoint;
+    FAIMSentriesDCMenu2[i].Min = -250.0 + faims.DCoffset.VoltageSetpoint;
+    FAIMSentriesDCMenu2[i].Max =  250.0 + faims.DCoffset.VoltageSetpoint;
+    FAIMSentriesDCMenu3[i].Min = -250.0 + faims.DCoffset.VoltageSetpoint;
+    FAIMSentriesDCMenu3[i].Max =  250.0 + faims.DCoffset.VoltageSetpoint;
   }
 }
 
@@ -430,8 +487,6 @@ void SaveFAIMSSettings(void)
       SelectBoard(0);
     }
   }
-TWI_RESET();
-Wire.begin();
   SelectBoard(FAIMSBoardAddress);
   if (WriteEEPROM(&faims, faims.EEPROMadr, 0, sizeof(FAIMSdata)) == 0)
   {
@@ -456,8 +511,6 @@ void RestoreFAIMSSettings(bool NoDisplay)
     RestoreDCbiasSettings(true);
     SelectBoard(0);
   }
-TWI_RESET();
-Wire.begin();
   SelectBoard(FAIMSBoardAddress);
   if (ReadEEPROM(&faimsT, faims.EEPROMadr, 0, sizeof(FAIMSdata)) == 0)
   {
@@ -503,10 +556,11 @@ void setServoPulse(uint8_t n, double pulse)
   pwm.setPWM(n, 0, pulse);
 }
 
-// External scan trigger interrupt vectors here!
+// External scan trigger interrupt vectors here to start an enabled scan!
 void FAIMSscanISR(void)
 {
-  FAIMSscan = true;
+  if(FAIMSscanEnable) FAIMSscan = true;
+  if(FAIMSstepScanEnable) FAIMSstepScan = true;
 }
 
 // This ISR increments a counter on clock rising edge, part of the clock
@@ -609,8 +663,8 @@ void FAIMS_init(int8_t Board)
   FAIMSThread.setInterval(100);
   // Add threads to the controller
   control.add(&FAIMSThread);
-  // Use trig input on pin 12 as a trigger to start a scan
-  attachInterrupt(12, FAIMSscanISR, RISING);
+  // Use trig input to start a scan
+  FAIMSscanTrigger = new DIhandler;
   // Turn DC power supply on
   digitalWrite(PWR_ON, LOW);
   // Pressure sensor to be used for FAIMS voltage correction
@@ -691,7 +745,7 @@ void FAIMSDCbiasControl(void)
 {
   static bool SuppliesOff = true;
   static int  SuppliesStableCount = 10;
-  static unsigned long StartTime;
+  static unsigned long StartTime, StepTime, Duration;
 
   // Monitor power on output bit. If power comes on hold all output at zero until power is stable, short delay.
   if (digitalRead(PWR_ON) != 0)
@@ -717,7 +771,7 @@ void FAIMSDCbiasControl(void)
   {
     AD5625(faims.DACadr, faims.DCoffset.DCctrl.Chan, Value2Counts(faims.DCoffset.VoltageSetpoint, &faims.DCoffset.DCctrl));
     AD5625(faims.DACadr, faims.DCbias.DCctrl.Chan, Value2Counts(faims.DCbias.VoltageSetpoint - faims.DCoffset.VoltageSetpoint, &faims.DCbias.DCctrl));
-    if (!FAIMSscan)
+    if ((!FAIMSscan) && (!FAIMSstepScan))
     {
       if (FAIMSscanning) DCcvRB = faims.DCcv.VoltageSetpoint;
       FAIMSscanning = false;
@@ -746,9 +800,12 @@ void FAIMSDCbiasControl(void)
         DOrefresh;
         // Toggle LDAC
         PulseLDAC;
+        if(FAIMSstepScan) Duration = faims.StepDuration * faims.Steps;
+        else Duration = faims.Duration * 1000;
         // Setup the scanning parameters
-        ScanTime = 0;
+        ScanTime  = 0;
         StartTime = millis();
+        StepTime  = StartTime;
         FAIMSscanning = true;
         ScanCV = faims.CVstart;
         DCcvRB = ScanCV;  // Reset the filter
@@ -764,12 +821,13 @@ void FAIMSDCbiasControl(void)
         // Here if system is scanning
         // Determine the total scan time in seconds
         ScanTime = (millis() - StartTime)/1000;
-        if (ScanTime > faims.Duration)
+        if ((ScanTime * 1000) > Duration)
         {
           // Stop scanning and clear all the scanning flags if all loops are done
           if(--Loops <= 0)
           {
-             FAIMSscan = false;
+             FAIMSscan = FAIMSscanEnable = false;
+             FAIMSstepScan = FAIMSstepScanEnable = false;
              FAIMSscanning = false;
              DCcvRB = faims.DCcv.VoltageSetpoint;
              Loops = faims.Loops;
@@ -780,15 +838,18 @@ void FAIMSDCbiasControl(void)
                FAIMSDCMenu.State = M_SCROLLING;
              }
           }
-          else
-          {
-            FAIMSscanning = false;
-          }
+          else FAIMSscanning = false;
         }
         else
         {
           // Update the scan voltage
-          ScanCV = faims.CVstart + (faims.CVend - faims.CVstart) * ScanTime / faims.Duration;
+          if(FAIMSscan) ScanCV = faims.CVstart + (faims.CVend - faims.CVstart) * ScanTime / faims.Duration;
+          else if((millis()-StepTime) > faims.StepDuration)
+          {
+            StepTime += faims.StepDuration;
+            ScanCV += (faims.CVend - faims.CVstart) / faims.Steps;
+            DCcvRB = ScanCV;  // Reset the filter
+          }
         }
       }
       AD5625(faims.DACadr, faims.DCcv.DCctrl.Chan, Value2Counts(ScanCV - faims.DCoffset.VoltageSetpoint, &faims.DCcv.DCctrl));
@@ -906,15 +967,15 @@ void FAIMS_loop(void)
   float MaxDrv;
   uint16_t ADCvals[8];
   float V, Vp, Vn, I, SP;
-  static int  LastFreq = -1;
-  static int  LastGPIO = -1;
-  static int  LastDelay = -1;
+  static int  LastFreq     = -1;
+  static int  LastGPIO     = -1;
+  static int  LastDelay    = -1;
   static int  LastFunDelay = -1;
-  static int  LastDrv  = -1;
-  static bool LastEnable = false;
-  static float LastCV = -1;
-  static float LastBias = -1;
-  static float LastOffset = -1;
+  static int  LastDrv      = -1;
+  static bool LastEnable   = false;
+  static float LastCV      = -1;
+  static float LastBias    = -1;
+  static float LastOffset  = -1;
   static DialogBoxEntry *TMde = GetDialogEntries(FAIMSentriesTuneMenu, " Frequency");
   static DialogBoxEntry *PCde = GetDialogEntries(FAIMSentriesTuneMenu, " Pri capacitance");
   static DialogBoxEntry *HCde = GetDialogEntries(FAIMSentriesTuneMenu, " Har capacitance");
@@ -1225,18 +1286,14 @@ void FAIMSsetDrive(char *drv)
 {
   String res;
   float  v;
-  DialogBoxEntry *de = GetDialogEntries(FAIMSentriesPowerMenu, "Max drive level");
 
   res = drv;
   v = res.toFloat();
-  if((v > *((float *)de->Value)) || (v < 10))
+  if(RangeTest(FAIMSentriesPowerMenu,"Max drive level",v))
   {
-    SetErrorCode(ERR_BADARG);
-    SendNAK;
-    return;
+     faims.Drv = v;
+     SendACK;    
   }
-  faims.Drv = v;
-  SendACK;    
 }
 
 // Set the faims CV voltage, get limits from the dialog structure
@@ -1244,18 +1301,14 @@ void FAIMSsetCV(char *volts)
 {
   String res;
   float  v;
-  DialogBoxEntry *de = GetDialogEntries(FAIMSentriesDCMenu, "DC CV");
 
   res = volts;
   v = res.toFloat();
-  if((v > de->Max) || (v < de->Min))
+  if(RangeTest(FAIMSentriesDCMenu,"DC CV",v))
   {
-    SetErrorCode(ERR_BADARG);
-    SendNAK;
-    return;
+    faims.DCcv.VoltageSetpoint = v;
+    SendACK;      
   }
-  faims.DCcv.VoltageSetpoint = v;
-  SendACK;  
 }
 
 // Set the faims Bias voltage, get limits from the dialog structure
@@ -1263,18 +1316,14 @@ void FAIMSsetBIAS(char *volts)
 {
   String res;
   float  v;
-  DialogBoxEntry *de = GetDialogEntries(FAIMSentriesDCMenu, "DC bias");
 
   res = volts;
   v = res.toFloat();
-  if((v > de->Max) || (v < de->Min))
+  if(RangeTest(FAIMSentriesDCMenu,"DC bias",v))
   {
-    SetErrorCode(ERR_BADARG);
-    SendNAK;
-    return;
+     faims.DCbias.VoltageSetpoint = v;
+     SendACK;    
   }
-  faims.DCbias.VoltageSetpoint = v;
-  SendACK;  
 }
 
 // Set the faims Offset voltage, +-250V range. 
@@ -1318,8 +1367,147 @@ void FAIMSsetRFharNcal(char *m, char *b)
   faims.RFharN.b = res.toFloat();
 }
 
+// This function saves the FAIMS module data to EEPROM. 
+void SaveFAIMS2EEPROM(void)
+{
+  int  brd;
+  bool berr = false;
+  
+  brd = SelectedBoard();
+  if(FAIMSpresent)
+  {
+    SelectBoard(FAIMSBoardAddress);
+    if (WriteEEPROM(&faims, faims.EEPROMadr, 0, sizeof(FAIMSdata)) != 0) berr = true;
+  }
+  SelectBoard(brd);
+  if(berr)
+  {
+    SetErrorCode(ERR_EEPROMWRITE);
+    SendNAK;
+    return;
+  }
+  SendACK;
+}
 
+void FAIMSsetCVstart(char *volts)
+{
+  String res;
+  float  v;
 
+  res = volts;
+  v = res.toFloat();
+  if(RangeTest(FAIMSentriesDCMenu2,"CV start",v))
+  {
+     faims.CVstart = v;
+     SendACK;    
+  }  
+}
 
+void FAIMSsetCVend(char *volts)
+{
+  String res;
+  float  v;
+
+  res = volts;
+  v = res.toFloat();
+  if(RangeTest(FAIMSentriesDCMenu2,"CV end",v))
+  {
+     faims.CVend = v;
+     SendACK;    
+  }    
+}
+
+void FAIMSsetDuration(char *secs)
+{
+  String res;
+  float  t;
+
+  res = secs;
+  t = res.toFloat();
+  if(RangeTest(FAIMSentriesDCMenu2,"Duration",t))
+  {
+     faims.Duration = t;
+     SendACK;    
+  }    
+}
+
+void FAIMSsetLoops(char *count)
+{
+  String res;
+  int    c;
+
+  res = count;
+  c = res.toInt();
+  if(RangeTest(FAIMSentriesDCMenu2,"Loops",c))
+  {
+     Loops = faims.Loops = c;
+     SendACK;    
+  }    
+}
+
+void FAIMSsetStepTime(char *msec)
+{
+  String res;
+  int    t;
+
+  res = msec;
+  t = res.toInt();
+  if(RangeTest(FAIMSentriesDCMenu3,"Step time, mS",t))
+  {
+     faims.StepDuration = t;
+     SendACK;    
+  }        
+}
+
+void FAIMSsetSteps(char *count)
+{
+  String res;
+  int    c;
+
+  res = count;
+  c = res.toInt();
+  if(RangeTest(FAIMSentriesDCMenu3,"Step count",c))
+  {
+     faims.Steps = c;
+     SendACK;    
+  }      
+}
+
+// Enable or disable the lock mode
+void FAIMSsetLock(char *state)
+{
+  String res;
+
+  res = state;
+  if((res != "TRUE") && (res != "FALSE"))
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;    
+  }
+  SendACK;
+  if(res != "TRUE") Lock = true;
+  else Lock = false;
+  LockLevel();
+}
+
+// Set the lock voltage setpoint
+void FAIMSsetLockSP(char *KV)
+{
+ String res;
+ float  kv;
+
+   res = KV;
+   kv = res.toFloat();
+   if((kv < 1.0) || (kv > 6))
+   {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;
+     return;    
+   }
+   LockSetpoint = kv;
+   DriveChange = 0;
+   SendACK;
+}
 
 

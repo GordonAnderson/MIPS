@@ -254,6 +254,8 @@ void TraceCapture(uint8_t tp);
 void TraceReport(void);
 void TraceEnable(void);
 
+void TWIreset(void);
+
 // SD file io commands
 void ListFiles(void);
 void DeleteFile(char *FileName);
@@ -269,6 +271,7 @@ void SerialtoEEPROM(char *brd, char *add);
 //void ShutterEnable(char *state);
 
 #endif
+
 
 
 

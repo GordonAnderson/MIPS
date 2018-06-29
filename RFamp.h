@@ -13,7 +13,7 @@
 #define RFAcpldERROR          0       // Error LED, active high
 #define RFAcpldSTATUS         1       // Status LED, active high
 #define RFAcpldCLOSED         2       // Clossed LED, active high. on when in clossed loop mode
-#define RFAcpldBLNK           3       // Used to apply a hold on RF level detectors
+#define RFAcpldRANGE          3       // Used to apply a hold on RF level detectors
 #define RFAcpldFSELECT        4       // DDS control line
 #define RFAcpldPSEL0          5       // DDS control line 
 #define RFAcpldPSEL1          6       // DDS control line
@@ -39,7 +39,7 @@
 #define RFAdacAUX1            2
 #define RFAdacAUX2            3
 
-// One struct for each DC bias board
+// One struct for each RF amp board
 typedef struct
 {
   int16_t Size;              // This data structures size in bytes
@@ -51,6 +51,7 @@ typedef struct
   float   SetPoint;
   bool    Mode;              // True = open loop mode
   bool    Invert;
+  
   // SPI device addresses
   int8_t  CPLDspi;           // SPI address for CPLD controller
   int8_t  DDSspi;            // SPI address for DDS ref osc generator
@@ -64,6 +65,8 @@ typedef struct
   float   FullScale;         // Fule scale voltage Vp-p
   float   Ro;                // Quad radius parameter, in mm
   float   mz;                // Target m/z value
+  float   ResolvingDC;       // Resolving DC voltage
+  float   PoleBias;          // Pole bias
 } RFAdata;                    
 
 // This structure saves the current state of the RFamp module
@@ -99,6 +102,9 @@ extern int   NumberOfRFAchannels;
 
 // Prototypes
 void ReportRFAchannels(void);
+void RFAsetPoleBias(char *Module, char *value);
+void RFAsetResolvingDC(char *Module, char *value);
 
 #endif
+
 

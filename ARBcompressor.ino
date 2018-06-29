@@ -7,7 +7,7 @@
 
 DialogBoxEntry ARBCompressorEntries[] = {
   {" Mode"                , 0, 1, D_LIST   , 0,  0, 8, 15, false, CmodeList, Cmode, NULL, ARBupdateMode},
-  {" Order"               , 0, 2, D_UINT8  , 0, 255, 1, 20, false, "%3d", &arb.Corder, NULL, ARBupdateCorder},
+  {" Order"               , 0, 2, D_INT    , 0, 65535, 1, 18, false, "%5d", &arb.Corder, NULL, ARBupdateCorder},
   {" Compression table"   , 0, 3, D_TITLE  , 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
   {" "                    , 0, 4, D_STRING , 0, 2, 0, 2, false, "%-20.20s", TwaveCompressorTable, NULL, NULL},
   {" Trig delay, mS"      , 0, 5, D_FLOAT  , 0.1, 99999, 0.1, 16, false, "%7.1f", &arb.Tdelay, NULL, NULL},
@@ -46,7 +46,8 @@ void ARBupdateMode(void)
 
 void ARBupdateCorder(void)
 {
-  SetByte(CompressBoard, TWI_SET_COMP_ORDER, arb.Corder);
+  if(arb.Corder <= 255) SetByte(CompressBoard, TWI_SET_COMP_ORDER, arb.Corder);
+  else SetWord(CompressBoard, TWI_SET_COMP_ORDER_EX, arb.Corder);
 }
 
 void ARBconfigureTrig(void)
@@ -120,7 +121,8 @@ void ARBCsetV2toV1(void)
 void ARBCsetOrder(void)
 {
    int b=SelectedBoard();
-   SetByte(CompressBoard,TWI_SET_COMP_ORDER, ARBarray[0]->Corder);
+   if(ARBarray[0]->Corder <= 255) SetByte(CompressBoard,TWI_SET_COMP_ORDER, ARBarray[0]->Corder);
+   else SetWord(CompressBoard,TWI_SET_COMP_ORDER_EX, ARBarray[0]->Corder);
    SelectBoard(b);           
 }
 
@@ -368,7 +370,7 @@ char ARBgetNextOperationFromTable(bool init)
     }
     if(OP == 'O')
     {
-      if((count >= 0) && (count <= 255))
+      if((count >= 0) && (count <= 65535))
       {
          ARBarray[0]->Corder = count;
          if(AcquireTWI()) ARBCsetOrder();
@@ -685,5 +687,6 @@ void SetARBCswitch(char *mode)
   SendNAK;
 }
 // End of compressor host command routines
+
 
 

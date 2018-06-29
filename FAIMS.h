@@ -42,6 +42,13 @@ extern float  DCoffsetRB;
 extern float  DCbiasRB;
 extern float  DCcvRB;
 
+extern bool   FAIMSscan;
+extern bool   FAIMSstepScan;
+
+extern bool   Lock;
+extern float  LockSetpoint;
+extern int    Loops;
+
 
 // Drive data structure
 typedef struct
@@ -96,6 +103,12 @@ typedef struct
   int    Loops;
   // Arc detector sensitivity
   float  ArcSens;
+  // Step based scanning
+  int    Steps;
+  int    StepDuration;        // in mSec
+  // External scan trigger options
+  char          ScanTrigger;  // Trigger input channel
+  int8_t        TriggerLevel; // Trigger level, 0,CHANGE,RISING, or FALLING
 } FAIMSdata;
 
 extern FAIMSdata  faims;
@@ -116,7 +129,20 @@ void FAIMSsetOffset(char *volts);
 void FAIMSsetRFharPcal(char *m, char *b);
 void FAIMSsetRFharNcal(char *m, char *b);
 
+void SaveFAIMS2EEPROM(void);
+
+void FAIMSsetCVstart(char *volts);
+void FAIMSsetCVend(char *volts);
+void FAIMSsetDuration(char *secs);
+void FAIMSsetLoops(char *count);
+void FAIMSsetStepTime(char *msec);
+void FAIMSsetSteps(char *count);
+
+void FAIMSsetLock(char *state);
+void FAIMSsetLockSP(char *KV);
+
 #endif
+
 
 
 

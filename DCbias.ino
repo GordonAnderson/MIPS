@@ -24,23 +24,20 @@
 //  - Board address points to module array, if only one board it can be board 0 or 1
 //  - Dynamically allocate the needed profile array and update all profile code
 //
-// November 3, 2017, to dos
-//  1.) Automatically remove the popup trip message when the power supply is reset
-//  2.) Add a automaic trip reset feature that will work as follows
-//        - If the supply trips wait 5 seconds and reset
-//        - If it trips 3 times in 30 seconds then leave it off
-//        - Turning on the power supply via UI or command will reset the logic
-//        - Enable with a serial command for auto reset
-//        - Implementation notes:
-//              bool      AutoReset       // Automatic trip reset enable if true
-//              bool      Tripped         // True when supply trips
-//              uint8_t   TrippedTimes    // Number of times the supply tripped
-//              uint32_t  TrippedTime     // Tripped time
-//              uint32_t  ResetTime       // Time to reset power supply if not 0
-//              When supply supply trips if time is 30 sec greater than TrippedTime set TrippedTime to time
-//              and set TrippedTimes to 1
-//              if Tripped and time is 5 sec greater the TrippedTime reset and inc TrippedTimes if TrippedTimes > 3
-//              do not auto reset
+// Added features
+//   November 3, 2017
+//      1.) Automatically remove the popup trip message when the power supply is reset
+//      2.) Add a automaic trip reset feature that will work as follows
+//          - If the supply trips wait 5 seconds and reset
+//          - If it trips 3 times in 45 seconds then leave it off
+//          - Turning on the power supply via UI or command will reset the logic
+//          - Enable with a serial command for auto reset
+//   February 27, 2018
+//      1.) Added support for rev 4.0 50 volt bias board with the AD5593 analog io chip.
+//          this chip allow readback of the offset as well as supply voltages. Will up grade all
+//          hardware in the future to use this chip. The firmware automatically detects this chip
+//          using it TWI address of 0x10 or 0x11.
+//      2.) Added host command to return supply voltages monitored with AD5593
 //
 // Gordon Anderson
 //
@@ -67,7 +64,6 @@ int     ProfileDwell;
 #define  Filter 0.5         // Weak filter coefficent
 #define  StrongFilter 0.05  // Strong filter coefficent
 
-//float Profiles[10][16];
 //MIPS Threads
 Thread DCbiasThread  = Thread();
 
@@ -378,6 +374,14 @@ void DCbiasOffsetCal(void)
   CC.ADCreadback=NULL;
   if((NumberOfDCChannels > 8) && (DCbDarray[0]->OffsetReadback) && (b == 1)) CC.ADCreadback=&DCbDarray[b]->DCCD[7].DCmon;
   if((NumberOfDCChannels < 8) && (DCbDarray[0]->OffsetReadback) && (b == 0)) CC.ADCreadback=&DCbDarray[b]->DCCD[7].DCmon;
+  // If the DACadr is 0x10 or 0x11 then setup for the AD5593 chip
+  if((DCbDarray[b]->DACadr & 0xFE) == 0x10)
+  {
+    // Here if using the AD5593
+    CC.ADCpointer = &AD5593readADC;
+    CC.ADCaddr=DCbDarray[b]->DACadr;
+    CC.ADCreadback=&DCbDarray[b]->DCoffset.DCmon;;
+  }
   // Define this channels name
   if(CalChannel <= 8) sprintf(Name," Offset for channel 1-8");
   else sprintf(Name,"Offset for channel 9-16");
@@ -532,6 +536,33 @@ int DCBadd2chan(int brd, int ch)
   return(0);
 }
 
+// Init the AD5593 (Analog and digital IO chip) for the DCbias module. The following 
+// setup requirements:
+// CH0 = DAC out, offset control
+// CH1 = ADC in, offset readback
+// CH2 = ADC in, positive HV
+// CH3 = ADC in, negative HV
+// CH4 = ADC in, 3.3V logic supply
+// External 2.5V reference with 0 to 2.5V range
+// No pullups
+void DCbiasAD5593init(int8_t addr)
+{
+   // General purpose configuration
+   AD5593write(addr, 3, 0x0100);
+   // Set ext reference
+   AD5593write(addr, 11, 0x0000);
+   // Set LDAC mode
+   AD5593write(addr, 7, 0x0000);
+   // Set DAC outputs channels
+   AD5593write(addr, 5, 0x0001);
+   // Init DAC channel 0 to mid range
+   AD5593writeDAC(addr, 0, 32767);
+   // Set ADC input channels
+   AD5593write(addr, 4, 0x001E);
+   // Turn off all pulldowns
+   AD5593write(addr, 6, 0x0000);   
+}
+
 // This function is called at powerup to initiaize the DC bias board(s).
 void DCbias_init(int8_t Board, int8_t addr)
 {
@@ -564,6 +595,12 @@ void DCbias_init(int8_t Board, int8_t addr)
   {
     RestoreDCbiasSettings(true);
     *DCbD = dcbd;        // Copy back into the configuration data structure array
+  }
+  // If the DAC TWI address is 0x10 or 0x11 thne the device is a AD5593.
+  // Setup as needed
+  if((DCbDarray[Board]->DACadr & 0xFE) == 0x10)
+  {
+    DCbiasAD5593init(DCbDarray[Board]->DACadr);
   }
   if(NumberOfDCChannels == 0)
   {
@@ -608,7 +645,7 @@ void DCbias_init(int8_t Board, int8_t addr)
 }
 
 // This function is called every 100 mS to process the DC bias board(s).
-// Updated March 13, 2016: Only update the DACs when the values have changed.
+// Only update the DACs when the values have changed.
 void DCbias_loop(void)
 {
   static  bool  inited = false;
@@ -652,14 +689,16 @@ void DCbias_loop(void)
       if((DCbDarray[b]->DCoffset.VoltageSetpoint != DCbiasStates[b]->DCbiasO) || DCbiasUpdate)
       {
         DCbiasStates[b]->DCbiasO = DCbDarray[b]->DCoffset.VoltageSetpoint;
-        AD5625(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(DCbDarray[b]->DCoffset.VoltageSetpoint,&DCbDarray[b]->DCoffset.DCctrl),3);
+        if((DCbDarray[b]->DACadr & 0xFE) == 0x10) AD5593writeDAC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(DCbDarray[b]->DCoffset.VoltageSetpoint,&DCbDarray[b]->DCoffset.DCctrl));
+        else AD5625(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(DCbDarray[b]->DCoffset.VoltageSetpoint,&DCbDarray[b]->DCoffset.DCctrl),3);
       }
     }
     else
     {
       // Set to zero if power is off
       DCbiasStates[b]->DCbiasO = 0;
-      AD5625(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCoffset.DCctrl),3);      
+      if((DCbDarray[b]->DACadr & 0xFE) == 0x10) AD5593writeDAC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCoffset.DCctrl));
+      else AD5625(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCoffset.DCctrl),3);      
     }
     // Update all output channels. SPI interface for speed
     if(DCbiasUpdate) DelayMonitoring();
@@ -697,6 +736,10 @@ void DCbias_loop(void)
            if((NumberOfDCChannels < 8) && (b == 0)) offsetV = Counts2Value(ADCvals[7],&DCbDarray[b]->DCCD[7].DCmon); 
          }
          else offsetV = DCbDarray[b]->DCoffset.VoltageSetpoint;
+         if((DCbDarray[b]->DACadr & 0xFE) == 0x10)
+         {
+            offsetV = Counts2Value(AD5593readADC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCmon.Chan),&DCbDarray[b]->DCoffset.DCmon);
+         }
          if(SuppliesOff) offsetV = 0;
          DCbiasStates[b]->Readbacks[i] = Filter * (Counts2Value(ADCvals[i],&DCbDarray[b]->DCCD[i].DCmon) + offsetV) + (1-Filter) * DCbiasStates[b]->Readbacks[i];
          if(abs(DCbiasStates[b]->Readbacks[i]) > MaxDCbiasVoltage) MaxDCbiasVoltage = abs(DCbiasStates[b]->Readbacks[i]);
@@ -1183,8 +1226,8 @@ void SetDCbiasRange(int board, int range)
   {
     if(DCbDarray[board] != NULL)
     {
-      DCbDarray[board]->MaxVoltage = range;
-      DCbDarray[board]->MinVoltage = -range;
+      DCbDarray[board]->MaxVoltage = abs(range);
+      DCbDarray[board]->MinVoltage = -abs(range);
       // Set the gains and offsets for the ADC and DAC channels for this board
       for(int i=0; i < 8; i++)
       {
@@ -1205,7 +1248,7 @@ void SetDCbiasRange(int board, int range)
   SendNAK;
 }
 
-// This command sets the TWI addresses for the DAC and ADC and the SPI address for the qctal DAC
+// This command sets the TWI addresses for the DAC and ADC and the SPI address for the octal DAC
 // for extended operation. The addressed set are:
 // SPI = 0
 // ADC = 0x20
@@ -1364,6 +1407,48 @@ void SetDCbiasADCtwiADD(int module, int add)
   }
   DCbDarray[module]->ADCadr = add;
   SendACK;  
+}
+
+// Sets the DAC TWI address, radix 10
+void SetDCbiasDACtwiADD(int module, int add)
+{
+  int b;
+  
+  if((DCbDarray[module] == NULL) || (module < 0) || (module >3))
+  {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;    
+     return;    
+  }
+  DCbDarray[module]->DACadr = add;
+  SendACK;  
+}
+
+void ReportDCbiasSuppplies(int module)
+{
+  int b;
+  
+  if((DCbDarray[module] == NULL) || (module < 0) || (module >3))
+  {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;    
+     return;    
+  }
+  if((DCbDarray[module]->DACadr & 0xFE) != 0x10)
+  {
+     SetErrorCode(ERR_NOTSUPPORTED);
+     SendNAK;    
+     return;  
+  }
+  SendACKonly;
+  if(SerialMute) return;
+  // Report logic voltage
+  int i = AD5593readADC(DCbDarray[module]->DACadr, 4, 10);
+  serial->print("Logic supply = "); serial->print((2.5 * i / 65536) * 2.0); serial->println(" volts"); 
+  i = AD5593readADC(DCbDarray[module]->DACadr, 2, 10);
+  serial->print("Positive supply = "); serial->print((2.5 * i / 65536) * 101); serial->println(" volts"); 
+  i = AD5593readADC(DCbDarray[module]->DACadr, 3, 10);
+  serial->print("Negative supply = "); serial->print((-3.3 + (2.5 * i / 65536)) * 31.3); serial->println(" volts"); 
 }
 
 // October 15, 2016. Added the DCbias profile capability. This allow up to 10 voltage
@@ -1795,5 +1880,34 @@ void GetDCbiasPtrigger(void)
 }
 
 // End of DCbias channel pulse generation function.
+
+// This function saves the DC bias module data to EEPROM. All detected DC bias modules are saved.
+void SaveDCB2EEPROM(void)
+{
+  int  brd;
+  bool berr = false;
+  
+  brd = SelectedBoard();
+  for(int b=0; b<4; b++)
+  {
+    if(DCbDarray[b] != NULL)
+    {
+      SelectBoard(b);
+      if (WriteEEPROM(DCbDarray[b], DCbDarray[b]->EEPROMadr, 0, sizeof(DCbiasData)) != 0) berr = true;
+    }
+  }
+  SelectBoard(brd);
+  if(berr)
+  {
+    SetErrorCode(ERR_EEPROMWRITE);
+    SendNAK;
+    return;
+  }
+  SendACK;
+}
+
+
+
+
 
 

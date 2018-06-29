@@ -750,7 +750,7 @@ void Filament_loop(void)
         // Read and filter all the readback and monitor values
         if (adcStatus == 0)
         {
-          // If this is rev 3 then read the emission current dar channel
+          // If this is rev 3 then read the emission current per channel
           if(FDarray[b].Rev == 3)
           {
              float BCfilter = 0.05;
@@ -1308,6 +1308,30 @@ void ReportBiasCurrent(void)
   if (!SerialMute) serial->println(BiasCurrent);
 }
 
+// This function saves the Filament module data to EEPROM. All detected Filament modules are saved.
+void SaveFIL2EEPROM(void)
+{
+  int  brd;
+  bool berr = false;
+  
+  brd = SelectedBoard();
+  for(int b=0; b<2; b++)
+  {
+    if(FilamentBoards[b])
+    {
+      SelectBoard(b);
+      if (WriteEEPROM(&FDarray[b], FDarray[b].EEPROMadr, 0, sizeof(FilamentData)) != 0) berr = true;
+    }
+  }
+  SelectBoard(brd);
+  if(berr)
+  {
+    SetErrorCode(ERR_EEPROMWRITE);
+    SendNAK;
+    return;
+  }
+  SendACK;
+}
 
 
 

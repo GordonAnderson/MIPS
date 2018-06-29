@@ -9,6 +9,7 @@
 // Gordon Anderson
 //
 #include "Hardware.h"
+#include "Variants.h"
 
 int    PBled;
 PBledStates  PBledMode = OFF;
@@ -228,6 +229,7 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
       if (CC->DACout != NULL)
       {
         if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
+        else if ((CC->DACaddr & 0xFE) == 0x10) { AD5593writeDAC(CC->DACaddr, CC->DACout->Chan, DACZeroCounts); delay(100);}
         else { AD5625(CC->DACaddr, CC->DACout->Chan, DACZeroCounts); delay(100);}
       }
       if (CC->ADCreadback != NULL) ADCZeroCounts = CC->ADCpointer(CC->ADCaddr, CC->ADCreadback->Chan, 100);
@@ -237,6 +239,7 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
       if (CC->DACout != NULL)
       {
         if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
+        else if ((CC->DACaddr & 0xFE) == 0x10) { AD5593writeDAC(CC->DACaddr, CC->DACout->Chan, DACMidCounts); delay(100);}
         else { AD5625(CC->DACaddr, CC->DACout->Chan, DACMidCounts); delay(100);}
       }
       if (CC->ADCreadback != NULL) ADCMidCounts = CC->ADCpointer(CC->ADCaddr, CC->ADCreadback->Chan, 100);
@@ -255,8 +258,8 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
           if (DACZeroCounts > 65535) DACZeroCounts = 65535;
           if (CC->DACout != NULL)
           {
-//            if (CC->DACaddr < 8) CC->ADCpointer(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
             if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
+            else if ((CC->DACaddr & 0xFE) == 0x10) { AD5593writeDAC(CC->DACaddr, CC->DACout->Chan, DACZeroCounts); delay(100);}
             else { AD5625(CC->DACaddr, CC->DACout->Chan, DACZeroCounts); delay(100);}
           }
           if (CC->ADCreadback != NULL) ADCZeroCounts = CC->ADCpointer(CC->ADCaddr, CC->ADCreadback->Chan, 100);
@@ -269,8 +272,8 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
           if (DACMidCounts > 65535) DACMidCounts = 65535;
           if (CC->DACout != NULL)
           {
-//            if (CC->DACaddr < 8) CC->ADCpointer(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
             if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
+            else if ((CC->DACaddr & 0xFE) == 0x10) { AD5593writeDAC(CC->DACaddr, CC->DACout->Chan, DACMidCounts); delay(100);}
             else { AD5625(CC->DACaddr, CC->DACout->Chan, DACMidCounts); delay(100);}
           }
           if (CC->ADCreadback != NULL) ADCMidCounts = CC->ADCpointer(CC->ADCaddr, CC->ADCreadback->Chan, 100);
@@ -445,7 +448,7 @@ void RebootStatus(void)
           break;
    }
    serial->println(millis());
-
+   serial->print("TWI failure / reset count: ");
    TraceReport();
 }
 
@@ -714,20 +717,33 @@ int WriteEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count)
 //  4.) Generate a STOP condition
 void TWI_RESET(void)
 {
-  /*
-  // Set SDA as input, clock as output
-  TWI_SDA_IN;
-  TWI_SCL_OUT;
-  for(int i = 0; i < 10; i++)
+  // Do resect procedure for both board addresses
+  int brd = SelectedBoard();
+  for(int b=0; b<2;b++)
   {
-    if(TWI_SDA_data == HIGH) break;
-    TWI_SCL_HI;
-    TWI_SCL_LOW;
-    TWI_SCL_HI;
+    SelectBoard(b);
+    for(int i=0;i<2;i++)
+    {
+      TWI_START();
+      TWI_STOP();
+      TWI_SDA_IN;
+      TWI_SCL_OUT;
+      for(int i = 0; i < 10; i++)
+      {
+        TWI_SCL_HI;
+        TWI_SCL_LOW;
+        delayMicroseconds(5);
+        TWI_SCL_HI;
+        delayMicroseconds(5);
+        if(TWI_SDA_data == HIGH) break;
+      }
+      TWI_STOP();
+      TWI_STOP();
+    }
   }
-  TWI_STOP();
+  SelectBoard(brd);
   return;
-  */
+ 
   TWI_START();
   TWI_STOP();
   // Generate a bunch of clocks
@@ -811,6 +827,14 @@ int8_t TWI_READ(bool Reply)
   return (val);
 }
 
+// Called when a TWI error is detected. This function will reset the TWI interface and reinit the
+// wire driver
+void TWIerror(void)
+{
+  TWI_RESET();
+  Wire.begin();
+}
+
 // The following routines support the Analog Devices DAC and ADC used to monitor and
 // control voltages in the MIPS system.
 
@@ -821,7 +845,7 @@ int8_t TWI_READ(bool Reply)
 // vals = pointer to a memory block where results are saved.
 //        the values are 0 to 65535 reguardless of ADC resolution
 //
-// Return the status of the TWI transaction, 0 if no errors.
+// Return the status of the TWI transaction, 0 if no errors or -1.
 //
 // Note: ARM byte order is LSB then MSB!
 //
@@ -830,13 +854,15 @@ int8_t TWI_READ(bool Reply)
 // write and the read of data.
 int AD7998(int8_t adr, uint16_t *vals)
 {
-  int   iStat, i;
+  int   iStat, i,v;
   byte  *bvals;
 
   for (i = 0; i < 8; i++)
   {
     AD7998(adr, i);
-    vals[i] = AD7998(adr, i);
+    v = AD7998(adr, i);
+    if(v == -1) return(-1);
+    vals[i] = v;
   }
   return (0);
 
@@ -872,15 +898,52 @@ int AD7998(int8_t adr, uint16_t *vals)
 // 4 channel ADC
 int AD7994(int8_t adr, uint16_t *vals)
 {
-  int   iStat, i;
+  int   iStat, i, v;
   byte  *bvals;
 
   for (i = 0; i < 4; i++)
   {
     AD7994(adr, i);
-    vals[i] = AD7994(adr, i);
+    v = AD7994(adr, i);
+    if(v == -1) return(-1);
+    vals[i] = v;
+
   }
   return (0);
+}
+
+int AD7994_b(int8_t adr, int8_t chan)
+{
+  unsigned int val;
+  
+  AcquireTWI();
+  chan++;
+  if (chan == 3) chan = 4;
+  else if (chan == 4) chan = 8;
+  AtomicBlock< Atomic_RestoreState > a_Block;
+  Wire.beginTransmission(adr);
+  if(Wire.endTransmission(false) !=0)
+  {
+    TWIerror();
+    TWIfails++;
+    ReleaseTWI();
+    return(-1);
+  }
+  Wire.requestFrom(adr, 2, (chan) << 4, 1);
+  while (Wire.available() < 2);
+  val = (Wire.read() << 8) & 0xFF00;
+  val |= (Wire.read()) & 0xFF;
+  val &= 0xFFF;
+  val <<= 4;
+  if(Wire.endTransmission() !=0)
+  {
+    TWIerror();
+    TWIfails++;
+    ReleaseTWI();
+    return(-1);
+  }
+  ReleaseTWI();
+  return(val);
 }
 
 int AD7994(int8_t adr, int8_t chan)
@@ -888,6 +951,7 @@ int AD7994(int8_t adr, int8_t chan)
   int   iStat, i;
   unsigned int val;
 
+  if(MIPSconfigData.TWIhardware) return(AD7994_b(adr,chan));
   AcquireTWI();
   while (1)
   {
@@ -909,6 +973,7 @@ int AD7994(int8_t adr, int8_t chan)
   }
   Wire.begin();  // Release control of clock and data lines
   ReleaseTWI();
+  if(iStat != 0) return(-1); 
   return (val);
 }
 
@@ -918,18 +983,28 @@ int AD7998_b (int8_t adr, int8_t chan)
   unsigned int val;
   
   AcquireTWI();
+  AtomicBlock< Atomic_RestoreState > a_Block;
   Wire.beginTransmission(adr);
-  Wire.endTransmission(false);
-
+  if(Wire.endTransmission(false) !=0)
+  {
+    TWIerror();
+    TWIfails++;
+    ReleaseTWI();
+    return(-1);
+  }
   Wire.requestFrom(adr, 2, 0x80 | chan << 4, 1);
-
   while (Wire.available() < 2);
-
   val = (Wire.read() << 8) & 0xFF00;
   val |= (Wire.read()) & 0xFF;
   val &= 0xFFF;
   val <<= 4;
-  Wire.endTransmission();
+  if(Wire.endTransmission() !=0)
+  {
+    TWIerror();
+    TWIfails++;
+    ReleaseTWI();
+    return(-1);
+  }
   ReleaseTWI();
   return(val);
 }
@@ -940,7 +1015,7 @@ int AD7998(int8_t adr, int8_t chan)
   int   iStat, i;
   unsigned int val;
 
-//  AtomicBlock< Atomic_RestoreState > a_Block;
+  if(MIPSconfigData.TWIhardware) return(AD7998_b(adr,chan));
   AcquireTWI();
   while (1)
   {
@@ -981,6 +1056,97 @@ int AD7994(int8_t adr, int8_t chan, int8_t num)
   return (val / num);
 }
 
+// AD5593 IO routines. This is a analog and digitial IO chip with
+// a TWI interface. The following are low level read and write functions,
+// the modules using this device are responsible for initalizing the chip.
+
+// Write to AD5593
+// Return 0 if no error else an error code is returned
+int AD5593write(uint8_t addr, uint8_t pb, uint16_t val)
+{
+  int iStat;
+  
+  AcquireTWI();
+  Wire.beginTransmission(addr);
+  Wire.write(pb);
+  Wire.write((val >> 8) & 0xFF);
+  Wire.write(val & 0xFF);
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    iStat = Wire.endTransmission();
+  }
+  ReleaseTWI();
+  return (iStat);
+}
+
+// Read from AD5593R
+// returns -1 on any error
+int AD5593readWord(uint8_t addr, uint8_t pb)
+{
+  int iStat;
+  
+  AcquireTWI();
+  Wire.beginTransmission(addr);
+  Wire.write(pb);
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    iStat = Wire.endTransmission();
+  }
+  if(iStat != 0)
+  {
+    ReleaseTWI();
+    return (-1);
+  }
+  // Now read the data word
+  int i = 0,j = 0;
+  Wire.requestFrom(addr, (uint8_t)2);
+  while(Wire.available())
+  {
+     if(i==0) j = Wire.read() << 8;
+     if(i==1) j |= Wire.read();
+     i++;
+  }
+  ReleaseTWI();
+  return(j);
+}
+
+int AD5593readADC(int8_t addr, int8_t chan)
+{
+   int iStat;
+   
+   // Select the ADC channel number
+   if((iStat = AD5593write(addr, 0x02, (1 << chan))) != 0) return(-1);
+   // Read the data and make sure the address is correct then left 
+   // justify in 16 bits
+   int i = AD5593readWord(addr, 0x40);
+   if(((i >> 12) & 0x7) != chan) return(-1);
+   i <<= 4;
+   return(i & 0xFFFF);
+}
+
+
+int AD5593readADC(int8_t addr, int8_t chan, int8_t num)
+{
+  int i,j, val = 0;
+
+  for (i = 0; i < num; i++) 
+  {
+    j = AD5593readADC(addr, chan);
+    if(j == -1) return(-1);
+    val += j;
+  }
+  return (val / num);
+}
+
+int AD5593writeDAC(int8_t addr, int8_t chan, int val)
+{
+   uint16_t  d;
+   // convert 16 bit DAC value into the DAC data data reg format
+   d = (val>>4) | (chan << 12) | 0x8000;
+   return(AD5593write(addr, 0x10 | chan, d));
+}
+
+// End of AD5593 routines
 
 // AD5625 is a 4 channel DAC.
 //
@@ -1009,6 +1175,11 @@ int AD5625(int8_t adr, uint8_t chan, uint16_t val,int8_t Cmd)
   {
 //    AtomicBlock< Atomic_RestoreState > a_Block;
     iStat = Wire.endTransmission();
+    if(iStat != 0)
+    {
+       TWIerror();
+       TWIfails++;
+    }
   }
   ReleaseTWI();
   return (iStat);
@@ -2336,19 +2507,91 @@ void ListFiles(void)
     SendNAK;
     return;
   }
-  AtomicBlock< Atomic_RestoreState > a_Block;
-  SD.begin(_sdcs);
-  root = SD.open("/", FILE_READ);
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    SD.begin(_sdcs);
+    root = SD.open("/", FILE_READ);
+    root.rewindDirectory();
+  }
   SendACKonly;
-  root.rewindDirectory();
   while (true)
   {
-    if (!(entry = root.openNextFile())) break;
+    {
+      AtomicBlock< Atomic_RestoreState > a_Block;
+      entry = root.openNextFile();
+    }
+    if (!entry) break;
     serial->print(entry.name());
     serial->print(", ");
     serial->println(entry.size());
   }
-  root.close();  
+    {
+      AtomicBlock< Atomic_RestoreState > a_Block;
+      root.close();  
+    }
+}
+
+File root;
+int DeletedCount = 0;
+int FolderDeleteCount = 0;
+int FailCount = 0;
+String rootpath = "/";
+
+void rm(File dir, String tempPath) {
+  while(true) {
+    WDT_Restart(WDT);
+    File entry =  dir.openNextFile();
+    String localPath;
+
+    serial->println("");
+    if (entry) {
+      if ( entry.isDirectory() )
+      {
+        localPath = tempPath + entry.name() + rootpath + '\0';
+        char folderBuf[localPath.length()];
+        localPath.toCharArray(folderBuf, localPath.length() );
+        rm(entry, folderBuf);
+
+
+        if( SD.rmdir( folderBuf ) )
+        {
+          serial->print("Deleted folder ");
+          serial->println(folderBuf);
+          FolderDeleteCount++;
+        } 
+        else
+        {
+          serial->print("Unable to delete folder ");
+          serial->println(folderBuf);
+          FailCount++;
+        }
+      } 
+      else
+      {
+        localPath = tempPath + entry.name() + '\0';
+        char charBuf[localPath.length()];
+        localPath.toCharArray(charBuf, localPath.length() );
+
+        if( SD.remove( charBuf ) )
+        {
+          serial->print("Deleted ");
+          serial->println(localPath);
+          DeletedCount++;
+        } 
+        else
+        {
+          serial->print("Failed to delete ");
+          serial->println(localPath);
+          FailCount++;
+        }
+
+      }
+    } 
+    else {
+      // break out of recursion
+      break;
+    }
+  }
 }
 
 void DeleteFile(char *FileName)
@@ -2359,8 +2602,20 @@ void DeleteFile(char *FileName)
     SendNAK;
     return;
   }
-  AtomicBlock< Atomic_RestoreState > a_Block;
   SD.begin(_sdcs);
+  if(strcmp(FileName,"*") == 0)
+  {
+    // Delete all files on SD card
+
+    root = SD.open("/");
+    delay(2000);
+    WDT_Restart(WDT);
+
+    rm(root, rootpath);
+    SendACK;
+    return;
+  }
+  AtomicBlock< Atomic_RestoreState > a_Block;
   // Remove the existing default.cfg file
   SD.remove(FileName); 
   SendACK; 
@@ -2445,7 +2700,7 @@ void GetFile(char *FileName)
 // The function will receive a file from the USB connected host. The file must be sent
 // in hex and use the following format:
 // First the file name and file size, in bytes (decimal) are sent. If the file can
-// be created and ACK is sent to the host otherwise a NAK is sent. The process stops
+// be created an ACK is sent to the host otherwise a NAK is sent. The process stops
 // if a NAK is sent. 
 // If an ACK is sent to the host then the host will send the data for the body of the 
 // file in hex. After all the data is sent then a 8 bit CRC is sent, in decimal. If the
@@ -2784,4 +3039,13 @@ void CPUtemp(void)
   SendACKonly;
   if(!SerialMute) serial->println(treal);
 }
+
+void TWIreset(void)
+{
+  TWI_RESET();
+  Wire.begin();
+  Wire.setClock(100000);
+  SendACK;
+}
+
 

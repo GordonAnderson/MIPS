@@ -539,6 +539,19 @@ int FindInList(char *list, char *entry)
   return -1;
 }
 
+// This function is used by the serial IO command processor to test
+// of valid range of a parameter.
+bool RangeTest(DialogBoxEntry *des, char *EntryName, float fval)
+{
+  DialogBoxEntry *de;
+  
+  de = GetDialogEntries(des, EntryName);
+  if((fval >= de->Min) && (fval <= de->Max)) return true;
+  SetErrorCode(ERR_BADARG);
+  SendNAK;
+  return false;
+}
+
 
 
 

@@ -27,6 +27,8 @@ extern bool Suspend;
 extern bool EnableSerialNavigation;
 extern uint32_t BrightTime;
 
+extern uint32_t TWIfails;
+
 #define EnableSerial
 #define SerialBAUD    9600
 
@@ -68,6 +70,10 @@ typedef struct
   char     BootImage[20];     // Defines a image (bmp) to load at boot up, if found and loaded then the display
                               // is diabled.
   int      BackLight;         // Backlight level in percent
+  bool     Ser1ena;           // If true then serial port 1 is avalibale for general IO
+  int      signature;         // This is used to validate a restore from flash function, 0xA55AE99E
+  bool     DisableDisplay;    // Save the diable display state  
+  bool     TWIhardware;       // If true use hardware interface to read ADC else bit bang
 } MIPSconfigStruct;
 
 void   DisplayIntensity(void);
@@ -117,6 +123,7 @@ extern char *BoardVariantsNames;
 extern void *BoardVariants[];
 
 #endif
+
 
 
 

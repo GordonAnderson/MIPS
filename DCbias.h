@@ -81,8 +81,10 @@ void  DCbiasOffsetable(char *schan, char *state);
 void  DCbiasUseOneOffset(char *state);
 void  DCbiasOffsetReadback(char *state);
 void  SetDCbiasADCtwiADD(int module, int add);
+void  SetDCbiasDACtwiADD(int module, int add);
 void  SetDCbiasRange(int board, int range);
 void  SetDCbiasExtended(int board);
+void ReportDCbiasSuppplies(int module);
 
 void SetDCbiasProfile(void);
 void GetDCbiasProfile(int num);
@@ -95,7 +97,10 @@ void SetDCbiasPena(char *state);
 void SetDCbiasPtrigger(char *src);
 void GetDCbiasPtrigger(void);
 
+void SaveDCB2EEPROM(void);
+
 #endif
+
 
 
 

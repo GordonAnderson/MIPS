@@ -152,6 +152,11 @@ bool ScanIP(char *ips, uint8_t *ip)
 
 void Ethernet_init(void)
 {
+  if(MIPSconfigData.Ser1ena)
+  {
+    Serial1.begin(115200);
+    return;
+  }
   // Exit if WiFi is enabled
   if(MIPSconfigData.UseWiFi == true) return;
   // See if we can find a ethernet adapter
@@ -178,7 +183,7 @@ void Ethernet_test(void)
 
 void ProcessEthernet(void)
 {
-  if(!EthernetPresent) return;
+  if((!EthernetPresent) && (!MIPSconfigData.Ser1ena)) return;
   while (Serial1.available() > 0) 
   {
     serial = &Serial1;
@@ -306,6 +311,7 @@ void SetEGATE(char *ips)
     SendNAK;
   }
 }
+
 
 
 

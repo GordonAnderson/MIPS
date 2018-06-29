@@ -14,7 +14,9 @@
 #include "Dialog.h"
 #include "Variants.h"
 
-MIPSconfigStruct MIPSconfigData = {sizeof(MIPSconfigStruct),"MIPS",2,0,0,10,false,true,1.0,"",false,false,"",5};
+uint32_t TWIfails = 0;
+
+MIPSconfigStruct MIPSconfigData = {sizeof(MIPSconfigStruct),"MIPS",2,0,0,10,false,true,1.0,"",false,false,"",5,false,0xA55AE99E,false,false};
 
 TwaveData Twave_Rev1 = {sizeof(TwaveData),"Twave",1,1000000,03,0x10,0x20,0x27,0x69,
                         20.0, 0, 76.53, 905, 0, 1, 0,
@@ -36,7 +38,7 @@ TwaveData Twave_Rev2 = {sizeof(TwaveData),"Twave",2,100000,03,0x10,0x20,0x27,0x6
                         false,
                         false,2,10,1,1.0,1.0,1.0,1.0,0,-1,0,-1,
                         0,-1,false,
-                        0,1
+                        0,1,0.0
                         };
                         
 TwaveData Twave_Rev3 = {sizeof(TwaveData),"Twave",3,100000,03,0x1F,0x24,0x27,0x58,
@@ -48,7 +50,7 @@ TwaveData Twave_Rev3 = {sizeof(TwaveData),"Twave",3,100000,03,0x1F,0x24,0x27,0x5
                         false,
                         false,2,10,1,1.0,1.0,1.0,1.0,0,-1,0,-1,
                         0,-1,false,
-                        0,1
+                        0,1,0.0
                         };
 
 TwaveData Twave_Rev5 = {sizeof(TwaveData),"Twave",5,100000,03,0x1F,0x24,0x27,0x58,
@@ -60,7 +62,7 @@ TwaveData Twave_Rev5 = {sizeof(TwaveData),"Twave",5,100000,03,0x1F,0x24,0x27,0x5
                         false,
                         false,2,10,1,1.0,1.0,1.0,1.0,0,-1,0,-1,
                         0,-1,false,
-                        0,1
+                        0,1,0.0
                         };
 
 RFdriverData  RFDD_A_Rev_1 = {sizeof(RFdriverData),"RFdriver", 1, 2, 0x20, 0x69, 0x50,
@@ -101,7 +103,7 @@ DCbiasData  DCbD_250_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 250, -250, true
                               0, 5, 113.7, 32767, 5, 113.7, 32767,        // Ch 6
                               0, 6, 113.7, 32767, 6, 113.7, 32767,        // Ch 7
                               0, 7, 113.7, 32767, 7, 113.7, 32767,        // Ch 8
-                              0, 0, -113.7, 32767, 0, 0, 0,               // Offset control, DAC only
+                              0, 0, -113.7, 32767, 1, -113.7, 32767,      // Offset control, DAC only unless using AD5593
                               false,false,
                              };
 
@@ -114,7 +116,7 @@ DCbiasData  DCbD_250_Rev_2 = {sizeof(DCbiasData),"DCbias", 2, 8, 250, -250, true
                               0, 5, 113.7, 32767, 5, 113.7, 32767,        // Ch 6
                               0, 6, 113.7, 32767, 6, 113.7, 32767,        // Ch 7
                               0, 7, 113.7, 32767, 7, 113.7, 32767,        // Ch 8
-                              0, 0, -113.7, 32767, 0, 0, 0,               // Offset control, DAC only
+                              0, 0, -113.7, 32767, 1, -113.7, 32767,      // Offset control, DAC only unless using AD5593
                               false,false,
                              };
 
@@ -127,7 +129,7 @@ DCbiasData  DCbD_750_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 750, -750, true
                               0, 5, -26, 32767, 5, 26, 32767,        // Ch 6
                               0, 6, -26, 32767, 6, 26, 32767,        // Ch 7
                               0, 7, -26, 32767, 7, 26, 32767,        // Ch 8
-                              0, 0, 26, 32767, 0, 0, 0,               // Offset control, DAC only
+                              0, 0, 26, 32767, 1, 26, 32767,         // Offset control, DAC only unless using AD5593
                               false,false,
                              };
           
@@ -140,7 +142,7 @@ DCbiasData  DCbD_50_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 50, -50, true, 2
                              0, 5, 609.48, 32767, 5, 609.48, 32767,        // Ch 6
                              0, 6, 609.48, 32767, 6, 609.48, 32767,        // Ch 7
                              0, 7, 609.48, 32767, 7, 609.48, 32767,        // Ch 8
-                             0, 0, -609.48, 32767, 0, 0, 0,               // Offset control, DAC only
+                             0, 0, -609.48, 32767, 1, -609.48, 32767,      // Offset control, DAC only unless using AD5593
                              false,false,
                             };
 
@@ -153,7 +155,7 @@ DCbiasData  DCbD_60_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 60, -60, true, 2
                              0, 5, 540, 32767, 5, 540, 32767,        // Ch 6
                              0, 6, 540, 32767, 6, 540, 32767,        // Ch 7
                              0, 7, 540, 32767, 7, 540, 32767,        // Ch 8
-                             0, 0, -540, 32767, 0, 0, 0,             // Offset control, DAC only
+                             0, 0, -540, 32767, 1, -540, 32767,      // Offset control, DAC only unless using AD5593
                              false,false,
                             };
                             
@@ -172,6 +174,9 @@ FAIMSdata  FAIMS_Rev_1 = {sizeof(FAIMSdata),"FAIMS", 1, 1000000, 25.0, false, 4,
                           false,0.001,0.01,10,
                           1,
                           50.0,
+                          25,
+                          200,
+                          'R',RISING
                           };
                          
 ESIdata  ESI_Rev_1 =   { sizeof(ESIdata),"ESI", 1,
@@ -199,12 +204,13 @@ FilamentData FILAMENT_Rev_1 = {sizeof(FilamentData),"Filament",1,2,
 ARBdata  ARB_Rev_1 = {sizeof(ARBdata),"ARB", 1, false, 1, false, 100, 0, true,20000,25,0,32,ARB_SIN,
                       1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,
                       0x40,0x50,
-                      "TWAVE",25.0,'Q',RISING,1000,1,0,-1,
+                      "TWAVE",25.0,'R',RISING,1000,1,0,-1,
                       false,false,2,1,10.0,10.0,10.0,10.0,
                       0,-1,0,-1,
                       false,
                       false,0,0,
-                      0,1
+                      0,1,
+                      0
                      };
 
 HOFAIMSdata  HOFAIMS_Rev_1 = {sizeof(HOFAIMSdata),"HOFAIMS", 1, false, 0, 25.0, 0, 20, 50,
@@ -240,6 +246,7 @@ RFAdata RFA_Rev1 = {sizeof(RFAdata),"RFamp",1,false,1000000,0,0,true,false,3,4,0
                     6,5.26,-156.71,
                     7,3.6614,-147.14,
                     4000,4.5,600,
+                    0.0,0.0,
                    };
                    
 #ifdef TestMode
@@ -255,6 +262,7 @@ char *BoardAddressList = "A 0x50,A 0x52,A 0x54,A 0x56,B 0x50,B 0x52,B 0x54,B 0x5
 char *BoardVariantsNames = "RFdrvA R1,RFdrvB R1,RFdrvA R2,RFdrvB R2,DC250V R1,DC250V R2,DC750V R1,DC50V  R1,DC60V  R1,Twave R1,Twave R2,Twave R3,Twave R5,FAIMS R1,ESI  R1,FIL R1,ARB R1,HOFAIMS,DAC R1,RFamp R1";
 // List of variant board default data structure pointers with a one to one corespondence to list of board names
 void *BoardVariants[] = {(void *)&RFDD_A_Rev_1,(void *)&RFDD_B_Rev_1,(void *)&RFDD_A_Rev_2,(void *)&RFDD_B_Rev_2,(void *)&DCbD_250_Rev_1,(void *)&DCbD_250_Rev_2,(void *)&DCbD_750_Rev_1,(void *)&DCbD_50_Rev_1,(void *)&DCbD_60_Rev_1,(void *)&Twave_Rev1,(void *)&Twave_Rev2,(void *)&Twave_Rev3,(void *)&Twave_Rev5,(void *)&FAIMS_Rev_1,(void *)&ESI_Rev_1,(void *)&FILAMENT_Rev_1,(void *)&ARB_Rev_1,(void *)&HOFAIMS_Rev_1,(void *)&DAC_Rev1,(void *)&RFA_Rev1};
+
 
 
 

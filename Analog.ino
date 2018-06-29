@@ -416,7 +416,7 @@ void Analog_init(void)
 void Analog_loop(void)
 {
   static int disIndex = 0;
-  long int startTime;
+  uint32_t   startTime;
 
   if (!analog.Enabled) return;
   // Read all the ADC input channels and save them in the data structure.
@@ -440,6 +440,7 @@ void Analog_loop(void)
     if(disIndex >= analog.NumChannels) disIndex = 0;
   }
 }
+
 
 
 

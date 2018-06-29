@@ -95,11 +95,13 @@ void GetCerrentDirection(int channel);
 void SetCurrentDirection(char *chan, char *dir);
 void FilamentShutdown(void);
 
-
 void SetFilamentReporting(int channel, int period);
 void ReportBiasCurrent(void);
 
+void SaveFIL2EEPROM(void);
+
 #endif
+
 
 
 

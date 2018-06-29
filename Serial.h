@@ -141,6 +141,10 @@ void GetCommands(void);
 void DelayCommand(int dtime);
 void ReportUniqueID(void);
 void TWItalk(int brd, int TWIadd);
+void SetMemAddress(char *address);
+void WriteMemory(char *type, char *val);
+void ReadMemory(char *type);
+void SaveModule(char *Module);
 
 // Prototypes for external functions called
 void SAVEparms(void);
@@ -153,8 +157,10 @@ void DCbiasReadFloat(int chan);
 void DCbiasReadMin(int chan);
 void DCbiasReadMax(int chan);
 void DCbiasNumber(void);
+void FormatEEPROM(void);
 
 #endif /* SERIAL_H_ */
+
 
 
 

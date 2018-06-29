@@ -76,8 +76,10 @@ void DialogBoxDisplay(DialogBox *d);
 DialogBoxEntry *GetDialogEntries(DialogBoxEntry *de, char *rname);
 void RefreshAllDialogEntries(DialogBox *d);
 void PrintDialog(DialogBox *d, int X, int Y, char *text);
+bool RangeTest(DialogBoxEntry *des, char *EntryName, float fval);
 
 #endif
+
 
 
 

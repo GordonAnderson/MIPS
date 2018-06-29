@@ -56,7 +56,8 @@
 #define TWI_UPDATE_BRD_BIAS 0x25      // This command sets the board bias voltage, 1 byte board number, 1 float with value
 #define TWI_LOAD_UPDATES    0x26      // Updated values are loaded into the hardware via this command
 
-#define TWI_SERIAL          0x27      // This command enables the TWI port to process serial commands
+#define TWI_SERIAL             0x27      // This command enables the TWI port to process serial commands
+#define TWI_SET_COMP_ORDER_EX  0x28      // Set compression order, word value, 0 to 65535 
 
 #define TWI_READ_REQ_FREQ   0x81      // Returns requested frequency
 #define TWI_READ_ACT_FREQ   0x82      // Returns actual frequency
@@ -136,7 +137,7 @@ typedef struct
   // Compressor variables
   bool          UseCommonClock;     // Flag set to true to use a common clock, this will cause both modules to set each others value
   bool          CompressorEnabled;  // True if the compressor mode has been enabled
-  uint8_t       Corder;             // Compressor order, 1 to 20
+  uint8_t       CorderNU;           // Compressor order, 1 to 20, no longer used, extended to 16 bit unsigned
   int8_t        NumPasses;          // Total number of passes through device
   float         Tdelay;             // Delay from trigger to start of compressor or pass, in millisec
   float         Tcompress;          // Time in compress mode, in millisec
@@ -154,6 +155,8 @@ typedef struct
   float         OffsetB;            // Output set B offset
   int           Cramp;              // Order ramping
   int           CrampOrder;         // Order ramping step size
+  // Extended compresion order to unsigned 16 bits
+  int           Corder;
 } ARBdata;
 
 extern ARBdata  *ARBarray[4];
@@ -233,7 +236,10 @@ void SetARBCnoncompressTime(char *str);
 void ARBCtrigger(void);
 void SetARBCswitch(char *mode);
 
+void SaveARB2EEPROM(void);
+
 #endif
+
 
 
 

@@ -48,7 +48,7 @@ extern bool NormalStartup;
 #define  Filter 0.1         // Weak filter coefficent
 #define  StrongFilter 0.05  // Strong filter coefficent
 
-#define ESIstepSize 10
+#define ESIstepSize 50      // Changed from 10 3/12/18
 
 //MIPS Threads
 Thread ESIthread  = Thread();
@@ -895,6 +895,31 @@ void SetESImoduleNeg(int module, int value)
   ESIarray[module -1].ESIchan[1].MaxVoltage = value;
   // Adjust the calibration gain
   ESIarray[module -1].ESIchan[1].DCctrl.m = 65535/(value);
+  SendACK;
+}
+
+// This function saves the ESI module data to EEPROM. All detected ESI modules are saved.
+void SaveESI2EEPROM(void)
+{
+  int  brd;
+  bool berr = false;
+  
+  brd = SelectedBoard();
+  for(int b=0; b<2; b++)
+  {
+    if(ESIboards[b])
+    {
+      SelectBoard(b);
+      if (WriteEEPROM(&ESIarray[b], ESIarray[b].EEPROMadr, 0, sizeof(ESIdata)) != 0) berr = true;
+    }
+  }
+  SelectBoard(brd);
+  if(berr)
+  {
+    SetErrorCode(ERR_EEPROMWRITE);
+    SendNAK;
+    return;
+  }
   SendACK;
 }
 
