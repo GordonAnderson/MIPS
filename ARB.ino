@@ -1370,18 +1370,18 @@ void SetARBwfType(char *sMod, char *Swft)
    sToken = sMod;
    mod = sToken.toInt();
    if((b = ARBmoduleToBoard(mod,true)) == -1) return;
-   if(strcmp(Swft,"SIN") == 0) ARBarray[b]->wft = ARB_SIN;
-   else if(strcmp(Swft,"RAMP") == 0) ARBarray[b]->wft = ARB_RAMP;
-   else if(strcmp(Swft,"TRI") == 0) ARBarray[b]->wft = ARB_TRIANGLE;
+   if(strcmp(Swft,"SIN") == 0)        ARBarray[b]->wft = ARB_SIN;
+   else if(strcmp(Swft,"RAMP") == 0)  ARBarray[b]->wft = ARB_RAMP;
+   else if(strcmp(Swft,"TRI") == 0)   ARBarray[b]->wft = ARB_TRIANGLE;
    else if(strcmp(Swft,"PULSE") == 0) ARBarray[b]->wft = ARB_PULSE;
-   else if(strcmp(Swft,"ARB") == 0) ARBarray[b]->wft = ARB_ARB;
+   else if(strcmp(Swft,"ARB") == 0)   ARBarray[b]->wft = ARB_ARB;
    else
    {
      SetErrorCode(ERR_BADARG);
      SendNAK;
      return;
    }
-   if(SelectedARBboard == b) strcpy(WFT,sMod);
+   if(SelectedARBboard == b) strcpy(WFT,Swft);
    SendACK;
 }
 

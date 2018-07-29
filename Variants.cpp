@@ -15,8 +15,9 @@
 #include "Variants.h"
 
 uint32_t TWIfails = 0;
+bool     Serial1Echo = false;
 
-MIPSconfigStruct MIPSconfigData = {sizeof(MIPSconfigStruct),"MIPS",2,0,0,10,false,true,1.0,"",false,false,"",5,false,0xA55AE99E,false,false};
+MIPSconfigStruct MIPSconfigData = {sizeof(MIPSconfigStruct),"MIPS",2,0,0,10,false,true,1.0,"",false,false,"",5,false,0xA55AE99E,false,false,false};
 
 TwaveData Twave_Rev1 = {sizeof(TwaveData),"Twave",1,1000000,03,0x10,0x20,0x27,0x69,
                         20.0, 0, 76.53, 905, 0, 1, 0,
@@ -246,7 +247,11 @@ RFAdata RFA_Rev1 = {sizeof(RFAdata),"RFamp",1,false,1000000,0,0,true,false,3,4,0
                     6,5.26,-156.71,
                     7,3.6614,-147.14,
                     4000,4.5,600,
-                    0.0,0.0,
+                    0.0,0.0,0.0,
+                    200,
+                    6,5.26,-156.71,
+                    7,3.6614,-147.14,                    
+                    1,3.47,0,
                    };
                    
 #ifdef TestMode

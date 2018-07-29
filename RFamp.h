@@ -62,11 +62,16 @@ typedef struct
   DACchan DACchans[4];       // 4 channels of DAC
   ADCchan ADCchans[8];       // 8 channels of ADC
   // Configuration parameters
-  float   FullScale;         // Fule scale voltage Vp-p
+  float   FullScale;         // Full scale voltage Vp-p
   float   Ro;                // Quad radius parameter, in mm
   float   mz;                // Target m/z value
   float   ResolvingDC;       // Resolving DC voltage
   float   PoleBias;          // Pole bias
+  float   Res;               // Resolution in AMU
+  // Low range parameters
+  float   RangeThreshold;    // Threshold to apply low range cal
+  ADCchan ADCchansLR[2];
+  DACchan DACchansLR;       
 } RFAdata;                    
 
 // This structure saves the current state of the RFamp module
@@ -79,6 +84,8 @@ typedef struct
   int     Freq;
   float   Drive;
   float   SetPoint;
+  float   ResolvingDC;
+  float   PoleBias;
   bool    Mode;
   bool    Invert;
   // Misc
@@ -101,9 +108,21 @@ typedef struct
 extern int   NumberOfRFAchannels;
 
 // Prototypes
+void RFAsetRange(char *Module, char *value);
+void RFAgetRange(int Module);
 void ReportRFAchannels(void);
 void RFAsetPoleBias(char *Module, char *value);
+void RFAgetPoleBias(int Module);
 void RFAsetResolvingDC(char *Module, char *value);
+void RFAgetResolvingDC(int Module);
+void RFAsetRo(char *Module, char *value);
+void RFAgetRo(int Module);
+void RFAsetMZ(char *Module, char *value);
+void RFAgetMZ(int Module);
+void RFAsetRes(char *Module, char *value);
+void RFAgetRes(int Module);
+void RFAupdateQUAD(int Module);
+void RFAsetGain(char *Module, char *value);
 
 #endif
 

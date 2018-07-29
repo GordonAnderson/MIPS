@@ -123,9 +123,12 @@ Commands  CmdArray[] = 	{
   {"SAVEM", CMDfunctionStr, 1, (char *)&SaveModule},           // Save the defined module to EEPROM  
   {"TWIRESET", CMDfunction, 0, (char *)TWIreset},              // Resets the TWI interface
   {"TWIERROR",  CMDint, 0, (char *)&TWIfails},                 // Reports the numner of detected TWI failures 
-  {"STWIHDW", CMDbool, 1, (char *)&MIPSconfigData.TWIhardware}, // If true then the TWI hardware interface is used for ADC read functions
-  {"GTWIHDW", CMDbool, 0, (char *)&MIPSconfigData.TWIhardware}, // Returns the surrent status.
-  
+  {"STWIHDW", CMDbool, 1, (char *)&MIPSconfigData.TWIhardware},   // If true then the TWI hardware interface is used for ADC read functions
+  {"GTWIHDW", CMDbool, 0, (char *)&MIPSconfigData.TWIhardware},   // Returns the current status.
+  {"STBLRETRIG", CMDbool, 1, (char *)&MIPSconfigData.TableRetrig},// Set the table retriggerable flag, TRUE=retriggerable.
+  {"GTBLRETRIG", CMDbool, 0, (char *)&MIPSconfigData.TableRetrig},// Returns the table retriggerable flag, TRUE=retriggerable.
+  {"SSETECHO", CMDbool, 1, (char *)&Serial1Echo},                 // Set the SerialUSB to Serial1 echo, TRUE enables echo.
+  {"GSERECHO", CMDbool, 0, (char *)&Serial1Echo},                 // Return the SerialUSB to Serial1 echo, TRUE enables echo.
   // Clock generation functions
   {"GWIDTH",  CMDint, 0, (char *)&PulseWidth},                // Report the pulse width in microseconds
   {"SWIDTH",  CMDint, 1, (char *)&PulseWidth},                // Set the pulse width in microseconds
@@ -222,7 +225,7 @@ Commands  CmdArray[] = 	{
   // RF generator module commands
   {"SRFFRQ", CMDfunction, 2, (char *)RFfreq},		 // Set RF frequency
   {"SRFVLT", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&RFvoltage))},	 // Set RF output voltage
-  {"SRFDRV", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&RFdrive))},        // Set RF drive level
+  {"SRFDRV", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&RFdrive))},    // Set RF drive level
   {"GRFFRQ", CMDfunction, 1, (char *)RFfreqReport},	 // Report RF frequency
   {"GRFPPVP", CMDfunction, 1, (char *)RFvoltageReportP}, // Report RF output voltage, positive phase
   {"GRFPPVN", CMDfunction, 1, (char *)RFvoltageReportN}, // Report RF output voltage, negative phase
@@ -236,14 +239,25 @@ Commands  CmdArray[] = 	{
   {"RETUNERFCH", CMDfunction, 1, (char *)RFautoRetune},  // Auto retune the select RF channel, start and current freq and drive
   {"SRFCAL", CMDfunctionLine, 1, (char *)RFcalParms},    // Sets the RF calibration parameters, channel,slope,intercept  
   // RF amplifier / QUAD commands
+  {"SRFARNG", CMDfunctionStr, 2, (char *)RFAsetRange},       // Sets the QUAD RF maximum RF level
+  {"GRFARNG", CMDfunction, 1, (char *)RFAgetRange},          // Returns the QUAD RF maximum RF level
   {"SRFAPB", CMDfunctionStr, 2, (char *)RFAsetPoleBias},     // Sets the pole bias DC
+  {"GRFAPB", CMDfunction, 1, (char *)RFAgetPoleBias},        // Returns the pole bias DC
   {"SRFARDC", CMDfunctionStr, 2, (char *)RFAsetResolvingDC}, // Sets the resolving DC + and - voltages using DC bias channels 1 and 2
-  
+  {"GRFARDC", CMDfunction, 1, (char *)RFAgetResolvingDC},    // Returns the resolving DC + and - voltages using DC bias channels 1 and 2
+  {"SRFAR0", CMDfunctionStr, 2, (char *)RFAsetRo},           // Sets the Ro value in cm
+  {"GRFAR0", CMDfunction, 1, (char *)RFAgetRo},              // Returns the Ro value in cm
+  {"SRFAMZ", CMDfunctionStr, 2, (char *)RFAsetMZ},           // Sets the m/z in amu
+  {"GRFAMZ", CMDfunction, 1, (char *)RFAgetMZ},              // Returns the m/z in amu
+  {"SRFARES", CMDfunctionStr, 2, (char *)RFAsetRes},         // Sets the resolution in AMU
+  {"GRFARES", CMDfunction, 1, (char *)RFAgetRes},            // Returns the resolution in AMU
+  {"RFAQUPDATE", CMDfunction, 1, (char *)RFAupdateQUAD},     // Updates the QUAD parameters
+  {"SRFAGAIN", CMDfunctionStr, 2, (char *)RFAsetGain},       // Sets RF head level control gain, HIGH or LOW
   // DIO commands
-  {"SDIO", CMDfunctionStr, 2, (char *)SDIO_Serial},	 // Set DIO output bit
-  {"GDIO", CMDfunctionStr, 1, (char *)GDIO_Serial},	 // Get DIO output bit
-  {"RPT", CMDfunctionStr, 2, (char *)DIOreport},     // Report an input state change
-  {"MIRROR", CMDfunctionStr, 2, (char *)DIOmirror},  // Mirror an input to an output
+  {"SDIO", CMDfunctionStr, 2, (char *)SDIO_Serial},	        // Set DIO output bit
+  {"GDIO", CMDfunctionStr, 1, (char *)GDIO_Serial},	        // Get DIO output bit
+  {"RPT", CMDfunctionStr, 2, (char *)DIOreport},            // Report an input state change
+  {"MIRROR", CMDfunctionStr, 2, (char *)DIOmirror},         // Mirror an input to an output
   // ESI module commands
   {"SHV", CMDfunctionStr, 2, (char *)SetESIchannel},        // Set channel high voltage
   {"GHV", CMDfunction, 1, (char *)GetESIchannel},           // Returns the high voltage setpoint

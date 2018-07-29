@@ -808,64 +808,11 @@ void DCbias_loop(void)
   if(DCbiasDialog.Entry == DCDialogEntriesPage2) return;
   if(disIndex < dcbd.NumChannels) DisplayDialogEntry(&DCbiasDialog.w, &DCDialogEntriesActualVoltages[disIndex], false);
   if((ActiveDialog->Selected != disIndex) || (ActiveDialog->State == M_SCROLLING)) if(disIndex < dcbd.NumChannels) DisplayDialogEntry(&ActiveDialog->w, &ActiveDialog->Entry[disIndex], false);
-  if(++disIndex >= 8) disIndex = 0;
-// Test the DMA speed.
-//    Need to change the chip select between channels to cause the required strobe
-//    to be generated.
-//    Things remaining to be done:
-//      - Reduce the delay parameter between SPI writes
-//      - Change mode to 16 bits
-//      - Write function to convert 8 value array into 24 32 bit word array
-//
-// The code below will update 24 channels in 50uS with a 21MHz clock
-/*
-    uint32_t ch = BOARD_PIN_TO_SPI_CHANNEL(SPI_CS);
-    uint32_t dbuf[40];
-    uint32_t ival;
-    SPI.begin(10);
-    SPI.setClockDivider(10,1);
-    SPI.setClockDivider(SPI_CS,4);   // 21 MHz clock rate
-    for(i=0;i<8;i++)
-    {
-       ival = DCbiasValue2Counts(i, 0);
-       dbuf[i*5] = (uint32_t)3 | SPI_PCS(ch);
-       dbuf[i*5 + 1] = (uint32_t)(((i << 4) | (ival >> 12)) & 0xFF) | SPI_PCS(ch);
-       dbuf[i*5 + 2] = (uint32_t)((ival >> 4) & 0xFF) | SPI_PCS(ch);
-       dbuf[i*5 + 3] = (uint32_t)((ival << 4) & 0xFF) | SPI_PCS(ch);
-       dbuf[i*5 + 4] = SPI_PCS(BOARD_PIN_TO_SPI_CHANNEL(10));
-    }
-    dbuf[8*5 - 1] |= SPI_TDR_LASTXFER;
-    SPI.setDataMode(SPI_CS, SPI_MODE1);
-    Spi* pSpi = SPI0;
-    pSpi->SPI_CSR[ch] &= 0xFFFFFF;  // Set DLYBCT delay between bytes to zero
-    pSpi->SPI_CSR[BOARD_PIN_TO_SPI_CHANNEL(10)] &= 0xFFFFFF;
-    SetAddress(2);
-    digitalWrite(TRGOUT, HIGH);
-    spiDmaTX(&dbuf[0],40);
-//    digitalWrite(TRGOUT, LOW);
-//    digitalWrite(TRGOUT, HIGH);
-    spiDmaWait();
-//    digitalWrite(TRGOUT, LOW);
-    // Do it again to simulate two board or 16 channels
-    SetAddress(2);
-//    digitalWrite(TRGOUT, HIGH);
-    spiDmaTX(&dbuf[0],40);
-//    digitalWrite(TRGOUT, LOW);
-//    digitalWrite(TRGOUT, HIGH);
-    spiDmaWait();
-//    digitalWrite(TRGOUT, LOW);
-    // And do it one more time to simulate 3 bords or 24 channels
-    SetAddress(2);
-//    digitalWrite(TRGOUT, HIGH);
-    spiDmaTX(&dbuf[0],40);
-//    digitalWrite(TRGOUT, LOW);
-//    digitalWrite(TRGOUT, HIGH);
-    spiDmaWait();
-    digitalWrite(TRGOUT, LOW);
-    // Exit
-    SetAddress(0);
-    SPI.setClockDivider(SPI_CS,8);
-*/
+  if(++disIndex >= 8) 
+  {
+    if((ActiveDialog->Selected != disIndex) || (ActiveDialog->State == M_SCROLLING)) DisplayDialogEntry(&ActiveDialog->w, &ActiveDialog->Entry[disIndex], false);
+    disIndex = 0;
+  }
 }
 
 //
@@ -1104,15 +1051,15 @@ void DCbiasSetFloat(char *Chan, char *Value)
   DCbData->DCoffset.VoltageSetpoint = value;
   if(DCbDarray[0]->UseOneOffset) DCbDarray[0]->DCoffset.VoltageSetpoint = DCbDarray[1]->DCoffset.VoltageSetpoint = value;
   // If this channel is being displayed in a dialog then refresh the display
-  if(GetDCbiasBoard(chan) == SelectedDCBoard)
-  {
-    dcbd = *DCbD;
-    if((ActiveDialog == &DCbiasDialog) && (DCbiasDialog.Entry != DCDialogEntriesPage2))
-    {
-      DisplayAllDialogEntries(&DCbiasDialog);
-      DCbiasDialog.State = M_SCROLLING;
-    }
-  }
+  if(GetDCbiasBoard(chan) == SelectedDCBoard) dcbd = *DCbD;
+//  {
+//    dcbd = *DCbD;
+//    if((ActiveDialog == &DCbiasDialog) && (DCbiasDialog.Entry != DCDialogEntriesPage2))
+//    {
+//      DisplayAllDialogEntries(&DCbiasDialog);
+//      DCbiasDialog.State = M_SCROLLING;
+//    }
+//  }
   SendACK;
 }
 

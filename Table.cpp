@@ -671,8 +671,13 @@ void SWTableTrg(void)
         SendNAK;
         return;
     }
+    if((!MIPSconfigData.TableRetrig) && (TimerRunning == true))
+    {
+      SendACK;
+      return;
+    }
     // If there is a update at count 0 then fire LDAC and setup for the next event
-    if(MPT.getRAcounter() == 0)  // This can't work because the timer has not yet been setup, maybe it has??
+    if(MPT.getRAcounter() == 0) 
     {
       if((MIPSconfigData.Rev <= 1) || (softLDAC)) // Rev 1 used software control of LDAC
       {
@@ -681,18 +686,18 @@ void SWTableTrg(void)
       }
       else   // here for rev 2 
       {
-        // Not sure why this was done and I removed it on Nov 3, 2016.
-        // This was part of a series of bug fixes for external triggering. 
- //       LDACcapture;    
- //       LDACctrlLow;
- //       LDACctrlHigh;
- //       LDACrelease;
+        // Added this LDAC toggle on 7/28/18. This loads the DACs at software trigger time
+        // if there it a time point 0 event.
+        LDACcapture;    
+        LDACctrlLow;
+        LDACctrlHigh;
+        LDACrelease;
       }
-//    SetupNextEntry();  // Nov 3, 2016
+      SetupNextEntry();
     }
     SendACK;
     StartTimer();
-    if(MPT.getRAcounter() == 0) SetupNextEntry(); // added 5/5/18
+//  if(MPT.getRAcounter() == 0) SetupNextEntry();
 }
 
 // Report table current frequency setting
@@ -1189,6 +1194,7 @@ void AdvanceTableNumber(void)
 void ProcessTables(void)
 {
     int  InitialTableNum;
+    bool bStat;
    
     InitialTableNum = CT;
     // Set mode to TBL
@@ -1221,7 +1227,11 @@ void ProcessTables(void)
                 break;
             }
             // If the timer has been triggered update the displayed status
-            if(MPT.checkStatusBit(TC_SR_ETRGS) || SWtriggered)
+            {
+               AtomicBlock< Atomic_RestoreState > a_Block;
+               bStat = MPT.checkStatusBit(TC_SR_ETRGS);  
+            }
+            if(bStat || SWtriggered)
             {
               TableTriggered = true;
               SWtriggered = false;
@@ -1230,7 +1240,11 @@ void ProcessTables(void)
 //               if(StopRequest == true) break;     // removed 5/5/18
             }
             // Exit this loop when the timer is stoped.
-            if(!MPT.checkStatusBit(TC_SR_CLKSTA) || TableStopped)
+            {
+               AtomicBlock< Atomic_RestoreState > a_Block;
+               bStat = MPT.checkStatusBit(TC_SR_CLKSTA);  
+            }
+            if(!bStat || TableStopped)
             {
                 // Issue the table complete message
                 TableTriggered = false;
@@ -1256,7 +1270,7 @@ void ProcessTables(void)
             }
             #endif
             // Process any serial commands
-            TRACE(7);
+            //TRACE(7);
             ProcessSerial();
             serial->flush();
             // If full command processing in table mode is enabled then run tasks.
@@ -1406,12 +1420,15 @@ void SetupTimer(void)
       // The Toggle A output on trigger has to happen because we do not get a counter 0 event when triggered externally.
       // This does cause an issue if we do not have time 0 value in the DAC latches. If we external trigger then we need to do the
       // first SetupNext call in the trigger ISR
-      // Added TC_CMR_ASWTRG_TOGGLE, 5/5/18 this fixes bug when SW trigger and time 0 point
-      if(TEheader->Count == 0) MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE | TC_CMR_ASWTRG_TOGGLE);
+      // Added TC_CMR_ASWTRG_TOGGLE, 5/5/18 this fixes bug when SW trigger and time 0 point.
+      // Removed TC_CMR_ASWTRG_TOGGLE on 7/28/18. The toogle happen after the software trigger and after the first clock edge
+      // this caused a problem because there is no even to setup after this first clock pulse
+      if(TEheader->Count == 0) MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE);
       else MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE);
     }
     //
     // Adjust the system interrupt priorities, Rev 1.07 update
+    // 
     NVIC_SetPriority (SysTick_IRQn, 8);
     NVIC_SetPriority(WIRE1_ISR_ID, 8);
     NVIC_SetPriority(WIRE_ISR_ID, 8);
@@ -1772,6 +1789,9 @@ void Trigger_ISR(void)
 
 // This interrupt happens when the compare register matches the timer value. At this time the
 // data is latched and the next values are written.
+//
+// Note; This interrupt does not happen when the compare register A is 0. The hardware pin 
+// toggels and then LDAC is generated but the ISR does not fire. Strange.
 inline void RAmatch_Handler(void)
 {
   static Pio *pio = g_APinDescription[BRDSEL].pPort;

@@ -624,6 +624,26 @@
 //      1.) Added the delete all function, DEL,*
 //      2.) Added the FAIMS step scan and scan serial commands
 //      3.) Added FAIMS output level lock host commands
+//  1.128, June 30, 2018
+//      1.) Updated the RFamp module and added host commands. This version includes all the calculations 
+//          to allow calculating RF and DC values given m/z etc.
+//      2.) Added test of the signature when reading the default parameters from SD. If the signature does not match then the
+//          file is not read.
+//  1.129, July 17, 2018
+//      1.) Added Q and q commands to TWAVE multi-pass compression table to allow changing the sequence. This was implemented
+//          rev 4.0 and above.
+//  1.30, July 24, 2018
+//      1.) Added floating point number capability to the multipass compression tables.
+//  1.131, July 25, 2018
+//      1.) Fixed an table bug that only happens when using an external clock at frequencies below 1MHz. The bug caused the
+//          initial time 0 table event to be randomly over written by the second event.
+//      2.) Also fixed a display bug when writting waveform type to MIPS ARM from the host
+//  1.132, July 26, 2018
+//      1.) Fixed a bug in the table fix in version 1.131, need to wait for a full clock cycle.
+//      2.) Added SerialUSB to Serial1 echo command
+//      3.) Added command to allow user to define table retriggerablity. Default in not retriggerable
+//  1.133, July 28, 2018
+//      1.) Fixed the table bug that 1.132 tried to fix.
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
@@ -711,7 +731,7 @@ int  LEDstate = 0;
 
 uint32_t BrightTime=0;
 
-const char Version[] PROGMEM = "Version 1.127, June 18, 2018";
+const char Version[] PROGMEM = "Version 1.132, July 28, 2018";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -1650,10 +1670,14 @@ void ProcessSerial(void)
   // Put serial received characters in the input ring buffer
   while (SerialUSB.available() > 0)
   {
-//TriggerOut(1);
     ResetFilamentSerialWD();
     serial = &SerialUSB;
     char c = SerialUSB.read();
+    if(Serial1Echo)
+    {
+       Serial1.write(c);    // Serial1 is also WiFiSerial
+       Serial1.flush();
+    }
     if (!SerialNavigation(c)) PutCh(c);
   }
 #ifdef EnableSerial
@@ -1796,9 +1820,13 @@ bool LOADparms(char *filename)
     }
     file.close();
     // Copy to MIPS config struct
-    memcpy(&MIPSconfigData, &MCS, MCS.Size);
-    DisableDisplay = MIPSconfigData.DisableDisplay;
-    return true;
+    if(MCS.signature == 0xA55AE99E)
+    {
+       memcpy(&MIPSconfigData, &MCS, MCS.Size);
+       DisableDisplay = MIPSconfigData.DisableDisplay;
+       return true;
+    }
+    break;
   }
   // If here then the SD card read failed so try loading from FLASH
   b = (byte *)&MCS;

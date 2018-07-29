@@ -29,6 +29,8 @@ extern uint32_t BrightTime;
 
 extern uint32_t TWIfails;
 
+extern bool     Serial1Echo;
+
 #define EnableSerial
 #define SerialBAUD    9600
 
@@ -74,6 +76,7 @@ typedef struct
   int      signature;         // This is used to validate a restore from flash function, 0xA55AE99E
   bool     DisableDisplay;    // Save the diable display state  
   bool     TWIhardware;       // If true use hardware interface to read ADC else bit bang
+  bool     TableRetrig;       // If true the time table is retriggerable
 } MIPSconfigStruct;
 
 void   DisplayIntensity(void);

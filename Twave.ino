@@ -692,10 +692,10 @@ void SetPulseVoltage(int ModuleIndex, float voltage)
   int DACcounts;
   float MinPV;
 
-  if(TDarray[ModuleIndex].Rev == 4) MinPV = MinPulseVoltageRev4;
   if(TDarray[ModuleIndex].Rev == 5) MinPV = MinPulseVoltageRev5;
-  //  SelectBoard(TWboardAddress[SelectedTwaveBoard]);
-  if (TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint < (TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPV)) TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].VoltageSetpoint = TDarray[ModuleIndex].TWCD[DAC_RestingVoltage].VoltageSetpoint + MinPV;
+  else if(TDarray[ModuleIndex].Rev == 4) MinPV = MinPulseVoltageRev4;
+  else MinPV = MinPulseVoltage;
+  if(voltage < MinPV) voltage = MinPV;
   // Use calibration data to convert engineering units requested to DAC counts.
   DACcounts = Value2Counts(voltage, &TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].DCctrl);
   AD5625(TDarray[ModuleIndex].DACadr, TDarray[ModuleIndex].TWCD[DAC_PulseVoltage].DCctrl.Chan, DACcounts);
@@ -1463,29 +1463,6 @@ void setTWAVEsequence(char * chan, char *value)
   SendACK;
 }
 
-// Validate the voltage input command. Use the Pulse voltage to range test all
-// voltage requests, they are all set to the same limits.
-// Returns a pointer to the float value or NULL on error.
-float *TWAVEvoltageSetValidation(char *voltage)
-{
-  DialogBoxEntry *DBE;
-  static float fval;
-
-  sscanf(voltage, "%f", &fval);
-  // Test the voltage range
-  if (TD.Rev == 1) DBE = &TwaveDialogEntries[2];
-  else DBE = &TwaveDialogEntries2[3];
-  if ((fval < DBE->Min) || (fval > DBE->Max))
-  {
-    // here on range error so exit
-    SetErrorCode(ERR_VALUERANGE);
-    SendNAK;
-    return NULL;
-  }
-  // Return pointer to the value
-  return &fval;
-}
-
 // Send the TWAVE pulse voltage level
 void sendTWAVEpulseVoltage(int channel)
 {
@@ -1501,16 +1478,21 @@ void sendTWAVEpulseVoltage(int channel)
 // Set the TWAVE pulse voltage level. This function is called from the serial processor.
 void setTWAVEpulseVoltage(char *chan, char *voltage)
 {
-  int channel, index;
-  float *fval;
+  int    channel, index;
+  String token;
+  float  fval;
 
-  sscanf(chan, " %d", &channel);
+  token = chan;
+  channel = token.toInt();
   index = GetTwaveIndex(channel);
   if (index == -1) return;
-  if ((fval = TWAVEvoltageSetValidation(voltage)) == NULL) return;
+  token = voltage;
+  fval = token.toFloat();
+  if (TD.Rev == 1) if(!RangeTest(TwaveDialogEntries, "Pulse voltage", fval)) return;
+  else if(!RangeTest(TwaveDialogEntries2, "Pulse voltage", fval)) return;
   // Update the voltage value and exit
-  if (index == SelectedTwaveModule) TD.TWCD[0].VoltageSetpoint = *fval;
-  TDarray[index].TWCD[0].VoltageSetpoint = *fval;
+  if (index == SelectedTwaveModule) TD.TWCD[0].VoltageSetpoint = fval;
+  TDarray[index].TWCD[0].VoltageSetpoint = fval;
   SendACK;
 }
 
@@ -1518,7 +1500,6 @@ void setTWAVEpulseVoltage(char *chan, char *voltage)
 void sendTWAVEguard1Voltage(int channel)
 {
   int index;
-  float *fval;
 
   index = GetTwaveIndex(channel);
   if (index == -1) return;
@@ -1529,16 +1510,21 @@ void sendTWAVEguard1Voltage(int channel)
 // Set the TWAVE guard 1 voltage level
 void setTWAVEguard1Voltage(char *chan, char *voltage)
 {
-  int channel, index;
-  float *fval;
+  int    channel, index;
+  String token;
+  float  fval;
 
-  sscanf(chan, " %d", &channel);
+  token = chan;
+  channel = token.toInt();
   index = GetTwaveIndex(channel);
   if (index == -1) return;
-  if ((fval = TWAVEvoltageSetValidation(voltage)) == NULL) return;
+  token = voltage;
+  fval = token.toFloat();
+  if (TD.Rev == 1) if(!RangeTest(TwaveDialogEntries, "Guard 1", fval)) return;
+  else if(!RangeTest(TwaveDialogEntries2, "Guard 1", fval)) return;
   // Update the voltage value and exit
-  if (index == SelectedTwaveModule) TD.TWCD[2].VoltageSetpoint = *fval;
-  TDarray[index].TWCD[2].VoltageSetpoint = *fval;
+  if (index == SelectedTwaveModule) TD.TWCD[2].VoltageSetpoint = fval;
+  TDarray[index].TWCD[2].VoltageSetpoint = fval;
   SendACK;
 }
 
@@ -1546,7 +1532,6 @@ void setTWAVEguard1Voltage(char *chan, char *voltage)
 void sendTWAVEguard2Voltage(int channel)
 {
   int index;
-  float *fval;
 
   index = GetTwaveIndex(channel);
   if (index == -1) return;
@@ -1557,16 +1542,21 @@ void sendTWAVEguard2Voltage(int channel)
 // Set the TWAVE guard 2 voltage level
 void setTWAVEguard2Voltage(char *chan, char *voltage)
 {
-  int channel, index;
-  float *fval;
+  int    channel, index;
+  String token;
+  float  fval;
 
-  sscanf(chan, " %d", &channel);
+  token = chan;
+  channel = token.toInt();
   index = GetTwaveIndex(channel);
   if (index == -1) return;
-  if ((fval = TWAVEvoltageSetValidation(voltage)) == NULL) return;
+  token = voltage;
+  fval = token.toFloat();
+  if (TD.Rev == 1) if(!RangeTest(TwaveDialogEntries, "Guard 2", fval)) return;
+  else if(!RangeTest(TwaveDialogEntries2, "Guard 2", fval)) return;
   // Update the voltage value and exit
-  if (index == SelectedTwaveModule) TD.TWCD[3].VoltageSetpoint = *fval;
-  TDarray[index].TWCD[3].VoltageSetpoint = *fval;
+  if (index == SelectedTwaveModule) TD.TWCD[3].VoltageSetpoint = fval;
+  TDarray[index].TWCD[3].VoltageSetpoint = fval;
   SendACK;
 }
 
@@ -2026,10 +2016,11 @@ void TWCsetV1toV2(void)
 //    
 char GetNextOperationFromTable(bool init)
 {
-  int index,b;
-  static int tblindex=0;
+  int         index,b;
+  float       fval;
+  static int  tblindex=0;
   static char OP;
-  static int count = 0;
+  static int  count = 0;
 
   if(init)
   {
@@ -2053,9 +2044,17 @@ char GetNextOperationFromTable(bool init)
       count = 1;  // Default to count of 1
       if(isDigit(TwaveCompressorTable[tblindex]))
       {
-        // If here then get the value, it has to be an integer
+        // If here then get the value, number can be a float but has to start with a number, 0.1 is ok, .1 is not ok
         count = int(TwaveCompressorTable[tblindex++] - '0');
         while(isDigit(TwaveCompressorTable[tblindex])) count = count * 10 + int(TwaveCompressorTable[tblindex++] - '0');
+        // If its a decimal point then its a float so process
+        fval = 0;
+        if(TwaveCompressorTable[tblindex] == '.')
+        {
+          tblindex++;
+          for(float d = 10; isDigit(TwaveCompressorTable[tblindex]); d *= 10) fval += (float)(TwaveCompressorTable[tblindex++] - '0') / d;
+        }
+        fval += count;
       }
       break;
     }
@@ -2067,20 +2066,20 @@ char GetNextOperationFromTable(bool init)
     }
     if(OP == 'D') //Delay
     {
-      C_Delay = (((float)count) / 1000.0) * C_clock;
+      C_Delay = (fval / 1000.0) * C_clock;
       count = 0;
       return(OP);
     }
     if(OP == 'g') //Time to open gate
     {
-      C_GateOpenTime = (((float)count) / 1000.0) * C_clock;
+      C_GateOpenTime = (fval / 1000.0) * C_clock;
       count = 0;
       CSState = CSS_OPEN_REQUEST;
       CompressorTimer.setTIOBeffect(C_GateOpenTime,TC_CMR_BCPB_TOGGLE);
     }
     if(OP == 'G') //Time to close gate
     {
-      C_GateOpenTime = (((float)count) / 1000.0) * C_clock;
+      C_GateOpenTime = (fval / 1000.0) * C_clock;
       count = 0;
       CSState = CSS_CLOSE_REQUEST;
       CompressorTimer.setTIOBeffect(C_GateOpenTime,TC_CMR_BCPB_TOGGLE);
@@ -2106,8 +2105,8 @@ char GetNextOperationFromTable(bool init)
       {
         if((count > 7) && (count <= 100))
         {
-           if (index == SelectedTwaveModule) TD.TWCD[0].VoltageSetpoint = count;
-           TDarray[index].TWCD[0].VoltageSetpoint = count; 
+           if (index == SelectedTwaveModule) TD.TWCD[0].VoltageSetpoint = fval;
+           TDarray[index].TWCD[0].VoltageSetpoint = fval; 
            if(AcquireTWI()) TWCsetV();
            else TWIqueue(TWCsetV);
         }   
@@ -2120,8 +2119,8 @@ char GetNextOperationFromTable(bool init)
       {
         if((count > 7) && (count <= 100))
         {
-           if (index == SelectedTwaveModule) TD.TWCD[0].VoltageSetpoint = count;
-           TDarray[index].TWCD[0].VoltageSetpoint = count;
+           if (index == SelectedTwaveModule) TD.TWCD[0].VoltageSetpoint = fval;
+           TDarray[index].TWCD[0].VoltageSetpoint = fval;
            if(AcquireTWI()) TWCsetv();
            else TWIqueue(TWCsetv);
         }   
@@ -2142,17 +2141,17 @@ char GetNextOperationFromTable(bool init)
     }
     if(OP == 'c')
     {
-      TD.Tcompress = TDarray[0].Tcompress = count;
+      TD.Tcompress = TDarray[0].Tcompress = fval;
       C_Tc  = (TDarray[0].Tcompress / 1000.0) * C_clock;
     }
     if(OP == 'n')
     {
-      TD.Tnormal = TDarray[0].Tnormal = count;
+      TD.Tnormal = TDarray[0].Tnormal = fval;
       C_Tn  = (TDarray[0].Tnormal / 1000.0) * C_clock;
     }
     if(OP == 't')
     {
-      TD.TnoC = TDarray[0].TnoC = count;
+      TD.TnoC = TDarray[0].TnoC = fval;
       C_Tnc = (TDarray[0].TnoC / 1000.0) * C_clock;
     }
     if(OP == 's')  // Stop the clock
@@ -2165,7 +2164,7 @@ char GetNextOperationFromTable(bool init)
     }
     if(OP == 'o')  // Sets the switch open time
     {
-      C_SwitchTime = (count / 1000.0) * C_clock;
+      C_SwitchTime = (fval / 1000.0) * C_clock;
     }
     if(OP == 'M')  // Set compressor normal amplitude mode
     {
@@ -2178,6 +2177,18 @@ char GetNextOperationFromTable(bool init)
     if(OP == 'k')  
     {
        TDarray[0].CrampOrder = count;
+    }
+    if(OP == 'Q') 
+    {
+      TDarray[0].Sequence = count;
+      count = 0;
+      SetSequence(0);
+    }
+    if(OP == 'q') 
+    {
+      TDarray[1].Sequence = count;
+      count = 0;
+      SetSequence(1);
     }
     if(OP == '[')
     {
