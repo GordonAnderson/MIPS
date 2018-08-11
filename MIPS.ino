@@ -644,6 +644,8 @@
 //      3.) Added command to allow user to define table retriggerablity. Default in not retriggerable
 //  1.133, July 28, 2018
 //      1.) Fixed the table bug that 1.132 tried to fix.
+//  1.134, Aug 2, 2018
+//      1.) Fixed a bug that caused the table commands not to be processed when using serial1 port.
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
@@ -731,7 +733,7 @@ int  LEDstate = 0;
 
 uint32_t BrightTime=0;
 
-const char Version[] PROGMEM = "Version 1.132, July 28, 2018";
+const char Version[] PROGMEM = "Version 1.134, Aug 2, 2018";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();

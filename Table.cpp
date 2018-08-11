@@ -420,6 +420,11 @@ char *NextToken(void)
           serial = &Serial;
           PutCh(Serial.read());
         }
+        if (Serial1.available() > 0) // Added Aug 2, 2018
+        {
+          serial = &Serial1;
+          PutCh(Serial1.read());
+        }
     }
     SetErrorCode(ERR_TOKENTIMEOUT);
     return(NULL);
