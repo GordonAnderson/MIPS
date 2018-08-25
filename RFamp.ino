@@ -103,7 +103,7 @@ DialogBoxEntry RFAdialogEntriesPage2[] = {
 };
 
 DialogBoxEntry RFAdialogEntriesQUAD[] = {
-  {"Ro, cm"             , 1, 1, D_FLOAT    , 1, 10, 0.001, 17, false, "%5.3f", &rfad.Ro, NULL, NULL},
+  {"Ro, mm"             , 1, 1, D_FLOAT    , 1, 10, 0.001, 17, false, "%5.3f", &rfad.Ro, NULL, NULL},
   {"ResolvingDC, V"     , 1, 2, D_FLOAT    , -400, 400, 1, 17, false, "%5.1f", &rfad.ResolvingDC, NULL, NULL},
   {"Pole Bias, V"       , 1, 3, D_FLOAT    , -400, 400, 1, 17, false, "%5.0f", &rfad.PoleBias, NULL, NULL},
   {"Resolution, AMU"    , 1, 4, D_FLOAT    , 0, 100, 1, 19, false, "%3.0f", &rfad.Res, NULL, NULL},
@@ -928,6 +928,7 @@ void RFAsetGain(char *Module, char *value)
   if(token == "HIGH") RFACPLDimage[b] |= 1<<RFAcpldRANGE;
   else RFACPLDimage[b] &= ~(1<<RFAcpldRANGE);
 }
+
 
 
 

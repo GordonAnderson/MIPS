@@ -646,6 +646,9 @@
 //      1.) Fixed the table bug that 1.132 tried to fix.
 //  1.134, Aug 2, 2018
 //      1.) Fixed a bug that caused the table commands not to be processed when using serial1 port.
+//  1.135, Aug 20, 2018
+//      1.) On the RFamp change the units on Ro to mm.
+//      2.) Fixed a bug that would not let you enter closed loop mode on the RF driver MIPS UI
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
@@ -733,7 +736,7 @@ int  LEDstate = 0;
 
 uint32_t BrightTime=0;
 
-const char Version[] PROGMEM = "Version 1.134, Aug 2, 2018";
+const char Version[] PROGMEM = "Version 1.135, Aug 20, 2018";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -1845,5 +1848,6 @@ bool LOADparms(char *filename)
   }
   return false;
 }
+
 
 

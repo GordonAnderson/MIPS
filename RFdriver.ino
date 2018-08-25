@@ -169,6 +169,7 @@ void RFmodeChange(void)
     RFdriverDialogEntriesPage1[2].Type = D_OFF;
     RFdriverDialogEntriesPage1[3].Type = D_FLOAT;
   }
+  if(ActiveDialog == &RFdriverDialog) ActiveDialog->Changed = true;
 }
 
 void RFgateChange(void)
@@ -868,7 +869,7 @@ void RFmodeSet(char *chan, char *mode)
     RFDDarray[i].RFCD[(channel - 1) & 1].Setpoint = (RFpVpps[i][(channel - 1) & 1] + RFnVpps[i][(channel - 1) & 1]) / 2;
     RFDDarray[i].RFCD[(channel - 1) & 1].RFmode = RF_AUTO;
   }
-  // If this channel is displayed on tne MIPS UI then update
+  // If this channel is displayed on the MIPS UI then update
   if((channel-1) == SelectedRFChan)
   {
     RFCD.Setpoint = RFDDarray[i].RFCD[(channel - 1) & 1].Setpoint;
@@ -1101,6 +1102,7 @@ void SaveRF2EEPROM(void)
   }
   SendACK;
 }
+
 
 
 
