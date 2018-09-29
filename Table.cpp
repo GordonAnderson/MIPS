@@ -425,6 +425,7 @@ char *NextToken(void)
           serial = &Serial1;
           PutCh(Serial1.read());
         }
+        ProcessEthernet();
     }
     SetErrorCode(ERR_TOKENTIMEOUT);
     return(NULL);

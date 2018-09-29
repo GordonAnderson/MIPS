@@ -1,6 +1,12 @@
 #ifndef ETHERNET_H_
 #define ETHERNET_H_
 
+// If used with the TWI2ENET adapter the use the following parameters
+#define TWI_ENET_ADD      0x42
+#define TWI_SET_CFG       0x80
+#define TWI_GET_CFG       0x81
+#define TWI_GET_PRESENT   0x82
+
 extern bool EthernetPresent;
 
 typedef struct

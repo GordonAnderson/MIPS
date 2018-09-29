@@ -1429,12 +1429,6 @@ void TriggerOut(char *cmd)
   String Cmd;
   int uS;
   
-//  if (MIPSconfigData.Rev < 2)
-//  {
-//    SetErrorCode(ERR_NOTSUPPORTINREV);
-//    SendNAK;
-//    return;
-//  }
   Cmd = cmd;
   uS = Cmd.toInt();
   if(uS >0)
@@ -1468,6 +1462,37 @@ void TriggerOut(char *cmd)
   }
   SetErrorCode(ERR_BADARG);
   SendNAK;
+}
+
+void AuxOut(char *cmd)
+{
+  String Cmd;
+  
+  Cmd = cmd;
+  if ((strcmp(cmd, "HIGH") == 0) || (strcmp(cmd, "LOW") == 0) || (strcmp(cmd, "PULSE") == 0))
+  {
+    SendACK;
+    if (strcmp(cmd, "HIGH") == 0) digitalWrite(AUXTRGOUT, LOW);
+    if (strcmp(cmd, "LOW") == 0) digitalWrite(AUXTRGOUT, HIGH);
+    if (strcmp(cmd, "PULSE") == 0)
+    {
+      if (digitalRead(AUXTRGOUT) == HIGH)
+      {
+        digitalWrite(AUXTRGOUT, LOW);
+        delay(1);
+        digitalWrite(AUXTRGOUT, HIGH);
+      }
+      else
+      {
+        digitalWrite(AUXTRGOUT, HIGH);
+        delay(1);
+        digitalWrite(AUXTRGOUT, LOW);
+      }
+    }
+    return;
+  }
+  SetErrorCode(ERR_BADARG);
+  SendNAK;  
 }
 
 void FollowSisr(void)
@@ -1569,13 +1594,14 @@ void AuxTrigger(void)
 {
   static Pio *pio = g_APinDescription[AUXTRGOUT].pPort;
   static uint32_t pin = g_APinDescription[AUXTRGOUT].ulPin;
-  static int16_t skip = 0;
+//  static int16_t skip = 0;
 
   AtomicBlock< Atomic_RestoreState > a_Block;
-  if(++skip > ((PulseFreq-1) / 60)) skip = 0;
-  if(skip != 0) return;
+//  if(++skip > ((PulseFreq-1) / 60)) skip = 0;
+//  if(skip != 0) return;
   pio->PIO_CODR = pin;         // Set output high
-  delayMicroseconds(30);
+//  delayMicroseconds(30);
+  delayMicroseconds(PulseWidth);
   pio->PIO_SODR = pin;         // Set output low  
 }
 

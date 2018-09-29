@@ -23,8 +23,8 @@
 //#define TestFilament
 //#define TestTwave
 
-extern bool Suspend;
-extern bool EnableSerialNavigation;
+extern bool     Suspend;
+extern bool     EnableSerialNavigation;
 extern uint32_t BrightTime;
 
 extern uint32_t TWIfails;
@@ -77,6 +77,7 @@ typedef struct
   bool     DisableDisplay;    // Save the diable display state  
   bool     TWIhardware;       // If true use hardware interface to read ADC else bit bang
   bool     TableRetrig;       // If true the time table is retriggerable
+  bool     EnetUseTWI;        // If true the ethernet interface uses the TWI (wire1) interface
 } MIPSconfigStruct;
 
 void   DisplayIntensity(void);

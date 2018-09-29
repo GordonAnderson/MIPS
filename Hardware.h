@@ -224,6 +224,7 @@ void TWIqueue(void (*TWIfunction)());
 
 void TriggerOut(char *cmd);
 void TriggerOut(int microSec);
+void AuxOut(char *cmd);
 void QueueTriggerOut(int microSec);
 void ProcessTriggerOut(void);
 void ADCread(int chan);

@@ -17,7 +17,7 @@
 uint32_t TWIfails = 0;
 bool     Serial1Echo = false;
 
-MIPSconfigStruct MIPSconfigData = {sizeof(MIPSconfigStruct),"MIPS",2,0,0,10,false,true,1.0,"",false,false,"",5,false,0xA55AE99E,false,false,false};
+MIPSconfigStruct MIPSconfigData = {sizeof(MIPSconfigStruct),"MIPS",2,0,0,10,false,true,1.0,"",false,false,"",5,false,0xA55AE99E,false,false,false,false};
 
 TwaveData Twave_Rev1 = {sizeof(TwaveData),"Twave",1,1000000,03,0x10,0x20,0x27,0x69,
                         20.0, 0, 76.53, 905, 0, 1, 0,
@@ -211,7 +211,9 @@ ARBdata  ARB_Rev_1 = {sizeof(ARBdata),"ARB", 1, false, 1, false, 100, 0, true,20
                       false,
                       false,0,0,
                       0,1,
-                      0
+                      0,
+                      20000,20000,25,25,1,
+                      0,-1
                      };
 
 HOFAIMSdata  HOFAIMS_Rev_1 = {sizeof(HOFAIMSdata),"HOFAIMS", 1, false, 0, 25.0, 0, 20, 50,

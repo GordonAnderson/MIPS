@@ -4,15 +4,27 @@
 // This file contains the driver for the USR-TCP232-T V2 Ethernet to RS232 module.
 // This code will enable the ethernet to rs232 adapter if found and the set the enabled
 // flag telling MIPS the module is present.
+//
+// Sept 2018, this function was updated to support communicating through the Wire1 twi
+// interface to the ethernet module. This requires a twi 2 rs232 interface to connect the
+// MIPS wire port to the ethernet interface. This is custom hardware and uses a Adafruit Trinket M0
+// to perform the translation. This was done to resolve a MIPS controller disign bug that
+// did not provide the needed signals at the interface.
+//
 // Notes:
 //   Send 0x55 0xBB to read configuration from module
+//   MIPSconfigData.UseWiFi = true flags the use of the TWI interface
 //
 // Gordon Anderson
+//
 
 #include "ethernet.h"
+#include <SerialBuffer.h>
 
 EConfig eConfig;
 bool EthernetPresent = false;
+
+SerialBuffer enet_sb;
 
 // This function assumes the serial port has been initalized. The command 0x55 0xBB is sent and the
 // configuration data is read back. True is returned if success else false is returned.
@@ -23,6 +35,28 @@ bool EloadConfig(EConfig *ec, bool report)
   unsigned int mtime;
   uint8_t lastC,ch,*ptr,chksum;
 
+  if(MIPSconfigData.EnetUseTWI)
+  { 
+    Wire1.beginTransmission(TWI_ENET_ADD);
+    Wire1.write(TWI_GET_CFG);
+    Wire1.endTransmission();
+    delay(2000);
+    ptr = (uint8_t *)&EC;
+    for(i=0;i<sizeof(EConfig);i++) 
+    {
+      Wire1.requestFrom(TWI_ENET_ADD, 1);
+      if(Wire1.available() >= 1) ptr[i] = Wire1.read();
+      SerialUSB.println(ptr[i]);
+    }
+    // Verify the checksum
+    chksum = 0;
+    ptr = (uint8_t *)&EC;
+    for(i=0;i<sizeof(EConfig)-1;i++) chksum += ptr[i];
+    if(chksum != EC.CheckSum) return false;
+    // Move data to passed in pointer
+    memcpy((void *)ec,(void *)&EC,sizeof(EConfig));
+    return true;
+  }
   // Lower the config bit
   pinMode(ECONFIG, OUTPUT);
   digitalWrite(ECONFIG,LOW);
@@ -85,6 +119,15 @@ bool EsendConfig(EConfig *ec)
   ptr = (uint8_t *)ec;
   ec->CheckSum = 0;
   for(i=0;i<sizeof(EConfig)-2;i++) ec->CheckSum += ptr[i];
+  if(MIPSconfigData.EnetUseTWI)
+  { 
+    ptr = (uint8_t *)ec;
+    Wire1.beginTransmission(TWI_ENET_ADD);
+    Wire1.write(TWI_SET_CFG);
+    for(i=0;i<sizeof(EConfig);i++) Wire1.write(ptr[i]);
+    Wire1.endTransmission();
+    return true;
+  }
   // Put system in config mode
   pinMode(ECONFIG, OUTPUT);
   digitalWrite(ECONFIG,LOW);
@@ -160,6 +203,25 @@ void Ethernet_init(void)
   // Exit if WiFi is enabled
   if(MIPSconfigData.UseWiFi == true) return;
   // See if we can find a ethernet adapter
+  if(MIPSconfigData.EnetUseTWI)
+  { 
+    EthernetPresent = false;
+    // init the TWI port
+    Wire1.begin();
+    Wire1.setClock(1000000);
+    // See if the TWI enet interface is present
+    Wire1.beginTransmission(TWI_ENET_ADD);
+    Wire1.write(TWI_GET_PRESENT);
+    Wire1.endTransmission();
+    Wire1.requestFrom(TWI_ENET_ADD, 1);
+    if(Wire1.available() > 0)
+    {
+       EthernetPresent = Wire1.read();
+       EloadConfig(&eConfig);
+    }
+    enet_sb.begin(&Wire1,TWI_ENET_ADD);
+    return;
+  }
   Serial1.begin(9600);
   EthernetPresent = EloadConfig(&eConfig);
   digitalWrite(ECONFIG,HIGH);
@@ -171,6 +233,11 @@ void Ethernet_init(void)
 
 void Ethernet_test(void)
 {
+  if(MIPSconfigData.EnetUseTWI)
+  {
+     serial->println("Not supported with TWI interface.");
+     return;
+  }
   // See if we can find a ethernet adapter
   Serial1.begin(9600);
   EthernetPresent = EloadConfig(&eConfig,true);
@@ -183,7 +250,24 @@ void Ethernet_test(void)
 
 void ProcessEthernet(void)
 {
+  uint8_t b;
+  
   if((!EthernetPresent) && (!MIPSconfigData.Ser1ena)) return;
+  if(MIPSconfigData.EnetUseTWI)
+  {
+    // Send any chars to enet interface
+    enet_sb.flush();
+    // If TWI data is available read into processing buffer
+    Wire1.requestFrom(TWI_ENET_ADD, 1);
+    while (Wire1.available() > 0)
+    {
+      b = Wire1.read();
+      if(b == 255) break;
+      serial = &enet_sb;
+      PutCh(b);
+    }
+    return;
+  }
   while (Serial1.available() > 0) 
   {
     serial = &Serial1;
@@ -218,6 +302,7 @@ bool UpdateEthernetAdapter(void)
   bool bStatus;
 
   if(!isEthernetPresent()) return false;
+  if(MIPSconfigData.EnetUseTWI) return EsendConfig(&eConfig);
   Serial1.begin(9600);
   eConfig.WorkMode = eConfig.Reserved = 3;
   bStatus = EsendConfig(&eConfig);

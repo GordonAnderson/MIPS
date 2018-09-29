@@ -27,6 +27,7 @@ extern bool DisableDisplay;
 
 extern void About(void);
 extern void SetModuleRev(void);
+extern void ProcessEthernet(void);
 
 extern Adafruit_ILI9340 tft;
 

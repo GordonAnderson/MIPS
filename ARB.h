@@ -1,6 +1,9 @@
 #ifndef ARB_H_
 #define ARB_H_
 
+// This is the max digitizer frequency in the ARB mode, this sets the max frequency.
+#define MAXARBRATE 1280000
+
 // Digital IO pins used by the ARB system
 #define ARBsync 9
 #define ARBmode 48                    // Signals ARB module to enter compress mode
@@ -59,9 +62,23 @@
 #define TWI_SERIAL             0x27      // This command enables the TWI port to process serial commands
 #define TWI_SET_COMP_ORDER_EX  0x28      // Set compression order, word value, 0 to 65535 
 
+// The following command support amplitude and frequence scanning
+#define TWI_SWPSTARTFREQ    0x29      // Define the sweep start frequency in Hz
+#define TWI_SWPSTOPFREQ     0x30      // Define the sweep stop frequency in Hz
+#define TWI_SWPSTARTV       0x31      // Define the sweep start voltage, p-p
+#define TWI_SWPSTOPV        0x32      // Define the sweep stop voltage, p-p
+#define TWI_SWPTIME         0x33      // Define the seep time in seconds
+#define TWI_SWPGO           0x34      // Start a sweep
+
+#define TWI_SET_PPP         0x35      // Sets the points per period byte
+#define TWI_SAVE            0x36      // Save settings to flash
+
 #define TWI_READ_REQ_FREQ   0x81      // Returns requested frequency
 #define TWI_READ_ACT_FREQ   0x82      // Returns actual frequency
-#define TWI_READ_STATUS     0x83      // Returns status byte
+#define TWI_READ_STATUS     0x83      // Returns status byte (ARB system status)
+#define TWI_READ_PPP        0x84      // Returns points per period byte
+#define TWI_READ_VERSION    0x85      // Returns a float that contains the ARB version number
+#define TWI_READ_SWEEP_STATUS 0x86    // Returns sweep system status
 
 // Waveform types, used in TWI command
 #define TWI_WAVEFORM_SIN    0x01
@@ -72,9 +89,9 @@
 
 // Constants
 #define ppp   32  // Number of points per waveform period
-#define NP    32  // Number of periods in buffer
-#define CHANS 8   // Total number of DAC channels
-#define MAXBUFFER 8000
+//#define NP    32  // Number of periods in buffer
+//#define CHANS 8   // Total number of DAC channels
+//#define MAXBUFFER 8000
 
 enum WaveFormTypes
 {
@@ -87,19 +104,24 @@ enum WaveFormTypes
 
 typedef struct
 {
-  char  Mode[7];
-  int   Freq;
-  float Amplitude;
-  float Offset;
-  float OffsetA;
-  float OffsetB;
-  float Aux;
-  int   BufferLength;
-  int   NumBuffers;
-  int   Direction;
-  int   WFT;
-  int   Enable;
-  bool  ARBwaveformUpdate;
+  char   Mode[7];
+  int    Freq;
+  float  Amplitude;
+  float  Offset;
+  float  OffsetA;
+  float  OffsetB;
+  float  Aux;
+  int    BufferLength;
+  int    NumBuffers;
+  int    Direction;
+  int    WFT;
+  int    Enable;
+  bool   ARBwaveformUpdate;
+  int    StartFreq;
+  int    StopFreq;
+  float  StartVoltage;
+  float  StopVoltage;
+  float  SweepTime;   
 } ARBstate;
 
 // One struct for each ARB board
@@ -157,6 +179,14 @@ typedef struct
   int           CrampOrder;         // Order ramping step size
   // Extended compresion order to unsigned 16 bits
   int           Corder;
+  // Frequency and voltage sweep parameters
+  int           StartFreq;
+  int           StopFreq;
+  float         StartVoltage;
+  float         StopVoltage;
+  float         SweepTime;          // In seconds  
+  char          ARBsweepTrig;       // Sweep start external input trigger channel
+  int8_t        ARBsweepLevel;      // Sweep start external input trigger level
 } ARBdata;
 
 extern ARBdata  *ARBarray[4];
@@ -176,6 +206,7 @@ void SetBoardBias(int board, int add, float Voltage, uint8_t cmd = TWI_SET_BRD_B
 void SetWaveform(void);
 void SetDirection(void);
 void SetARBwaveform(void);
+void SetupNumWaveformPoints(void);
 
 void UpdateAux(int8_t brd, float val, bool FlushQueued);
 void UpdateOffsetA(int8_t brd, float val, bool FlushQueued);
@@ -219,6 +250,13 @@ void GetARBoffsetBoardA(int module);
 void SetARBoffsetBoardB(char *module, char *val);
 void GetARBoffsetBoardB(int module);
 void ARBmoduleSync(void);
+void GetARBversion(int module);
+void GetARBppp(int module);
+void SetARBppp(int module, int PPP);
+void ARBstartSweep(int module);
+void ARBstopSweep(int module);
+void GetARBsweepStatus(int module);
+
 
 // Compressor proto types
 void SetARBCompressorEnabled(char *flag);

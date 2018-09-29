@@ -649,6 +649,18 @@
 //  1.135, Aug 20, 2018
 //      1.) On the RFamp change the units on Ro to mm.
 //      2.) Fixed a bug that would not let you enter closed loop mode on the RF driver MIPS UI
+//  1.136, Sept 4, 2018
+//      1.) Updated SD drivers, in Sd2Card.cpp, cardCommand function added additional clocks to let the card init
+//  1.137, Sept 12, 2018
+//      1.) Updated the ARB driver to support adjustment os the number of point per waveform cycle. (not finished yet,
+//          the user definable waveforms still needs some development, also testing is needed).
+//      2.) Need to add the capability for frequency sweeping, I did check and there is space for thge variables in the ARB
+//          data structure.
+//  1.138, Sept 23, 2018
+//      1.) Added the AUXOUT command for testing of the MALDI controller.
+//      2.) Updated the delayed trigger AUXOUT, removed the 60Hz limit and use the frequency function's pulse width.
+//      3.) Added support for using TWI interface to enet module.
+//
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
@@ -736,7 +748,7 @@ int  LEDstate = 0;
 
 uint32_t BrightTime=0;
 
-const char Version[] PROGMEM = "Version 1.135, Aug 20, 2018";
+const char Version[] PROGMEM = "Version 1.138, Sept 23, 2018";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -1385,8 +1397,18 @@ void setup()
   delay(250);
 
   SPI.setClockDivider(21);
+  SPI.setClockDivider(30);
   pinMode(_sdcs, OUTPUT);
   digitalWrite(_sdcs, HIGH);
+
+  digitalWrite(_sdcs, LOW);
+  delay(100);
+  digitalWrite(_sdcs, HIGH);
+//  delay(100);
+//  SPI.setDataMode(_sdcs, SPI_MODE1);
+//  SPI.transfer(_sdcs, 0, SPI_CONTINUE);  // Generate some clock pulses
+//  SPI.transfer(_sdcs, 0);
+
   delay(100);
   SD.begin(_sdcs);
   WDT_Restart(WDT);

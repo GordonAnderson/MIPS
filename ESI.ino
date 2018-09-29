@@ -561,8 +561,9 @@ void ESI_loop(void)
         {
           if(abs(Setpoints[b][c]) < abs(ESIarray[b].ESIchan[c].VoltageSetpoint)) 
           {
-            // Here is increase the absolute value, ramp up. Limit testing is done later
-            if(ESIarray[b].ESIchan[c].VoltageSetpoint < 0) Setpoints[b][c] -= ESIstepSize;
+            // Here to increase the absolute value, ramp up. Limit testing is done later
+            if(abs(Setpoints[b][c]-ESIarray[b].ESIchan[c].VoltageSetpoint) <= ESIstepSize) Setpoints[b][c]=ESIarray[b].ESIchan[c].VoltageSetpoint;
+            else if(ESIarray[b].ESIchan[c].VoltageSetpoint < 0) Setpoints[b][c] -= ESIstepSize;
             else Setpoints[b][c] += ESIstepSize;
           }
           if(abs(Setpoints[b][c]) > abs(ESIarray[b].ESIchan[c].VoltageSetpoint)) // Setpoints[b][c] = ESIarray[b].ESIchan[c].VoltageSetpoint;

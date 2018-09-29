@@ -63,11 +63,15 @@ MIPStimer *ARBclock;
 
 #define ARB ARBarray[SelectedARBboard]
 
+float ARBversion=0;
+
 ARBdata  *ARBarray[4]  = {NULL,NULL,NULL,NULL};
 ARBstate *ARBstates[4] = {NULL,NULL,NULL,NULL};
 ARBdata  arb;   // This is the display / UI data structure
 
+DIhandler *ARBsweepTrigDI[4];
 DIhandler *ARBsyncIN[4];
+void (*ARBsweepISRs[4])(void) = {ARB_1_SWEEP_ISR, ARB_2_SWEEP_ISR, ARB_3_SWEEP_ISR, ARB_3_SWEEP_ISR};
 DIhandler *DIdirARB[4];
 void (*ARBdirISRs[4])(void) = {ARB_1_DIR_ISR, ARB_2_DIR_ISR, ARB_3_DIR_ISR, ARB_4_DIR_ISR};
 
@@ -96,6 +100,7 @@ extern DialogBoxEntry ARBentriesPage2[];
 extern DialogBoxEntry ARBwaveformEdit[];
 extern DialogBoxEntry ARBentriesRange[];
 extern DialogBoxEntry ARBentriesSetup[];
+extern DialogBoxEntry ARBentriesSweep[];
 
 // TWAVE mode main menu
 DialogBoxEntry ARBentriesPage1[] = {
@@ -144,6 +149,7 @@ DialogBoxEntry ARBentriesPage2[] = {
   {" Setup"              , 0, 3, D_PAGE    , 0, 0, 0, 0, false, NULL, ARBentriesSetup, NULL, NULL},
   {" Offset A"           , 0, 4, D_OFF     , -10, 10, 0.1, 18, false, "%5.1f", &arb.OffsetA, NULL, NULL},
   {" Offset B"           , 0, 5, D_OFF     , -10, 10, 0.1, 18, false, "%5.1f", &arb.OffsetB, NULL, NULL},  
+  {" Sweep"              , 0, 7, D_OFF     , 0, 0, 0, 0, false, NULL, ARBentriesSweep, NULL, NULL},
   {" Compressor"         , 0, 7, D_OFF     , 0, 0, 0, 0, false, NULL, &ARBCompressorDialog, NULL,NULL},
   {" Save settings"      , 0, 8, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SaveARBsettings, NULL},
   {" Restore settings"   , 0, 9, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RestorARBsettings, NULL},
@@ -157,6 +163,18 @@ DialogBoxEntry ARBentriesSetup[] = {
   {" Dir input"          , 0, 3, D_DI     , 0, 0, 2, 21, false, NULL, &arb.ARBdirDI, NULL, NULL},
   {" Dir level"          , 0, 4, D_DILEVEL, 0, 0, 4, 19, false, NULL, &arb.ARBdirLevel, NULL, NULL},
   {" Return"             , 0,10, D_PAGE, 0, 0, 0, 0, false, NULL, ARBentriesPage2, NULL, NULL},
+  {NULL},
+};
+
+DialogBoxEntry ARBentriesSweep[] = {
+  {" Start freq"         , 0, 1, D_INT    , 1000, 40000, 100, 18, false, "%6d", &arb.StartFreq, NULL, NULL},
+  {" Stop freq"          , 0, 2, D_INT    , 1000, 40000, 100, 18, false, "%6d", &arb.StopFreq, NULL, NULL},
+  {" Start Vp-p"         , 0, 3, D_FLOAT  , -50, 50, 0.1, 19, false, "%5.1f", &arb.StartVoltage, NULL, NULL},
+  {" Stop Vp-p"          , 0, 4, D_FLOAT  , -50, 50, 0.1, 19, false, "%5.1f", &arb.StopVoltage, NULL, NULL},
+  {" Sweep time, sec"    , 0, 5, D_FLOAT  , 0.1, 1000, 0.1, 18, false, "%6.1f", &arb.SweepTime, NULL, NULL},
+  {" Trig input"         , 0, 7, D_DI     , 0, 0, 2, 22, false, DIlist, &arb.ARBsweepTrig, NULL, NULL},
+  {" Trig level"         , 0, 8, D_DILEVEL, 0, 0, 4, 20, false, DILlist, &arb.ARBsweepLevel, NULL, NULL},
+  {" Return"             , 0,10, D_PAGE   , 0, 0, 0, 0, false, NULL, ARBentriesPage2, NULL, NULL},
   {NULL},
 };
 
@@ -217,7 +235,87 @@ DialogBox ARBdialog = {
 
 MenuEntry MEARBmodule = {" ARB module", M_DIALOG, 0, 0, 0, NULL, &ARBdialog, NULL, NULL};
 
+// This is a pre processing function called my the UI before the screen loads that allows
+// the user to edit a waveform. This function sets the number of points per period
+void SetupNumWaveformPoints(void)
+{
+  for(int i=0;i<ppp;i++)
+  {
+    if(i < arb.PPP) ARBwaveformEdit[i+1].Type = D_INT;
+    else ARBwaveformEdit[i+1].Type = D_OFF;
+  }
+}
+
 // ISRs
+void ARB_1_SWEEP_ISR(void)
+{
+   int b;
+  
+   // Acquire the TWI resource, if bust then put this function
+   // in the queue to run when its freeded
+   if((b = ARBmoduleToBoard(1,false)) == -1) return;
+   if(AcquireTWI()) 
+   {
+      int brd = SelectedBoard();
+      // Send the start command to the ARB
+      SetByte(b, TWI_SWPGO, SS_START);
+      SelectBoard(brd);
+      return;
+   }
+   TWIqueue(ARB_1_SWEEP_ISR);
+}
+void ARB_2_SWEEP_ISR(void)
+{
+   int b;
+  
+   // Acquire the TWI resource, if bust then put this function
+   // in the queue to run when its freeded
+   if((b = ARBmoduleToBoard(2,false)) == -1) return;
+   if(AcquireTWI()) 
+   {
+      int brd = SelectedBoard();
+      // Send the start command to the ARB
+      SetByte(b, TWI_SWPGO, SS_START);
+      SelectBoard(brd);
+      return;
+   }
+   TWIqueue(ARB_2_SWEEP_ISR);
+}
+void ARB_3_SWEEP_ISR(void)
+{
+   int b;
+  
+   // Acquire the TWI resource, if bust then put this function
+   // in the queue to run when its freeded
+   if((b = ARBmoduleToBoard(3,false)) == -1) return;
+   if(AcquireTWI()) 
+   {
+      int brd = SelectedBoard();
+      // Send the start command to the ARB
+      SetByte(b, TWI_SWPGO, SS_START);
+      SelectBoard(brd);
+      return;
+   }
+   TWIqueue(ARB_3_SWEEP_ISR);
+}
+void ARB_4_SWEEP_ISR(void)
+{
+   int b;
+  
+   // Acquire the TWI resource, if bust then put this function
+   // in the queue to run when its freeded
+   if((b = ARBmoduleToBoard(4,false)) == -1) return;
+   if(AcquireTWI()) 
+   {
+      int brd = SelectedBoard();
+      // Send the start command to the ARB
+      SetByte(b, TWI_SWPGO, SS_START);
+      SelectBoard(brd);
+      return;
+   }
+   TWIqueue(ARB_4_SWEEP_ISR);
+}
+
 void ARB_1_DIR_ISR(void)
 {
   if (DIdirARB[0]->activeLevel()) ARBarray[0]->Direction = true;
@@ -301,7 +399,14 @@ void SetModeMenus(bool paint = true)
     // Enable the compressor menu only on board 0 (the first channel)
     de = GetDialogEntries(ARBentriesPage2, "Compressor");
     if(de != NULL) de->Type = D_OFF;
-    if((de != NULL) && (ARBarray[0]->CompressorEnabled) && (SelectedARBboard == 0)) de->Type = D_DIALOG;
+    if((de != NULL) && (ARBarray[0]->CompressorEnabled) && (SelectedARBboard == 0)) de->Type = D_DIALOG;    
+    // Set the max frequency for this channel and for the sweep options
+    de = GetDialogEntries(ARBentriesPage1, "Frequency");
+    de->Max = MAXARBRATE / arb.PPP;
+    de = GetDialogEntries(ARBentriesSweep, "Start freq");
+    de->Max = MAXARBRATE / arb.PPP;
+    de = GetDialogEntries(ARBentriesSweep, "Stop Freq");
+    de->Max = MAXARBRATE / arb.PPP;
   }
   else
   {
@@ -447,6 +552,7 @@ void Waveform2EditBuffer(void)
   int i;
 
   for (i = 0; i < ppp; i++) ARBwaveform[i] = arb.WaveForm[i];
+  SetupNumWaveformPoints();
 }
 
 // Update the dialog box and display
@@ -467,6 +573,106 @@ void SelectARBmodule(bool paint = true)
   SelectBoard(SelectedARBboard);
   arb = *ARB;
   SetModeMenus(paint);
+}
+
+bool ReadFloat(int board,int cmd, float *value)
+{
+  byte *b;
+  int  i=0;
+
+  b = (byte *)value;
+  SelectBoard(board);
+  AcquireTWI();
+  AtomicBlock< Atomic_RestoreState > a_Block;
+  Wire.beginTransmission(ARBarray[board]->ARBadr);
+  Wire.write(cmd);
+  if(Wire.endTransmission() !=0) {ReleaseTWI(); return false;}
+  Wire.requestFrom(ARBarray[board]->ARBadr, 4);
+  while (Wire.available()) b[i++] = Wire.read();
+  ReleaseTWI();
+  if(fpclassify(*value) != FP_NORMAL)
+  {
+    *value = 0;
+    return false;
+  }
+  if(i==4) return true;
+  return false;
+}
+
+bool Read32bitInt(int board,int cmd, int *value)
+{
+  byte *b;
+  int  i=0;
+
+  b = (byte *)value;
+  SelectBoard(board);
+  AcquireTWI();
+  AtomicBlock< Atomic_RestoreState > a_Block;
+  Wire.beginTransmission(ARBarray[board]->ARBadr);
+  Wire.write(cmd);
+  if(Wire.endTransmission() !=0) {ReleaseTWI(); return false;}
+  Wire.requestFrom(ARBarray[board]->ARBadr, 4);
+  while (Wire.available()) b[i++] = Wire.read();
+  ReleaseTWI();
+  if(i==4) return true;
+  return false;
+}
+
+bool Read24bitUnsigned(int board,int cmd, int *value)
+{
+  byte *b;
+  int  i=0;
+
+  b = (byte *)value;
+  SelectBoard(board);
+  AcquireTWI();
+  AtomicBlock< Atomic_RestoreState > a_Block;
+  Wire.beginTransmission(ARBarray[board]->ARBadr);
+  Wire.write(cmd);
+  if(Wire.endTransmission() !=0) {ReleaseTWI(); return false;}
+  Wire.requestFrom(ARBarray[board]->ARBadr, 3);
+  while (Wire.available()) b[i++] = Wire.read();
+  ReleaseTWI();
+  if(i==3) return true;
+  return false;
+}
+
+bool Read16bitUnsigned(int board,int cmd, int *value)
+{
+  byte *b;
+  int  i=0;
+
+  b = (byte *)value;
+  SelectBoard(board);
+  AcquireTWI();
+  AtomicBlock< Atomic_RestoreState > a_Block;
+  Wire.beginTransmission(ARBarray[board]->ARBadr);
+  Wire.write(cmd);
+  if(Wire.endTransmission() !=0) {ReleaseTWI(); return false;}
+  Wire.requestFrom(ARBarray[board]->ARBadr, 2);
+  while (Wire.available()) b[i++] = Wire.read();
+  ReleaseTWI();
+  if(i==2) return true;
+  return false;
+}
+
+bool Read8bitUnsigned(int board,int cmd, int *value)
+{
+  byte *b;
+  int  i=0;
+
+  b = (byte *)value;
+  SelectBoard(board);
+  AcquireTWI();
+  AtomicBlock< Atomic_RestoreState > a_Block;
+  Wire.beginTransmission(ARBarray[board]->ARBadr);
+  Wire.write(cmd);
+  if(Wire.endTransmission() !=0) {ReleaseTWI(); return false;}
+  Wire.requestFrom(ARBarray[board]->ARBadr, 1);
+  while (Wire.available()) b[i++] = Wire.read();
+  ReleaseTWI();
+  if(i==1) return true;
+  return false;
 }
 
 void SetBool(int board, int cmd, bool flag)
@@ -528,6 +734,24 @@ void Set16bitInt(int board, int cmd, int ival)
   ReleaseTWI();  
 }
 
+void SetInt(int board, int cmd, int ival)
+{
+  SelectBoard(board);
+  AcquireTWI();
+  uint8_t *b = (uint8_t *)&ival;
+  Wire.beginTransmission(ARBarray[board]->ARBadr);
+  Wire.write(cmd);
+  Wire.write(b[0]);
+  Wire.write(b[1]);
+  Wire.write(b[2]);
+  Wire.write(b[3]);
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
+  ReleaseTWI();  
+}
+
 void SetFloat(int board, int cmd, float fval)
 {
   SelectBoard(board);
@@ -555,9 +779,9 @@ void SetARBcommonClock(ARBdata *ad, int freq)
   ARBclock->stop();
   if(strcmp(ad->Mode,"TWAVE") == 0)
   {
-    clkdiv = VARIANT_MCK / (2 * ppp * freq);
-    actualF = VARIANT_MCK / (2 * ppp * clkdiv);
-    ARBclock->setFrequency(actualF * ppp);
+    clkdiv = VARIANT_MCK / (2 * ad->PPP * freq);
+    actualF = VARIANT_MCK / (2 * ad->PPP * clkdiv);
+    ARBclock->setFrequency(actualF * ad->PPP);
   }
   else
   {
@@ -686,7 +910,6 @@ void SetARBwaveform(int board)
     AtomicBlock< Atomic_RestoreState > a_Block;
     Wire.endTransmission();
   }
-
   Wire.beginTransmission(ARBarray[board]->ARBadr);
   Wire.write(TWI_SET_VECTOR);
   Wire.write(16);
@@ -755,7 +978,7 @@ void ARBsyncISR(void)
 // 
 void ARB_init(int8_t Board, int8_t addr)
 {
-  // If this is the first board then reset the ARB CPUs
+  // If this is the first board then reset all the ARB CPUs
   if (NumberOfARBchannels == 0)
   {
      pinMode(14,OUTPUT);
@@ -802,6 +1025,13 @@ void ARB_init(int8_t Board, int8_t addr)
   // Init the hardware here...
   pinMode(ARBsync,OUTPUT);
   digitalWrite(ARBsync,LOW);
+  // Read the points per waveform for this ARB channel
+  int i;
+  if(Read8bitUnsigned(Board,TWI_READ_PPP,&i))
+  {
+    if((i>=8) && (i<=32)) ARBarray[Board]->PPP = i;
+  }
+  else ARBarray[Board]->PPP = 32;
   if (NumberOfARBchannels == 0)
   {
     arb = *ARB;
@@ -832,6 +1062,16 @@ void ARB_init(int8_t Board, int8_t addr)
   //SetFrequency(Board,ARBarray[Board]->Frequency);
   // If we are using a common clock then signal the ARB module to use external clock
   if(ARBarray[Board]->UseCommonClock) SetBool(Board, TWI_SET_EXT_CLOCK, true);
+  // Read the arb version and set the global variable, we assume all ARBs are the
+  // same version
+  if(!ReadFloat(Board,TWI_READ_VERSION,&ARBversion)) ARBversion = 0;
+  // If version >= 1.14 then enable the sweep options
+  if(ARBversion > 1.13)
+  {
+    DialogBoxEntry *de = GetDialogEntries(ARBentriesPage2, "Sweep");
+    de->Type = D_PAGE;
+    ARBsweepTrigDI[Board] = new DIhandler;
+  }
   NumberOfARBchannels += 8;  // Always add eight channels for each board
   // Set the maximum number of channels in the selection menu
   ARBentriesPage1[0].Max = NumberOfARBchannels / 8;
@@ -988,6 +1228,41 @@ void ARB_loop(void)
       {
          DIdirARB[b]->detach();
          DIdirARB[b]->attached(ARBarray[b]->ARBdirDI, ARBarray[b]->ARBdirLevel, ARBdirISRs[b]);
+      }
+      // Process sweep parameters only for version 1.14 and greater
+      if(ARBversion > 1.13)
+      {
+        if((ARBstates[b]->StartFreq != ARBarray[b]->StartFreq) || FirstPass)
+        {
+           SetInt(b, TWI_SWPSTARTFREQ, ARBarray[b]->StartFreq);
+           ARBstates[b]->StartFreq = ARBarray[b]->StartFreq;
+        }
+        if((ARBstates[b]->StopFreq != ARBarray[b]->StopFreq) || FirstPass)
+        {
+           SetInt(b, TWI_SWPSTOPFREQ, ARBarray[b]->StopFreq);
+           ARBstates[b]->StopFreq = ARBarray[b]->StopFreq;
+        }
+        if((ARBstates[b]->StartVoltage != ARBarray[b]->StartVoltage) || FirstPass)
+        {
+           SetFloat(b, TWI_SWPSTARTV, ARBarray[b]->StartVoltage);
+           ARBstates[b]->StartVoltage = ARBarray[b]->StartVoltage;
+        }
+        if((ARBstates[b]->StopVoltage != ARBarray[b]->StopVoltage) || FirstPass)
+        {
+           SetFloat(b, TWI_SWPSTOPV, ARBarray[b]->StopVoltage);
+           ARBstates[b]->StopVoltage = ARBarray[b]->StopVoltage;
+        }
+        if((ARBstates[b]->SweepTime != ARBarray[b]->SweepTime) || FirstPass)
+        {
+           SetFloat(b, TWI_SWPTIME, ARBarray[b]->SweepTime);
+           ARBstates[b]->SweepTime = ARBarray[b]->SweepTime;
+        }
+        // process the sweep trigger options
+        if ((ARBarray[b]->ARBsweepTrig != ARBsweepTrigDI[b]->di) || (ARBarray[b]->ARBsweepLevel != ARBsweepTrigDI[b]->mode) || FirstPass)
+        {
+           ARBsweepTrigDI[b]->detach();
+           ARBsweepTrigDI[b]->attached(ARBarray[b]->ARBsweepTrig, ARBarray[b]->ARBsweepLevel, ARBsweepISRs[b]);
+        }
       }
     }
   }
@@ -1174,12 +1449,14 @@ void GetARBMode(int module)
   if(!SerialMute) serial->println(ARBarray[b]->Mode);
 }
 
+
 void SetWFfreq(int module, int freq)
 {
    int b;
   
    if((b = ARBmoduleToBoard(module,true)) == -1) return;
-   if(((strcmp(ARBarray[b]->Mode,"TWAVE") == 0) && (freq >= 1000) && (freq <= 45000)) || ((strcmp(ARBarray[b]->Mode,"ARB") == 0) && (freq >= 1000) && (freq <= 1500000)))
+   float MaxARBfreq = MAXARBRATE / ARBarray[b]->PPP;
+   if(((strcmp(ARBarray[b]->Mode,"TWAVE") == 0) && (freq >= 1000) && (freq <= MaxARBfreq)) || ((strcmp(ARBarray[b]->Mode,"ARB") == 0) && (freq >= 1000) && (freq <= 1500000)))
    {
       ARBarray[b]->Frequency = freq;
       SetFrequency(b,freq);
@@ -1200,8 +1477,8 @@ void GetWFfreq(int module)
    SendACKonly;
    if(strcmp(ARBarray[b]->Mode,"TWAVE") == 0)
    {
-     clkdiv = VARIANT_MCK / (2 * ppp * ARBarray[b]->Frequency);
-     actualF = VARIANT_MCK / (2 * ppp * clkdiv);
+     clkdiv = VARIANT_MCK / (2 * ARBarray[b]->PPP * ARBarray[b]->Frequency);
+     actualF = VARIANT_MCK / (2 * ARBarray[b]->PPP * clkdiv);
    }
    else
    {
@@ -1411,30 +1688,39 @@ void SetARBwaveform(void)
      if((Token = GetToken(true)) == NULL) break;
      sToken = Token;
      mod = sToken.toInt();
-     for(i=0;i<ppp;i++)
+     
+     i = 0;
+     while(true)
      {
         GetToken(true);
         if((Token = GetToken(true)) == NULL) break;
         sToken = Token;
-        vals[i] = sToken.toFloat();
+        if(Token[0] == '\n') break;
+        if(i<(ppp-1)) vals[i] = sToken.toFloat();
+        i++;
      }
-     if((Token = GetToken(true)) == NULL) break;
-     if(Token[0] != '\n') break;
+     if(Token == NULL) break;
      // Test arguments
      if((b = ARBmoduleToBoard(mod,true)) == -1) return;
-     for(i=0;i<ppp;i++) if((vals[i] < -100) || (vals[i] > 100))
+     if(i != ARBarray[b]->PPP)
+     {
+       SetErrorCode(ERR_BADARG);
+       SendNAK;
+       return;      
+     }
+     for(i=0;i<ARBarray[b]->PPP;i++) if((vals[i] < -100) || (vals[i] > 100))
      {
        SetErrorCode(ERR_BADARG);
        SendNAK;
        return;
      }
      // Fill the waveform buffer and set flag to send waveform
-     for(i=0;i<ppp;i++) ARBarray[b]->WaveForm[i] = vals[i];
+     for(i=0;i<ARBarray[b]->PPP;i++) ARBarray[b]->WaveForm[i] = vals[i];
      ARBstates[b]->ARBwaveformUpdate = true;
      // If the user interface is displaying this channel then update the display array
      if((ActiveDialog->Entry == ARBwaveformEdit) && (SelectedARBboard == b))
      {
-        for (i = 0; i < ppp; i++) ARBwaveform[i] = vals[i];
+        for (i = 0; i < ARBarray[b]->PPP; i++) ARBwaveform[i] = vals[i];
      }
      SendACK;
    }
@@ -1448,10 +1734,10 @@ void GetARBwaveform(int module)
   if((b = ARBmoduleToBoard(module,true)) == -1) return;
   SendACKonly;
   if(SerialMute) return;
-  for(i=0;i<ppp;i++)
+  for(i=0;i<ARBarray[b]->PPP;i++)
   {
     serial->print(ARBarray[b]->WaveForm[i]);
-    if(i == (ppp-1)) serial->println("");
+    if(i == (ARBarray[b]->PPP-1)) serial->println("");
     else serial->print(","); 
   }
   SendACK;
@@ -1904,6 +2190,113 @@ void SaveARB2EEPROM(void)
   SendACK;
 }
 
+void GetARBversion(int module)
+{
+  int b;
 
+   if((b = ARBmoduleToBoard(module,true)) == -1) return;
+   SendACKonly;
+   if(SerialMute) return;
+   // Read version float from ARB
+   float fVer;
+   if(ReadFloat(b,TWI_READ_VERSION,&fVer))
+   {
+      serial->print("ARB version: ");
+      serial->println(fVer);
+      return;
+   }
+   serial->println("ARB version is prior to 1.14");  
+}
+
+// Returns the points per waveform
+void GetARBppp(int module)
+{
+  int b;
+  
+   if((b = ARBmoduleToBoard(module,true)) == -1) return;
+   SendACKonly;
+   if(SerialMute) return;
+   serial->println(ARBarray[b]->PPP);
+}
+
+// This function sets the points per waveform in the selected ARB module.
+// This function will save the updates in the ARB module and reboot the MIPS system.
+// This is a setup command.
+void SetARBppp(int module, int PPP)
+{
+   int b;
+  
+   if((b = ARBmoduleToBoard(module,true)) == -1) return;
+   // Validate PPP
+   if((PPP < 8) || (PPP >32))
+   {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;
+     return;    
+   }
+   SendACK;
+   // Set the PPP on the ARB module
+   SetByte(b, TWI_SET_PPP, PPP);
+   // Save changes on the ARB module
+   Wire.beginTransmission(ARBarray[b]->ARBadr);
+   Wire.write(TWI_SAVE);
+   Wire.endTransmission();
+   // Delay and warn
+   serial->println("The MIPS system will reboot soon...");
+   delay(1000);
+   // Reboot MIPS
+   Software_Reset();
+}
+
+// Sweep start, stop and status commands
+void ARBstartSweep(int module)
+{
+  int b;
+  
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  // Send TWI command to start a sweep
+  SetByte(b, TWI_SWPGO, SS_START);
+  SendACK;
+}
+
+void ARBstopSweep(int module)
+{
+  int b;
+  
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  // Send TWI command to stop a sweep
+  SetByte(b, TWI_SWPGO, SS_STOP);
+  SendACK;  
+}
+
+void GetARBsweepStatus(int module)
+{
+  int b;
+  
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  // Send read status from ARB module.
+  int i;
+  if(!Read8bitUnsigned(b,TWI_READ_SWEEP_STATUS, &i)) return;
+  switch (i)
+  {
+    case SS_IDLE:
+      serial->println("IDLE"); 
+      break;
+    case SS_START:
+      serial->println("STARTING"); 
+      break;
+    case SS_STOP:
+      serial->println("STOPPING"); 
+      break;
+    case SS_SWEEPING:
+      serial->println("SWEEPING"); 
+      break;
+    default:
+      serial->println("Invalid response from ARB"); 
+      break;
+  }
+}
 
 

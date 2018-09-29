@@ -81,6 +81,7 @@ Commands  CmdArray[] = 	{
   {"ECHO",  CMDbool, 1, (char *)&echoMode},              // Turns on and off the serial echo mode where the command is echoed to host, TRUE or FALSE
   {"TRIGOUT", CMDfunctionStr, 1, (char *)(static_cast<void (*)(char *)>(&TriggerOut))},    // Generates output trigger on rev 2 and higher controllers
                                                          // supports, HIGH,LOW,PULSE
+  {"AUXOUT",  CMDfunctionStr, 1, (char *)AuxOut},        // Generates output trigger on Aux output, supports, HIGH,LOW,PULSE                                                         
   {"DELAY", CMDfunction, 1, (char *)DelayCommand},       // Generates a delay in milliseconds. This is used by the macro functions
                                                          // to define delays in voltage ramp up etc.
   {"GCMDS", CMDfunction, 0, (char *)GetCommands},	       // Send a list of all commands
@@ -342,6 +343,11 @@ Commands  CmdArray[] = 	{
   {"GTWSSTPV",CMDfunction, 1, (char *)GetStopVoltageTWSW},     // Return the TWAVE sweep stop voltage
   {"STWSTM",CMDfunctionStr, 2, (char *)SetSweepTimeTWSW},      // Set the TWAVE sweep time
   {"GTWSTM",CMDfunction, 1, (char *)GetSweepTimeTWSW},         // Return the TWAVE sweep time
+  // There are two ARB sweep systems, the following commands start the sweep functions controlled
+  // from the MIPS system. These work on both ARB and TWAVE system and support only channel 1 and 2.
+  // The new ARB (version 1.14 and later) support ARB module sweeping and you can use all 4 ARB board.
+  // The above setup commands work for both system. The following 3 commands are only the old system.
+  // Look in the ARB secton for the new sweep start/stop/status commands.
   {"STWSGO",CMDfunction, 1, (char *)StartSweepTWSW},           // Start the sweep
   {"STWSHLT",CMDfunction, 1, (char *)StopSweepTWSW},           // Stop the sweep
   {"GTWSTA",CMDfunction, 1, (char *)GetStatusTWSW},            // Return the TWAVE sweep status
@@ -438,11 +444,13 @@ Commands  CmdArray[] = 	{
   {"SEPORT", CMDfunction, 1, (char *)SetEport},                      // Set the ethernet adapter port number
   {"GEGATE", CMDfunction, 0, (char *)ReportEGATE},                   // Report the ethernet adapter gateway IP address
   {"SEGATE", CMDfunctionStr, 1, (char *)SetEGATE},                   // Set the ethernet adapter gateway IP address
+  {"SENTTWI", CMDbool, 1, (char *)&MIPSconfigData.EnetUseTWI},       // Sets the TWI interface flag for enet interface, TRUE=use TWI
+  {"GENTTWI", CMDbool, 0, (char *)&MIPSconfigData.EnetUseTWI},       // Returns the enet TWI flag
   // ARB general commands
-  {"SARBMODE", CMDfunctionStr, 2, (char *)SetARBMode},               // Sets the ARM mode
-  {"GARBMODE", CMDfunction, 1, (char *)GetARBMode},                  // Reports the ARM mode
-  {"SWFREQ", CMDfunction, 2, (char *)SetWFfreq},                     // Sets waveform frequency, 0 to 45000Hz
-  {"GWFREQ", CMDfunction, 1, (char *)GetWFfreq},                     // Returns the waveform frequency, 0 to 45000Hz
+  {"SARBMODE", CMDfunctionStr, 2, (char *)SetARBMode},               // Sets the ARB mode
+  {"GARBMODE", CMDfunction, 1, (char *)GetARBMode},                  // Reports the ARB mode
+  {"SWFREQ", CMDfunction, 2, (char *)SetWFfreq},                     // Sets waveform frequency, 0 to 40000Hz
+  {"GWFREQ", CMDfunction, 1, (char *)GetWFfreq},                     // Returns the waveform frequency, 0 to 40000Hz
   {"SWFVRNG", CMDfunctionStr, 2, (char *)SetWFrange},                // Sets waveform voltage range, rev 2.0
   {"GWFVRNG", CMDfunction, 1, (char *)GetWFrange},
   {"SWFVOFF", CMDfunctionStr, 2, (char *)SetWFoffsetV},              // Sets waveform offset voltage, rev 2.0
@@ -461,7 +469,7 @@ Commands  CmdArray[] = 	{
   {"GARBOFFA", CMDfunction, 1, (char *)GetARBoffsetBoardA},          // For a dual output board ARB channel this commands returns the board A offset
   {"SARBOFFB", CMDfunctionStr, 2, (char *)SetARBoffsetBoardB},       // For a dual output board ARB channel this commands sets the board B offset
   {"GARBOFFB", CMDfunction, 1, (char *)GetARBoffsetBoardB},          // For a dual output board ARB channel this commands returns the board B offset  
-  {"ARBSYNC", CMDfunction, 0, (char *)ARBmoduleSync},                 // Issues a software sync, note, the modules have to be configured for external sync
+  {"ARBSYNC", CMDfunction, 0, (char *)ARBmoduleSync},                // Issues a software sync, note, the modules have to be configured for external sync
                                                                      // for this function to work    
   // ARB conventional ARB mode commands
   {"SARBBUF", CMDfunction, 2, (char *)SetARBbufferLength},           // Sets ARB buffer length
@@ -489,12 +497,20 @@ Commands  CmdArray[] = 	{
   {"TARBTRG",CMDfunction, 0, (char *)ARBCtrigger},                   // Force a Twave compressor trigger
   {"GARBCSW",CMDstr, 0, (char *)CswitchState},                       // Report Twave compressor Switch state
   {"SARBCSW",CMDfunctionStr, 1, (char *)SetARBCswitch},              // Set Twave compressor Switch state
+  // ARB sweep commands
+  {"SARBSGO",CMDfunction, 1, (char *)ARBstartSweep},                 // Start the sweep
+  {"SARBSHLT",CMDfunction, 1, (char *)ARBstopSweep},                 // Stop the sweep
+  {"GARBSTA",CMDfunction, 1, (char *)GetARBsweepStatus},             // Return the TWAVE sweep status
   // ARB configuration commands  
   {"SARBCCLK", CMDfunctionStr, 2, (char *)SetARBUseCommonClock},     // Flag to indicate common clock mode for the given ARB module.
   {"SARBCMP", CMDfunctionStr, 1, (char *)SetARBCompressorEnabled},   // Flag to indicate ARB compressor mode is enabled.
   {"SARBCOFF", CMDfunctionStr, 1, (char *)SetARBcommonOffset},       // Flag for all ARB channels use a common offset.
   {"SARBADD",CMDfunction, 2, (char *)SetARBtwiADD},                  // Set the TWI address (base 10) for the ARB module.
   {"SARBDBRD",CMDfunctionStr, 2, (char *)SetARBDualBoard},           // Sets module dual board flag to true or false.
+  {"GARBVER",CMDfunction, 1, (char *)GetARBversion},                 // Returns the ARB module version number
+  {"GARBPPP",CMDfunction, 1, (char *)GetARBppp},                     // Returns the ARB module points per period, 8 to 32
+  {"SARBPPP",CMDfunction, 2, (char *)SetARBppp},                     // Sets the ARB module points per period, 8 to 32
+  
   // DAC module commands
   {"SDACV", CMDfunctionStr, 2, (char *)SetDACValue},                 // Sets the named DAC channel's value  
   {"GDACV", CMDfunctionStr, 1, (char *)GetDACValue},                 // Returns the named DAC channel's value  

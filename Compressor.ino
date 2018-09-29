@@ -204,10 +204,13 @@ void ProcessSweep(void)
 bool TWSWvalidateCF(int chan, int freq)
 {
   DialogBoxEntry *de;
+  int MaxChan = 0;
 
   if(NumberOfTwaveModules > 0) de = GetDialogEntries(TwaveDialogEntries2, "Clock freq, Hz");
   if(NumberOfARBchannels > 0) de = GetDialogEntries(ARBentriesPage1, "Frequency");
-  if(((chan != 1) && (chan != 2)) || (freq > de->Max) || (freq < de->Min))
+  if(NumberOfTwaveModules > 0) MaxChan = NumberOfTwaveModules;
+  if(NumberOfARBchannels > 0) MaxChan = NumberOfARBchannels/8;
+  if((chan <= 0) || (chan > MaxChan) || (freq > de->Max) || (freq < de->Min))
   {
     SetErrorCode(ERR_BADARG);
     SendNAK;
@@ -219,10 +222,13 @@ bool TWSWvalidateCF(int chan, int freq)
 bool TWSWvalidateCV(int chan, int volts)
 {
   DialogBoxEntry *de;
+  int MaxChan = 0;
 
   if(NumberOfTwaveModules > 0) de = GetDialogEntries(TwaveDialogEntries2, "Pulse voltage");
   if(NumberOfARBchannels > 0) de = GetDialogEntries(ARBentriesPage1, "Amplitude, Vp-p");
-  if(((chan != 1) && (chan != 2)) || (volts > de->Max) || (volts < de->Min))
+  if(NumberOfTwaveModules > 0) MaxChan = NumberOfTwaveModules;
+  if(NumberOfARBchannels > 0) MaxChan = NumberOfARBchannels/8;
+  if((chan <= 0) || (chan > MaxChan) || (volts > de->Max) || (volts < de->Min))
   {
     SetErrorCode(ERR_BADARG);
     SendNAK;
@@ -233,7 +239,11 @@ bool TWSWvalidateCV(int chan, int volts)
 
 bool TWSWvalidateC(int chan)
 {
-  if(((chan != 1) && (chan != 2)))
+  int MaxChan = 0;
+
+  if(NumberOfTwaveModules > 0) MaxChan = NumberOfTwaveModules;
+  if(NumberOfARBchannels > 0) MaxChan = NumberOfARBchannels/8;
+  if((chan <= 0) || (chan > MaxChan))
   {
     SetErrorCode(ERR_BADARG);
     SendNAK;
@@ -244,29 +254,49 @@ bool TWSWvalidateC(int chan)
 
 void SetStartFreqTWSW(int chan, int freq)
 {
+  int b;
+  
   if(!TWSWvalidateCF(chan,freq)) return;
-  fSweep[chan-1].StartFreq = freq;
+  if(chan <= 2) fSweep[chan-1].StartFreq = freq;
+  if((b = ARBmoduleToBoard(chan, false)) != -1) ARBarray[b]->StartFreq = freq;
   SendACK;
 }
 
 void GetStartFreqTWSW(int chan)
 {
+  int b;
+  
   if(!TWSWvalidateC(chan)) return;
   SendACKonly;
+  if((b = ARBmoduleToBoard(chan, false)) != -1)
+  {
+    if(!SerialMute) serial->println(ARBarray[b]->StartFreq);
+    return;
+  }
   if(!SerialMute) serial->println(fSweep[chan-1].StartFreq);
 }
 
 void SetStopFreqTWSW(int chan, int freq)
 {
+  int b;
+  
   if(!TWSWvalidateCF(chan,freq)) return;
-  fSweep[chan-1].StopFreq = freq;
+  if(chan <= 2) fSweep[chan-1].StopFreq = freq;
+  if((b = ARBmoduleToBoard(chan, false)) != -1) ARBarray[b]->StopFreq = freq;
   SendACK;
 }
 
 void GetStopFreqTWSW(int chan)
 {
+  int b;
+  
   if(!TWSWvalidateC(chan)) return;
   SendACKonly;
+  if((b = ARBmoduleToBoard(chan, false)) != -1)
+  {
+    if(!SerialMute) serial->println(ARBarray[b]->StopFreq);
+    return;
+  }
   if(!SerialMute) serial->println(fSweep[chan-1].StopFreq);
 }
 
@@ -275,20 +305,29 @@ void SetStartVoltageTWSW(char *schan, char *svolts)
   String sToken;
   int    chan;
   float  volts;
+  int b;
 
   sToken = schan;
   chan = sToken.toInt();
   sToken = svolts;
   volts = sToken.toFloat();
   if(!TWSWvalidateCV(chan,volts)) return;
-  fSweep[chan-1].StartVoltage = volts;
+  if(chan <= 2) fSweep[chan-1].StartVoltage = volts;
+  if((b = ARBmoduleToBoard(chan, false)) != -1) ARBarray[b]->StartVoltage = volts;
   SendACK;
 }
 
 void GetStartVoltageTWSW(int chan)
 {
+  int b;
+
   if(!TWSWvalidateC(chan)) return;
   SendACKonly;
+  if((b = ARBmoduleToBoard(chan, false)) != -1)
+  {
+    if(!SerialMute) serial->println(ARBarray[b]->StartVoltage);
+    return;
+  }
   if(!SerialMute) serial->println(fSweep[chan-1].StartVoltage);
 }
 
@@ -297,20 +336,29 @@ void SetStopVoltageTWSW(char *schan, char *svolts)
   String sToken;
   int    chan;
   float  volts;
+  int b;
 
   sToken = schan;
   chan = sToken.toInt();
   sToken = svolts;
   volts = sToken.toFloat();
   if(!TWSWvalidateCV(chan,volts)) return;
-  fSweep[chan-1].StopVoltage = volts;
+  if(chan <= 2) fSweep[chan-1].StopVoltage = volts;
+  if((b = ARBmoduleToBoard(chan, false)) != -1) ARBarray[b]->StopVoltage = volts;
   SendACK;
 }
 
 void GetStopVoltageTWSW(int chan)
 {
+  int b;
+
   if(!TWSWvalidateC(chan)) return;
   SendACKonly;
+  if((b = ARBmoduleToBoard(chan, false)) != -1)
+  {
+    if(!SerialMute) serial->println(ARBarray[b]->StopVoltage);
+    return;
+  }
   if(!SerialMute) serial->println(fSweep[chan-1].StopVoltage);
 }
 
@@ -319,20 +367,29 @@ void SetSweepTimeTWSW(char *schan, char *stime)
   int    chan;
   float  SweepTime;
   String Token;
+  int b;
 
   Token = schan;
   chan = Token.toInt();
   Token = stime;
   SweepTime = Token.toFloat();
   if(!TWSWvalidateC(chan)) return;
-  fSweep[chan-1].SweepTime = SweepTime;
+  if(chan <= 2) fSweep[chan-1].SweepTime = SweepTime;
+  if((b = ARBmoduleToBoard(chan, false)) != -1) ARBarray[b]->SweepTime = SweepTime;
   SendACK;
 }
 
 void GetSweepTimeTWSW(int chan)
 {
+  int b;
+
   if(!TWSWvalidateC(chan)) return;
   SendACKonly;
+  if((b = ARBmoduleToBoard(chan, false)) != -1)
+  {
+    if(!SerialMute) serial->println(ARBarray[b]->SweepTime);
+    return;
+  }
   if(!SerialMute) serial->println(fSweep[chan-1].SweepTime); 
 }
 
