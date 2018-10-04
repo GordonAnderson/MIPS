@@ -2248,6 +2248,27 @@ void SetARBppp(int module, int PPP)
    Software_Reset();
 }
 
+// Set the external clock source, MIPS or EXT
+void SetARBext(char *module, char *val)
+{
+   String sToken;
+   int    b,mod;
+
+   sToken = module;
+   mod = sToken.toInt();
+   if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+   sToken = val;
+   if((sToken != "MIPS") && (sToken != "EXT"))
+   {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;
+     return;
+   }
+   if(sToken == "MIPS") SetByte(b, TWI_SET_SEXTSRC, 0);
+   else SetByte(b, TWI_SET_SEXTSRC, 1);
+   SendACK;    
+}
+
 // Sweep start, stop and status commands
 void ARBstartSweep(int module)
 {

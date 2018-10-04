@@ -510,6 +510,7 @@ Commands  CmdArray[] = 	{
   {"GARBVER",CMDfunction, 1, (char *)GetARBversion},                 // Returns the ARB module version number
   {"GARBPPP",CMDfunction, 1, (char *)GetARBppp},                     // Returns the ARB module points per period, 8 to 32
   {"SARBPPP",CMDfunction, 2, (char *)SetARBppp},                     // Sets the ARB module points per period, 8 to 32
+  {"SARBEXT",CMDfunctionStr, 2, (char *)SetARBext},                  // Sets the selected ARB external clock source, MIPS or EXT
   
   // DAC module commands
   {"SDACV", CMDfunctionStr, 2, (char *)SetDACValue},                 // Sets the named DAC channel's value  

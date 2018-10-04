@@ -1539,7 +1539,8 @@ void MIPSsystemLoop(void)
       tft.println("Apply power to operate...");
     }
     // Dim the display, we could be like this for a long time!
-    analogWrite(BACKLIGHT, 400);
+    analogWrite(BACKLIGHT, 0);
+//    analogWrite(BACKLIGHT, 400);
     //    bmpDraw(MIPSconfigData.BootImage, 0, 0);
     // Wait for power to appear and then reset the system.
     while (ReadVin() < 10.0) WDT_Restart(WDT);

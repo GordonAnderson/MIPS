@@ -205,6 +205,7 @@ void Ethernet_init(void)
   // See if we can find a ethernet adapter
   if(MIPSconfigData.EnetUseTWI)
   { 
+    delay(1000);
     EthernetPresent = false;
     // init the TWI port
     Wire1.begin();
