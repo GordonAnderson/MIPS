@@ -660,6 +660,20 @@
 //      1.) Added the AUXOUT command for testing of the MALDI controller.
 //      2.) Updated the delayed trigger AUXOUT, removed the 60Hz limit and use the frequency function's pulse width.
 //      3.) Added support for using TWI interface to enet module.
+//  1.139, Oct 9, 2018
+//      1.) Added interlock capability
+//      2.) Allow compression with seperate clocks on ARB
+//      3.) Adjusted the ARB frequency calculation to reduce the error and never exceed 40KHz, 40KHz was 41.3KHz and its
+//          now 39.7KHz
+//  1.140, Oct 21, 2018
+//      1.) Added programmable frequency limits for trigger out and Aux trigger out
+//      2.) Added addition RFamp module commands
+//      3.) Fixed the invert bug in the RFamp
+//      4.) Fixed the DCbias menu selection bug in RFamp
+//      5.) Fixed a bug in the ARB compresion table waveform type selection, w command
+//  1.141, Nov 1, 2018
+//      1.) Added enable command to RFamp module
+//      2.) Changed Invert menu option to Normal in the RFamp module
 //
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
@@ -748,7 +762,7 @@ int  LEDstate = 0;
 
 uint32_t BrightTime=0;
 
-const char Version[] PROGMEM = "Version 1.138, Sept 23, 2018";
+const char Version[] PROGMEM = "Version 1.141, Nov 1, 2018";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -810,6 +824,8 @@ DialogBoxEntry MIPSconfigEntries[] = {
 
 DialogBoxEntry MIPSconfigEntriesP2[] = {
   {" Macro options"     , 0, 1,  D_DIALOG,   0, 0, 0, 0, false, NULL, &MacroOptions, SetupMacroOptions, NULL},
+  {" Interlock input"   , 0, 2,  D_DI      , 0, 0, 2, 21, false, DIlist, &MIPSconfigData.InterlockIn, NULL, NULL},
+  {" Interlock Output"  , 0, 3,  D_DO      , 0, 0, 2, 21, false, DOlist, &MIPSconfigData.InterlockOut, NULL, NULL},
   {" Save settings"     , 0, 9,  D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SaveMIPSSettings, NULL},
   {" Restore settings"  , 0, 10, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RestoreMIPSSettings, NULL},
   {" First page"        , 0, 11, D_PAGE, 0, 0, 0, 0, false, NULL, MIPSconfigEntries, NULL, NULL},
@@ -1539,8 +1555,8 @@ void MIPSsystemLoop(void)
       tft.println("Apply power to operate...");
     }
     // Dim the display, we could be like this for a long time!
-    analogWrite(BACKLIGHT, 0);
-//    analogWrite(BACKLIGHT, 400);
+    if(MIPSconfigData.EnetUseTWI) analogWrite(BACKLIGHT, 0);
+    else analogWrite(BACKLIGHT, 400);
     //    bmpDraw(MIPSconfigData.BootImage, 0, 0);
     // Wait for power to appear and then reset the system.
     while (ReadVin() < 10.0) WDT_Restart(WDT);
@@ -1776,6 +1792,45 @@ void loop()
     DismissMessageIfButton();
   }
   ProcessSerial();
+  // Interlock processing.
+  // If the user has defined an interlock input then monitor this channel.
+  // Arm when it goes high, if armed and it goes lown trip the power supplies.
+  // If the user has defined an interlock output then drive the signal high
+  // when the power supplies are on.
+  static bool initInterlock = true;
+  static int  WasPowerON = digitalRead(PWR_ON);  // LOW = on
+  static bool InterlockArmed = false;
+  if((MIPSconfigData.InterlockIn >= 'Q') && (MIPSconfigData.InterlockIn <= 'X'))
+  {
+    if(InterlockArmed)
+    {
+      if(ReadInput(MIPSconfigData.InterlockIn) == LOW)
+      {
+        // Trip power supply and disarm interlock
+        MIPSconfigData.PowerEnable = false;
+        digitalWrite(PWR_ON,HIGH);
+        DisplayMessageButtonDismiss("Interlock Trip!");
+        InterlockArmed = false;
+      }
+    }
+    else if(ReadInput(MIPSconfigData.InterlockIn) == HIGH) InterlockArmed = true;
+  }
+  if((initInterlock) || (WasPowerON != digitalRead(PWR_ON)))
+  {
+    initInterlock = false;
+    if((MIPSconfigData.InterlockOut >= 'A') && (MIPSconfigData.InterlockOut <= 'P'))
+    {
+      // If power supply is on then output interlock high 
+      if(NumberOfDCChannels > 0)
+      {
+        WasPowerON = digitalRead(PWR_ON);
+        if(digitalRead(PWR_ON) == LOW) SetOutput(MIPSconfigData.InterlockOut,HIGH);
+        else SetOutput(MIPSconfigData.InterlockOut,LOW);
+      }
+      else SetOutput(MIPSconfigData.InterlockOut,HIGH);
+      UpdateDigitialOutputArray();
+    }
+  }
 }
 
 

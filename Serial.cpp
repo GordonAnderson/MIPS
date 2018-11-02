@@ -136,6 +136,10 @@ Commands  CmdArray[] = 	{
   {"GFREQ",  CMDint, 0, (char *)&PulseFreq},                  // Report the pulse frequency in Hz
   {"SFREQ",  CMDint, 1, (char *)&PulseFreq},                  // Set the pulse frequency in Hz
   {"BURST",  CMDfunction, 1, (char *)&GenerateBurst},         // Generates a frequencyy burst on trig out line
+  {"GMAXFTRIG",  CMDint, 0, (char *)&TrigMax},                // Report the maximum frequency for trig out, 0 = nolimit
+  {"SMAXFTRIG",  CMDint, 1, (char *)&TrigMax},                // Sets the maximum frequency for trig out, 0 = nolimit
+  {"GMAXFATRIG",  CMDint, 0, (char *)&AuxTrigMax},            // Report the maximum frequency for aux trig out, 0 = nolimit
+  {"SMAXFATRIG",  CMDint, 1, (char *)&AuxTrigMax},            // Sets the maximum frequency for aux trig out, 0 = nolimit
   // Delay trigger functions. This supports delayed trigger and retriggering of supported modules
   {"SDTRIGINP", CMDfunctionStr, 2, (char *)SetDelayTrigInput},// Set delay trigger input (Q-X) and level, POS or NEG
   {"SDTRIGDLY",  CMDint, 1, (char *)&DtrigDelay},             // Set trigger delay in uS
@@ -227,7 +231,7 @@ Commands  CmdArray[] = 	{
   {"SRFFRQ", CMDfunction, 2, (char *)RFfreq},		 // Set RF frequency
   {"SRFVLT", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&RFvoltage))},	 // Set RF output voltage
   {"SRFDRV", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&RFdrive))},    // Set RF drive level
-  {"GRFFRQ", CMDfunction, 1, (char *)RFfreqReport},	 // Report RF frequency
+  {"GRFFRQ", CMDfunction, 1, (char *)RFfreqReport},	     // Report RF frequency
   {"GRFPPVP", CMDfunction, 1, (char *)RFvoltageReportP}, // Report RF output voltage, positive phase
   {"GRFPPVN", CMDfunction, 1, (char *)RFvoltageReportN}, // Report RF output voltage, negative phase
   {"GRFDRV", CMDfunction, 1, (char *)RFdriveReport},     // Report RF drive level in percentage
@@ -240,6 +244,21 @@ Commands  CmdArray[] = 	{
   {"RETUNERFCH", CMDfunction, 1, (char *)RFautoRetune},  // Auto retune the select RF channel, start and current freq and drive
   {"SRFCAL", CMDfunctionLine, 1, (char *)RFcalParms},    // Sets the RF calibration parameters, channel,slope,intercept  
   // RF amplifier / QUAD commands
+  {"SRFAENA", CMDfunctionStr, 2, (char *)RFAsetENA},         // Sets the RF system enable mode, ON or OFF
+  {"GRFAENA", CMDfunction, 1, (char *)RFAgetENA},            // Returns the RF system enable mode, ON or OFF
+  {"SRFAFREQ", CMDfunction, 2, (char *)RFAsetFreq},          // Sets the RF system frequency
+  {"GRFAFREQ", CMDfunction, 1, (char *)RFAgetFreq},          // Returns the RF frequency
+  {"SRFAK", CMDfunction, 2, (char *)RFAsetK},                // Sets the resolving DC voltage ratio
+  {"GRFAK", CMDfunction, 1, (char *)RFAgetK},                // Returns the resolving DC voltage ratio
+  {"SRFAMOD", CMDfunctionStr, 2, (char *)RFAsetMode},        // Sets the RF system to open or closed loop
+  {"GRFAMOD", CMDfunction, 1, (char *)RFAgetMode},           // Returns the RF mode state, open or closed
+  {"SRFADRV", CMDfunctionStr, 2, (char *)RFAsetDrive},       // Sets the RF drive level to 0 to 100 %
+  {"GRFADRV", CMDfunction, 1, (char *)RFAgetDrive},          // Returns the RF drive level
+  {"SRFALEV", CMDfunctionStr, 2, (char *)RFAsetLevel},       // Sets the RF output voltage setpoint
+  {"GRFALEV", CMDfunction, 1, (char *)RFAgetLevel},          // Returns the RF output voltage setpoint
+  {"GRFAVPPA", CMDfunction, 1, (char *)RFAgetVPPA},          // Returns the RF output A actual level
+  {"GFRAVPPB", CMDfunction, 1, (char *)RFAgetVPPB},          // Returns the RF output B actual level
+  {"GRFAPWR", CMDfunction, 1, (char *)RFAgetPWR},            // Returns the RF amp RF forward pwr
   {"SRFARNG", CMDfunctionStr, 2, (char *)RFAsetRange},       // Sets the QUAD RF maximum RF level
   {"GRFARNG", CMDfunction, 1, (char *)RFAgetRange},          // Returns the QUAD RF maximum RF level
   {"SRFAPB", CMDfunctionStr, 2, (char *)RFAsetPoleBias},     // Sets the pole bias DC
@@ -254,7 +273,8 @@ Commands  CmdArray[] = 	{
   {"GRFARES", CMDfunction, 1, (char *)RFAgetRes},            // Returns the resolution in AMU
   {"RFAQUPDATE", CMDfunction, 1, (char *)RFAupdateQUAD},     // Updates the QUAD parameters
   {"SRFAGAIN", CMDfunctionStr, 2, (char *)RFAsetGain},       // Sets RF head level control gain, HIGH or LOW
-  // DIO commands
+  {"RRFAAMP", CMDfunction, 1, (char *)RFAreport},            // Reports RF amplifier parameters
+  // DIO module commands
   {"SDIO", CMDfunctionStr, 2, (char *)SDIO_Serial},	        // Set DIO output bit
   {"GDIO", CMDfunctionStr, 1, (char *)GDIO_Serial},	        // Get DIO output bit
   {"RPT", CMDfunctionStr, 2, (char *)DIOreport},            // Report an input state change
@@ -497,7 +517,7 @@ Commands  CmdArray[] = 	{
   {"TARBTRG",CMDfunction, 0, (char *)ARBCtrigger},                   // Force a Twave compressor trigger
   {"GARBCSW",CMDstr, 0, (char *)CswitchState},                       // Report Twave compressor Switch state
   {"SARBCSW",CMDfunctionStr, 1, (char *)SetARBCswitch},              // Set Twave compressor Switch state
-  // ARB sweep commands
+  // ARB sweep commands, ARB module based
   {"SARBSGO",CMDfunction, 1, (char *)ARBstartSweep},                 // Start the sweep
   {"SARBSHLT",CMDfunction, 1, (char *)ARBstopSweep},                 // Stop the sweep
   {"GARBSTA",CMDfunction, 1, (char *)GetARBsweepStatus},             // Return the TWAVE sweep status
@@ -511,7 +531,6 @@ Commands  CmdArray[] = 	{
   {"GARBPPP",CMDfunction, 1, (char *)GetARBppp},                     // Returns the ARB module points per period, 8 to 32
   {"SARBPPP",CMDfunction, 2, (char *)SetARBppp},                     // Sets the ARB module points per period, 8 to 32
   {"SARBEXT",CMDfunctionStr, 2, (char *)SetARBext},                  // Sets the selected ARB external clock source, MIPS or EXT
-  
   // DAC module commands
   {"SDACV", CMDfunctionStr, 2, (char *)SetDACValue},                 // Sets the named DAC channel's value  
   {"GDACV", CMDfunctionStr, 1, (char *)GetDACValue},                 // Returns the named DAC channel's value  

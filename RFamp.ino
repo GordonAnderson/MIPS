@@ -60,7 +60,7 @@ int      SelectedRFAboard=0;                                    // Active board,
 int      RFAmodule = 1;                                         // Selected RFamp module
 bool     RFAupdate = true;                                      // Force all values to update
 bool     QUADupdateFlag = false;                                // This is a flag set by the UI to cause the QUAD parameters to be recalculated
-uint16_t RFACPLDimage[2] = {(1<<RFAcpldSTATUS) | (1<<RFAcpldRANGE),(1<<RFAcpldSTATUS) | (1<<RFAcpldRANGE)}; // CPLD control work image
+uint16_t RFACPLDimage[2] = {(1<<RFAcpldSTATUS) | (1<<RFAcpldRANGE),(1<<RFAcpldSTATUS) | (1<<RFAcpldRANGE)}; // CPLD control word image
 
 RFAdata  *RFAarray[2] = {NULL,NULL};       // Pointer to RF amp data arrays, one for each module. Allocated at init time
 RFAdata  rfad;                             // Copy of the selected channels data, must be static used in menu structs
@@ -93,9 +93,8 @@ DialogBoxEntry RFAdialogEntriesPage1[] = {
 DialogBoxEntry RFAdialogEntriesPage2[] = {
   {"QUAD parameters"    , 1, 1, D_PAGE, 0, 0, 0, 0, false, NULL, RFAdialogEntriesQUAD, NULL, NULL},
   {"RF amp parameters"  , 1, 2, D_PAGE, 0, 0, 0, 0, false, NULL, RFAdialogEntriesPage3, NULL, NULL},
-  {"DC bias outputs"    , 1, 3, D_PAGE, 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
-  {"Invert"             , 1, 4, D_YESNO, 0, 1, 1, 19, false, NULL, &rfad.Invert, NULL, NULL},
-  {"Calibration"        , 1, 5, D_PAGE, 0, 0, 0, 0, false, NULL, RFAdialogEntriesCal, LowRangeCalPrep, NULL},
+  {"Normal"             , 1, 3, D_YESNO, 0, 1, 1, 19, false, NULL, &rfad.Invert, NULL, NULL},
+  {"Calibration"        , 1, 4, D_PAGE, 0, 0, 0, 0, false, NULL, RFAdialogEntriesCal, LowRangeCalPrep, NULL},
   {"Save settings"      , 1, 8, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SaveRFAsettings, NULL},
   {"Restore settings"   , 1, 9, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RestoreRFAsettings, NULL},
   {"First page"         , 1,10, D_PAGE, 0, 0, 0, 0, false, NULL, RFAdialogEntriesPage1, NULL, NULL},
@@ -104,11 +103,12 @@ DialogBoxEntry RFAdialogEntriesPage2[] = {
 
 DialogBoxEntry RFAdialogEntriesQUAD[] = {
   {"Ro, mm"             , 1, 1, D_FLOAT    , 1, 10, 0.001, 17, false, "%5.3f", &rfad.Ro, NULL, NULL},
-  {"ResolvingDC, V"     , 1, 2, D_FLOAT    , -400, 400, 1, 17, false, "%5.1f", &rfad.ResolvingDC, NULL, NULL},
-  {"Pole Bias, V"       , 1, 3, D_FLOAT    , -400, 400, 1, 17, false, "%5.0f", &rfad.PoleBias, NULL, NULL},
-  {"Resolution, AMU"    , 1, 4, D_FLOAT    , 0, 100, 1, 19, false, "%3.0f", &rfad.Res, NULL, NULL},
-  {"m/z"                , 1, 5, D_FLOAT    , 100, 2000, 1, 17, false, "%5.0f", &rfad.mz, NULL, NULL},
-  {"Update"             , 1, 6, D_FUNCTION , 0, 0, 0, 0, false, NULL, NULL, SetUpdateFlag, NULL},
+  {"RDC=RFpp/k, k="     , 1, 2, D_FLOAT    , 1, 10, 0.001, 17, false, "%5.3f", &rfad.K, NULL, NULL},
+  {"ResolvingDC, V"     , 1, 3, D_FLOAT    , -400, 400, 0.1, 17, false, "%5.1f", &rfad.ResolvingDC, NULL, NULL},
+  {"Pole Bias, V"       , 1, 4, D_FLOAT    , -400, 400, 1, 17, false, "%5.0f", &rfad.PoleBias, NULL, NULL},
+  {"Resolution, AMU"    , 1, 5, D_FLOAT    , 0, 100, 1, 19, false, "%3.0f", &rfad.Res, NULL, NULL},
+  {"m/z"                , 1, 6, D_FLOAT    , 100, 2000, 1, 17, false, "%5.0f", &rfad.mz, NULL, NULL},
+  {"Update"             , 1, 7, D_FUNCTION , 0, 0, 0, 0, false, NULL, NULL, SetUpdateFlag, NULL},
   {"Previous page"      , 1,10, D_PAGE     , 0, 0, 0, 0, false, NULL, RFAdialogEntriesPage2, NULL, NULL},
   {NULL},
 };
@@ -294,7 +294,7 @@ void QUADupdate(int brd)
 {
   double c = (float)RFAarray[brd]->Freq * (float)RFAarray[brd]->Freq * RFAarray[brd]->mz * (RFAarray[brd]->Ro/1000) * (RFAarray[brd]->Ro/1000);
   RFAarray[brd]->SetPoint = (0.000000072226 * c) * 2;
-  float DCV = 0.000000012122 * c;
+  float DCV = RFAarray[brd]->SetPoint / (2 * RFAarray[brd]->K);  // 0.000000012122 * c;
   DCV *= ((RFAarray[brd]->mz - RFAarray[brd]->Res) / RFAarray[brd]->mz);
   RFAarray[brd]->ResolvingDC = DCV;  
 }
@@ -490,6 +490,8 @@ void RFA_init(int8_t Board, int8_t addr)
   if(NormalStartup) RestoreRFAsettings(true);
   // Set full scale limit
   RFAdialogEntrySetPoint.Max = RFAarray[Board]->FullScale;
+  // Make sure K is a valid float
+  if(fpclassify(RFAarray[Board]->K) != FP_NORMAL) RFAarray[Board]->K = 5.958257713248639;
   // Setup menu and start the thread
   if(NumberOfRFAchannels == 0)
   {
@@ -630,7 +632,7 @@ void RFA_loop(void)
     if((RFAarray[brd]->Invert != RFAstates[brd]->Invert) || RFAupdate)
     {
       // Set the loop polarity
-      if(!RFAarray[brd]->Mode) RFACPLDimage[brd] |= 1 << RFAcpldINVERT;
+      if(!RFAarray[brd]->Invert) RFACPLDimage[brd] |= 1 << RFAcpldINVERT;
       else RFACPLDimage[brd] &= ~(1 << RFAcpldINVERT);      
       RFAstates[brd]->Invert = RFAarray[brd]->Invert;
     }
@@ -724,6 +726,141 @@ int RFAmodule2board(int Module)
   SetErrorCode(ERR_BADCMD);
   SendNAK;
   return(b);
+}
+
+void RFAsetFreq(int module, int freq)
+{
+  int b;
+  
+  if((b = RFAmodule2board(module)) == -1) return;
+  if((freq<500000)||(freq>5000000))
+  {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;   
+     return;        
+  }
+  RFAarray[b]->Freq = freq;
+  SendACK;
+}
+
+void RFAgetFreq(int module)
+{
+  int b;
+  
+  if((b = RFAmodule2board(module)) == -1) return;
+  SendACKonly;
+  if(!SerialMute) serial->println(RFAarray[b]->Freq);     
+}
+
+void RFAgetPWR(int module)
+{
+  int b;
+  
+  if((b = RFAmodule2board(module)) == -1) return;
+  SendACKonly;
+  if(!SerialMute) serial->println(RFAstates[b]->RFpowerFWD);       
+}
+
+void RFAsetMode(char *module, char *state)
+{
+  int b;
+  String token;
+  
+  token = module;
+  if((b = RFAmodule2board(token.toInt())) == -1) return;
+  token = state;
+  if((token != "OPEN") && (token != "CLOSED"))
+  {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;   
+     return;    
+  }
+  if(token == "OPEN") RFAarray[b]->Mode = true;
+  else RFAarray[b]->Mode = false;
+  SendACK;
+}
+
+void RFAgetMode(int module)
+{
+  int b;
+  
+  if((b = RFAmodule2board(module)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  if(RFAarray[b]->Mode) serial->println("OPEN"); 
+  else  serial->println("CLOSED"); 
+}
+
+void RFAsetDrive(char *module, char *drive)
+{
+  int b;
+  String token;
+  
+  token = module;
+  if((b = RFAmodule2board(token.toInt())) == -1) return;
+  token = drive;
+  if((token.toFloat() > 100) || (token.toFloat() < 0))
+  {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;   
+     return;    
+  }
+  RFAarray[b]->Drive = token.toFloat();
+  SendACK;  
+}
+
+void RFAgetDrive(int module)
+{
+  int b;
+  
+  if((b = RFAmodule2board(module)) == -1) return;
+  SendACKonly;
+  if(!SerialMute) serial->println(RFAarray[b]->Drive); 
+}
+
+void RFAsetLevel(char *module, char *level)
+{
+  int b;
+  String token;
+  
+  token = module;
+  if((b = RFAmodule2board(token.toInt())) == -1) return;
+  token = level;
+  if((token.toFloat() > RFAarray[b]->FullScale) || (token.toFloat() < 0))
+  {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;   
+     return;    
+  }
+  RFAarray[b]->SetPoint = token.toFloat();
+  SendACK;    
+}
+
+void RFAgetLevel(int module)
+{
+  int b;
+  
+  if((b = RFAmodule2board(module)) == -1) return;
+  SendACKonly;
+  if(!SerialMute) serial->println(RFAarray[b]->SetPoint);   
+}
+
+void RFAgetVPPA(int module)
+{
+  int b;
+  
+  if((b = RFAmodule2board(module)) == -1) return;
+  SendACKonly;
+  if(!SerialMute) serial->println(RFAstates[b]->RFVPpp);     
+}
+
+void RFAgetVPPB(int module)
+{
+  int b;
+  
+  if((b = RFAmodule2board(module)) == -1) return;
+  SendACKonly;
+  if(!SerialMute) serial->println(RFAstates[b]->RFVNpp);       
 }
 
 void RFAsetPoleBias(char *Module, char *value)
@@ -833,7 +970,7 @@ void RFAgetRo(int Module)
   
   if((b = RFAmodule2board(Module)) == -1) return;
   SendACKonly;
-  if(!SerialMute) serial->println(RFAarray[b]->Ro); 
+  if(!SerialMute) serial->println(RFAarray[b]->Ro,3); 
 }
 
 // Set target m/z value. This function will calculate the RF and DC parameters based on 
@@ -929,6 +1066,80 @@ void RFAsetGain(char *Module, char *value)
   else RFACPLDimage[b] &= ~(1<<RFAcpldRANGE);
 }
 
+void RFAreport(int module)
+{
+  int b;
+  
+  if((b = RFAmodule2board(module)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  // Send all the RF amp parameters, on one comma seperated line
+  serial->print(RFAstates[b]->DCV); serial->print(",");  
+  serial->print(RFAstates[b]->DCI); serial->print(",");  
+  serial->print(RFAstates[b]->DCpower); serial->print(",");  
+  serial->print(RFAstates[b]->Temp); serial->print(",");  
+  serial->print(RFAstates[b]->RFV); serial->print(",");  
+  serial->print(RFAstates[b]->RFI); serial->print(",");  
+  serial->print(RFAstates[b]->RFpowerFWD); serial->print(",");  
+  serial->print(RFAstates[b]->RFpowerREF); serial->print(",");  
+  serial->println(RFAstates[b]->SWR);
+}
 
+void RFAsetENA(char *Module, char *value)
+{
+  String token;
+  int    mod,b;
+
+  token = Module;
+  mod = token.toInt();
+  if((b = RFAmodule2board(mod)) == -1) return;
+  token = value;
+  if((token != "ON") && (token != "OFF"))
+  {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;
+     return;
+  }
+  if(token == "ON") RFAarray[b]->Enabled = true;
+  else RFAarray[b]->Enabled = false;
+}
+
+void RFAgetENA(int Module)
+{
+  int    b;
+
+  if((b = RFAmodule2board(Module)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  if(RFAarray[b]->Enabled) serial->println("ON");
+  else serial->println("OFF");
+}
+
+void RFAsetK(char *Module, char *value)
+{
+  String token;
+  int    mod,b;
+
+  token = Module;
+  mod = token.toInt();
+  if((b = RFAmodule2board(mod)) == -1) return;
+  token = value;
+  if((token.toFloat() >= 1.0) && (token.toFloat() <= 10.0))
+  {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;
+     return;
+  }
+  RFAarray[b]->K = token.toFloat();
+}
+
+void RFAgetK(int Module)
+{
+  int    b;
+
+  if((b = RFAmodule2board(Module)) == -1) return;
+  SendACKonly;
+  if(!SerialMute) serial->println(RFAarray[b]->K,3);
+}
 
 

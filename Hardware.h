@@ -223,7 +223,7 @@ void ReleaseTWI(void);
 void TWIqueue(void (*TWIfunction)());
 
 void TriggerOut(char *cmd);
-void TriggerOut(int microSec);
+void TriggerOut(int microSec, bool WithLimits = false);
 void AuxOut(char *cmd);
 void QueueTriggerOut(int microSec);
 void ProcessTriggerOut(void);
@@ -243,6 +243,9 @@ bool bmpDraw(char *filename, uint8_t x, uint8_t y);
 void bmpReport(char *filename);
 
 void CPUtemp(void); 
+
+extern int AuxTrigMax;
+extern int TrigMax;
 
 extern bool     Tracing;
 extern uint8_t  TPpointer;

@@ -11,6 +11,9 @@
 #include "Hardware.h"
 #include "Variants.h"
 
+int AuxTrigMax = 0;
+int TrigMax    = 0;
+
 int    PBled;
 PBledStates  PBledMode = OFF;
 
@@ -53,7 +56,7 @@ void FreqBurstISR()
       FreqBurst.start(-1, 0, false);
     }
   }
-  TriggerOut(PulseWidth);
+  TriggerOut(PulseWidth,true);
   if(BurstCount < 0) return;
   CurrentCount++;
   if(CurrentCount >= BurstCount) FreqBurst.stop();
@@ -449,6 +452,7 @@ void RebootStatus(void)
    }
    serial->println(millis());
    serial->print("TWI failure / reset count: ");
+   serial->println(TWIfails);
    TraceReport();
 }
 
@@ -575,6 +579,19 @@ uint8_t DigitalIn(void)
   if (digitalRead(DI6) == HIGH) val |= 64;
   if (digitalRead(DI7) == HIGH) val |= 128;
   return (val);
+}
+
+int ReadInput(char inputCH)
+{
+  if(inputCH == 'Q') return(digitalRead(DI0));
+  if(inputCH == 'R') return(digitalRead(DI1));
+  if(inputCH == 'S') return(digitalRead(DI2));
+  if(inputCH == 'T') return(digitalRead(DI3));
+  if(inputCH == 'U') return(digitalRead(DI4));
+  if(inputCH == 'V') return(digitalRead(DI5));
+  if(inputCH == 'W') return(digitalRead(DI6));
+  if(inputCH == 'X') return(digitalRead(DI7));
+  return(LOW);
 }
 
 // =====================================================================================
@@ -1517,13 +1534,23 @@ void TriggerFollowS(void)
 }
 
 // This function will pulse the trigger output 
-inline void TriggerOut(int microSec)
+inline void TriggerOut(int microSec, bool WithLimits)
 {
   static Pio *pio = g_APinDescription[TRGOUT].pPort;
   static uint32_t pin = g_APinDescription[TRGOUT].ulPin;
   static uint32_t dwReg;
+  static int16_t skip = 0;
 
   AtomicBlock< Atomic_RestoreState > a_Block;
+  if((TrigMax > 0) && WithLimits)
+  {
+    if(++skip > ((PulseFreq-1) / TrigMax)) skip = 0;
+    if(skip != 0) 
+    {
+      PlayTpulseFunctions();
+      return;
+    }
+  }
   dwReg = pio->PIO_ODSR;       // Get output state
   if((dwReg & pin) == 0)
   {
@@ -1594,13 +1621,15 @@ void AuxTrigger(void)
 {
   static Pio *pio = g_APinDescription[AUXTRGOUT].pPort;
   static uint32_t pin = g_APinDescription[AUXTRGOUT].ulPin;
-//  static int16_t skip = 0;
+  static int16_t skip = 0;
 
   AtomicBlock< Atomic_RestoreState > a_Block;
-//  if(++skip > ((PulseFreq-1) / 60)) skip = 0;
-//  if(skip != 0) return;
+  if(AuxTrigMax > 0)
+  {
+    if(++skip > ((PulseFreq-1) / AuxTrigMax)) skip = 0;
+    if(skip != 0) return;
+  }
   pio->PIO_CODR = pin;         // Set output high
-//  delayMicroseconds(30);
   delayMicroseconds(PulseWidth);
   pio->PIO_SODR = pin;         // Set output low  
 }

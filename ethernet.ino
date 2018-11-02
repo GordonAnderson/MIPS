@@ -303,6 +303,7 @@ bool UpdateEthernetAdapter(void)
   bool bStatus;
 
   if(!isEthernetPresent()) return false;
+  eConfig.WorkMode = eConfig.Reserved = 3;
   if(MIPSconfigData.EnetUseTWI) return EsendConfig(&eConfig);
   Serial1.begin(9600);
   eConfig.WorkMode = eConfig.Reserved = 3;

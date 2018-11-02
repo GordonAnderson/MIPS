@@ -150,7 +150,7 @@ void ARBsetWFT1(void)
 void ARBsetWFT2(void)
 {
   int b=SelectedBoard();
-  SetWaveform(0, ARBarray[1]->wft);
+  SetWaveform(1, ARBarray[1]->wft);
   SelectBoard(b);               
 }
 
@@ -483,8 +483,8 @@ void ARBcompressor_init(void)
   DialogBoxEntry *de;
   
   if(!ARBarray[0]->CompressorEnabled) return;  // Exit if the compressor is not enabled
-  ARBarray[0]->UseCommonClock = true;          // If we are in compressor mode then we must use a common clock
-  ARBarray[1]->UseCommonClock = true;
+//  ARBarray[0]->UseCommonClock = true;          // If we are in compressor mode then we must use a common clock
+//  ARBarray[1]->UseCommonClock = true;
   // Enable the compressor hardware mode contol line in the compress ARB module
   pinMode(ARBmode,OUTPUT);
   SetBool(0,TWI_SET_COMP_EXT,false);

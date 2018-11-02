@@ -779,13 +779,13 @@ void SetARBcommonClock(ARBdata *ad, int freq)
   ARBclock->stop();
   if(strcmp(ad->Mode,"TWAVE") == 0)
   {
-    clkdiv = VARIANT_MCK / (2 * ad->PPP * freq);
+    clkdiv = VARIANT_MCK / (2 * ad->PPP * freq) + 1;
     actualF = VARIANT_MCK / (2 * ad->PPP * clkdiv);
     ARBclock->setFrequency(actualF * ad->PPP);
   }
   else
   {
-    clkdiv = VARIANT_MCK / (2 * freq);
+    clkdiv = VARIANT_MCK / (2 * freq) + 1;
     actualF = VARIANT_MCK / (2 * clkdiv);
     ARBclock->setFrequency(actualF);
   }
@@ -1477,12 +1477,12 @@ void GetWFfreq(int module)
    SendACKonly;
    if(strcmp(ARBarray[b]->Mode,"TWAVE") == 0)
    {
-     clkdiv = VARIANT_MCK / (2 * ARBarray[b]->PPP * ARBarray[b]->Frequency);
+     clkdiv = VARIANT_MCK / (2 * ARBarray[b]->PPP * ARBarray[b]->Frequency) + 1;
      actualF = VARIANT_MCK / (2 * ARBarray[b]->PPP * clkdiv);
    }
    else
    {
-     clkdiv = VARIANT_MCK / (2 * ARBarray[b]->Frequency);
+     clkdiv = VARIANT_MCK / (2 * ARBarray[b]->Frequency) + 1;
      actualF = VARIANT_MCK / (2 * clkdiv);
    }
    if (!SerialMute) serial->println(actualF);

@@ -18,7 +18,7 @@ void GDIO_Serial(char *CH);
 void SDIO_Set_Image(char chan,char val);
 void SDIO_Serial(char *CH, char *State);
 void UpdateDigitialOutputArray(void);
-
+void SetImageRegs(void);
 #endif
 
 

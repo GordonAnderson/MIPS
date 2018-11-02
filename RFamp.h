@@ -71,7 +71,8 @@ typedef struct
   // Low range parameters
   float   RangeThreshold;    // Threshold to apply low range cal
   ADCchan ADCchansLR[2];
-  DACchan DACchansLR;       
+  DACchan DACchansLR;      
+  float   K;                 // Factor used to calculate DC from Quad Vp-p,  
 } RFAdata;                    
 
 // This structure saves the current state of the RFamp module
@@ -123,6 +124,23 @@ void RFAsetRes(char *Module, char *value);
 void RFAgetRes(int Module);
 void RFAupdateQUAD(int Module);
 void RFAsetGain(char *Module, char *value);
+
+void RFAsetFreq(int module, int freq);
+void RFAgetFreq(int module);
+void RFAgetPWR(int module);
+void RFAsetMode(char *module, char *state);
+void RFAgetMode(int module);
+void RFAsetDrive(char *module, char *drive);
+void RFAgetDrive(int module);
+void RFAsetLevel(char *module, char *level);
+void RFAgetLevel(int module);
+void RFAgetVPPA(int module);
+void RFAgetVPPB(int module);
+void RFAreport(int module);
+void RFAsetENA(char *Module, char *value);
+void RFAgetENA(int Module);
+void RFAsetK(char *Module, char *value);
+void RFAgetK(int Module);
 
 #endif
 

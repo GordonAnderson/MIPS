@@ -78,6 +78,8 @@ typedef struct
   bool     TWIhardware;       // If true use hardware interface to read ADC else bit bang
   bool     TableRetrig;       // If true the time table is retriggerable
   bool     EnetUseTWI;        // If true the ethernet interface uses the TWI (wire1) interface
+  char     InterlockIn;       // Interlock digital input
+  char     InterlockOut;      // Interlock digital output
 } MIPSconfigStruct;
 
 void   DisplayIntensity(void);
