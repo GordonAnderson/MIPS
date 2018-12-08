@@ -131,6 +131,7 @@ char RB_Get(Ring_Buffer *);
 char RB_Next(Ring_Buffer *);
 int  RB_Commands(Ring_Buffer *);
 void PutCh(char ch);
+int GetLine(Ring_Buffer *rb,char *cbuf,int maxlen);
 void MacroRecord(char *filename);
 void MacroStop(void);
 char *MacroBuildList(char *current);
@@ -159,12 +160,7 @@ void DCbiasReadMin(int chan);
 void DCbiasReadMax(int chan);
 void DCbiasNumber(void);
 void FormatEEPROM(void);
+void PowerControl(void);
+void ReportSupplies(void);
 
 #endif /* SERIAL_H_ */
-
-
-
-
-
-
-

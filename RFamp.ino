@@ -1124,7 +1124,7 @@ void RFAsetK(char *Module, char *value)
   mod = token.toInt();
   if((b = RFAmodule2board(mod)) == -1) return;
   token = value;
-  if((token.toFloat() >= 1.0) && (token.toFloat() <= 10.0))
+  if((token.toFloat() < 1.0) || (token.toFloat() > 10.0))
   {
      SetErrorCode(ERR_BADARG);
      SendNAK;

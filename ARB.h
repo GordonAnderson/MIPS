@@ -74,6 +74,7 @@
 #define TWI_SAVE            0x36      // Save settings to flash
 
 #define TWI_SET_SEXTSRC     0x37      // Select the external clock source
+#define TWI_SET_RAMP        0x38      // Define ramp rate in v/s
 
 #define TWI_READ_REQ_FREQ   0x81      // Returns requested frequency
 #define TWI_READ_ACT_FREQ   0x82      // Returns actual frequency
@@ -106,6 +107,7 @@ enum WaveFormTypes
 
 typedef struct
 {
+  bool   update;
   char   Mode[7];
   int    Freq;
   float  Amplitude;
@@ -123,7 +125,8 @@ typedef struct
   int    StopFreq;
   float  StartVoltage;
   float  StopVoltage;
-  float  SweepTime;   
+  float  SweepTime; 
+  float  RampRate;  
 } ARBstate;
 
 // One struct for each ARB board
@@ -189,6 +192,8 @@ typedef struct
   float         SweepTime;          // In seconds  
   char          ARBsweepTrig;       // Sweep start external input trigger channel
   int8_t        ARBsweepLevel;      // Sweep start external input trigger level
+  // Output voltage ramp rate
+  float         RampRate;
 } ARBdata;
 
 extern ARBdata  *ARBarray[4];
@@ -234,6 +239,8 @@ void SetWFoffsetV(char *module, char *srange);
 void GetWFoffsetV(int module);
 void SetWFaux(char *module, char *srange);
 void GetWFaux(int module);
+void SetWFramp(char *module, char *sramp);
+void GetWFramp(int module);
 void SetARBdirection(char *module, char *dir);
 void GetARBdirection(int module);
 void SetARBwaveform(void);
@@ -280,10 +287,3 @@ void SetARBCswitch(char *mode);
 void SaveARB2EEPROM(void);
 
 #endif
-
-
-
-
-
-
-

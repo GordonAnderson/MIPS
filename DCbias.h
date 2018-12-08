@@ -18,10 +18,10 @@ extern int   DCbiasPwidth;
 
 typedef struct
 {
-  float  VoltageSetpoint;      // DC bias channel setpoint voltage
+  float    VoltageSetpoint;      // DC bias channel setpoint voltage
   // Hardware specific definitions
-  DACchan  DCctrl;             // DC bias DAC to control output voltage
-  ADCchan  DCmon;              // DC bias ADC channel used for monitor
+  DACchan  DCctrl;               // DC bias DAC to control output voltage
+  ADCchan  DCmon;                // DC bias ADC channel used for monitor
 } DCbiasChannellData;
 
 // One struct for each DC bias board
@@ -84,7 +84,7 @@ void  SetDCbiasADCtwiADD(int module, int add);
 void  SetDCbiasDACtwiADD(int module, int add);
 void  SetDCbiasRange(int board, int range);
 void  SetDCbiasExtended(int board);
-void ReportDCbiasSuppplies(int module);
+void  ReportDCbiasSuppplies(int module);
 
 void SetDCbiasProfile(void);
 void GetDCbiasProfile(int num);
@@ -100,10 +100,3 @@ void GetDCbiasPtrigger(void);
 void SaveDCB2EEPROM(void);
 
 #endif
-
-
-
-
-
-
-

@@ -356,6 +356,7 @@ void Init_IOpins(void)
   pinMode(PWR_ON, OUTPUT);
   pinMode(LDACctrl, OUTPUT);
   pinMode(TRGOUT, OUTPUT);
+  digitalWrite(TRGOUT, HIGH);
   pinMode(AUXTRGOUT, OUTPUT);
   digitalWrite(LDACctrl, HIGH);
   pinMode(RFON, OUTPUT);
@@ -500,8 +501,8 @@ void ClearDOshiftRegs(void)
   digitalWrite(DOenable,LOW);
   // This is DI6 used to drive the enable after its cut free from the buffer.
   // This is a hack for old controlers and needs be be removed at some point.
-  pinMode(46,OUTPUT);
-  digitalWrite(46,LOW);
+  //pinMode(46,OUTPUT);     // Removed 12/7/2018
+  //digitalWrite(46,LOW);
 }
 
 // This function sets the selected output where chan is the output, 'A' through 'P'.
@@ -946,7 +947,11 @@ int AD7994_b(int8_t adr, int8_t chan)
     ReleaseTWI();
     return(-1);
   }
+  #ifdef IDE == 1.6.5
   Wire.requestFrom(adr, 2, (chan) << 4, 1);
+  #else
+  Wire.requestFrom(adr, 2, (chan) << 4, 1,0);
+  #endif
   while (Wire.available() < 2);
   val = (Wire.read() << 8) & 0xFF00;
   val |= (Wire.read()) & 0xFF;
@@ -1009,7 +1014,11 @@ int AD7998_b (int8_t adr, int8_t chan)
     ReleaseTWI();
     return(-1);
   }
+  #ifdef IDE == 1.6.5
   Wire.requestFrom(adr, 2, 0x80 | chan << 4, 1);
+  #else
+  Wire.requestFrom(adr, 2, 0x80 | chan << 4, 1, 0);
+  #endif
   while (Wire.available() < 2);
   val = (Wire.read() << 8) & 0xFF00;
   val |= (Wire.read()) & 0xFF;
@@ -3102,6 +3111,3 @@ void TWIreset(void)
   Wire.setClock(100000);
   SendACK;
 }
-
-
-

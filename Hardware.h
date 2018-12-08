@@ -131,6 +131,7 @@ extern PBledStates  PBledMode;
 #define TRGOUT        A10   // Trigger output, this signal is inverted on controller
 #define AUXTRGOUT     A9    // Aux Trigger output, this signal is inverted on controller
 #define RFON          9     // Used by FAIMS to turn on RF on LED
+#define POWER         A2    // Power enable
 
 #define  ENA_BRD_A    digitalWrite(BRDSEL,HIGH)
 #define  ENA_BRD_B    digitalWrite(BRDSEL,LOW)
@@ -275,9 +276,3 @@ void SerialtoEEPROM(char *brd, char *add);
 //void ShutterEnable(char *state);
 
 #endif
-
-
-
-
-
-

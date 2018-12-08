@@ -129,10 +129,3 @@ extern char *BoardVariantsNames;
 extern void *BoardVariants[];
 
 #endif
-
-
-
-
-
-
-

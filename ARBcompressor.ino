@@ -103,6 +103,44 @@ void ARBCsetv(void)
    SetFloat(1,TWI_SET_RANGE, ARBarray[1]->Voltage);
    SelectBoard(b);     
 }
+// Set twave channel 3 voltage to the value defined in the channel 3 data structure
+void ARBCsetL(void)
+{
+   int b=SelectedBoard();
+   SetFloat(2,TWI_SET_RANGE, ARBarray[2]->Voltage);
+   SelectBoard(b);   
+}
+// Set twave channel 4 voltage to the value defined in the channel 4 data structure
+void ARBCsetl(void)
+{
+   int b=SelectedBoard();
+   SetFloat(3,TWI_SET_RANGE, ARBarray[3]->Voltage);
+   SelectBoard(b);     
+}
+void ARBCsetB(void)
+{
+   int b=SelectedBoard();
+   SetFloat(0, TWI_SET_RAMP, ARBarray[0]->RampRate);
+   SelectBoard(b);       
+}
+void ARBCsetb(void)
+{
+   int b=SelectedBoard();
+   SetFloat(1, TWI_SET_RAMP, ARBarray[1]->RampRate);
+   SelectBoard(b);       
+}
+void ARBCsetE(void)
+{
+   int b=SelectedBoard();
+   SetFloat(2, TWI_SET_RAMP, ARBarray[2]->RampRate);
+   SelectBoard(b);         
+}
+void ARBCsete(void)
+{
+   int b=SelectedBoard();
+   SetFloat(3, TWI_SET_RAMP, ARBarray[3]->RampRate);
+   SelectBoard(b);       
+}
 // Set the twave channel 1 voltage to the value defined in the channel 2 data structure
 void ARBCsetV1toV2(void)
 {
@@ -269,11 +307,49 @@ bool ARBgetValueFromTable(int *index, int *value)
    return valfound;
 }
 
+// Commands processed in this routine:
+//
+// N      Normal cycle
+// C      Compress cycle
+// D      Delay
+// g      Time to open gate
+// G      Time to close gate
+// S      This command has two options, if S is followed by a value then use the switch bit
+//        defined in the ARB module data structure and the value defines open or close. If
+//        S is followed by a character then it defines a port bit to set as per the 
+//        value following the character.
+// O      Compression order
+// V      Master channel voltage p-p
+// v      Slave channel voltage p-p
+// F      Frequency
+// c      Compress time
+// n      Normal time
+// t      Non compress time
+// K      Cramp rate
+// k      Cramp step size
+// W      Waveform type, master channel
+// w      Waveform type, slave channel
+// s      Stop the clock
+// r      Restart the clock
+// o      Sets the switch open time
+// M      Set compressor normal amplitude mode
+// [      Compressor loop start
+// ]      Compressor loop end
+//
+// Added Dec 6, 2018
+//
+// L      Channel 3 output voltage p-p
+// l      Channel 4 output voltage p-p
+// B      Channel 1 output ramp rate in v/s
+// b      Channel 2 output ramp rate in v/s
+// E      Channel 3 output ramp rate in v/s
+// e      Channel 4 output ramp rate in v/s
+//
 char ARBgetNextOperationFromTable(bool init)
 {
   bool   valfound;
   char   portCH;
-  int    index,b;
+  int    b;
   static int tblindex=0;
   static char OP;
   static int count = 0;
@@ -373,8 +449,7 @@ char ARBgetNextOperationFromTable(bool init)
       if((count >= 0) && (count <= 65535))
       {
          ARBarray[0]->Corder = count;
-         if(AcquireTWI()) ARBCsetOrder();
-         else TWIqueue(ARBCsetOrder);
+         if(AcquireTWI()) ARBCsetOrder(); else TWIqueue(ARBCsetOrder);
       }
       count = 0;
     }
@@ -382,10 +457,8 @@ char ARBgetNextOperationFromTable(bool init)
     {
       if((count >= 0) && (count <= 100))
       {
-        if (SelectedARBboard == 0) arb.Voltage = count;
         ARBarray[0]->Voltage = count; 
-        if(AcquireTWI()) ARBCsetV();
-        else TWIqueue(ARBCsetV);
+        if(AcquireTWI()) ARBCsetV(); else TWIqueue(ARBCsetV);
       }   
       count = 0;
     }
@@ -393,23 +466,72 @@ char ARBgetNextOperationFromTable(bool init)
     {
       if((count >= 0) && (count <= 100))
       {
-        if (SelectedARBboard == 1) arb.Voltage = count;
         ARBarray[1]->Voltage = count;
-        if(AcquireTWI()) ARBCsetv();
-        else TWIqueue(ARBCsetv);
+        if(AcquireTWI()) ARBCsetv(); else TWIqueue(ARBCsetv);
+      }      
+      count = 0;
+    }
+    if(OP == 'L')
+    {
+      if((count >= 0) && (count <= 100) && (ARBarray[2] != NULL))
+      {
+         ARBarray[2]->Voltage = count;
+         if(AcquireTWI()) ARBCsetL(); else TWIqueue(ARBCsetL);   
+      }      
+      count = 0;
+    }
+    if(OP == 'l')
+    {
+      if((count >= 0) && (count <= 100) && (ARBarray[3] != NULL))
+      {
+         ARBarray[3]->Voltage = count;
+         if(AcquireTWI()) ARBCsetl(); else TWIqueue(ARBCsetl);
+      }      
+      count = 0;
+    }
+    if(OP == 'B')
+    {
+      if((count >= 0) && (count <= 10000) && (ARBarray[0] != NULL))
+      {
+         ARBarray[0]->RampRate = count;
+         if(AcquireTWI()) ARBCsetB(); else TWIqueue(ARBCsetB);
+      }      
+      count = 0;
+    }
+    if(OP == 'b')
+    {
+      if((count >= 0) && (count <= 10000) && (ARBarray[1] != NULL))
+      {
+         ARBarray[1]->RampRate = count;
+         if(AcquireTWI()) ARBCsetb(); else TWIqueue(ARBCsetb);
+      }      
+      count = 0;
+    }
+    if(OP == 'E')
+    {
+      if((count >= 0) && (count <= 10000) && (ARBarray[2] != NULL))
+      {
+         ARBarray[2]->RampRate = count;
+         if(AcquireTWI()) ARBCsetE(); else TWIqueue(ARBCsetE);
+      }      
+      count = 0;
+    }
+    if(OP == 'e')
+    {
+      if((count >= 0) && (count <= 10000) && (ARBarray[3] != NULL))
+      {
+         ARBarray[3]->RampRate = count;
+         if(AcquireTWI()) ARBCsete(); else TWIqueue(ARBCsete);
       }      
       count = 0;
     }
     if(OP == 'F')
     {
-      if (index != -1)
+      if((count > 100) && (count <= 40000))
       {
-        if((count > 100) && (count <= 40000))
-        {
-           ARBarray[index]->Frequency = count;
-           SetARBcommonClock(ARBarray[index], count);
-        }   
-      }      
+         ARBarray[0]->Frequency = count;
+         SetARBcommonClock(ARBarray[0], count);
+      }   
       count = 0;
     }
     if(OP == 'c')
@@ -430,20 +552,17 @@ char ARBgetNextOperationFromTable(bool init)
       C_Tnc = (ARBarray[0]->TnoC / 1000.0) * C_clock;
       count = 0;
     }
-    if(OP == 'K')
+    if(OP == 'K') // Set the Cramp rate
     {
-      // Set the Cramp rate
       arb.Cramp = ARBarray[0]->Cramp = count;
-      if(AcquireTWI()) ARBCsetCramp();
-      else TWIqueue(ARBCsetCramp);
+      if(AcquireTWI()) ARBCsetCramp(); else TWIqueue(ARBCsetCramp);
       count = 0;
     }
     if(OP == 'k')
     {
       // Set the Cramp step size, or cramp order
       arb.CrampOrder = ARBarray[0]->CrampOrder = count;
-      if(AcquireTWI()) ARBCsetCrampOrder();
-      else TWIqueue(ARBCsetCrampOrder);      
+      if(AcquireTWI()) ARBCsetCrampOrder(); else TWIqueue(ARBCsetCrampOrder); 
       count = 0;
     }
     if(OP == 'W')
@@ -451,16 +570,14 @@ char ARBgetNextOperationFromTable(bool init)
       if(count < 1) count = 1;
       if(count > 5) count = 5;
       ARBarray[0]->wft = (WaveFormTypes)(count - 1);
-      if(AcquireTWI()) ARBsetWFT1();
-      else TWIqueue(ARBsetWFT1);      
+      if(AcquireTWI()) ARBsetWFT1(); else TWIqueue(ARBsetWFT1);
     }
     if(OP == 'w')
     {
       if(count < 1) count = 1;
       if(count > 5) count = 5;
       ARBarray[1]->wft = (WaveFormTypes)(count - 1);
-      if(AcquireTWI()) ARBsetWFT2();
-      else TWIqueue(ARBsetWFT2);           
+      if(AcquireTWI()) ARBsetWFT2(); else TWIqueue(ARBsetWFT2); 
     }
     if(OP == 's') ARBclock->stop();                            // Stop the clock
     if(OP == 'r') ARBclock->start(-1, 0, true);                // Restart the clock
@@ -687,7 +804,3 @@ void SetARBCswitch(char *mode)
   SendNAK;
 }
 // End of compressor host command routines
-
-
-
-

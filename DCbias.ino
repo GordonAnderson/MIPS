@@ -663,7 +663,7 @@ void DCbias_loop(void)
   // Monitor power on output bit. If power comes on, hold all outputs at zero until power is stable, short delay.
   if(digitalRead(PWR_ON) != 0) 
   {
-    // Here is power is off, set supply off flag and delay loop counter
+    // Here if power is off, set supply off flag and delay loop counter
     SuppliesOff = true;
     SuppliesStableCount = 10;
   }
@@ -1390,12 +1390,24 @@ void ReportDCbiasSuppplies(int module)
   SendACKonly;
   if(SerialMute) return;
   // Report logic voltage
-  int i = AD5593readADC(DCbDarray[module]->DACadr, 4, 10);
-  serial->print("Logic supply = "); serial->print((2.5 * i / 65536) * 2.0); serial->println(" volts"); 
-  i = AD5593readADC(DCbDarray[module]->DACadr, 2, 10);
-  serial->print("Positive supply = "); serial->print((2.5 * i / 65536) * 101); serial->println(" volts"); 
-  i = AD5593readADC(DCbDarray[module]->DACadr, 3, 10);
-  serial->print("Negative supply = "); serial->print((-3.3 + (2.5 * i / 65536)) * 31.3); serial->println(" volts"); 
+  if(DCbDarray[module]->MaxVoltage < 100)
+  {
+     int i = AD5593readADC(DCbDarray[module]->DACadr, 4, 10);
+     serial->print("Logic supply = "); serial->print((2.5 * i / 65536) * 2.0); serial->println(" volts"); 
+     i = AD5593readADC(DCbDarray[module]->DACadr, 2, 10);
+     serial->print("Positive supply = "); serial->print((2.5 * i / 65536) * 101); serial->println(" volts"); 
+     i = AD5593readADC(DCbDarray[module]->DACadr, 3, 10);
+     serial->print("Negative supply = "); serial->print((-3.3 + (2.5 * i / 65536)) * 31.3); serial->println(" volts"); 
+  }
+  else
+  {
+     int i = AD5593readADC(DCbDarray[module]->DACadr, 4, 10);
+     serial->print("Logic supply = "); serial->print((2.5 * i / 65536) * 2.0); serial->println(" volts"); 
+     i = AD5593readADC(DCbDarray[module]->DACadr, 3, 10);
+     serial->print("Positive supply = "); serial->print((2.5 * i / 65536) * 201); serial->println(" volts"); 
+     i = AD5593readADC(DCbDarray[module]->DACadr, 2, 10);
+     serial->print("Negative supply = "); serial->print((-3.3 + (2.5 * i / 65536)) * 201); serial->println(" volts");
+  } 
 }
 
 // October 15, 2016. Added the DCbias profile capability. This allow up to 10 voltage
@@ -1852,10 +1864,3 @@ void SaveDCB2EEPROM(void)
   }
   SendACK;
 }
-
-
-
-
-
-
-

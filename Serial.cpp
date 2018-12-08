@@ -61,11 +61,15 @@ char *ACKonlyString1 = "\x06";
 char *ACKonlyString2 = ",\x06";
 char *SelectedACKonlyString = ACKonlyString1;
 
+char *OnMessage = "I'm on!";
+
 bool echoMode = false;
 
 Commands  CmdArray[] = 	{
   // General commands
-  {"GVER",  CMDstr, 0, (char *)Version},	               // Report version
+  {"GVER",  CMDstr, 0, (char *)Version},                 // Report version
+  {"ISPWR",  CMDstr, 0, (char *)OnMessage},              // Report power status
+  {"SUPPLIES", CMDfunction, 0, (char *)ReportSupplies},  // Report main supply voltages
   {"GERR",  CMDint, 0, (char *)&ErrorCode},              // Report the last error code
   {"GNAME", CMDstr, 0, (char *)MIPSconfigData.Name},	   // Report MIPS system name
   {"SNAME", CMDstr, 1, (char *)MIPSconfigData.Name},     // Set MIPS system name
@@ -130,6 +134,7 @@ Commands  CmdArray[] = 	{
   {"GTBLRETRIG", CMDbool, 0, (char *)&MIPSconfigData.TableRetrig},// Returns the table retriggerable flag, TRUE=retriggerable.
   {"SSETECHO", CMDbool, 1, (char *)&Serial1Echo},                 // Set the SerialUSB to Serial1 echo, TRUE enables echo.
   {"GSERECHO", CMDbool, 0, (char *)&Serial1Echo},                 // Return the SerialUSB to Serial1 echo, TRUE enables echo.
+  {"POWER", CMDfunction, 0, (char *)PowerControl},                // Cycle MIPS system power
   // Clock generation functions
   {"GWIDTH",  CMDint, 0, (char *)&PulseWidth},                // Report the pulse width in microseconds
   {"SWIDTH",  CMDint, 1, (char *)&PulseWidth},                // Set the pulse width in microseconds
@@ -248,7 +253,7 @@ Commands  CmdArray[] = 	{
   {"GRFAENA", CMDfunction, 1, (char *)RFAgetENA},            // Returns the RF system enable mode, ON or OFF
   {"SRFAFREQ", CMDfunction, 2, (char *)RFAsetFreq},          // Sets the RF system frequency
   {"GRFAFREQ", CMDfunction, 1, (char *)RFAgetFreq},          // Returns the RF frequency
-  {"SRFAK", CMDfunction, 2, (char *)RFAsetK},                // Sets the resolving DC voltage ratio
+  {"SRFAK", CMDfunctionStr, 2, (char *)RFAsetK},             // Sets the resolving DC voltage ratio
   {"GRFAK", CMDfunction, 1, (char *)RFAgetK},                // Returns the resolving DC voltage ratio
   {"SRFAMOD", CMDfunctionStr, 2, (char *)RFAsetMode},        // Sets the RF system to open or closed loop
   {"GRFAMOD", CMDfunction, 1, (char *)RFAgetMode},           // Returns the RF mode state, open or closed
@@ -473,6 +478,8 @@ Commands  CmdArray[] = 	{
   {"GWFREQ", CMDfunction, 1, (char *)GetWFfreq},                     // Returns the waveform frequency, 0 to 40000Hz
   {"SWFVRNG", CMDfunctionStr, 2, (char *)SetWFrange},                // Sets waveform voltage range, rev 2.0
   {"GWFVRNG", CMDfunction, 1, (char *)GetWFrange},
+  {"SWFVRAMP", CMDfunctionStr, 2, (char *)SetWFramp},                // Sets waveform voltage chanel ramp rate in V/s
+  {"GWFVRAMP", CMDfunction, 1, (char *)GetWFramp},
   {"SWFVOFF", CMDfunctionStr, 2, (char *)SetWFoffsetV},              // Sets waveform offset voltage, rev 2.0
   {"GWFVOFF", CMDfunction, 1, (char *)GetWFoffsetV},
   {"SWFVAUX", CMDfunctionStr, 2, (char *)SetWFaux},                  // Sets waveform aux voltage, rev 2.0
@@ -846,7 +853,7 @@ void SerialInit(void)
   #endif
   //Serial_ *serial = &SerialUSB;
   SerialUSB.begin(0);
-  SerialUSB.printSetEOL("kk");
+//  SerialUSB.printSetEOL("kk");
 //  mipsstream = &SerialUSB;
   //  serial->println("Initializing....");
   RB_Init(&RB);
@@ -1026,11 +1033,13 @@ int ProcessCommand(void)
     if(ch == '\n')
     {
       lstrptr[lstrindex++] = 0;
+    if(lstrindex >= lstrmax) lstrindex = lstrmax - 1;
       lstrmode = false;
       SendACK;
-      return(0);
+      return(-1);                 // Changed from 0 on 12/6/18, signals nothing to do
     }
     lstrptr[lstrindex++] = ch;
+    if(lstrindex >= lstrmax) lstrindex = lstrmax - 1;
     return(0);
   }
   Token = GetToken(false);
@@ -1180,6 +1189,26 @@ char RB_Get(Ring_Buffer *rb)
   if (ch == '\n') rb->Commands--;
   if (rb->Commands < 0) rb->Commands = 0;
   return (ch);
+}
+
+int GetLine(Ring_Buffer *rb,char *cbuf,int maxlen)
+{
+  int i;
+  char c;
+  
+  cbuf[0] = 0;
+  if(RB_Commands(rb) <= 0) return(0);
+  while(true)
+  {
+    c = RB_Get(rb);
+    if(c==0xFF) break;
+    if(c == ';') break;
+    if(c == '\n') break;
+    cbuf[i++] = c;
+    if(i >= maxlen) i--;
+  }
+  cbuf[i] = 0;
+  return(i);
 }
 
 // Return the next character in the ring buffer but do not remove it, return NULL if empty.
@@ -1450,13 +1479,3 @@ void MacroPlay(char *filename, bool silent)
   // Unmute the serial system
   for (i = 0; i < strlen(unmute); i++) RB_Put(&RB, unmute[i]);
 }
-
-
-
-
-
-
-
-
-
-

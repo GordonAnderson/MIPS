@@ -674,6 +674,13 @@
 //  1.141, Nov 1, 2018
 //      1.) Added enable command to RFamp module
 //      2.) Changed Invert menu option to Normal in the RFamp module
+//  1.142, Nov 15, 2018
+//      1.) Updated for the new Arduino IDE. Had to add a switch for the old version, 1.6.5 because of
+//          requestFrom changes in the TWI drivers. 
+//  1.143, Dec 6, 2018
+//      1.) Fixed bug in longStr command processing and retuned -1 to indicate string is processed.
+//      2.) Added L and l commands to ARB compression table to control channel 3 and 4 voltage.
+//      3.) Added ARB ramp rate and commands B,b,E,e to ARB compression table to control ramp rate.
 //
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
@@ -735,6 +742,8 @@
 #define F(string_literal) string_literal
 #endif
 
+//#define IDE 1.6.5
+
 #define UseWDT
 
 // Define my names for the native USB driver
@@ -762,7 +771,7 @@ int  LEDstate = 0;
 
 uint32_t BrightTime=0;
 
-const char Version[] PROGMEM = "Version 1.141, Nov 1, 2018";
+const char Version[] PROGMEM = "Version 1.143, Dec 6, 2018";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -1237,6 +1246,9 @@ void Signon(void)
 {
   bool PBwasPressed = false;
 
+  PB_GREEN_OFF;
+  PB_RED_OFF;
+  PB_BLUE_OFF;
   // If the controll push button is pressed then wait for it to be released before
   // proceeding.
 #ifndef TestMode
@@ -1501,6 +1513,8 @@ void setup()
 // This task is called every 10 milliseconds and handels a number of tasks.
 void MIPSsystemLoop(void)
 {
+  char cbuf[20];
+  
   if((BrightTime + 30000) < millis()) SetBackLight();
   float MaxVoltage;
   // Process any serial commands
@@ -1559,7 +1573,19 @@ void MIPSsystemLoop(void)
     else analogWrite(BACKLIGHT, 400);
     //    bmpDraw(MIPSconfigData.BootImage, 0, 0);
     // Wait for power to appear and then reset the system.
-    while (ReadVin() < 10.0) WDT_Restart(WDT);
+    while (ReadVin() < 10.0) 
+    {
+      // Look for the POWER command to start up!
+      ReadAllSerial();
+      if(RB_Commands(&RB))
+      {
+        // Read a line from the ring buffer
+        GetLine(&RB,cbuf,20);
+        if(strcmp(cbuf,"POWER") == 0) PowerControl();
+        if(strcmp(cbuf,"ISPWR") == 0) serial->println("I'm off!");
+      }
+      WDT_Restart(WDT);
+    }
     ReleaseADC();
     Software_Reset();
   }
@@ -1927,5 +1953,20 @@ bool LOADparms(char *filename)
   return false;
 }
 
+void PowerControl(void)
+{
+  pinMode(POWER,OUTPUT);
+  digitalWrite(POWER,HIGH);
+  delay(1000);
+  digitalWrite(POWER,LOW);
+}
 
-
+// ADC channel 0 is 24VDC supply
+// ADC channel 1 is 12VDC supply
+void ReportSupplies(void)
+{
+  serial->print("24 volt supply: ");
+  serial->println(((float)analogRead(0)/4095.0) * 3.3 *12.0);
+  serial->print("12 volt supply: ");
+  serial->println(((float)analogRead(1)/4095.0) * 3.3 *6.3);
+}
