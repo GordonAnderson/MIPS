@@ -358,6 +358,7 @@ void Init_IOpins(void)
   pinMode(TRGOUT, OUTPUT);
   digitalWrite(TRGOUT, HIGH);
   pinMode(AUXTRGOUT, OUTPUT);
+  digitalWrite(AUXTRGOUT, HIGH);
   digitalWrite(LDACctrl, HIGH);
   pinMode(RFON, OUTPUT);
   pinMode(DOMSBlatch,OUTPUT);

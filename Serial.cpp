@@ -533,6 +533,7 @@ Commands  CmdArray[] = 	{
   {"SARBCMP", CMDfunctionStr, 1, (char *)SetARBCompressorEnabled},   // Flag to indicate ARB compressor mode is enabled.
   {"SARBCOFF", CMDfunctionStr, 1, (char *)SetARBcommonOffset},       // Flag for all ARB channels use a common offset.
   {"SARBADD",CMDfunction, 2, (char *)SetARBtwiADD},                  // Set the TWI address (base 10) for the ARB module.
+  {"GARBADD",CMDfunction, 1, (char *)GetARBtwiADD},                  // Return the TWI address (base 10) for the ARB module.
   {"SARBDBRD",CMDfunctionStr, 2, (char *)SetARBDualBoard},           // Sets module dual board flag to true or false.
   {"GARBVER",CMDfunction, 1, (char *)GetARBversion},                 // Returns the ARB module version number
   {"GARBPPP",CMDfunction, 1, (char *)GetARBppp},                     // Returns the ARB module points per period, 8 to 32

@@ -253,6 +253,7 @@ void GetARBwfType(int module);
 void SetARBUseCommonClock(char *module, char *flag);
 void SetARBcommonOffset(char *flag);
 void SetARBtwiADD(int module, int add);
+void GetARBtwiADD(int module);
 void SetARBDualBoard(char *module, char *sval);
 void SetARBoffsetBoardA(char *module, char *val);
 void GetARBoffsetBoardA(int module);

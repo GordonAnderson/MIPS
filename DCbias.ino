@@ -732,14 +732,24 @@ void DCbias_loop(void)
       {
          if(DCbDarray[0]->OffsetReadback)
          {
-           if((NumberOfDCChannels > 8) && (b == 1)) offsetV = Counts2Value(ADCvals[7],&DCbDarray[b]->DCCD[7].DCmon); 
-           if((NumberOfDCChannels < 8) && (b == 0)) offsetV = Counts2Value(ADCvals[7],&DCbDarray[b]->DCCD[7].DCmon); 
+           if((DCbDarray[b]->DACadr & 0xFE) == 0x10)
+           {
+              if(DCbDarray[0]->UseOneOffset)
+              {
+                if(NumberOfDCChannels > 24) { if(b == 3) offsetV = Counts2Value(AD5593readADC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCmon.Chan),&DCbDarray[b]->DCoffset.DCmon); }
+                else if(NumberOfDCChannels > 16) { if(b == 2) offsetV = Counts2Value(AD5593readADC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCmon.Chan),&DCbDarray[b]->DCoffset.DCmon); }
+                else if(NumberOfDCChannels > 8)  { if(b == 1) offsetV = Counts2Value(AD5593readADC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCmon.Chan),&DCbDarray[b]->DCoffset.DCmon); }
+                else if(NumberOfDCChannels <= 8) { if(b == 0) offsetV = Counts2Value(AD5593readADC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCmon.Chan),&DCbDarray[b]->DCoffset.DCmon); }
+              }
+              else offsetV = Counts2Value(AD5593readADC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCmon.Chan),&DCbDarray[b]->DCoffset.DCmon);
+           }
+           else
+           {
+              if((NumberOfDCChannels > 8) && (b == 1)) offsetV = Counts2Value(ADCvals[7],&DCbDarray[b]->DCCD[7].DCmon); 
+              else if((NumberOfDCChannels < 8) && (b == 0)) offsetV = Counts2Value(ADCvals[7],&DCbDarray[b]->DCCD[7].DCmon); 
+           }
          }
          else offsetV = DCbDarray[b]->DCoffset.VoltageSetpoint;
-         if((DCbDarray[b]->DACadr & 0xFE) == 0x10)
-         {
-            offsetV = Counts2Value(AD5593readADC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCmon.Chan),&DCbDarray[b]->DCoffset.DCmon);
-         }
          if(SuppliesOff) offsetV = 0;
          DCbiasStates[b]->Readbacks[i] = Filter * (Counts2Value(ADCvals[i],&DCbDarray[b]->DCCD[i].DCmon) + offsetV) + (1-Filter) * DCbiasStates[b]->Readbacks[i];
          if(abs(DCbiasStates[b]->Readbacks[i]) > MaxDCbiasVoltage) MaxDCbiasVoltage = abs(DCbiasStates[b]->Readbacks[i]);
@@ -1390,6 +1400,8 @@ void ReportDCbiasSuppplies(int module)
   SendACKonly;
   if(SerialMute) return;
   // Report logic voltage
+  int brd = SelectedBoard();
+  SelectBoard(module);
   if(DCbDarray[module]->MaxVoltage < 100)
   {
      int i = AD5593readADC(DCbDarray[module]->DACadr, 4, 10);
@@ -1408,6 +1420,7 @@ void ReportDCbiasSuppplies(int module)
      i = AD5593readADC(DCbDarray[module]->DACadr, 2, 10);
      serial->print("Negative supply = "); serial->print((-3.3 + (2.5 * i / 65536)) * 201); serial->println(" volts");
   } 
+  SelectBoard(brd);
 }
 
 // October 15, 2016. Added the DCbias profile capability. This allow up to 10 voltage

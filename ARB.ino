@@ -1335,6 +1335,16 @@ void SetARBtwiADD(int module, int add)
   SendACK;  
 }
 
+// Returns the TWI address, radix 10
+void GetARBtwiADD(int module)
+{
+  int b;
+  
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  SendACKonly;  
+  if(!SerialMute) serial->println(ARBarray[b]->ARBadr);
+}
+
 void SetARBUseCommonClock(char *module, char *flag)
 {
   String smode;
@@ -1724,10 +1734,10 @@ void SetARBwaveform(void)
         if((Token = GetToken(true)) == NULL) break;
         sToken = Token;
         if(Token[0] == '\n') break;
-        if(i<(ppp-1)) vals[i] = sToken.toFloat();
+        if(i<(ppp)) vals[i] = sToken.toFloat();
         i++;
      }
-     if(Token == NULL) break;
+//   if(Token == NULL) break;
      // Test arguments
      if((b = ARBmoduleToBoard(mod,true)) == -1) return;
      if(i != ARBarray[b]->PPP)

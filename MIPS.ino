@@ -681,6 +681,13 @@
 //      1.) Fixed bug in longStr command processing and retuned -1 to indicate string is processed.
 //      2.) Added L and l commands to ARB compression table to control channel 3 and 4 voltage.
 //      3.) Added ARB ramp rate and commands B,b,E,e to ARB compression table to control ramp rate.
+//      4.) Added support for rev 3.1 of the power input modules, commands for on/off, voltage monitor
+//          and power status.
+//      5.) Fixed bug in ARB custom waveform download.
+//      6.) Updated DCbias driver to allow disabling readback when using AD5593 ADC/DAC
+//  1.144, Dec, 18 2018
+//      1.) Fixed init issue with AUXTRIG output, it was initing high dure to Arduino IDE upgrade
+//      2.) DCbias board power supply readback was not using board select, fixed
 //
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
@@ -771,7 +778,7 @@ int  LEDstate = 0;
 
 uint32_t BrightTime=0;
 
-const char Version[] PROGMEM = "Version 1.143, Dec 6, 2018";
+const char Version[] PROGMEM = "Version 1.144, Dec 18, 2018";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
