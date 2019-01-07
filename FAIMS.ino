@@ -77,6 +77,7 @@ extern DialogBoxEntry FAIMSentriesDCMenu3[];
 // Filter time constant is:
 // TC in seconds = 1/(sample rate is samples per sec * filter value) * 2 * pi
 #define  Filter 0.05               // Strong filter coefficent
+#define  FAIMS_Filter 0.02         // Very strong filter coefficent
 #define  EnvFilter 0.03            // Pressure and temp filter coefficent
 
 FAIMSdata  faims = FAIMS_Rev_1;    // FAIMS main data structure
@@ -1190,11 +1191,11 @@ void FAIMS_loop(void)
     if(LastBias != faims.DCbias.VoltageSetpoint) LastBias = DCbiasRB = faims.DCbias.VoltageSetpoint;
     if(LastOffset != faims.DCoffset.VoltageSetpoint) LastOffset = DCoffsetRB = faims.DCoffset.VoltageSetpoint;
     // Monitor all the readback voltages
-    DCoffsetRB = Filter * Counts2Value(ADCvals[faims.DCoffset.DCmon.Chan], &faims.DCoffset.DCmon) + (1 - Filter) * DCoffsetRB;
+    DCoffsetRB = FAIMS_Filter * Counts2Value(ADCvals[faims.DCoffset.DCmon.Chan], &faims.DCoffset.DCmon) + (1 - FAIMS_Filter) * DCoffsetRB;
     if (DCoffsetRB > MaxFAIMSVoltage) MaxFAIMSVoltage = DCoffsetRB;
-    DCbiasRB = Filter * Counts2Value(ADCvals[faims.DCbias.DCmon.Chan], &faims.DCbias.DCmon) + (1 - Filter) * DCbiasRB;
+    DCbiasRB = FAIMS_Filter * Counts2Value(ADCvals[faims.DCbias.DCmon.Chan], &faims.DCbias.DCmon) + (1 - FAIMS_Filter) * DCbiasRB;
     if (DCbiasRB > MaxFAIMSVoltage) MaxFAIMSVoltage = DCbiasRB;
-    DCcvRB = Filter * Counts2Value(ADCvals[faims.DCcv.DCmon.Chan], &faims.DCcv.DCmon) + (1 - Filter) * DCcvRB;
+    DCcvRB = FAIMS_Filter * Counts2Value(ADCvals[faims.DCcv.DCmon.Chan], &faims.DCcv.DCmon) + (1 - FAIMS_Filter) * DCcvRB;
     if (DCcvRB > MaxFAIMSVoltage) MaxFAIMSVoltage = DCcvRB;
   }
   // Display the monitored values based on the dialog box curently being displayed
@@ -1509,6 +1510,3 @@ void FAIMSsetLockSP(char *KV)
    DriveChange = 0;
    SendACK;
 }
-
-
-

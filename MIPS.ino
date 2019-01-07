@@ -632,7 +632,7 @@
 //  1.129, July 17, 2018
 //      1.) Added Q and q commands to TWAVE multi-pass compression table to allow changing the sequence. This was implemented
 //          rev 4.0 and above.
-//  1.30, July 24, 2018
+//  1.130, July 24, 2018
 //      1.) Added floating point number capability to the multipass compression tables.
 //  1.131, July 25, 2018
 //      1.) Fixed an table bug that only happens when using an external clock at frequencies below 1MHz. The bug caused the
