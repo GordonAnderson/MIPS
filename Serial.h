@@ -147,6 +147,7 @@ void SetMemAddress(char *address);
 void WriteMemory(char *type, char *val);
 void ReadMemory(char *type);
 void SaveModule(char *Module);
+void UpTime(void);
 
 // Prototypes for external functions called
 void SAVEparms(void);

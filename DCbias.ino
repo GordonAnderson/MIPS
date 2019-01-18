@@ -495,6 +495,11 @@ void SetPowerSource(void)
   {
     // Turn power on
     digitalWrite(PWR_ON,LOW);
+    // Delay to let hardware stabalize
+    noInterrupts();
+    // 100 mS delay to let hardware stabalize
+    for(int i=0;i<10;i++) delayMicroseconds(10000);
+    interrupts();
     // Clear the voltage error variables
     Verror = VerrorFiltered = 0;
     // Delay output alarm monitoring to let things stabalize

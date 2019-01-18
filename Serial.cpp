@@ -70,6 +70,7 @@ Commands  CmdArray[] = 	{
   {"GVER",  CMDstr, 0, (char *)Version},                 // Report version
   {"ISPWR",  CMDstr, 0, (char *)OnMessage},              // Report power status
   {"SUPPLIES", CMDfunction, 0, (char *)ReportSupplies},  // Report main supply voltages
+  {"UPTIME", CMDfunction, 0, (char *)UpTime},            // Report uptime in mins
   {"GERR",  CMDint, 0, (char *)&ErrorCode},              // Report the last error code
   {"GNAME", CMDstr, 0, (char *)MIPSconfigData.Name},	   // Report MIPS system name
   {"SNAME", CMDstr, 1, (char *)MIPSconfigData.Name},     // Set MIPS system name
@@ -553,6 +554,15 @@ Commands  CmdArray[] = 	{
   // End of table marker
   {0},
 };
+
+void UpTime(void)
+{
+  SendACKonly;
+  serial->print("System has been up for at least: ");
+  float uptime = (float)millis() / 60000;
+  serial->print(uptime);
+  serial->println(" minutes");
+}
 
 uint32_t MemoryAddress;
 

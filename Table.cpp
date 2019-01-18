@@ -1278,6 +1278,7 @@ void ProcessTables(void)
             // Process any serial commands
             //TRACE(7);
             ProcessSerial();
+            if(ReadVin() < 10.0) break;
             serial->flush();
             // If full command processing in table mode is enabled then run tasks.
             if(TasksEnabled)
@@ -1305,6 +1306,7 @@ void ProcessTables(void)
             StopTimer();
             break;
         }
+        if(ReadVin() < 10.0) break;
         if(TableOnce) break;
         StopTimer();  // not sure about this, testing
         // Advance to next table if advance mode is enabled
@@ -1854,9 +1856,3 @@ inline void RCmatch_Handler(void)
       else pio->PIO_SODR = pin; 
     }
 }
-
-
-
-
-
-

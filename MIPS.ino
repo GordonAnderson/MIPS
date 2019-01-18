@@ -688,6 +688,13 @@
 //  1.144, Dec, 18 2018
 //      1.) Fixed init issue with AUXTRIG output, it was initing high dure to Arduino IDE upgrade
 //      2.) DCbias board power supply readback was not using board select, fixed
+//  1.145, Jan 15 2019
+//      1.) Removed watchdog timer reset from the process serial command processing loop
+//      2.) Added test of supply voltage and abort from table mode loop
+//  1.146, Jan 16 2019
+//      1.) Added uptime command.
+//      2.) Fixed the watchdog timer, failed when I updated the IDE
+//      3.) Added delay when HV power supply is enabled
 //
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
@@ -778,7 +785,7 @@ int  LEDstate = 0;
 
 uint32_t BrightTime=0;
 
-const char Version[] PROGMEM = "Version 1.144, Dec 18, 2018";
+const char Version[] PROGMEM = "Version 1.146, Jan 16, 2019";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -1249,6 +1256,23 @@ void WDT_Setup () {
 }
 #endif
 
+#define WDT_KEY (0xA5)
+void watchdogSetup(void) {/*** watchdogDisable (); ***/}
+
+void watchdogEnable(void)
+{
+  // Enable watchdog.
+  WDT->WDT_MR = WDT_MR_WDD(0xFFF)
+                | WDT_MR_WDRPROC
+                | WDT_MR_WDRSTEN
+                | WDT_MR_WDV(256 * 8); // Watchdog triggers a reset after 2 seconds if underflow
+                                       // 2 seconds equal 84000000 * 2 = 168000000 clock cycles
+  /* Slow clock is running at 32.768 kHz
+    watchdog frequency is therefore 32768 / 128 = 256 Hz
+    WDV holds the periode in 256 th of seconds  */
+}
+
+
 void Signon(void)
 {
   bool PBwasPressed = false;
@@ -1515,6 +1539,7 @@ void setup()
     MacroPlay(MIPSconfigData.StartupMacro, true);
   }
   Ethernet_init();
+  watchdogEnable();
 }
 
 // This task is called every 10 milliseconds and handels a number of tasks.
@@ -1778,7 +1803,7 @@ void ProcessSerial(void)
   // If there is a command in the input ring buffer, process it!
   while (RB_Commands(&RB) > 0) // Process until flag that there is nothing to do
   {
-    while (ProcessCommand() == 0) WDT_Restart(WDT);
+    while (ProcessCommand() == 0);  // WDT_Restart(WDT);
   }
   SerialUSB.flush();     // Added 9/2/2017
   DIOopsReport();
