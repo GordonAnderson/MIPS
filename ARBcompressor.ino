@@ -89,72 +89,6 @@ void ARBswitchTimerISR(void)
   }  
 }
 
-// Set twave channel 1 voltage to the value defined in the channel 1 data structure
-void ARBCsetV(void)
-{
-   int b=SelectedBoard();
-   SetFloat(0,TWI_SET_RANGE, ARBarray[0]->Voltage);
-   SelectBoard(b);   
-}
-// Set twave channel 2 voltage to the value defined in the channel 2 data structure
-void ARBCsetv(void)
-{
-   int b=SelectedBoard();
-   SetFloat(1,TWI_SET_RANGE, ARBarray[1]->Voltage);
-   SelectBoard(b);     
-}
-// Set twave channel 3 voltage to the value defined in the channel 3 data structure
-void ARBCsetL(void)
-{
-   int b=SelectedBoard();
-   SetFloat(2,TWI_SET_RANGE, ARBarray[2]->Voltage);
-   SelectBoard(b);   
-}
-// Set twave channel 4 voltage to the value defined in the channel 4 data structure
-void ARBCsetl(void)
-{
-   int b=SelectedBoard();
-   SetFloat(3,TWI_SET_RANGE, ARBarray[3]->Voltage);
-   SelectBoard(b);     
-}
-void ARBCsetB(void)
-{
-   int b=SelectedBoard();
-   SetFloat(0, TWI_SET_RAMP, ARBarray[0]->RampRate);
-   SelectBoard(b);       
-}
-void ARBCsetb(void)
-{
-   int b=SelectedBoard();
-   SetFloat(1, TWI_SET_RAMP, ARBarray[1]->RampRate);
-   SelectBoard(b);       
-}
-void ARBCsetE(void)
-{
-   int b=SelectedBoard();
-   SetFloat(2, TWI_SET_RAMP, ARBarray[2]->RampRate);
-   SelectBoard(b);         
-}
-void ARBCsete(void)
-{
-   int b=SelectedBoard();
-   SetFloat(3, TWI_SET_RAMP, ARBarray[3]->RampRate);
-   SelectBoard(b);       
-}
-// Set the twave channel 1 voltage to the value defined in the channel 2 data structure
-void ARBCsetV1toV2(void)
-{
-   int b=SelectedBoard();
-   SetFloat(0,TWI_SET_RANGE, ARBarray[1]->Voltage);
-   SelectBoard(b);       
-}
-// Set the twave channel 2 voltage to the value defined in the channel 1 data structure
-void ARBCsetV2toV1(void)
-{
-   int b=SelectedBoard();
-   SetFloat(1,TWI_SET_RANGE, ARBarray[0]->Voltage);
-   SelectBoard(b);         
-}
 // Sets the compression order
 void ARBCsetOrder(void)
 {
@@ -205,13 +139,11 @@ void ARBcompressorTimerISR(void)
       // If C_NormAmpMode is 1 or 2 then set the amplitude to TW1 level.
       if((C_NormAmpMode == 1) || (C_NormAmpMode == 2))
       {
-         if(AcquireTWI()) ARBCsetV2toV1();
-         else TWIqueue(ARBCsetV2toV1);
+         if(AcquireTWI()) SetFloat(1,TWI_SET_RANGE, ARBarray[0]->Voltage); else TWIqueue(SetFloat,1,TWI_SET_RANGE, ARBarray[0]->Voltage);
       }
       if(C_NormAmpMode == 2)
       {
-         if(AcquireTWI()) ARBCsetV();
-         else TWIqueue(ARBCsetV);          
+         if(AcquireTWI()) SetFloat(0,TWI_SET_RANGE, ARBarray[0]->Voltage); else TWIqueue(SetFloat,0,TWI_SET_RANGE, ARBarray[0]->Voltage);
       }
       // Next state is always normal
       ARBnormal;
@@ -234,13 +166,11 @@ void ARBcompressorTimerISR(void)
         // If C_NormAmpMode is 1 or 2 then set the amplitude to TW2 level.
         if((C_NormAmpMode == 1) || (C_NormAmpMode == 2))
         {
-           if(AcquireTWI()) ARBCsetv();
-           else TWIqueue(ARBCsetv);
+           if(AcquireTWI()) SetFloat(1,TWI_SET_RANGE, ARBarray[1]->Voltage); else TWIqueue(SetFloat,1,TWI_SET_RANGE, ARBarray[1]->Voltage);
         }
         if(C_NormAmpMode == 2)
         {
-           if(AcquireTWI()) ARBCsetV1toV2();
-           else TWIqueue(ARBCsetV1toV2);          
+           if(AcquireTWI()) SetFloat(0,TWI_SET_RANGE, ARBarray[1]->Voltage); else TWIqueue(SetFloat,0,TWI_SET_RANGE, ARBarray[1]->Voltage);
         }
       }
       else if(OP == 'N')
@@ -345,11 +275,17 @@ bool ARBgetValueFromTable(int *index, int *value)
 // E      Channel 3 output ramp rate in v/s
 // e      Channel 4 output ramp rate in v/s
 //
+// Added Jan 18, 2019
+//
+// m      Mode, channel, N or C
+// J      Compression order, channel order
+//
 char ARBgetNextOperationFromTable(bool init)
 {
   bool   valfound;
-  char   portCH;
+  char   portCH,c;
   int    b;
+  bool   CE;
   static int tblindex=0;
   static char OP;
   static int count = 0;
@@ -382,13 +318,13 @@ char ARBgetNextOperationFromTable(bool init)
       count--;
       return(OP);
     }
-    if(OP == 'D') //Delay
+    else if(OP == 'D') //Delay
     {
       C_Delay = (((float)count) / 1000.0) * C_clock;
       count = 0;
       return(OP);
     }
-    if(OP == 'g') //Time to open gate
+    else if(OP == 'g') //Time to open gate
     {
       if(valfound)
       {
@@ -406,7 +342,7 @@ char ARBgetNextOperationFromTable(bool init)
       CSState = CSS_OPEN_REQUEST;
       CompressorTimer.setTIOBeffect(C_GateOpenTime,TC_CMR_BCPB_TOGGLE);
     }
-    if(OP == 'G') //Time to close gate
+    else if(OP == 'G') //Time to close gate
     {
       if(valfound)
       {
@@ -424,7 +360,7 @@ char ARBgetNextOperationFromTable(bool init)
       CSState = CSS_CLOSE_REQUEST;
       CompressorTimer.setTIOBeffect(C_GateOpenTime,TC_CMR_BCPB_TOGGLE);
     }
-    if(OP == 'S')
+    else if(OP == 'S')
     {
       // This command has two options, if S is followed by a value then use the switch bit
       // defined in the ARB module data structure and the value defines open or close. If
@@ -444,7 +380,7 @@ char ARBgetNextOperationFromTable(bool init)
       }
       count = 0;
     }
-    if(OP == 'O')
+    else if(OP == 'O')
     {
       if((count >= 0) && (count <= 65535))
       {
@@ -453,138 +389,163 @@ char ARBgetNextOperationFromTable(bool init)
       }
       count = 0;
     }
-    if(OP == 'V')
+    else if(OP == 'V')
     {
       if((count >= 0) && (count <= 100))
       {
         ARBarray[0]->Voltage = count; 
-        if(AcquireTWI()) ARBCsetV(); else TWIqueue(ARBCsetV);
+        if(AcquireTWI()) SetFloat(0,TWI_SET_RANGE, ARBarray[0]->Voltage); else TWIqueue(SetFloat,0,TWI_SET_RANGE, ARBarray[0]->Voltage);
       }   
       count = 0;
     }
-    if(OP == 'v')
+    else if(OP == 'v')
     {
       if((count >= 0) && (count <= 100))
       {
         ARBarray[1]->Voltage = count;
-        if(AcquireTWI()) ARBCsetv(); else TWIqueue(ARBCsetv);
+        if(AcquireTWI()) SetFloat(1,TWI_SET_RANGE, ARBarray[1]->Voltage); else TWIqueue(SetFloat,1,TWI_SET_RANGE, ARBarray[1]->Voltage);
       }      
       count = 0;
     }
-    if(OP == 'L')
+    else if(OP == 'L')
     {
       if((count >= 0) && (count <= 100) && (ARBarray[2] != NULL))
       {
          ARBarray[2]->Voltage = count;
-         if(AcquireTWI()) ARBCsetL(); else TWIqueue(ARBCsetL);   
+         if(AcquireTWI()) SetFloat(2,TWI_SET_RANGE, ARBarray[2]->Voltage); else TWIqueue(SetFloat,2,TWI_SET_RANGE, ARBarray[2]->Voltage);
       }      
       count = 0;
     }
-    if(OP == 'l')
+    else if(OP == 'l')
     {
       if((count >= 0) && (count <= 100) && (ARBarray[3] != NULL))
       {
          ARBarray[3]->Voltage = count;
-         if(AcquireTWI()) ARBCsetl(); else TWIqueue(ARBCsetl);
+         if(AcquireTWI()) SetFloat(3,TWI_SET_RANGE, ARBarray[3]->Voltage); else TWIqueue(SetFloat,3,TWI_SET_RANGE, ARBarray[3]->Voltage);
       }      
       count = 0;
     }
-    if(OP == 'B')
+    else if(OP == 'B')
     {
       if((count >= 0) && (count <= 10000) && (ARBarray[0] != NULL))
       {
          ARBarray[0]->RampRate = count;
-         if(AcquireTWI()) ARBCsetB(); else TWIqueue(ARBCsetB);
+         if(AcquireTWI()) SetFloat(0, TWI_SET_RAMP, ARBarray[0]->RampRate); else TWIqueue(SetFloat,0, TWI_SET_RAMP, ARBarray[0]->RampRate);
       }      
       count = 0;
     }
-    if(OP == 'b')
+    else if(OP == 'b')
     {
       if((count >= 0) && (count <= 10000) && (ARBarray[1] != NULL))
       {
          ARBarray[1]->RampRate = count;
-         if(AcquireTWI()) ARBCsetb(); else TWIqueue(ARBCsetb);
+         if(AcquireTWI()) SetFloat(1, TWI_SET_RAMP, ARBarray[1]->RampRate); else TWIqueue(SetFloat,1, TWI_SET_RAMP, ARBarray[1]->RampRate);
       }      
       count = 0;
     }
-    if(OP == 'E')
+    else if(OP == 'E')
     {
       if((count >= 0) && (count <= 10000) && (ARBarray[2] != NULL))
       {
          ARBarray[2]->RampRate = count;
-         if(AcquireTWI()) ARBCsetE(); else TWIqueue(ARBCsetE);
+         if(AcquireTWI()) SetFloat(2, TWI_SET_RAMP, ARBarray[2]->RampRate); else TWIqueue(SetFloat,2, TWI_SET_RAMP, ARBarray[2]->RampRate);
       }      
       count = 0;
     }
-    if(OP == 'e')
+    else if(OP == 'e')
     {
       if((count >= 0) && (count <= 10000) && (ARBarray[3] != NULL))
       {
          ARBarray[3]->RampRate = count;
-         if(AcquireTWI()) ARBCsete(); else TWIqueue(ARBCsete);
+         if(AcquireTWI()) SetFloat(3, TWI_SET_RAMP, ARBarray[3]->RampRate); else TWIqueue(SetFloat,3, TWI_SET_RAMP, ARBarray[3]->RampRate);
       }      
       count = 0;
     }
-    if(OP == 'F')
+    else if(OP == 'F')
     {
-      if((count > 100) && (count <= 40000))
+      if((count > 100) && (count <= (MAXARBRATE / ARBarray[0]->PPP)))
       {
          ARBarray[0]->Frequency = count;
          SetARBcommonClock(ARBarray[0], count);
       }   
       count = 0;
     }
-    if(OP == 'c')
+    else if(OP == 'c')
     {
       arb.Tcompress = ARBarray[0]->Tcompress = count;
       C_Tc  = (ARBarray[0]->Tcompress / 1000.0) * C_clock;
       count = 0;
     }
-    if(OP == 'n')
+    else if(OP == 'n')
     {
       arb.Tnormal = ARBarray[0]->Tnormal = count;
       C_Tn  = (ARBarray[0]->Tnormal / 1000.0) * C_clock;
       count = 0;
     }
-    if(OP == 't')
+    else if(OP == 't')
     {
       arb.TnoC = ARBarray[0]->TnoC = count;
       C_Tnc = (ARBarray[0]->TnoC / 1000.0) * C_clock;
       count = 0;
     }
-    if(OP == 'K') // Set the Cramp rate
+    else if(OP == 'K') // Set the Cramp rate
     {
       arb.Cramp = ARBarray[0]->Cramp = count;
       if(AcquireTWI()) ARBCsetCramp(); else TWIqueue(ARBCsetCramp);
       count = 0;
     }
-    if(OP == 'k')
+    else if(OP == 'k')
     {
       // Set the Cramp step size, or cramp order
       arb.CrampOrder = ARBarray[0]->CrampOrder = count;
       if(AcquireTWI()) ARBCsetCrampOrder(); else TWIqueue(ARBCsetCrampOrder); 
       count = 0;
     }
-    if(OP == 'W')
+    else if(OP == 'W')
     {
       if(count < 1) count = 1;
       if(count > 5) count = 5;
       ARBarray[0]->wft = (WaveFormTypes)(count - 1);
       if(AcquireTWI()) ARBsetWFT1(); else TWIqueue(ARBsetWFT1);
     }
-    if(OP == 'w')
+    else if(OP == 'w')
     {
       if(count < 1) count = 1;
       if(count > 5) count = 5;
       ARBarray[1]->wft = (WaveFormTypes)(count - 1);
       if(AcquireTWI()) ARBsetWFT2(); else TWIqueue(ARBsetWFT2); 
     }
-    if(OP == 's') ARBclock->stop();                            // Stop the clock
-    if(OP == 'r') ARBclock->start(-1, 0, true);                // Restart the clock
-    if(OP == 'o') C_SwitchTime = (count / 1000.0) * C_clock;   // Sets the switch open time
-    if(OP == 'M') C_NormAmpMode = count;                       // Set compressor normal amplitude mode
-    if(OP == '[') CompressorLoopStart(tblindex);
-    if(OP == ']')
+    else if(OP == 'm')   // Set selected ARB mode to compress or normal
+    {
+       // syntax is m followed by ARB channel followed by N or C
+      if(valfound)
+      {
+         c = TwaveCompressorTable[tblindex++];
+         if((count>=1) && (count<=4) && ((c=='N') || (c=='C')))
+         {
+            if(c=='C') CE = true; else CE = false;
+            if(AcquireTWI()) SetBool(count - 1, TWI_SET_COMP_ENA, CE); else TWIqueue(SetBool,count - 1, TWI_SET_COMP_ENA, CE);
+         }
+      }
+    }
+    else if(OP == 'J')   // Set selected ARB compression order
+    {
+       // Syntax is J followed by ARB channel (1 thru 4) followed by order
+       b = count;
+       int m = 1;
+       while(b > 4) { b /= 10; m *= 10; }
+       count -= m * b;
+       if((b>=1) && (b<=4))
+       {
+          if(AcquireTWI()) SetWord(b-1,TWI_SET_COMP_ORDER_EX, count); else TWIqueue(SetWord,b-1,TWI_SET_COMP_ORDER_EX, count);
+       }
+    }
+    else if(OP == 's') ARBclock->stop();                            // Stop the clock
+    else if(OP == 'r') ARBclock->start(-1, 0, true);                // Restart the clock
+    else if(OP == 'o') C_SwitchTime = (count / 1000.0) * C_clock;   // Sets the switch open time
+    else if(OP == 'M') C_NormAmpMode = count;                       // Set compressor normal amplitude mode
+    else if(OP == '[') CompressorLoopStart(tblindex);
+    else if(OP == ']')
     {
       int i = CompressorProcessLoop(count);
       if(i != -1) tblindex = i;

@@ -189,10 +189,12 @@
 // STBLDAT;100:1:15:3:123,150:2:33,400:[3:5,0:1:30:2:10,100:1:10:2:30,150:];
 // STBLDAT;100:1:15:3:123,150:2:33,400:[3:5,0:1:30:2:10,100:1:10:2:30,150:],0:1:15,50:1:5;
 // STBLDAT;0:[3:5,0:1:30:2:10,100:1:10:2:30,150:];
-// STBLDAT;0:[A:1000,0:1:0,1000:1:5,1000:];
+// STBLDAT;0:[A:1000,0:1:0,1000:1:100,5000:];
 // STBLDAT;0:[A:1000,0:A:1,1000:A:0,1000:];
 // STBLDAT;0:[A:1000,100:A:1,1000:A:0,1000:];
 // STBLDAT;0:[A:1000,100:A:1,1000:A:0:c:A,100000:];
+//
+// STBLDAT;0:[A:3,0:1:0,1000:1:100,2000:],100:A:1,10000:[A:2,0:1:0,1000:1:100,3000:];
 //
 // Examples to be tested
 //
@@ -364,6 +366,9 @@ volatile bool TableOnce = false;      // If true the table will play one time th
 volatile bool softLDAC = false;       // If true forces the use of software LDAC
 bool TableResponse = true;            // This flag is true to enable table status response
 
+bool TblTasks = false;                // If true enables processing tasks when there is avalible time during table execution
+int  ExtFreq = 0;                     // Defines enternal clock frequency used by the table, needed for the TblTasks mode.
+
 // The following variables are used to support the loop time incrementing or decermenting. This capability
 // was added October 25, 2017
 int  TimeDelta = 0;                   // This time is added to the time sent to the timer 
@@ -374,7 +379,7 @@ uint8_t  Chan2Brd[32];
 bool DCbiasUpdaated = false;
 bool ValueChange = false;
 
-bool TasksEnabled = false;            // Setting this flag to tue will enable all tasks in table mode
+bool TasksEnabled = false;            // Setting this flag to true will enable all tasks in table mode
 bool TableTriggered = false;          // This flag is set when the table is triggered and reset when its complete
 bool TimerRunning = false;
 
@@ -385,6 +390,10 @@ DIhandler DIhTrig;
 enum TriggerModes TriggerMode = SW;
 enum ClockModes   ClockMode   = MCK128;
 enum TableModes   TableMode   = LOC;
+
+int  TableClockFreq = VARIANT_MCK/128;
+
+bool IssueSoftwareTableStart = false;
 
 //**************************************************************************************************
 //
@@ -611,6 +620,11 @@ void SetTableCLK(char *cmd)
         return;
       }
     }
+    TableClockFreq = 0;
+    if(ClockMode == MCK2) TableClockFreq   = VARIANT_MCK/2;
+    if(ClockMode == MCK8) TableClockFreq   = VARIANT_MCK/8;
+    if(ClockMode == MCK32) TableClockFreq  = VARIANT_MCK/32;
+    if(ClockMode == MCK128) TableClockFreq = VARIANT_MCK/128;
     SendACK;
 }
 
@@ -682,6 +696,17 @@ void SWTableTrg(void)
       SendACK;
       return;
     }
+    // This function was changed Jan 22, 2019 to just set a flag and let the table real time loop processing
+    // code actiall call the start function. This allows the real time loop to call tasks (if enabled) while 
+    // waiting for a trigger.
+    IssueSoftwareTableStart = true;
+    SendACK;
+    return;
+}
+
+void PerformSoftwareStart(void)
+{
+    if(!IssueSoftwareTableStart) return;
     // If there is a update at count 0 then fire LDAC and setup for the next event
     if(MPT.getRAcounter() == 0) 
     {
@@ -701,8 +726,8 @@ void SWTableTrg(void)
       }
       SetupNextEntry();
     }
-    SendACK;
     StartTimer();
+    IssueSoftwareTableStart = false;
 //  if(MPT.getRAcounter() == 0) SetupNextEntry();
 }
 
@@ -809,9 +834,10 @@ void GetTableEntryValue(int Count, int Chan)
     // Convert entry back to engineering units and send
     SendACKonly;
     // The value is saved as the DAC bit pattern so first convert back to DAC counts
-    int val = TE->Value;
-    val >>= 4;
-    val &= 0xFFFF;
+    uint8_t  *buf = (uint8_t *)&TE->Value;
+    int val = ((int)buf[1] & 0x0F) << 12;
+    val |= ((int)buf[2]) << 4;
+    val |= ((int)buf[3]) >> 4;
     fval = DCbiasCounts2Value(TE->Chan, val);
     if(!SerialMute) serial->println(fval);
 }
@@ -835,7 +861,7 @@ void SetTableEntryValue(int Count, int Chan, float fval)
     // in the table execute mode. June 23 2016
     uint8_t  *buf = (uint8_t *)&TE->Value;
     buf[0] = 0;         // DAC command
-    buf[1] = (TE->Chan << 4) | (val >> 12);
+    buf[1] = ((TE->Chan & 7) << 4) | (val >> 12);
     buf[2] = (val >> 4);
     buf[3] = (val << 4);
     SendACK;
@@ -953,7 +979,7 @@ void ParseTableCommand(void)
             if(!Token2int(&TH->RepeatCount)) break;
             if(!ExpectComma()) break;
             // Now get the initial time point value
-//          if(iStat == 0) InitialOffset = i;   // This was the failed solution before the Nov 3, 2016 edits
+//          if(iStat == 0) InitialOffset = i;           // This was the failed solution before the Nov 3, 2016 edits
             if(!Token2int(&i)) break;                   // First time point
             if(!ExpectColon()) break;
             if((TK = NextToken()) == NULL) break;       // First channel
@@ -1055,7 +1081,7 @@ int ParseEntry(int Count, char *TK)
     {
         // Process each entry, TK has token for first channel.
         // This token could be on of the following:
-        //   - A DCB channel number 1 through 16
+        //   - A DCB channel number 1 through 32
         //   - A DIO channel number, A through P or t for Trigger output
         //   - A 'W', if this is true do nothing because all we do is set max count with time point
         //   - A ']', This will define the end of the table.
@@ -1113,7 +1139,7 @@ int ParseEntry(int Count, char *TK)
             {
                if((TK = NextToken()) == NULL) break;
                TE->Value = TK[0];
-//               if(TK[0] == 't') Token2int(&TE->Value);  // This line makes no sense
+//             if(TK[0] == 't') Token2int(&TE->Value);  // This line makes no sense
             }
         }
         else
@@ -1193,6 +1219,35 @@ void AdvanceTableNumber(void)
   }
 }
 
+void ProcessTasks(void)
+{
+  uint32_t TCcount,RAcount,RCcount,AvalibleClocks;
+
+  if(!TblTasks) return;   // Flag to enable this mode that will call tasks if there is time avalible to do so
+  if(!TimerRunning)
+  {
+    // If we are software trigger mode its OK to call the task processor
+    if(TriggerMode == SW) control.run();
+    return;
+  }
+  if((ClockMode == EXT) || (ClockMode == EXTN) || (ClockMode == EXTS)) TableClockFreq = ExtFreq;
+  if(TableClockFreq == 0) return;
+  // If the timer is running test the avalible time
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    TCcount = MPTtc.TC_CV;
+    RAcount = MPTtc.TC_RA;
+    RCcount = MPTtc.TC_RC;
+  }
+  if(TCcount < RAcount) AvalibleClocks = RAcount - TCcount;
+  if((RCcount - TCcount) < AvalibleClocks) AvalibleClocks = RCcount - TCcount;
+  if(((AvalibleClocks * 1000) / TableClockFreq) > 40)
+  {
+    // If here its OK to call the task processor and run ready tasks
+    control.run();
+  }
+}
+
 //
 // This function places the system in table mode and sets up the timer to play a table.
 // TableModeEnabled is written to the display and all button processing is suspended.
@@ -1226,6 +1281,10 @@ void ProcessTables(void)
         while(1)
         {
             WDT_Restart(WDT);
+            // Issue software trigger if requested
+            PerformSoftwareStart();
+            // Process tasks if time is avalible
+            ProcessTasks();
             // Restart table if reqested by user
             if(StopCommanded)
             {
@@ -1240,10 +1299,10 @@ void ProcessTables(void)
             if(bStat || SWtriggered)
             {
               TableTriggered = true;
-              SWtriggered = false;
+              SWtriggered    = false;
               // Here when triggered
-               if((!SerialMute) && (TableResponse)) serial->println("TBLTRIG\n");
-//               if(StopRequest == true) break;     // removed 5/5/18
+              if((!SerialMute) && (TableResponse)) serial->println("TBLTRIG\n");
+//            if(StopRequest == true) break;     // removed 5/5/18
             }
             // Exit this loop when the timer is stoped.
             {
@@ -1581,19 +1640,20 @@ inline void SetupNextEntry(void)
    static bool  DIOchange;
    static Pio *pio = g_APinDescription[ADDR0].pPort;
 
-//    ValueChange = true;
+//  ValueChange = true;
     DIOchange=false;
     // Set the address
-SetupNextEntryAgain:  // sorry
-    pio->PIO_CODR = 7;                                    // Set all bits low
-    if(DCbDarray[0] != NULL) SPIadd = pio->PIO_SODR = DCbDarray[0]->DACspi & 7;    // Set address for channels 0 through 15
+SetupNextEntryAgain:
+    pio->PIO_CODR = 7;                                                                 // Set all bits low
+    if(DCbDarray[0] != NULL)      SPIadd = pio->PIO_SODR = DCbDarray[0]->DACspi & 7;   // Set address for channels 0 through 15
     else if(DCbDarray[1] != NULL) SPIadd = pio->PIO_SODR = DCbDarray[1]->DACspi & 7;
-    // Timer count where these values are set
+    // Set the next event counts. These are compare registers that will cause interrtups
+    // and generate LDAC latch signal
     MPTtc.TC_RA = TEheader->Count;
     MPTtc.TC_RC = Theader->MaxCount;
-//    if(TEheader->Count == 0) MPTtc.TC_RA = 0;
-//    else MPTtc.TC_RA = TEheader->Count + TimeDelta;
-//    MPTtc.TC_RC = Theader->MaxCount + TimeDeltaMax;
+//  if(TEheader->Count == 0) MPTtc.TC_RA = 0;
+//  else MPTtc.TC_RA = TEheader->Count + TimeDelta;
+//  MPTtc.TC_RC = Theader->MaxCount + TimeDeltaMax;
 SetupNextEntryAgain2:
     // Process the current entry, all channels
     while(1)
@@ -1696,14 +1756,14 @@ SetupNextEntryAgain2:
             else if((Tentry[i].Chan >= 100) && (Tentry[i].Chan <= 107))
             {
               // Here if ARB commands
-              if(Tentry[i].Chan == 100)      UpdateAux(0, *(float *)&Tentry[i].Value, false);     // 101
-              else if(Tentry[i].Chan == 101) UpdateAux(1, *(float *)&Tentry[i].Value, false);     // 102
-              else if(Tentry[i].Chan == 102) UpdateAux(2, *(float *)&Tentry[i].Value, false);     // 103
-              else if(Tentry[i].Chan == 103) UpdateAux(3, *(float *)&Tentry[i].Value, false);     // 104
-              else if(Tentry[i].Chan == 104) UpdateOffsetA(0, *(float *)&Tentry[i].Value, false); // 105
-              else if(Tentry[i].Chan == 105) UpdateOffsetB(0, *(float *)&Tentry[i].Value, false); // 106
-              else if(Tentry[i].Chan == 106) UpdateOffsetA(1, *(float *)&Tentry[i].Value, false); // 107
-              else if(Tentry[i].Chan == 107) UpdateOffsetB(1, *(float *)&Tentry[i].Value, false); // 108
+              if(Tentry[i].Chan == 100)      UpdateAux(0, *(float *)&Tentry[i].Value, false);     // 101, e
+              else if(Tentry[i].Chan == 101) UpdateAux(1, *(float *)&Tentry[i].Value, false);     // 102, f
+              else if(Tentry[i].Chan == 102) UpdateAux(2, *(float *)&Tentry[i].Value, false);     // 103, g
+              else if(Tentry[i].Chan == 103) UpdateAux(3, *(float *)&Tentry[i].Value, false);     // 104, h
+              else if(Tentry[i].Chan == 104) UpdateOffsetA(0, *(float *)&Tentry[i].Value, false); // 105, i
+              else if(Tentry[i].Chan == 105) UpdateOffsetB(0, *(float *)&Tentry[i].Value, false); // 106, j
+              else if(Tentry[i].Chan == 106) UpdateOffsetA(1, *(float *)&Tentry[i].Value, false); // 107, k
+              else if(Tentry[i].Chan == 107) UpdateOffsetB(1, *(float *)&Tentry[i].Value, false); // 108, l
             }
             // if Chan is A through P its a DIO to process
             else if((Tentry[i].Chan >= 'A') && (Tentry[i].Chan <= 'P'))

@@ -695,13 +695,32 @@
 //      1.) Added uptime command.
 //      2.) Fixed the watchdog timer, failed when I updated the IDE
 //      3.) Added delay when HV power supply is enabled
+//      4.) If a watchdog timer reset is detected on power up then a software reset is issued to make sure
+//          the USB system is reset
+//  1.147, Jan 19 2019
+//      1.) The TWI queue capability was re-written to all queuing of functions with arguments. This cleaned
+//          up the ARB compression code and supported added capability
+//      2.) Added the m command to the ARB compressor to allow defining mode for any ARB channel
+//      3.) Added the J command to the ARB compressor to allow defining the compresion order for any
+//          ARB channel
+//      4.) Fixed bug in the ARB compressor table 'F' command, hard limit at 40000
+//  1.148, Jan 21 2019
+//      1.) Fixed bug in the Get Table Value command, GTBLVLT, this bug was pretty old!
+//      2.) Added capability to run the tasks when there is time in a table. Need at least 40mS to run
+//          tasks.
 //
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
 //
 // Next version to dos:
-//      1.) Update the display code to make it interupt safe when ISR uses SPI, done but turned off for compressor
+//      0.) Update the table code to allow running tasks when the table is waiting for an event, additionally if
+//          in software trigger mode and waitinf for a trigger command, process tasks. Enable and disable using
+//          TBLTASKS, TRUE enable, FALSE by default. The scheme works by monitoring the counter value and comparing to
+//          RA and RC to determine counts to net event. the EXTFREQ command allos you to define an enternal frequency
+//          needed to calculate avalible time. EXTFREQ is zero by default. In the table processing loop, if we have
+//          40 mS then call the next ready task.
+//      1.) Update the display code to make it interrupt safe when ISR uses SPI, done but turned off for compressor
 //      2.) Fix the DIO to allow command processing in table mode, this will require a pending update flag for
 //          the DIO, only update if no pending update
 //      3.) Consider re-implementing the table mode dialog box code. This should work after the SPI upgrades to
@@ -785,7 +804,7 @@ int  LEDstate = 0;
 
 uint32_t BrightTime=0;
 
-const char Version[] PROGMEM = "Version 1.146, Jan 16, 2019";
+const char Version[] PROGMEM = "Version 1.148, Jan 21, 2019";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -1430,6 +1449,14 @@ void test(void)
 
 void setup()
 {
+
+  // A watchdog timer reboot does not reset the USB interface for some reason, so
+  // this code will detect if a watchdog timer reset happened and force a software
+  // reset. Jan 18, 2019
+  uint32_t i = REG_RSTC_SR;  // Reads the boot flag
+  i >>= 8;
+  i &= 7;   
+  if(i==2) Software_Reset();
   //  int i = REG_RSTC_SR;  // Reads the boot flag
   analogReadResolution(12);
   Reset_IOpins();

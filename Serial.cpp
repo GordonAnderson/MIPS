@@ -320,6 +320,11 @@ Commands  CmdArray[] = 	{
   {"GTBLREPLY",CMDbool, 0, (char *)&TableResponse},        // Returns TRUE or FALSE state of enable table response flag
   {"STBLREPLY",CMDbool, 1, (char *)&TableResponse},        // TRUE or FALSE, set to TRUE enable table response messages (default)
   {"TBLRPT",CMDfunction,1, (char *)ReportTable},           // Report table as hex bytes
+  {"STBLREPLY",CMDbool, 1, (char *)&TableResponse},        // TRUE or FALSE, set to TRUE enable table response messages (default)
+  {"STBLTSKS",CMDbool, 1, (char *)&TblTasks},              // Set to TRUE to enable tasks in table mode based on avalible time, FALSE is default
+  {"GTBLTSKS",CMDbool, 0, (char *)&TblTasks},              // Returns the TblTasks flag status
+  {"SEXTFREQ",CMDint, 1, (char *)&ExtFreq},                // Sets the external frequency used for the table clock, needed for TblTasks capability, 0 by default
+  {"GEXTFREQ",CMDint, 0, (char *)&ExtFreq},                // Returns the ExtFreq value, in Hz
   // Macro commands
   {"MRECORD", CMDfunctionStr, 1, (char *) MacroRecord},    // Turn on macro recording into the filename argument
   {"MSTOP", CMDfunction, 0, (char *) MacroStop},           // Stop macro recording and close the file
@@ -989,13 +994,13 @@ void ExecuteCommand(Commands *cmd, int arg1, int arg2, char *args1, char *args2,
       break;
     case CMDfunction:
       if (cmd->NumArgs == 0) cmd->pointers.funcVoid();
-      if (cmd->NumArgs == 1) cmd->pointers.func1int(arg1);
-      if (cmd->NumArgs == 2) cmd->pointers.func2int(arg1, arg2);
+      else if (cmd->NumArgs == 1) cmd->pointers.func1int(arg1);
+      else if (cmd->NumArgs == 2) cmd->pointers.func2int(arg1, arg2);
       break;
     case CMDfunctionStr:
       if (cmd->NumArgs == 0) cmd->pointers.funcVoid();
-      if (cmd->NumArgs == 1) cmd->pointers.func1str(args1);
-      if (cmd->NumArgs == 2) cmd->pointers.func2str(args1, args2);
+      else if (cmd->NumArgs == 1) cmd->pointers.func1str(args1);
+      else if (cmd->NumArgs == 2) cmd->pointers.func2str(args1, args2);
       break;
     case CMDfun2int1flt:
       if (cmd->NumArgs == 3) cmd->pointers.func2int1flt(arg1, arg2, farg1);

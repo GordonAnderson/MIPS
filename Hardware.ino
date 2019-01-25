@@ -1379,12 +1379,41 @@ int MCP2300(int8_t adr, uint8_t reg, uint8_t *data)
 }
 
 //
-// Routines used to allow TWI use in ISR. 
+// Routines used to allow TWI use in ISR. The TWI queue functions allow you to
+// queue function with parameters.
 //
-#define MaxQueued 5
+#define MaxQueued 10
+
+enum TWIcbType
+{
+  Empty,
+  VoidVoid,
+  VoidIntIntFloat,
+  VoidIntIntBool,
+  VoidIntIntWord
+};
+
+union TWIfunctions
+{
+  void  (*funcVoidVoid)(void);
+  void  (*funcIntIntFloat)(int, int, float);
+  void  (*funcIntIntBool)(int, int, bool);
+  void  (*funcIntIntWord)(int, int, uint16_t);
+};
+
+typedef struct 
+{
+  TWIcbType             Type;
+  union   TWIfunctions  pointers;
+  int                   Int1,Int2;
+  float                 Float1;
+  bool                  Bool1;
+  uint16_t              Word1;
+} TWIqueueEntry;
+
+TWIqueueEntry TWIq[MaxQueued] = {{Empty,NULL},{Empty,NULL},{Empty,NULL},{Empty,NULL},{Empty,NULL}};
 
 bool TWIbusy=false;
-void  (*TWIqueued[MaxQueued])(void) = {NULL,NULL,NULL,NULL,NULL};
 // This functoin acquires the TWI interface.
 // Returns false if it was busy.
 bool AcquireTWI(void)
@@ -1400,24 +1429,23 @@ bool AcquireTWI(void)
 // and queue up its io if the TWI interface is busy.
 void ReleaseTWI(void)
 {
-  static void (*function)();
   static bool busy = false;
-  int i;
 
   if(busy) return;
   busy = true;
   //AtomicBlock< Atomic_RestoreState > a_Block;
   if(TWIbusy)
   {
-    for(i=0;i<MaxQueued;i++)
+    for(int i=0;i<MaxQueued;i++)
     {
-      if(TWIqueued[i] != NULL) 
+      if(TWIq[i].pointers.funcVoidVoid != NULL) 
       {
-        function = TWIqueued[i];
-        TWIqueued[i] = NULL;
-        TWIbusy=false; // Added Dec 2, 2017
-        function();
-        TWIqueued[i] = NULL;
+        if(TWIq[i].Type == VoidVoid) TWIq[i].pointers.funcVoidVoid();
+        else if(TWIq[i].Type == VoidIntIntFloat) TWIq[i].pointers.funcIntIntFloat(TWIq[i].Int1,TWIq[i].Int2,TWIq[i].Float1);
+        else if(TWIq[i].Type == VoidIntIntBool) TWIq[i].pointers.funcIntIntFloat(TWIq[i].Int1,TWIq[i].Int2,TWIq[i].Bool1);
+        else if(TWIq[i].Type == VoidIntIntWord) TWIq[i].pointers.funcIntIntFloat(TWIq[i].Int1,TWIq[i].Int2,TWIq[i].Word1);
+        TWIq[i].pointers.funcVoidVoid = NULL;
+        TWIq[i].Type = Empty;
       }
     }
     TWIbusy=false;
@@ -1425,19 +1453,54 @@ void ReleaseTWI(void)
   busy=false;
 }
 
-// This queues up a function to call when the currect TWI operation finishes.
-void TWIqueue(void (*TWIfunction)())
+// This queues up a function to call when the current TWI operation finishes.
+void TWIqueue(void (*TWIfunction)(void))
 {
-  int i;
-
-  for(i=0;i<MaxQueued;i++)
+  for(int i=0;i<MaxQueued;i++) if(TWIq[i].pointers.funcVoidVoid == NULL)
   {
-     if(TWIqueued[i] == NULL) 
-     {
-       TWIqueued[i] = TWIfunction;
-       break;
-     }
+     TWIq[i].pointers.funcVoidVoid = TWIfunction;
+     TWIq[i].Type = VoidVoid;
+     break;
   }
+}
+
+void TWIqueue(void (*TWIfunction)(int,int,float),int arg1,int arg2,float arg3)
+{
+  for(int i=0;i<MaxQueued;i++) if(TWIq[i].pointers.funcIntIntFloat == NULL)
+  {
+     TWIq[i].pointers.funcIntIntFloat = TWIfunction;
+     TWIq[i].Type   = VoidIntIntFloat;
+     TWIq[i].Int1   = arg1;
+     TWIq[i].Int2   = arg2;
+     TWIq[i].Float1 = arg3;
+     break;
+  }  
+}
+
+void TWIqueue(void (*TWIfunction)(int,int,bool),int arg1,int arg2,bool arg3)
+{
+  for(int i=0;i<MaxQueued;i++) if(TWIq[i].pointers.funcIntIntBool == NULL)
+  {
+     TWIq[i].pointers.funcIntIntBool = TWIfunction;
+     TWIq[i].Type   = VoidIntIntBool;
+     TWIq[i].Int1   = arg1;
+     TWIq[i].Int2   = arg2;
+     TWIq[i].Bool1  = arg3;
+     break;
+  }  
+}
+
+void TWIqueue(void (*TWIfunction)(int,int,uint16_t),int arg1,int arg2,uint16_t arg3)
+{
+  for(int i=0;i<MaxQueued;i++) if(TWIq[i].pointers.funcIntIntWord == NULL)
+  {
+     TWIq[i].pointers.funcIntIntWord = TWIfunction;
+     TWIq[i].Type   = VoidIntIntWord;
+     TWIq[i].Int1   = arg1;
+     TWIq[i].Int2   = arg2;
+     TWIq[i].Word1  = arg3;
+     break;
+  }  
 }
 
 // Trigger output functions. These functions support pulsing the output in micro second units as

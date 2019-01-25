@@ -84,6 +84,9 @@ extern int  InterTableDelay;
 extern bool ValueChange;
 extern volatile bool softLDAC;
 extern bool TableResponse;
+extern bool TblTasks;
+extern int  ExtFreq;
+
 
 // ProcessEntry return codes
 #define PEprocessed 1
@@ -138,11 +141,3 @@ void RAmatch_Handler(void);
 void RCmatch_Handler(void);
 
 #endif
-
-
-
-
-
-
-
-

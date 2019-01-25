@@ -678,8 +678,9 @@ bool Read8bitUnsigned(int board,int cmd, int *value)
 
 void SetBool(int board, int cmd, bool flag)
 {
-  SelectBoard(board);
   AcquireTWI();
+  int cb=SelectedBoard();
+  SelectBoard(board);
   Wire.beginTransmission(ARBarray[board]->ARBadr);
   Wire.write(cmd);
   Wire.write(flag);
@@ -687,6 +688,7 @@ void SetBool(int board, int cmd, bool flag)
     AtomicBlock< Atomic_RestoreState > a_Block;
     Wire.endTransmission();
   }
+  if(cb != board) SelectBoard(cb);
   ReleaseTWI();
 }
 
@@ -706,8 +708,9 @@ void SetByte(int board, int cmd, byte bval)
 
 void SetWord(int board, int cmd, uint16_t wval)
 {
-  SelectBoard(board);
   AcquireTWI();
+  int cb=SelectedBoard();
+  SelectBoard(board);
   Wire.beginTransmission(ARBarray[board]->ARBadr);
   Wire.write(cmd);
   Wire.write(wval & 0xFF);
@@ -716,6 +719,7 @@ void SetWord(int board, int cmd, uint16_t wval)
     AtomicBlock< Atomic_RestoreState > a_Block;
     Wire.endTransmission();
   }
+  if(cb != board) SelectBoard(cb);
   ReleaseTWI();
 }
 
@@ -755,8 +759,9 @@ void SetInt(int board, int cmd, int ival)
 
 void SetFloat(int board, int cmd, float fval)
 {
-  SelectBoard(board);
   AcquireTWI();
+  int cb=SelectedBoard();
+  SelectBoard(board);
   uint8_t *b = (uint8_t *)&fval;
   Wire.beginTransmission(ARBarray[board]->ARBadr);
   Wire.write(cmd);
@@ -768,6 +773,7 @@ void SetFloat(int board, int cmd, float fval)
     AtomicBlock< Atomic_RestoreState > a_Block;
     Wire.endTransmission();
   }
+  if(cb != board) SelectBoard(cb);
   ReleaseTWI();  
 }
 
