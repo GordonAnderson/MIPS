@@ -1791,13 +1791,13 @@ void DIOopsISR(void)
   TRACE(9);
   for(i=0;i<8;i++)
   {
-    if((dioops[i].Report) || (dioops[i].Mirror))
+//    if((dioops[i].Report) || (dioops[i].Mirror))
     {
       j = digitalRead(dioops[i].DI);
       if(j != dioops[i].LastLevel)
       {
         dioops[i].LastLevel = j;
-        if(dioops[i].Report)
+        if(!dioops[i].Mirror)
         {
           if(dioops[i].ReportState == CHANGE) dioops[i].Changed = true;
           if((dioops[i].ReportState == RISING) && (j == HIGH)) dioops[i].Changed = true;
@@ -1825,7 +1825,7 @@ void DIOopsISR(void)
 // port is Q,R,S,T,U,V,W, or X
 // mode is RISING,FALLING,CHANGE, or OFF
 // OFF will remove and monitoring function.
-void DIOreport(char *port, char *mode)
+void DIOreportMonitor(char *port, char *mode, bool Report)
 {
   int i;
 
@@ -1843,7 +1843,7 @@ void DIOreport(char *port, char *mode)
     dioops[i].ReportState = CHANGE;
     if (strcmp(mode, "RISING") == 0) dioops[i].ReportState = RISING;
     if (strcmp(mode, "FALLING") == 0) dioops[i].ReportState = FALLING;
-    dioops[i].Report = true;
+    dioops[i].Report = Report;
     dioops[i].Changed = false;
     if(!dioops[i].Mirror) dioops[i].DIh->attached(port[0],CHANGE,DIOopsISR);
     SendACK;
@@ -1861,6 +1861,38 @@ void DIOreport(char *port, char *mode)
   }
   SetErrorCode(ERR_BADARG);
   SendNAK;
+}
+
+void DIOreport(char *port, char *mode)
+{
+  DIOreportMonitor(port,mode,true);
+}
+
+void DIOmonitor(char *port, char *mode)
+{
+  DIOreportMonitor(port,mode,false);  
+}
+
+void DIOchangeReport(char *port)
+{
+  int  i;
+
+  i = port[0] - 'Q';
+  if((i < 0) || (i > 7))
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;
+  }
+  SendACKonly;
+  if(SerialMute) return;
+  if(dioops[i].Changed)
+  {
+    if((dioops[i].ReportState == CHANGE)||(dioops[i].ReportState == RISING)||(dioops[i].ReportState == FALLING)) serial->println("TRUE");
+    else serial->println("FALSE");
+    return;
+  }
+  serial->println("FALSE");
 }
 
 // This function will mirror an input (Q through X) to an output (A through P or OFF)

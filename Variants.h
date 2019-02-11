@@ -19,7 +19,7 @@
 #include "DAC.h"
 #include "RFamp.h"
 
-//#define TestMode
+#define TestMode
 //#define TestFilament
 //#define TestTwave
 

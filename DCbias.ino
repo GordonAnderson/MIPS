@@ -658,6 +658,7 @@ void DCbias_loop(void)
   static  float offsetV;
   static  int disIndex = 0;
   static  bool SuppliesOff = true;
+  static  bool LastSuppliesState = true;
   static  int  SuppliesStableCount = 10;
   int     i,b;
   uint16_t ADCvals[8];
@@ -684,10 +685,72 @@ void DCbias_loop(void)
   if(DCbDarray[0]->UseOneOffset) DCbDarray[SelectedDCBoard ^ 1]->DCoffset.VoltageSetpoint = DCbDarray[SelectedDCBoard]->DCoffset.VoltageSetpoint;
   MaxDCbiasVoltage = 0;
   Verror = 0;
+  // This logic was add in version 1.150. This code will ramp the voltages back up after
+  // the power supply is enabled. The goal it to stop any big voltage impluses. This code
+  // requires 100mS to ramp up and this only happen when the supply state changes from off
+  // to on.
+  for(int StepUp = 0; StepUp < 100; StepUp++)
+  {
+    float Mult;
+    if(!SuppliesOff && !LastSuppliesState) Mult = 1.0;
+    else Mult = (float)(StepUp+1)/100.0; 
+    if(SuppliesOff) Mult = 1.0;
+    for(b=0;b<4;b++)
+    {
+      SelectBoard(b);
+      if(DCbDarray[b] == NULL) continue;
+      // Update the offset output, its TWI not SPI!
+      if(SuppliesOff == false)
+      {
+        if((DCbDarray[b]->DCoffset.VoltageSetpoint != DCbiasStates[b]->DCbiasO) || DCbiasUpdate)
+        {
+          DCbiasStates[b]->DCbiasO = DCbDarray[b]->DCoffset.VoltageSetpoint * Mult;
+          if((DCbDarray[b]->DACadr & 0xFE) == 0x10) AD5593writeDAC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(DCbDarray[b]->DCoffset.VoltageSetpoint*Mult,&DCbDarray[b]->DCoffset.DCctrl));
+          else AD5625(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(DCbDarray[b]->DCoffset.VoltageSetpoint*Mult,&DCbDarray[b]->DCoffset.DCctrl),3);
+        }
+      }
+      else
+      {
+        // Set to zero if power is off
+        DCbiasStates[b]->DCbiasO = 0;
+        if((DCbDarray[b]->DACadr & 0xFE) == 0x10) AD5593writeDAC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCoffset.DCctrl));
+        else AD5625(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCoffset.DCctrl),3);      
+      }
+      // Update all output channels. SPI interface for speed
+      if(DCbiasUpdate) DelayMonitoring();
+      for(i=0;i<DCbDarray[b]->NumChannels;i++)
+      {
+        if(SuppliesOff == false)
+        {
+          V = DCbDarray[b]->DCCD[i].VoltageSetpoint*Mult - DCbDarray[b]->DCoffset.VoltageSetpoint*Mult;
+          if(V > DCbDarray[b]->MaxVoltage) {V = DCbDarray[b]->MaxVoltage; DCbDarray[b]->DCCD[i].VoltageSetpoint = V + DCbDarray[b]->DCoffset.VoltageSetpoint*Mult; }
+          if(V < DCbDarray[b]->MinVoltage) {V = DCbDarray[b]->MinVoltage; DCbDarray[b]->DCCD[i].VoltageSetpoint = V + DCbDarray[b]->DCoffset.VoltageSetpoint*Mult; }
+          //DCbDarray[b]->DCCD[i].VoltageSetpoint = V + DCbDarray[b]->DCoffset.VoltageSetpoint*Mult;
+          if((V != DCbiasStates[b]->DCbiasV[i]) || DCbiasUpdate)
+          {
+            DCbiasStates[b]->DCbiasV[i] = V;
+            if(!DCbiasProfileApplied) AD5668(DCbDarray[b]->DACspi,DCbDarray[b]->DCCD[i].DCctrl.Chan,Value2Counts(V,&DCbDarray[b]->DCCD[i].DCctrl),3);
+          }
+        }
+        else
+        {
+          // Set to zero if power is off
+          AD5668(DCbDarray[b]->DACspi,DCbDarray[b]->DCCD[i].DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCCD[i].DCctrl), 3);
+          DCbiasStates[b]->DCbiasV[i] = 0;
+        }
+      }
+    }
+    if(LastSuppliesState == SuppliesOff) break;
+    if(SuppliesOff) break;
+    delay(1); 
+  }
+  LastSuppliesState = SuppliesOff;
+  // End of version 1.150 rampup updates  
   for(b=0;b<4;b++)
   {
     SelectBoard(b);
     if(DCbDarray[b] == NULL) continue;
+    /*  Removed and replaced with rampup update code above, done on version 1.150
     // Update the offset output, its TWI not SPI!
     if(SuppliesOff == false)
     {
@@ -728,6 +791,7 @@ void DCbias_loop(void)
         DCbiasStates[b]->DCbiasV[i] = 0;
       }
     }
+    */
     // Read the monitor inputs and update the display buffer
     ValueChange = false;
     delay(1);

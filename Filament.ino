@@ -290,7 +290,9 @@ void FmodeChange(void)
     FCD.Mode = FmodeIV;
     FilamentEntriesPage1[3].NoEdit = true;
   }
-  FD.FCD[Channel2Index(SelectedFilamentChan)] = FCD;
+  //FD.FCD[Channel2Index(SelectedFilamentChan)] = FCD;
+  FD.FCD[0].Mode = FD.FCD[1].Mode = FCD.Mode;             // I think this fixes the bug where the rev channel does not update the Mode 
+                                                          // When changed on the fwd channel. 1/27/2019
 }
 
 // This function uses the selected channel to determine the board number, 0 or 1.
@@ -467,6 +469,10 @@ void Filament_init(int8_t Board, int8_t addr)
   {
     de = GetDialogEntries(FilamentEntriesPage2, " Current dir");
     if(de != NULL) de->Type = D_FWDREV;
+    // Make sure both mode values for forward and reverse are the same and 
+    // if prefer IVmode. Jan 28, 2019
+    FDarray[Board].FCD[0].Mode |= FDarray[Board].FCD[1].Mode;
+    FDarray[Board].FCD[1].Mode |= FDarray[Board].FCD[0].Mode;
   }
   // If this is rev 3 then enable the emission current calibration option
   if(FDarray[Board].Rev == 3)
@@ -649,16 +655,16 @@ void Filament_loop(void)
   {
     if(ActiveDialog->Changed)
     {
-      FD.FCD[Channel2Index(SelectedFilamentChan)] = FCD;    // This stores any changes back to the selected channels data structure
+      FD.FCD[Channel2Index(SelectedFilamentChan)]  = FCD;    // This stores any changes back to the selected channels data structure
       FD.FCyl[Channel2Index(SelectedFilamentChan)] = FCY;
       // If this is rev 2 or greater then set the channel parameters to the same values
       if(FD.Rev >= 2)
       {
         FDarray[SelectedFilamentBoard].FCD[0].CurrentSetpoint = FDarray[SelectedFilamentBoard].FCD[1].CurrentSetpoint = FCD.CurrentSetpoint;
         FDarray[SelectedFilamentBoard].FCD[0].FilamentVoltage = FDarray[SelectedFilamentBoard].FCD[1].FilamentVoltage = FCD.FilamentVoltage;
-        FDarray[SelectedFilamentBoard].FCD[0].RampRate = FDarray[SelectedFilamentBoard].FCD[1].RampRate = FCD.RampRate;
-        FDarray[SelectedFilamentBoard].FCD[0].Mode = FDarray[SelectedFilamentBoard].FCD[1].Mode = FCD.Mode;
-        FDarray[SelectedFilamentBoard].FCD[0].MaxPower = FDarray[SelectedFilamentBoard].FCD[1].MaxPower = FCD.MaxPower;
+        FDarray[SelectedFilamentBoard].FCD[0].RampRate        = FDarray[SelectedFilamentBoard].FCD[1].RampRate        = FCD.RampRate;
+        FDarray[SelectedFilamentBoard].FCD[0].Mode            = FDarray[SelectedFilamentBoard].FCD[1].Mode            = FCD.Mode;
+        FDarray[SelectedFilamentBoard].FCD[0].MaxPower        = FDarray[SelectedFilamentBoard].FCD[1].MaxPower        = FCD.MaxPower;
       }
       ActiveDialog->Changed = false;
     }
@@ -1332,7 +1338,3 @@ void SaveFIL2EEPROM(void)
   }
   SendACK;
 }
-
-
-
-

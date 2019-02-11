@@ -235,6 +235,8 @@ void PlayTpulseFunctions(void);
 void DIOopsReport(void);
 void DIOreport(char *port, char *mode);
 void DIOmirror(char *in, char *out);
+void DIOmonitor(char *port, char *mode);
+void DIOchangeReport(char *port);
 
 void SetDelayTrigInput(char *input, char *level);
 void SetDelayTrigEnable(char *sena);

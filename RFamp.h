@@ -143,6 +143,3 @@ void RFAsetK(char *Module, char *value);
 void RFAgetK(int Module);
 
 #endif
-
-
-

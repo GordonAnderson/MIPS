@@ -393,7 +393,7 @@ void RFcontrol(void)
         es = abs(RFDDarray[board].RFCD[chan].Setpoint - ((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2));
         
         g = 1;
-//        if(RFDDarray[board].Rev == 2) g = (es - 1.0) * 100;
+//      if(RFDDarray[board].Rev == 2) g = (es - 1.0) * 100;
         if((RFDDarray[board].Rev == 2) || (RFDDarray[board].Rev == 4)) g = es * 0.05;
         if (((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) > RFDDarray[board].RFCD[chan].Setpoint) RFDDarray[board].RFCD[chan].DriveLevel -= .01 * g;
         else RFDDarray[board].RFCD[chan].DriveLevel += .01 * g;
@@ -538,6 +538,33 @@ void RFdriver_tune(void)
    Last = Current;
 }
 
+float RFdriverCounts2Volts(int Rev, int ADCcounts, ADCchan *adcchan)
+{
+   float Pv;
+   
+   if(Rev == 3)
+   {
+      // Convert to engineering units for the Linear tech level sensors, 5th order correction.
+      // y = -62.27195 + 2.06452*x - 0.025363*x^2 + 0.000161919*x^3 - 3.873611e-7*x^4 + 3.255975e-10*x^5
+      Pv = Counts2Value(ADCcounts, adcchan);
+      Pv = 3.255975e-10 * pow(Pv,5) - 3.873611e-7 * pow(Pv,4) + 0.000161919 * pow(Pv,3) - 0.025363 * pow(Pv,2) + 2.06452 * Pv - 62.27195;
+   }
+   else if((Rev == 2) || (Rev == 4))
+   {
+     // This rev supports linear operation for high voltage, up to 4000Vp-p, this is equations is for the RF level detector circuit.
+     // Rev 2 also displays only the RF+ output. Used on the Eiceman project
+     Pv = Counts2Value(ADCcounts, adcchan);
+     // This code attempts to correct for nonlinear performance near 0
+     float Zc = (float)Counts2Value(0, adcchan) / 0.8;
+     if(Pv <= Zc) Pv = Pv - (Zc - Pv) * 4.0;   
+   }
+   else if(Rev <= 1)
+   {
+     // This is a linear calibration using the data structure parameters
+     Pv = Counts2Value(ADCcounts, adcchan);
+   }  
+   return Pv; 
+}
 
 // This function is called by the main loop every 100 millisec
 void RFdriver_loop(void)
@@ -1103,6 +1130,70 @@ void SaveRF2EEPROM(void)
   SendACK;
 }
 
+// Software calibration functions to make minor adjustment to the RF level readback detectors. 
+// These routines interate to converge on the desired output. To use this feature you need
+// to set the RF level and read its level then calibrate the channel by defining the desired
+// readback level.
+void RFcalP(char *channel, char *Vpp)
+{
+  String sToken;
+  int ch,brd,ADCraw;
+  float vpp,MVpp, m;
 
+  sToken = channel;
+  ch = sToken.toInt();
+  sToken = Vpp;
+  vpp = sToken.toFloat();
+  if (!IsChannelValid(ch,false)) return;
+  brd = BoardFromSelectedChannel(ch - 1);
+  if(vpp < 0.0)
+  {
+    RFDDarray[brd].RFCD[(ch-1) & 1].RFpADCchan.m = 32;
+    SendACK;
+    return;
+  }
+  // Read the ADC value for the current settings.
+  ADCraw = AD7998(RFDDarray[brd].ADCadr, RFDDarray[brd].RFCD[(ch-1) & 1].RFpADCchan.Chan, 100);
+  // Save the current gain value
+  m = RFDDarray[brd].RFCD[(ch-1) & 1].RFpADCchan.m;
+  // Adj m to find calibration match
+  for(int i=0;i<100000;i++)
+  {
+    MVpp = RFdriverCounts2Volts(RFDDarray[brd].Rev, ADCraw, &RFDDarray[brd].RFCD[(ch-1) & 1].RFpADCchan);
+    RFDDarray[brd].RFCD[(ch-1) & 1].RFpADCchan.m -= 10*(vpp - MVpp)/vpp;
+    if((vpp - MVpp) < 1) break;
+  }
+  SendACK;
+}
 
+void RFcalN(char *channel, char *Vpp)
+{
+  String sToken;
+  int ch,brd,ADCraw;
+  float vpp,MVpp, m;
 
+  sToken = channel;
+  ch = sToken.toInt();
+  sToken = Vpp;
+  vpp = sToken.toFloat();
+  if (!IsChannelValid(ch,false)) return;
+  brd = BoardFromSelectedChannel(ch - 1);
+  if(vpp < 0.0)
+  {
+    RFDDarray[brd].RFCD[(ch-1) & 1].RFnADCchan.m = 32;
+    SendACK;
+    return;
+  }
+  // Read the ADC value for the current settings.
+  ADCraw = AD7998(RFDDarray[brd].ADCadr, RFDDarray[brd].RFCD[(ch-1) & 1].RFnADCchan.Chan, 100);
+  // Save the current gain value
+  m = RFDDarray[brd].RFCD[(ch-1) & 1].RFnADCchan.m;
+  // Adj m to find calibration match
+  for(int i=0;i<100000;i++)
+  {
+    MVpp = RFdriverCounts2Volts(RFDDarray[brd].Rev, ADCraw, &RFDDarray[brd].RFCD[(ch-1) & 1].RFnADCchan);
+    RFDDarray[brd].RFCD[(ch-1) & 1].RFnADCchan.m -= 10*(vpp - MVpp)/vpp;
+    if((vpp - MVpp) < 1) break;
+  }
+  SendACK;
+}

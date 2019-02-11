@@ -652,9 +652,9 @@
 //  1.136, Sept 4, 2018
 //      1.) Updated SD drivers, in Sd2Card.cpp, cardCommand function added additional clocks to let the card init
 //  1.137, Sept 12, 2018
-//      1.) Updated the ARB driver to support adjustment os the number of point per waveform cycle. (not finished yet,
+//      1.) Updated the ARB driver to support adjustment to the number of points per waveform cycle. (not finished yet,
 //          the user definable waveforms still needs some development, also testing is needed).
-//      2.) Need to add the capability for frequency sweeping, I did check and there is space for thge variables in the ARB
+//      2.) Need to add the capability for frequency sweeping, I did check and there is space for the variables in the ARB
 //          data structure.
 //  1.138, Sept 23, 2018
 //      1.) Added the AUXOUT command for testing of the MALDI controller.
@@ -707,19 +707,27 @@
 //  1.148, Jan 21 2019
 //      1.) Fixed bug in the Get Table Value command, GTBLVLT, this bug was pretty old!
 //      2.) Added capability to run the tasks when there is time in a table. Need at least 40mS to run
-//          tasks.
-//
+//          tasks. Updated the table code to allow running tasks when the table is waiting for an event, additionally if
+//          in software trigger mode and waiting for a trigger command, process tasks. Enable and disable using
+//          STBLTASKS, TRUE enable, FALSE by default. The scheme works by monitoring the counter value and comparing to
+//          RA and RC to determine counts to next event. the SEXTFREQ command allos you to define an enternal frequency
+//          needed to calculate avalible time. SEXTFREQ is zero by default. In the table processing loop, if we have
+//          40 mS then call the next ready task.
+//  1.149, Jan 28 2019
+//      1.) Fixed a Filament bug that resulted in forward and reverse modes having different mode values.
+//  1.150, Feb 5, 2019
+//      1.) Added the MDIO command to look for a edge transistion and latch the data, add the RDIO command
+//          to read the input state.
+//      2.) Added calibraton function for RF level readbacks
+//      3.) When enabling the DC bias supplies the system will now ramp the voltages up using 100 steps over
+//          100 mS.
+//      4.) The reset serial ports on the main menu now resets the USB drivers. If you have an open connection
+//          performing this reset will break the connection
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
 //
 // Next version to dos:
-//      0.) Update the table code to allow running tasks when the table is waiting for an event, additionally if
-//          in software trigger mode and waitinf for a trigger command, process tasks. Enable and disable using
-//          TBLTASKS, TRUE enable, FALSE by default. The scheme works by monitoring the counter value and comparing to
-//          RA and RC to determine counts to net event. the EXTFREQ command allos you to define an enternal frequency
-//          needed to calculate avalible time. EXTFREQ is zero by default. In the table processing loop, if we have
-//          40 mS then call the next ready task.
 //      1.) Update the display code to make it interrupt safe when ISR uses SPI, done but turned off for compressor
 //      2.) Fix the DIO to allow command processing in table mode, this will require a pending update flag for
 //          the DIO, only update if no pending update
@@ -781,6 +789,7 @@
 
 // Define my names for the native USB driver
 #define  USB_PRODUCT      "MIPS, native USB"
+//#pragma "-DUSB_PRODUCT=MIPS, native USB"
 #define  USB_MANUFACTURER "GAA Custom Electronics, LLC"
 
 DueFlashStorage dueFlashStorage;
@@ -804,7 +813,7 @@ int  LEDstate = 0;
 
 uint32_t BrightTime=0;
 
-const char Version[] PROGMEM = "Version 1.148, Jan 21, 2019";
+const char Version[] PROGMEM = "Version 1.150, Feb 5, 2019";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -948,6 +957,12 @@ void SerialPortReset(void)
 {
   SerialUSB.flush();
   SerialUSB.end();
+// Reset the serial USB port
+  otg_disable();       // Disable the hardware
+  delay(10);
+  otg_enable();        // Enable the hardware
+  USBDevice.attach();  // Inits the USB serial port
+
   SerialInit();
 }
 
@@ -1282,7 +1297,7 @@ void watchdogEnable(void)
 {
   // Enable watchdog.
   WDT->WDT_MR = WDT_MR_WDD(0xFFF)
-                | WDT_MR_WDRPROC
+//              | WDT_MR_WDRPROC       // This flag will cause a processor reset only, without it all hardware is reset
                 | WDT_MR_WDRSTEN
                 | WDT_MR_WDV(256 * 8); // Watchdog triggers a reset after 2 seconds if underflow
                                        // 2 seconds equal 84000000 * 2 = 168000000 clock cycles
@@ -1450,14 +1465,17 @@ void test(void)
 void setup()
 {
 
+  pinMode(73, OUTPUT);  // TXL
+  pinMode(72, OUTPUT);  // RXL
+  digitalWrite(73, HIGH);  // TXL
+  digitalWrite(72, HIGH);  // RXL
   // A watchdog timer reboot does not reset the USB interface for some reason, so
   // this code will detect if a watchdog timer reset happened and force a software
-  // reset. Jan 18, 2019
-  uint32_t i = REG_RSTC_SR;  // Reads the boot flag
-  i >>= 8;
-  i &= 7;   
-  if(i==2) Software_Reset();
-  //  int i = REG_RSTC_SR;  // Reads the boot flag
+  // reset. Jan 18, 2019. Fixed this issue my making sure watchdog reset did a full reset
+//uint32_t i = REG_RSTC_SR;  // Reads the boot flag
+//i >>= 8;
+//i &= 7;   
+//if(i==2) Software_Reset();
   analogReadResolution(12);
   Reset_IOpins();
   ClearDOshiftRegs();
@@ -1797,7 +1815,7 @@ void ReadAllSerial(void)
 void ProcessSerial(void)
 {
   // Put serial received characters in the input ring buffer
-  while (SerialUSB.available() > 0)
+  if(SerialUSB) while (SerialUSB.available() > 0)
   {
     ResetFilamentSerialWD();
     serial = &SerialUSB;
@@ -1830,7 +1848,7 @@ void ProcessSerial(void)
   // If there is a command in the input ring buffer, process it!
   while (RB_Commands(&RB) > 0) // Process until flag that there is nothing to do
   {
-    while (ProcessCommand() == 0);  // WDT_Restart(WDT);
+    while (ProcessCommand() == 0); // WDT_Restart(WDT);
   }
   SerialUSB.flush();     // Added 9/2/2017
   DIOopsReport();
@@ -1841,6 +1859,11 @@ void loop()
 {
   static bool DisableDisplayStatus = false;
 
+  if(isUSBerror())
+  {
+    clearUSBerror();
+    SerialPortReset();
+  }
   if ((!DisableDisplay) && (DisableDisplayStatus))
   {
     // Here is the display was disabled and it now going to be enabled.

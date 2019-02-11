@@ -115,6 +115,7 @@ extern Ring_Buffer  RB;
 extern const char Version[] PROGMEM;
 
 // Function prototypes
+void Debug(int function);
 void CheckImage(char *filename);
 void LoadImage(char *filename);
 void SetThreadEnable(char *, char *);
@@ -131,7 +132,7 @@ char RB_Get(Ring_Buffer *);
 char RB_Next(Ring_Buffer *);
 int  RB_Commands(Ring_Buffer *);
 void PutCh(char ch);
-int GetLine(Ring_Buffer *rb,char *cbuf,int maxlen);
+int  GetLine(Ring_Buffer *rb,char *cbuf,int maxlen);
 void MacroRecord(char *filename);
 void MacroStop(void);
 char *MacroBuildList(char *current);

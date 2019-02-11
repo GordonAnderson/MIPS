@@ -64,18 +64,11 @@ void RFreportAll(void);
 void RFautoTune(int channel);
 void RFautoRetune(int channel);
 void RFcalParms(void);
+void RFcalP(char *, char *);
+void RFcalN(char *, char *);
 
 void RFmodeReport(int);
 void RFmodeSet(char *, char *);
 void SaveRF2EEPROM(void);
 
 #endif
-
-
-
-
-
-
-
-
-
