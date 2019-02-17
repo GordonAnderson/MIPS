@@ -1194,6 +1194,7 @@ void RFcalN(char *channel, char *Vpp)
     MVpp = RFdriverCounts2Volts(RFDDarray[brd].Rev, ADCraw, &RFDDarray[brd].RFCD[(ch-1) & 1].RFnADCchan);
     RFDDarray[brd].RFCD[(ch-1) & 1].RFnADCchan.m -= 10*(vpp - MVpp)/vpp;
     if((vpp - MVpp) < 1) break;
+    WDT_Restart(WDT);
   }
   SendACK;
 }

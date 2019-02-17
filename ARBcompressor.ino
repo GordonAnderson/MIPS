@@ -286,6 +286,7 @@ char ARBgetNextOperationFromTable(bool init)
   char   portCH,c;
   int    b;
   bool   CE;
+  float  fval;
   static int tblindex=0;
   static char OP;
   static int count = 0;
@@ -305,6 +306,28 @@ char ARBgetNextOperationFromTable(bool init)
   while(1)
   {
     // Find a valid character
+    while(1)  // Updated to support floating point numbers
+    {
+      if(TwaveCompressorTable[tblindex] == 0) return(0);
+      OP = TwaveCompressorTable[tblindex++];
+      count = 1;  // Default to count of 1
+      if(isDigit(TwaveCompressorTable[tblindex]))
+      {
+        // If here then get the value, number can be a float but has to start with a number, 0.1 is ok, .1 is not ok
+        count = int(TwaveCompressorTable[tblindex++] - '0');
+        while(isDigit(TwaveCompressorTable[tblindex])) count = count * 10 + int(TwaveCompressorTable[tblindex++] - '0');
+        // If its a decimal point then its a float so process
+        fval = 0;
+        if(TwaveCompressorTable[tblindex] == '.')
+        {
+          tblindex++;
+          for(float d = 10; isDigit(TwaveCompressorTable[tblindex]); d *= 10) fval += (float)(TwaveCompressorTable[tblindex++] - '0') / d;
+        }
+        fval += count;
+      }
+      break;
+    }
+    /*
     while(1)
     {
       if(TwaveCompressorTable[tblindex] == 0) return(0);
@@ -312,6 +335,7 @@ char ARBgetNextOperationFromTable(bool init)
       valfound = ARBgetValueFromTable(&tblindex, &count);
       break;
     }
+    */
     if((OP=='N')||(OP=='C'))
     {
       // Only return valid options, N for non compressed and C for compressed
@@ -393,7 +417,7 @@ char ARBgetNextOperationFromTable(bool init)
     {
       if((count >= 0) && (count <= 100))
       {
-        ARBarray[0]->Voltage = count; 
+        ARBarray[0]->Voltage = fval; 
         if(AcquireTWI()) SetFloat(0,TWI_SET_RANGE, ARBarray[0]->Voltage); else TWIqueue(SetFloat,0,TWI_SET_RANGE, ARBarray[0]->Voltage);
       }   
       count = 0;
@@ -402,7 +426,7 @@ char ARBgetNextOperationFromTable(bool init)
     {
       if((count >= 0) && (count <= 100))
       {
-        ARBarray[1]->Voltage = count;
+        ARBarray[1]->Voltage = fval;
         if(AcquireTWI()) SetFloat(1,TWI_SET_RANGE, ARBarray[1]->Voltage); else TWIqueue(SetFloat,1,TWI_SET_RANGE, ARBarray[1]->Voltage);
       }      
       count = 0;
@@ -411,7 +435,7 @@ char ARBgetNextOperationFromTable(bool init)
     {
       if((count >= 0) && (count <= 100) && (ARBarray[2] != NULL))
       {
-         ARBarray[2]->Voltage = count;
+         ARBarray[2]->Voltage = fval;
          if(AcquireTWI()) SetFloat(2,TWI_SET_RANGE, ARBarray[2]->Voltage); else TWIqueue(SetFloat,2,TWI_SET_RANGE, ARBarray[2]->Voltage);
       }      
       count = 0;
@@ -420,7 +444,7 @@ char ARBgetNextOperationFromTable(bool init)
     {
       if((count >= 0) && (count <= 100) && (ARBarray[3] != NULL))
       {
-         ARBarray[3]->Voltage = count;
+         ARBarray[3]->Voltage = fval;
          if(AcquireTWI()) SetFloat(3,TWI_SET_RANGE, ARBarray[3]->Voltage); else TWIqueue(SetFloat,3,TWI_SET_RANGE, ARBarray[3]->Voltage);
       }      
       count = 0;
@@ -429,7 +453,7 @@ char ARBgetNextOperationFromTable(bool init)
     {
       if((count >= 0) && (count <= 10000) && (ARBarray[0] != NULL))
       {
-         ARBarray[0]->RampRate = count;
+         ARBarray[0]->RampRate = fval;
          if(AcquireTWI()) SetFloat(0, TWI_SET_RAMP, ARBarray[0]->RampRate); else TWIqueue(SetFloat,0, TWI_SET_RAMP, ARBarray[0]->RampRate);
       }      
       count = 0;
@@ -438,7 +462,7 @@ char ARBgetNextOperationFromTable(bool init)
     {
       if((count >= 0) && (count <= 10000) && (ARBarray[1] != NULL))
       {
-         ARBarray[1]->RampRate = count;
+         ARBarray[1]->RampRate = fval;
          if(AcquireTWI()) SetFloat(1, TWI_SET_RAMP, ARBarray[1]->RampRate); else TWIqueue(SetFloat,1, TWI_SET_RAMP, ARBarray[1]->RampRate);
       }      
       count = 0;
@@ -447,7 +471,7 @@ char ARBgetNextOperationFromTable(bool init)
     {
       if((count >= 0) && (count <= 10000) && (ARBarray[2] != NULL))
       {
-         ARBarray[2]->RampRate = count;
+         ARBarray[2]->RampRate = fval;
          if(AcquireTWI()) SetFloat(2, TWI_SET_RAMP, ARBarray[2]->RampRate); else TWIqueue(SetFloat,2, TWI_SET_RAMP, ARBarray[2]->RampRate);
       }      
       count = 0;
@@ -456,7 +480,7 @@ char ARBgetNextOperationFromTable(bool init)
     {
       if((count >= 0) && (count <= 10000) && (ARBarray[3] != NULL))
       {
-         ARBarray[3]->RampRate = count;
+         ARBarray[3]->RampRate = fval;
          if(AcquireTWI()) SetFloat(3, TWI_SET_RAMP, ARBarray[3]->RampRate); else TWIqueue(SetFloat,3, TWI_SET_RAMP, ARBarray[3]->RampRate);
       }      
       count = 0;

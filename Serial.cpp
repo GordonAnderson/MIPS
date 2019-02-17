@@ -572,19 +572,19 @@ void (*usb_isr)(void);
 void myUSB_ISR(void)
 {
     digitalWrite(73,LOW);
-//    digitalWrite(72,LOW);
     usb_isr();  // calls USB_ISR() from USBCore.cpp
-    if(USBtimeout || USBfatalError) return;
+    if(USBtimeout || USBfatalError) 
+    {
+      delayMicroseconds(100000);
+      return;
+    }
     digitalWrite(73,HIGH);
-//    digitalWrite(72,HIGH);
 }
 void Debug(int function)
 {
   bool flag;
 
   // This code will replace the current USB ISR
-//  pinMode(73, OUTPUT);  // TXL
-//  pinMode(72, OUTPUT);  // RXL
   usb_isr = gpf_isr;
   UDD_SetStack(&myUSB_ISR);
   return;

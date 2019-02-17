@@ -723,6 +723,16 @@
 //          100 mS.
 //      4.) The reset serial ports on the main menu now resets the USB drivers. If you have an open connection
 //          performing this reset will break the connection
+//  1.151, Feb 11, 2019
+//      1.) Edited the USBCore.cpp and USBCore.h files and added timeout of potential lockup loops to prevent USB
+//          lockups and thus watchdog timer resets.
+//      2.) Updated the ARB compression table to support floating point values.
+//      3.) Added watchdog timer reset to the RFdriver calibration loop.
+//  1.152, Feb 15, 2019
+//      1.) Fixed bug in ARB direction and improved performance. Dir change lantency is 17mS in Sin mode, 2mS
+//          in pulse mode.
+//      2.) Finished refining the SerialUSB auto recover code. The MIPS system will detect a SerialUSB error and 
+//          reset the port.
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
@@ -813,7 +823,7 @@ int  LEDstate = 0;
 
 uint32_t BrightTime=0;
 
-const char Version[] PROGMEM = "Version 1.150, Feb 5, 2019";
+const char Version[] PROGMEM = "Version 1.151, Feb 11, 2019";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -953,17 +963,30 @@ void SetBackLight(void)
   analogWrite(BACKLIGHT, (MIPSconfigData.BackLight * 4095) / 100);
 }
 
+extern uint32_t _usbInitialized;
 void SerialPortReset(void)
 {
   SerialUSB.flush();
   SerialUSB.end();
 // Reset the serial USB port
-  otg_disable();       // Disable the hardware
+  otg_disable();             // Disable the hardware
+  otg_disable_pad();
+  otg_freeze_clock();
+  pmc_disable_upll_clock();  // This is a critical step, the USB clock gets loked up by noise and the USB port freezes
   delay(10);
-  otg_enable();        // Enable the hardware
-  USBDevice.attach();  // Inits the USB serial port
+  pmc_enable_upll_clock();
+  otg_unfreeze_clock();
+  otg_enable();              // Enable the hardware
+  otg_enable_pad();
+  UDD_Init();                // Sets up the USB clock PLL, PMC
+  otg_unfreeze_clock();
+  _usbInitialized=1UL;
+  digitalWrite(72,HIGH);
+  USBDevice.attach();  // Inits the USB serial port, this is where it gets stuck
+  digitalWrite(72,HIGH);
 
   SerialInit();
+  SerialUSB.accept();
 }
 
 // This function is called by the serial command processor. This function will report the following:
@@ -1858,10 +1881,23 @@ void ProcessSerial(void)
 void loop()
 {
   static bool DisableDisplayStatus = false;
+  static bool wasConnected = false;
+  static int  unusableCount=0;
 
-  if(isUSBerror())
+  if(SerialUSB) wasConnected = true;
+  if(SerialUSB) digitalWrite(72,LOW);
+  else digitalWrite(72,HIGH);
+  if(!Is_otg_clock_usable()) unusableCount++;
+  else unusableCount=0;
+  if(!SerialUSB && wasConnected)
+  {
+    wasConnected = false;
+    SerialPortReset();
+  }
+  if(isUSBerror() || (unusableCount > 500))
   {
     clearUSBerror();
+    unusableCount = 0;
     SerialPortReset();
   }
   if ((!DisableDisplay) && (DisableDisplayStatus))

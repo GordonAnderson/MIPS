@@ -319,51 +319,35 @@ void ARB_4_SWEEP_ISR(void)
 
 void ARB_1_DIR_ISR(void)
 {
-  if (DIdirARB[0]->activeLevel()) ARBarray[0]->Direction = true;
+  delayMicroseconds(5);
+  if (DIdirARB[0]->test(ARBarray[0]->ARBdirLevel)) ARBarray[0]->Direction = true;
   else ARBarray[0]->Direction = false;
-  if (0 == SelectedARBboard)
-  {
-    if (DIdirARB[0]->activeLevel()) arb.Direction = true;
-    else arb.Direction = false;
-  }
-  // Need to make ARB loop run, put at top of queue
-  ARBthread.setNextRunTime(millis());
+  if(AcquireTWI()) SetBool(0, TWI_SET_DIR, !ARBarray[0]->Direction); else TWIqueue(SetBool, 0, TWI_SET_DIR, !ARBarray[0]->Direction);
+  if (0 == SelectedARBboard) ARBstates[0]->Direction = ARBarray[0]->Direction;
 }
 void ARB_2_DIR_ISR(void)
 {
-  if (DIdirARB[1]->activeLevel()) ARBarray[1]->Direction = true;
+  delayMicroseconds(5);
+  if (DIdirARB[1]->test(ARBarray[1]->ARBdirLevel)) ARBarray[1]->Direction = true;
   else ARBarray[1]->Direction = false;
-  if (1 == SelectedARBboard)
-  {
-    if (DIdirARB[1]->activeLevel()) arb.Direction = true;
-    else arb.Direction = false;
-  }
-  // Need to make ARB loop run, put at top of queue
-  ARBthread.setNextRunTime(millis());
+  if(AcquireTWI()) SetBool(1, TWI_SET_DIR, !ARBarray[1]->Direction); else TWIqueue(SetBool, 1, TWI_SET_DIR, !ARBarray[1]->Direction);
+  if (1 == SelectedARBboard) ARBstates[1]->Direction = ARBarray[1]->Direction;
 }
 void ARB_3_DIR_ISR(void)
 {
-  if (DIdirARB[2]->activeLevel()) ARBarray[2]->Direction = true;
+  delayMicroseconds(5);
+  if (DIdirARB[2]->test(ARBarray[2]->ARBdirLevel)) ARBarray[2]->Direction = true;
   else ARBarray[2]->Direction = false;
-  if (2 == SelectedARBboard)
-  {
-    if (DIdirARB[2]->activeLevel()) arb.Direction = true;
-    else arb.Direction = false;
-  }
-  // Need to make ARB loop run, put at top of queue
-  ARBthread.setNextRunTime(millis());
+  if(AcquireTWI()) SetBool(2, TWI_SET_DIR, !ARBarray[2]->Direction); else TWIqueue(SetBool, 2, TWI_SET_DIR, !ARBarray[2]->Direction);
+  if (2 == SelectedARBboard) ARBstates[2]->Direction = ARBarray[2]->Direction;
 }
 void ARB_4_DIR_ISR(void)
 {
-  if (DIdirARB[3]->activeLevel()) ARBarray[3]->Direction = true;
+  delayMicroseconds(5);
+  if (DIdirARB[3]->test(ARBarray[3]->ARBdirLevel)) ARBarray[3]->Direction = true;
   else ARBarray[3]->Direction = false;
-  if (3 == SelectedARBboard)
-  {
-    if (DIdirARB[3]->activeLevel()) arb.Direction = true;
-    else arb.Direction = false;
-  }
-  // Need to make ARB loop run, put at top of queue
-  ARBthread.setNextRunTime(millis());
+  if(AcquireTWI()) SetBool(3, TWI_SET_DIR, !ARBarray[3]->Direction); else TWIqueue(SetBool, 3, TWI_SET_DIR, !ARBarray[3]->Direction);
+  if (3 == SelectedARBboard) ARBstates[3]->Direction = ARBarray[3]->Direction;
 }
 //
 
@@ -1231,7 +1215,7 @@ void ARB_loop(void)
       if ((ARBarray[b]->ARBdirDI != DIdirARB[b]->di) || (ARBarray[b]->ARBdirLevel != DIdirARB[b]->mode) || ARBstates[b]->update)
       {
          DIdirARB[b]->detach();
-         DIdirARB[b]->attached(ARBarray[b]->ARBdirDI, ARBarray[b]->ARBdirLevel, ARBdirISRs[b]);
+         DIdirARB[b]->attached(ARBarray[b]->ARBdirDI, CHANGE, ARBdirISRs[b]);
       }
       // Process sweep parameters only for version 1.14 and greater
       if(ARBversion > 1.13)
