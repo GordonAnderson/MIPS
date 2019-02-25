@@ -733,6 +733,9 @@
 //          in pulse mode.
 //      2.) Finished refining the SerialUSB auto recover code. The MIPS system will detect a SerialUSB error and 
 //          reset the port.
+//  1.153, Feb 21, 2019
+//      1.) Fixed bug in serial auto reset that was introducted in version 1.151 and 1.152, this bug caused a comms slow
+//          down. 
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
@@ -823,7 +826,7 @@ int  LEDstate = 0;
 
 uint32_t BrightTime=0;
 
-const char Version[] PROGMEM = "Version 1.151, Feb 11, 2019";
+const char Version[] PROGMEM = "Version 1.153, Feb 21, 2019";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -1838,7 +1841,7 @@ void ReadAllSerial(void)
 void ProcessSerial(void)
 {
   // Put serial received characters in the input ring buffer
-  if(SerialUSB) while (SerialUSB.available() > 0)
+  if(SerialUSB.dtr()) while (SerialUSB.available() > 0)
   {
     ResetFilamentSerialWD();
     serial = &SerialUSB;
@@ -1884,12 +1887,12 @@ void loop()
   static bool wasConnected = false;
   static int  unusableCount=0;
 
-  if(SerialUSB) wasConnected = true;
-  if(SerialUSB) digitalWrite(72,LOW);
+  if(SerialUSB.dtr()) wasConnected = true;
+  if(SerialUSB.dtr()) digitalWrite(72,LOW);
   else digitalWrite(72,HIGH);
   if(!Is_otg_clock_usable()) unusableCount++;
   else unusableCount=0;
-  if(!SerialUSB && wasConnected)
+  if(!SerialUSB.dtr() && wasConnected)
   {
     wasConnected = false;
     SerialPortReset();
