@@ -609,7 +609,7 @@
 //      3.) Note; when TWI fails the communications timeout is long, the TWI_RESET function works and
 //          needs to be automatically called, maybe include an automatic retry?
 //  1.123, May 5, 2018
-//      1.) Table bug, when software triggered they was a delay the time of the table before the table would start.
+//      1.) Table bug, when software triggered there was a delay the time of the table before the table would start.
 //  1.124, May 9, 2018
 //      1.) Improved the TWI reset function and perform on both board channels
 //      2.) Improved the ADC 7994 function to return error on TWI problem
@@ -637,11 +637,11 @@
 //  1.131, July 25, 2018
 //      1.) Fixed an table bug that only happens when using an external clock at frequencies below 1MHz. The bug caused the
 //          initial time 0 table event to be randomly over written by the second event.
-//      2.) Also fixed a display bug when writting waveform type to MIPS ARM from the host
+//      2.) Also fixed a display bug when writting waveform type to MIPS ARB from the host
 //  1.132, July 26, 2018
 //      1.) Fixed a bug in the table fix in version 1.131, need to wait for a full clock cycle.
 //      2.) Added SerialUSB to Serial1 echo command
-//      3.) Added command to allow user to define table retriggerablity. Default in not retriggerable
+//      3.) Added command to allow user to define table retriggerablity. Default is not retriggerable
 //  1.133, July 28, 2018
 //      1.) Fixed the table bug that 1.132 tried to fix.
 //  1.134, Aug 2, 2018
@@ -686,7 +686,7 @@
 //      5.) Fixed bug in ARB custom waveform download.
 //      6.) Updated DCbias driver to allow disabling readback when using AD5593 ADC/DAC
 //  1.144, Dec, 18 2018
-//      1.) Fixed init issue with AUXTRIG output, it was initing high dure to Arduino IDE upgrade
+//      1.) Fixed init issue with AUXTRIG output, it was initing high due to Arduino IDE upgrade
 //      2.) DCbias board power supply readback was not using board select, fixed
 //  1.145, Jan 15 2019
 //      1.) Removed watchdog timer reset from the process serial command processing loop
@@ -736,6 +736,25 @@
 //  1.153, Feb 21, 2019
 //      1.) Fixed bug in serial auto reset that was introducted in version 1.151 and 1.152, this bug caused a comms slow
 //          down. 
+//  1.154, in progress
+//      1.) Fixed bug in DCbias module, when useing readbacks on offset the AD5532 was read for every channel
+//          instead of being read only one time
+//      2.) Added the FAIMSfb module interface, includes electrometer code
+//      3.) Added the TWIext file and header file to hold all the TWI related functions and developed generic
+//          TWI higher level functions
+//      4.) Added compile switches to Variants.h to enable turing off modules
+//      5.) Updated table code and cleaned up a number of issues
+//      6.) Added ramping to table code
+//      7.) A bug appeared when using a USB isolator on a PC, strings sent to the MIPS controller over 64 bytes
+//          were dropping characters. Fixed this bug by changing the endpoint buffer size to 64 in the CDC.cpp 
+//          file on lines 77 amd 78.
+//      8.) To do list for this version update
+//          a.) Move all the FILEIO from the hardware file to a FILEIO new file
+//          b.) Move all the DIO functions from hardware to the DIO file file
+//          d.) Move ADC functions from hardware file to ADCdvr file
+//          e.) Add support for new RF driver module with on module M0 processor
+//          f.) Update ARB TWI commands to use the new function in TWIext file
+//          g.) Update ARB sync command
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
@@ -764,25 +783,11 @@
 #include <Adafruit_BMP085_U.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_ADS1015.h>
+#include "Variants.h"
 #include "Encoder.h"
 #include <stdarg.h>
-#include "Menu.h"
-#include "Dialog.h"
-#include "Hardware.h"
-#include "Serial.h"
 #include <Wire.h>
 #include "AtomicBlock.h"
-#include "DIO.h"
-#include "Twave.h"
-#include "DCbias.h"
-#include "DCbiasList.h"
-#include "FAIMS.h"
-#include "ESI.h"
-#include "ARB.h"
-#include "HOFAIMS.h"
-#include "Variants.h"
-#include "Errors.h"
-#include "Serial.h"
 #include "ethernet.h"
 #include <Thread.h>
 #include <ThreadController.h>
@@ -805,7 +810,7 @@
 //#pragma "-DUSB_PRODUCT=MIPS, native USB"
 #define  USB_MANUFACTURER "GAA Custom Electronics, LLC"
 
-DueFlashStorage dueFlashStorage;
+DueFlashStorage    dueFlashStorage;
 const PROGMEM byte NonVolStorage[1000] = {};
 
 bool Suspend = false;
@@ -826,7 +831,7 @@ int  LEDstate = 0;
 
 uint32_t BrightTime=0;
 
-const char Version[] PROGMEM = "Version 1.153, Feb 21, 2019";
+const char Version[] PROGMEM = "Version 1.154a, April 24, 2019";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -1731,8 +1736,13 @@ void ScanHardware(void)
       if (strcmp(&signature[2], "ESI") == 0) ESI_init(0, addr);
       if (strcmp(&signature[2], "Filament") == 0) Filament_init(0, addr);
       if (strcmp(&signature[2], "ARB") == 0) ARB_init(0, addr);
-      if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(0, addr);
+      #if HOFAIMScode
+      if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(0, addr); 
+      #endif
       if (strcmp(&signature[2], "RFamp") == 0) RFA_init(0, addr);
+      #if FAIMSFBcode
+      if (strcmp(&signature[2], "FAIMSfb") == 0) FAIMSfb_init(0, addr);
+      #endif
     }
     // Set board select to B
     ENA_BRD_B;
@@ -1746,12 +1756,18 @@ void ScanHardware(void)
       if (strcmp(&signature[2], "ESI") == 0) ESI_init(1, addr);
       if (strcmp(&signature[2], "Filament") == 0) Filament_init(1, addr);
       if (strcmp(&signature[2], "ARB") == 0) ARB_init(1, addr);
-      if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(1, addr);
+      #if HOFAIMScode 
+      if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(1, addr); 
+      #endif
       if (strcmp(&signature[2], "RFamp") == 0) RFA_init(1, addr);
+      #if FAIMSFBcode
+      if (strcmp(&signature[2], "FAIMSfb") == 0) FAIMSfb_init(1, addr);
+      #endif
     }
   }
   // Now look for the FAIMS board. This is done last because field driven FAIMS mode is selected if
   // a DCbias module is found.
+  #if FAIMScode
   for (addr = 0x50; addr <= 0x56; addr  += 2)
   {
     // Set board select to A
@@ -1769,6 +1785,7 @@ void ScanHardware(void)
       if (strcmp(&signature[2], "FAIMS") == 0) FAIMS_init(1);
     }
   }
+  #endif
   WiFi_init();
   // The last thig we do is look for the analog input option
   if (MIPSconfigData.UseAnalog) Analog_init();
@@ -1811,36 +1828,6 @@ void ReadAllSerial(void)
 {
   WDT_Restart(WDT);
   // Put serial received characters in the input ring buffer
-  while (SerialUSB.available() > 0)
-  {
-    ResetFilamentSerialWD();
-    serial = &SerialUSB;
-    char c = SerialUSB.read();
-    if (!SerialNavigation(c)) PutCh(c);
-  }
-#ifdef EnableSerial
-  if ((!MIPSconfigData.UseWiFi) || (wifidata.SerialPort != 0))
-  {
-    while (Serial.available() > 0)
-    {
-      ResetFilamentSerialWD();
-      serial = &Serial;
-      PutCh(Serial.read());
-    }
-  }
-#endif
-  while (WiFiSerial->available() > 0)
-  {
-    ResetFilamentSerialWD();
-    serial = WiFiSerial;
-    PutCh(WiFiSerial->read());
-  }
-}
-
-// This function process all the serial IO and commands
-void ProcessSerial(void)
-{
-  // Put serial received characters in the input ring buffer
   if(SerialUSB.dtr()) while (SerialUSB.available() > 0)
   {
     ResetFilamentSerialWD();
@@ -1848,7 +1835,7 @@ void ProcessSerial(void)
     char c = SerialUSB.read();
     if(Serial1Echo)
     {
-       Serial1.write(c);    // Serial1 is also WiFiSerial
+       Serial1.write(c);
        Serial1.flush();
     }
     if (!SerialNavigation(c)) PutCh(c);
@@ -1871,6 +1858,45 @@ void ProcessSerial(void)
     PutCh(WiFiSerial->read());
   }
   ProcessEthernet();
+}
+
+// This function process all the serial IO and commands
+void ProcessSerial(void)
+{
+  ReadAllSerial();
+  /*
+  // Put serial received characters in the input ring buffer
+  if(SerialUSB.dtr()) while (SerialUSB.available() > 0)
+  {
+    ResetFilamentSerialWD();
+    serial = &SerialUSB;
+    char c = SerialUSB.read();
+    if(Serial1Echo)
+    {
+       Serial1.write(c);
+       Serial1.flush();
+    }
+    if (!SerialNavigation(c)) PutCh(c);
+  }
+#ifdef EnableSerial
+  if ((!MIPSconfigData.UseWiFi) || (wifidata.SerialPort != 0))
+  {
+    while (Serial.available() > 0)
+    {
+      ResetFilamentSerialWD();
+      serial = &Serial;
+      PutCh(Serial.read());
+    }
+  }
+#endif
+  while (WiFiSerial->available() > 0)
+  {
+    ResetFilamentSerialWD();
+    serial = WiFiSerial;
+    PutCh(WiFiSerial->read());
+  }
+  ProcessEthernet();
+  */
   // If there is a command in the input ring buffer, process it!
   while (RB_Commands(&RB) > 0) // Process until flag that there is nothing to do
   {

@@ -72,6 +72,3 @@ void RemoveStates(void);
 void IsState(char *name);
 
 #endif
-
-
-

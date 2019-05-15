@@ -35,7 +35,7 @@ class Encoder
     static void SetRotate(void);
 
     Encoder(void);
-    Encoder start(int A, int B, int PB);
+    Encoder start(int A, int B, int PushButton);
     Encoder stop(void);
     Encoder attachInterruptChange(void (*isr)());
     Encoder attachInterruptPushButton(void (*isr)());
@@ -45,12 +45,3 @@ class Encoder
     Encoder setStepSize(short int Step);
 };
 #endif
-
-
-
-
-
-
-
-
-

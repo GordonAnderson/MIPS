@@ -459,7 +459,3 @@ void ProcessCompressionTrigger(void)
   if(CompressionTriggerTarget == char('A')) ARBcompressorTriggerISR();
   else if(CompressionTriggerTarget == char('T')) CompressorTriggerISR();
 }
-
-
-
-

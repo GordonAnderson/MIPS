@@ -440,10 +440,3 @@ void Analog_loop(void)
     if(disIndex >= analog.NumChannels) disIndex = 0;
   }
 }
-
-
-
-
-
-
-

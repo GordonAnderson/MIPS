@@ -1141,5 +1141,3 @@ void RFAgetK(int Module)
   SendACKonly;
   if(!SerialMute) serial->println(RFAarray[b]->K,3);
 }
-
-

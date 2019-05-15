@@ -923,8 +923,3 @@ void SaveESI2EEPROM(void)
   }
   SendACK;
 }
-
-
-
-
-

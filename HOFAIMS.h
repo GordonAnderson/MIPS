@@ -35,8 +35,3 @@ void HOFAIMS_init(int8_t Board, int8_t addr);
 void HOFAIMS_loop(void);
 
 #endif
-
-
-
-
-

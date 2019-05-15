@@ -347,6 +347,3 @@ void FAIMSphase(int harmonic, int phase)
     Wire.endTransmission();    
   }
 }
-
-
-

@@ -36,11 +36,3 @@ void SetSSID(char *ssid);
 void SetPassword(char *pswd);
 
 #endif
-
-
-
-
-
-
-
-

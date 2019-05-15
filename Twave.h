@@ -144,7 +144,3 @@ void SetTWCswitch(char *mode);
 void SaveTWAVE2EEPROM(void);
 
 #endif
-
-
-
-

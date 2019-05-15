@@ -537,7 +537,3 @@ void GetDACName(int module, int channel)
   SendACKonly;
   if(!SerialMute) serial->println(DACarray[index]->DACCD[channel - 1].Name);
 }
-
-
-
-

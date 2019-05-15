@@ -18,6 +18,3 @@ void ADCsoftTrigger(void);
 void ADCabort(void);
 
 #endif
-
-
-

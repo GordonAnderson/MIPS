@@ -81,11 +81,3 @@ extern int ErrorCode;
 #define ERR_ADCALREARYSETUP         125     // ADC interface is already setup
 #define ERR_ADCNOTSETUP             126     // ADC interface is not setup
 #endif
-
-
-
-
-
-
-
-

@@ -1,7 +1,3 @@
-#include "ARB.h"
-#include "Hardware.h"
-#include "Menu.h"
-#include "Dialog.h"
 #include "Variants.h"
 #include "Compressor.h"
 
@@ -46,8 +42,8 @@ void ARBupdateMode(void)
 
 void ARBupdateCorder(void)
 {
-  if(arb.Corder <= 255) SetByte(CompressBoard, TWI_SET_COMP_ORDER, arb.Corder);
-  else SetWord(CompressBoard, TWI_SET_COMP_ORDER_EX, arb.Corder);
+  if(arb.Corder <= 255) SetByte(CompressBoard, TWI_ARB_SET_COMP_ORDER, arb.Corder);
+  else SetWord(CompressBoard, TWI_ARB_SET_COMP_ORDER_EX, arb.Corder);
 }
 
 void ARBconfigureTrig(void)
@@ -93,22 +89,22 @@ void ARBswitchTimerISR(void)
 void ARBCsetOrder(void)
 {
    int b=SelectedBoard();
-   if(ARBarray[0]->Corder <= 255) SetByte(CompressBoard,TWI_SET_COMP_ORDER, ARBarray[0]->Corder);
-   else SetWord(CompressBoard,TWI_SET_COMP_ORDER_EX, ARBarray[0]->Corder);
+   if(ARBarray[0]->Corder <= 255) SetByte(CompressBoard,TWI_ARB_SET_COMP_ORDER, ARBarray[0]->Corder);
+   else SetWord(CompressBoard,TWI_ARB_SET_COMP_ORDER_EX, ARBarray[0]->Corder);
    SelectBoard(b);           
 }
 
 void ARBCsetCramp(void)
 {
    int b=SelectedBoard();
-   Set16bitInt(CompressBoard, TWI_SET_CRAMP, ARBarray[0]->Cramp);
+   Set16bitInt(CompressBoard, TWI_ARB_SET_CRAMP, ARBarray[0]->Cramp);
    SelectBoard(b);             
 }
 
 void ARBCsetCrampOrder(void)
 {
    int b=SelectedBoard();
-   Set16bitInt(CompressBoard, TWI_SET_CRAMPORDER, ARBarray[0]->CrampOrder);
+   Set16bitInt(CompressBoard, TWI_ARB_SET_CRAMPORDER, ARBarray[0]->CrampOrder);
    SelectBoard(b);               
 }
 
@@ -139,11 +135,11 @@ void ARBcompressorTimerISR(void)
       // If C_NormAmpMode is 1 or 2 then set the amplitude to TW1 level.
       if((C_NormAmpMode == 1) || (C_NormAmpMode == 2))
       {
-         if(AcquireTWI()) SetFloat(1,TWI_SET_RANGE, ARBarray[0]->Voltage); else TWIqueue(SetFloat,1,TWI_SET_RANGE, ARBarray[0]->Voltage);
+         if(AcquireTWI()) SetFloat(1,TWI_ARB_SET_RANGE, ARBarray[0]->Voltage); else TWIqueue(SetFloat,1,TWI_ARB_SET_RANGE, ARBarray[0]->Voltage);
       }
       if(C_NormAmpMode == 2)
       {
-         if(AcquireTWI()) SetFloat(0,TWI_SET_RANGE, ARBarray[0]->Voltage); else TWIqueue(SetFloat,0,TWI_SET_RANGE, ARBarray[0]->Voltage);
+         if(AcquireTWI()) SetFloat(0,TWI_ARB_SET_RANGE, ARBarray[0]->Voltage); else TWIqueue(SetFloat,0,TWI_ARB_SET_RANGE, ARBarray[0]->Voltage);
       }
       // Next state is always normal
       ARBnormal;
@@ -166,11 +162,11 @@ void ARBcompressorTimerISR(void)
         // If C_NormAmpMode is 1 or 2 then set the amplitude to TW2 level.
         if((C_NormAmpMode == 1) || (C_NormAmpMode == 2))
         {
-           if(AcquireTWI()) SetFloat(1,TWI_SET_RANGE, ARBarray[1]->Voltage); else TWIqueue(SetFloat,1,TWI_SET_RANGE, ARBarray[1]->Voltage);
+           if(AcquireTWI()) SetFloat(1,TWI_ARB_SET_RANGE, ARBarray[1]->Voltage); else TWIqueue(SetFloat,1,TWI_ARB_SET_RANGE, ARBarray[1]->Voltage);
         }
         if(C_NormAmpMode == 2)
         {
-           if(AcquireTWI()) SetFloat(0,TWI_SET_RANGE, ARBarray[1]->Voltage); else TWIqueue(SetFloat,0,TWI_SET_RANGE, ARBarray[1]->Voltage);
+           if(AcquireTWI()) SetFloat(0,TWI_ARB_SET_RANGE, ARBarray[1]->Voltage); else TWIqueue(SetFloat,0,TWI_ARB_SET_RANGE, ARBarray[1]->Voltage);
         }
       }
       else if(OP == 'N')
@@ -418,7 +414,7 @@ char ARBgetNextOperationFromTable(bool init)
       if((count >= 0) && (count <= 100))
       {
         ARBarray[0]->Voltage = fval; 
-        if(AcquireTWI()) SetFloat(0,TWI_SET_RANGE, ARBarray[0]->Voltage); else TWIqueue(SetFloat,0,TWI_SET_RANGE, ARBarray[0]->Voltage);
+        if(AcquireTWI()) SetFloat(0,TWI_ARB_SET_RANGE, ARBarray[0]->Voltage); else TWIqueue(SetFloat,0,TWI_ARB_SET_RANGE, ARBarray[0]->Voltage);
       }   
       count = 0;
     }
@@ -427,7 +423,7 @@ char ARBgetNextOperationFromTable(bool init)
       if((count >= 0) && (count <= 100))
       {
         ARBarray[1]->Voltage = fval;
-        if(AcquireTWI()) SetFloat(1,TWI_SET_RANGE, ARBarray[1]->Voltage); else TWIqueue(SetFloat,1,TWI_SET_RANGE, ARBarray[1]->Voltage);
+        if(AcquireTWI()) SetFloat(1,TWI_ARB_SET_RANGE, ARBarray[1]->Voltage); else TWIqueue(SetFloat,1,TWI_ARB_SET_RANGE, ARBarray[1]->Voltage);
       }      
       count = 0;
     }
@@ -436,7 +432,7 @@ char ARBgetNextOperationFromTable(bool init)
       if((count >= 0) && (count <= 100) && (ARBarray[2] != NULL))
       {
          ARBarray[2]->Voltage = fval;
-         if(AcquireTWI()) SetFloat(2,TWI_SET_RANGE, ARBarray[2]->Voltage); else TWIqueue(SetFloat,2,TWI_SET_RANGE, ARBarray[2]->Voltage);
+         if(AcquireTWI()) SetFloat(2,TWI_ARB_SET_RANGE, ARBarray[2]->Voltage); else TWIqueue(SetFloat,2,TWI_ARB_SET_RANGE, ARBarray[2]->Voltage);
       }      
       count = 0;
     }
@@ -445,7 +441,7 @@ char ARBgetNextOperationFromTable(bool init)
       if((count >= 0) && (count <= 100) && (ARBarray[3] != NULL))
       {
          ARBarray[3]->Voltage = fval;
-         if(AcquireTWI()) SetFloat(3,TWI_SET_RANGE, ARBarray[3]->Voltage); else TWIqueue(SetFloat,3,TWI_SET_RANGE, ARBarray[3]->Voltage);
+         if(AcquireTWI()) SetFloat(3,TWI_ARB_SET_RANGE, ARBarray[3]->Voltage); else TWIqueue(SetFloat,3,TWI_ARB_SET_RANGE, ARBarray[3]->Voltage);
       }      
       count = 0;
     }
@@ -454,7 +450,7 @@ char ARBgetNextOperationFromTable(bool init)
       if((count >= 0) && (count <= 10000) && (ARBarray[0] != NULL))
       {
          ARBarray[0]->RampRate = fval;
-         if(AcquireTWI()) SetFloat(0, TWI_SET_RAMP, ARBarray[0]->RampRate); else TWIqueue(SetFloat,0, TWI_SET_RAMP, ARBarray[0]->RampRate);
+         if(AcquireTWI()) SetFloat(0, TWI_ARB_SET_RAMP, ARBarray[0]->RampRate); else TWIqueue(SetFloat,0, TWI_ARB_SET_RAMP, ARBarray[0]->RampRate);
       }      
       count = 0;
     }
@@ -463,7 +459,7 @@ char ARBgetNextOperationFromTable(bool init)
       if((count >= 0) && (count <= 10000) && (ARBarray[1] != NULL))
       {
          ARBarray[1]->RampRate = fval;
-         if(AcquireTWI()) SetFloat(1, TWI_SET_RAMP, ARBarray[1]->RampRate); else TWIqueue(SetFloat,1, TWI_SET_RAMP, ARBarray[1]->RampRate);
+         if(AcquireTWI()) SetFloat(1, TWI_ARB_SET_RAMP, ARBarray[1]->RampRate); else TWIqueue(SetFloat,1, TWI_ARB_SET_RAMP, ARBarray[1]->RampRate);
       }      
       count = 0;
     }
@@ -472,7 +468,7 @@ char ARBgetNextOperationFromTable(bool init)
       if((count >= 0) && (count <= 10000) && (ARBarray[2] != NULL))
       {
          ARBarray[2]->RampRate = fval;
-         if(AcquireTWI()) SetFloat(2, TWI_SET_RAMP, ARBarray[2]->RampRate); else TWIqueue(SetFloat,2, TWI_SET_RAMP, ARBarray[2]->RampRate);
+         if(AcquireTWI()) SetFloat(2, TWI_ARB_SET_RAMP, ARBarray[2]->RampRate); else TWIqueue(SetFloat,2, TWI_ARB_SET_RAMP, ARBarray[2]->RampRate);
       }      
       count = 0;
     }
@@ -481,7 +477,7 @@ char ARBgetNextOperationFromTable(bool init)
       if((count >= 0) && (count <= 10000) && (ARBarray[3] != NULL))
       {
          ARBarray[3]->RampRate = fval;
-         if(AcquireTWI()) SetFloat(3, TWI_SET_RAMP, ARBarray[3]->RampRate); else TWIqueue(SetFloat,3, TWI_SET_RAMP, ARBarray[3]->RampRate);
+         if(AcquireTWI()) SetFloat(3, TWI_ARB_SET_RAMP, ARBarray[3]->RampRate); else TWIqueue(SetFloat,3, TWI_ARB_SET_RAMP, ARBarray[3]->RampRate);
       }      
       count = 0;
     }
@@ -548,7 +544,7 @@ char ARBgetNextOperationFromTable(bool init)
          if((count>=1) && (count<=4) && ((c=='N') || (c=='C')))
          {
             if(c=='C') CE = true; else CE = false;
-            if(AcquireTWI()) SetBool(count - 1, TWI_SET_COMP_ENA, CE); else TWIqueue(SetBool,count - 1, TWI_SET_COMP_ENA, CE);
+            if(AcquireTWI()) SetBool(count - 1, TWI_ARB_SET_COMP_ENA, CE); else TWIqueue(SetBool,count - 1, TWI_ARB_SET_COMP_ENA, CE);
          }
       }
     }
@@ -561,7 +557,7 @@ char ARBgetNextOperationFromTable(bool init)
        count -= m * b;
        if((b>=1) && (b<=4))
        {
-          if(AcquireTWI()) SetWord(b-1,TWI_SET_COMP_ORDER_EX, count); else TWIqueue(SetWord,b-1,TWI_SET_COMP_ORDER_EX, count);
+          if(AcquireTWI()) SetWord(b-1,TWI_ARB_SET_COMP_ORDER_EX, count); else TWIqueue(SetWord,b-1,TWI_ARB_SET_COMP_ORDER_EX, count);
        }
     }
     else if(OP == 's') ARBclock->stop();                            // Stop the clock
@@ -582,16 +578,15 @@ char ARBgetNextOperationFromTable(bool init)
 void ARBcompressor_init(void)
 {
   int            i;
-  DialogBoxEntry *de;
   
   if(!ARBarray[0]->CompressorEnabled) return;  // Exit if the compressor is not enabled
 //  ARBarray[0]->UseCommonClock = true;          // If we are in compressor mode then we must use a common clock
 //  ARBarray[1]->UseCommonClock = true;
   // Enable the compressor hardware mode contol line in the compress ARB module
   pinMode(ARBmode,OUTPUT);
-  SetBool(0,TWI_SET_COMP_EXT,false);
-  SetBool(1,TWI_SET_COMP_EXT,false);
-  SetBool(CompressBoard,TWI_SET_COMP_EXT,true);
+  SetBool(0,TWI_ARB_SET_COMP_EXT,false);
+  SetBool(1,TWI_ARB_SET_COMP_EXT,false);
+  SetBool(CompressBoard,TWI_ARB_SET_COMP_EXT,true);
   // Clear the switch output
   ClearOutput(ARBarray[0]->Cswitch,ARBarray[0]->CswitchLevel);
   // Setup the trigger line and ISR
@@ -625,12 +620,12 @@ void ARBcompressor_loop(void)
   if(CurrentCramp != ARBarray[0]->Cramp)
   {
     CurrentCramp = ARBarray[0]->Cramp;
-    Set16bitInt(CompressBoard, TWI_SET_CRAMP, CurrentCramp);
+    Set16bitInt(CompressBoard, TWI_ARB_SET_CRAMP, CurrentCramp);
   }
   if(CurrentCrampOrder != ARBarray[0]->CrampOrder)
   {
     CurrentCrampOrder = ARBarray[0]->CrampOrder;
-    Set16bitInt(CompressBoard, TWI_SET_CRAMPORDER, CurrentCrampOrder);
+    Set16bitInt(CompressBoard, TWI_ARB_SET_CRAMPORDER, CurrentCrampOrder);
   }
 }
 

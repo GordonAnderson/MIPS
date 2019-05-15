@@ -200,11 +200,6 @@ void  DigitalOut(int8_t MSB, int8_t LSB);
 uint8_t DigitalIn(void);
 int  ReadEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count);
 int  WriteEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count);
-void TWI_RESET(void);
-void TWI_START(void);
-void TWI_STOP(void);
-bool TWI_WRITE(int8_t val);
-int8_t TWI_READ(bool Reply);
 int  AD7998(int8_t adr, uint16_t *vals);
 int  AD7994(int8_t adr, uint16_t *vals);
 int  AD5625(int8_t adr, uint8_t chan, uint16_t val);
@@ -218,10 +213,6 @@ int  MCP2300(int8_t adr, uint8_t reg, uint8_t *data);
 void SetAddress(int8_t addr);
 void SelectBoard(int8_t Board);
 int SelectedBoard(void);
-
-bool AcquireTWI(void);
-void ReleaseTWI(void);
-void TWIqueue(void (*TWIfunction)());
 
 void TriggerOut(char *cmd);
 void TriggerOut(int microSec, bool WithLimits = false);
@@ -260,8 +251,6 @@ extern uint32_t *TracePointTimes;
 void TraceCapture(uint8_t tp);
 void TraceReport(void);
 void TraceEnable(void);
-
-void TWIreset(void);
 
 // SD file io commands
 void ListFiles(void);

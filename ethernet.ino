@@ -230,6 +230,7 @@ void Ethernet_init(void)
   {
     Serial1.begin(115200);
   }
+  else Serial1.end();
 }
 
 void Ethernet_test(void)
@@ -398,8 +399,3 @@ void SetEGATE(char *ips)
     SendNAK;
   }
 }
-
-
-
-
-

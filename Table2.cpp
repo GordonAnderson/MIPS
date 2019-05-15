@@ -1,282 +1,31 @@
 //
-//  Table.cpp
-//  Created by Gordon Anderson on 9/4/14.
+// This file contains Table code that is in development.
 //
-// Timer8 is used to enable output voltage sequence control.
-// The MIPStimer class is used to support the needed timer 
-// functions.
-// The timer clock can be internal or external on the TCLK0 pin, D22.
-// TIOA8 (D11) is used to latch the DAC outputs using LDAC.
-//
-// Four internal clock are avalible:
-//   MCK/2
-//   MCK/8
-//   MCK/32
-//   MCK/128
-//   MCK = 84 MMz
-//
-// Table syntax:
-//
-// STBLDAT;0:[1:20,0:1:10:2:30,50:3:70,100:[2:40,0:1:30:2:10,100:1:10:2:30,200:W],
-// 0:1:0,0:2:0,200:A:1,150:A:0,400:W];
-//
-// The table command is parsed and data is saved in a memory block as follows:
-//
-// The table uses counter timer 8 in the atmel ARM cpu. The counter is in waveform (gaa stoped editing)
-// mode. In this mode the counter has a max count saved in the ICR register,
-// at this count the counter resets. This causes a counter overflow interrupt
-// where the counter max count is reloaded with the current table max count
-// value and some house keeping is done. Additionally the output compare register
-// is used to cause an interrupt and to generate LDAC.
-//
-// The process is started by setting the counter to 0xFFFF, its max value and
-// then defining the first time point values. When triggered the counter starts,
-// at every interrupt the next values are defined and the current time point
-// values latched by LDAC.
-//
-// The table command is parsed and saved in a formatted block of memory in
-// a format needed for fast processing to enable fast execution.
-//
-// A [ defines the start of a table entry defined below. A table command
-// does not need to have nesting so in this case the table name is null
-// and the repeat count is 1. When a [ is encountered in the input command
-// the current table is halted and a new table started. At run time when
-// a table is started a first in last out stack entry is made with the
-// table location and repeat count.
-// Table:
-//    Table name (byte), defined after [ or at start of table command
-//    Repeat count (word)
-//    NumEntries (word), this is calculated when the command is parsed.
-//    MaxCount (word), This is caluclated when the command is parsed.
-//    Entry format:
-//      Count (word), timer count when this point is defined
-//      NumChans (byte), this defines the number of output channels that will
-//                       be updated at this count. The number of channels includes
-//                       W and ], end of table flag
-//      ChanValue
-//          Chan (byte), 0-15 if DC output, alpha character if DIO, or W or ]
-//          Value (word)
-//      If Chan is ']' then this is the end of the nested table. The table count
-//      is tested and if not zero its deceremented and the table repeated. If zero
-//      the last stack value is removed and the next entry processed. This ']' marks
-//      the end of a table but a table can end without a ']'. If a table ends without
-//      a ']' then its the end of all tables. If a table ends with ']' and none follow
-//      then the next table name is defined as 0xFF to flag the end of all tables.
-// Note:
-//      Whatever the time point is that contains a ] any output values will likely
-//      not be defined because the ] represents the end of the table and the next one
-//      is being defined or all tables end.
-//
-// If you want the entire table to repeat you make it a loop (like above) and then embed
-// other loops inside it if needed.  Time is still absolute, but it resets to zero at the
-// beginning of the Table and at every loop bracket (open or close).
-//
-// So with the above STBLDAT command, when triggered, the Table immediately sets DCB1 to
-// 10V and DCB2 to 30V.  50 clock cycles later it sets DCB3 to 70V.  50 clock cycles later
-// it starts a loop and runs it 40 times where DCB1 and DCB2 swap values every 100 clock cycles.
-// When this is complete (8000 clock cycles later) it immediately sets DCB1 and DCB2 to 0V,
-// waits 200 clocks and sets DIO_A high for 10 clocks and then low, then it waits 190 clocks
-// before starting over and it repeats 20 times.
-//
-// Anyone writing a Falkor version of the Table needs to understand that time is absolute but
-// resets every time a loop is started or ended.  The above command line would be sourced thusly*:
-//
-// Time    Type    Chan    Value
-// 0       LOOP    1       20  (beginning of Loop 1 that will repeat 20 times)
-// 0       DCB     1       10
-// 0       DCB     2       30
-// 50      DCB     3       70
-// 100     LOOP    2       40  (beginning of Loop 2 that repeats 40 times)
-// 0       DCB     1       30
-// 0       DCB     2       10
-// 100     DCB     1       10
-// 100     DCB     2       30
-// 200     GOTO    2           (end of Loop 2 that points back to Loop 2 beginning)
-// 0       DCB     1       0
-// 0       DCB     2       0
-// 200     DIO     A       1
-// 210     DIO     A       0
-// 400     GOTO    1           (end of Loop 1 that points back to Loop 1 beginning)
-//
-// *Time in this Table is represented in units of microseconds, milliseconds, etc., Falkor
-// will to translate to actual clock counts before sending the Table to AMPS.
-//
-// As before, any steps with the same Time value are a single event in time and the next
-// time listed is absolute from the beginning/ending of the Table (or last LOOP bracket).
-// Please let us know what limit you’d like to place on nested loops.  Hopefully we can at
-// least do 3-5 for now.
-//
-// For now, please continue to issue a TBLCMPLT string when the entire Table has completed
-// execution.  We’d like to perhaps add other status strings issued when internal Loops
-// complete.  We can talk about this more as time goes on.
-//
-// I will send another email with other details and a sequence of operations for Table
-// execution.
-//
-//Here are the changes we discussed with some others so please read through:
-//
-// 1. We will stay with a single Table for now with changes outlined in the previous email.
-// 2. The STBLRPT command is gone and all repetition data will be embedded in the Table
-//    in the form of Loops.
-// 3. The STBLCLK command only sets the clock source for Table execution and can be issued
-//    at any time, even while running a Table.
-// 4. We will add a third modifier to the STBLTRG command: BOTH.  In BOTH mode, the Table
-//    will start with either TBLSTRT or INT7 events.  In SW mode, the INT7 input will be
-//    ignored.  In EXT mode, the TBLSTRT command will be ignored.  The STBLTRG command can
-//    be issued at any time, even while running a Table.
-// 5. We will put the AMPS box into Table Mode with the SMOD,TBL command.  This causes the
-//    AMPS box to:
-//      a. Send initial Table data to the DACs/DIOs.
-//      b. Set LDAC high.
-//      c. Disable the HMI and display “Executing Table” on the LCD.
-//      d. Issue a “TBLRDY” string.
-// 6. While in Table mode:
-//      a. Only Table commands and a front panel 2-button push (LEFT/RIGHT) will be
-//         recognized and acted upon.
-//      b. If/when the Table completes execution, AMPS issues “TBLCMPLT” and repeats
-//         the steps in #5 above in preparation for a re-trigger event.
-//      c. If/when the new command TBLSTOP is received, AMPS stops Table Execution and
-//         repeats the steps in #5 above in preparation for a re-trigger event.
-// 7. Only a SMOD,LOC or TBLABRT command, or a front panel 2-button push will take the
-//    AMPS box out of Table Mode.
-// 8. Issuing the SMOD,LOC command will stop Table execution (if running) and take the
-//    AMPS box out of Table mode:
-//      a. Front panel buttons and LCD  (HMI) become operational and all output values
-//         restored to pre-Table Mode.
-//      b. LDAC is set low.
-// 9. The TBLABRT command and the 2-button push will have the same effect as SMOD,LOC
-//    except that an “ABORTED” string is issued.
-// 10. “Remote Mode” goes away.  If precise Table timing/synchronization is required the
-//     User must use hardware triggering.
-// 11. Table execution can only be triggered while the AMPS box is in Table Mode and is
-//     not currently running a Table.
-//
-// Here’s the normal sequence of events:
-//
-// Commands:                           MIPS Response:
-//      - STBLDAT                             <ack>
-//      - STBLCLK                             <ack>
-//      - STBLTRG                             <ack>
-//      - SMOD,TBL                            TBLRDY (Display “Executing Table”)
-//      - TBLSTRT or R trig starts Table      
-//      - (if table completes execution)      TBLCMPLT then TBLRDY
-//      - (if TBLSTOP stops execution)        TBLRDY
-//      - SMOD,LOC                            (Display returns to normal operation and
-//                                            output values to what they were when SMOD,TBL
-//                                            was received)
-//
-// If, while in Table Mode, TBLABRT command is received or User pushes the control button on
-// the front panel, the MIPS box responds with “ABORTED” and returns to normal operation.
-//
-// Command string tested examples
-//
-// STBLDAT;100:1:10;
-// STBLDAT;100:1:10,150:2:33;
-// STBLDAT;200:1:1,300:1:0,400:1:1,500:1:0;
-// STBLDAT;200:A:1,300:A:0,400:A:1,500:A:0;
-// STBLDAT;0:[A:1000,200:A:1,300:A:0,400:A:1,500:A:0:];
-// STBLDAT;200:A:1,300:A:0,400:A:1,700:A:0;
-// STBLDAT;100:A:1,150:A:0,200:A:1,250:A:0;
-// STBLDAT;0:A:1,150:A:0,200:A:1,250:A:0;
-// STBLDAT;0:[3:3,100:A:1,150:A:0,225:A:1,250:A:0,301:];
-// STBLDAT;100:1:10:2:20:3:123,150:2:33,250:2:0;
-// STBLDAT;100:1:15:3:123,150:2:33,400:[3:5,0:1:30:2:10,100:1:10:2:30,150:];
-// STBLDAT;100:1:15:3:123,150:2:33,400:[3:5,0:1:30:2:10,100:1:10:2:30,150:],0:1:15,50:1:5;
-// STBLDAT;0:[3:5,0:1:30:2:10,100:1:10:2:30,150:];
-// STBLDAT;0:[A:1000,0:1:0,1000:1:5,1000:];
-// STBLDAT;0:[A:1000,0:A:1,1000:A:0,1000:];
-// STBLDAT;0:[A:1000,100:A:1,1000:A:0,1000:];
-//
-// Examples to be tested
-//
-// STBLDAT;100:1:10:3:123,150:2:33,200:[3:40,0:1:30:2:10,100:1:10:2:30,150:W];
-// STBLDAT;100:1:10:3:123,150:2:33,200:[3:40,0:1:30:2:10,100:1:10:2:30,150:W],100:1:10:3:123;
-// STBLDAT;0:[1:20,0:1:10:2:30,50:3:70,100:[2:40,0:1:30:2:10,100:1:10:2:30,200:W],0:1:0:2:0,150:A:1,200:A:0,400:W];
-//
-// STBLDAT;0:[1:50,0:1:2:2:0:3:0,328:1:0:2:1:3:2,12797:1:1:2:1:3:2,13125:];
-// STBLDAT;0:[1:3,0:A:1:B:0:C:0,328:A:0:B:1:C:1,500:A:1,600:A:0,12797:A:0:B:1:C:1,13125:];
-//
-// SMOD,TBL
-// SMOD,LOC
-// TBLSTRT
-// STBLCLK,EXT
-// STBLCLK,MCK2
-// STBLCLK,MCK8
-// STBLCLK,MCK32
-// STBLCLK,MCK128
-// GTBLFRQ
-// STBLTRG,POS
-//
-// Table setup for Jim's system
-// STBLTRG,NEG
-// STBLCLK,10500000
-// STBLDAT;136500:1:6,189000:1:0,305500:1:-9,337000:1:3,589500:1:2.5,594500:1:2,5000000:1:2;
-// STBLDAT;0:[1:1000,10000:1:25:A:1,30000:1:5:A:0,30100:1:5:A:0];
-// SMOD,TBL
-//
-// Timing tests
-// STBLDAT;0:[1:100000,100:1:25,1000:1:5,2000:];
-// STBLDAT;0:[1:100000,100:1:25,107:1:10,1000:1:5,2000:];
-// STBLDAT;0:[1:100000,100:A:1,107:A:0,1000:A:1,2000:];
-// STBLDAT;0:[1:100000,0:1:25:2:30,107:1:10,2000:1:5,3000:];
-// In FAST_TABLE mode:
-//  June 29, version
-//  6 is min count for 1 value change, 9.14uS
-//  10 is min count for 2 value change, 15.2uS
-//  Last event 21 min, 32uS
-//  
-//
-// STBLDAT;0:[1:100000,100:1:25,106:1:10,1000:1:5,2000:];
-//
-// Testing pulse sequences
-// STBLDAT;0:[1:10,1000:1:25:A:1,3000:1:5:A:0];
-// STBLDAT;0:[1:5,1000:9:25:A:1,3000:9:5:A:0];
-// STBLDAT;0:[1:4,1000:1:25:9:20:A:1,3000:1:5:9:6:A:0];
+// April 2019
+//  - Added voltage ramping capaility.
+//  - Made a number of improvements to the code, performance issues.
+//  - Fixed a bug on the table startup when there are timepoint events at time 0 such as ramps and
+//    various internal trigggers like the trigger output or compressor.
 // 
-// Spencer's is having trouble with:
-// STBLDAT;0:[1:100,39062:1:25:A:1,46875:1:5:A:0];
-// STBLDAT;0:[1:100,39062:1:100:A:1,46875:1:15:A:0];
-// STBLDAT;0:[1:100,10000:1:100:A:1,20000:1:15:A:0,30000:1:75:A:0];
-// STBLDAT;0:[1:100,39062:1:100:2:10:3:10:A:1,46875:1:15:2:0:3:0:A:0];
-// STBLDAT;0:[1:100,39062:1:100:2:10:3:10:A:1,46875:1:15:2:0:3:0:A:0,50000:W];
-// STBLDAT;0:[1:100,39062:1:100,46875:1:15];
-// STBLDAT;0:[1:100,39062:A:1,46875:A:0];
-// STBLDAT;0:[1:100,39062:1:10,46875:1:0,46876:];
-// STBLDAT;0:[1:100,300:1:10,400:1:0];
-// STBLDAT;0:[1:100,300:1:10,400:1:0,401:];
 //
-// STBLDAT;0:[1:1000,0:A:0,5:A:1,10:A:0];
-// STBLDAT;0:[1:1000,0:A:0,500:A:1,10000:A:0];
-//
-// Issues/bugs
-//  1.) Change the table memory management to dynamically allocate the space needed, do not allocate a fixed 
-//      block of memory.
-//  2.) Add the ramp capability.
-//
-// Proposed updates to the table IO mode.
-//  1.) call it pulse sequence generation.
-//  2.) create a dialog for setup with the following features:
-//      a.) Load a macro or a pulse sequence
-//      b.) Allow setting clock mode
-//      c.) Allow setting trigger mode
-//      d.) Enable pulse sequence generation
-//  3.) Have a second dialog that is displayed when we are in the table mode this
-//      dialog will:
-//      a.) Show table status, running or ready for trigger
-//      b.) Allow abort
-//      c.) Allow software trigger
-//      This could be independent of the first setup dialog. Replace the current popup message.
-//
-// Dec 2, 2017, add the following ARB commands to the table system:
-//  101 = aux channel 1
-//  102 = aux channel 2
-//  103 = aux channel 3
-//  104 = aux channel 4
-//  105 = offset channel 1a
-//  106 = offset channel 1b
-//  107 = offset channel 2a
-//  108 = offset channel 2b
-//
+/*
+STBLRMPENA,TRUE,2000
+STBLDAT;0:[A:100,100:1:10:194:1:130:4,5000:1:0:130:-1.0,10000:130:0,20000:];
+SMOD,ONCE
+TBLSTRT
+
+STBLRMPENA,TRUE,2000
+STBLDAT;0:[A:4,0:1:10:194:1:130:4,5000:1:0:130:-1.0,10000:130:0,20000:];
+SMOD,ONCE
+TBLSTRT
+
+STBLRMPENA,TRUE,2000
+STBLDAT;0:[A:4,0:1:10:194:1:130:4,5000:1:15:130:-1.0,10000:130:0,13000:1:0,20000:];
+SMOD,ONCE
+TBLSTRT
+
+
+ */
 
 #include "Arduino.h"
 #include "variant.h"
@@ -289,10 +38,9 @@
 #include "Adafruit_GFX.h"
 #include "Adafruit_ILI9340.h"
 #include "SPI.h"
-
 #include "Variants.h"    // This brings in most of the application specific include files
 
-#if TABLE2code == false
+#if TABLE2code
 
 #if defined(__SAM3X8E__)
     #undef __FlashStringHelper::F(string_literal)
@@ -307,6 +55,10 @@ extern ThreadController control;
 
 MIPStimer MPT(TMR_Table);               // timer used for pulse sequence generation
 #define   MPTtc   TC2->TC_CHANNEL[2]    // Pointer to the timers control block
+
+static Pio *pio     = g_APinDescription[BRDSEL].pPort;
+static uint32_t pin = g_APinDescription[BRDSEL].ulPin;
+static Pio *pioA    = g_APinDescription[ADDR0].pPort;
 
 #define NumTables 5
 #define MaxTable  4096
@@ -348,7 +100,8 @@ int  ExtFreq = 0;                     // Defines enternal clock frequency used b
 int  TimeDelta = 0;                   // This time is added to the time sent to the timer 
 int  TimeDeltaMax = 0;                // This time is added to the time sent to the timer max count 
 
-uint8_t  Chan2Brd[32];
+uint8_t  Chan2Brd[32];                // Holds DCbias module SPI address and board address. Upper 4 bits hold SPI address
+                                      // Used to speed the address selection process in real time code section
 
 bool DCbiasUpdaated = false;
 bool ValueChange = false;
@@ -369,13 +122,92 @@ int  TableClockFreq = VARIANT_MCK/128;
 
 bool IssueSoftwareTableStart = false;
 
+// Ramp generation variables
+#define  RAMP      0x80
+#define  INITIAL   0x40
+
+#define  RAMP_DONE 0x80
+#define  NUM_RAMPS 2
+
+typedef struct
+{
+   uint8_t  chan;
+   uint32_t initial;
+   int      delta;
+} RampEntry;
+
+bool      RampEnabled = false;
+bool      Ramping     = false;
+MIPStimer *RampClock  = NULL;
+volatile  RampEntry RE[NUM_RAMPS];
+// End of ramp variables
+
+//
+// The following code supports queuing functions to be run at a later time. This is used by the
+// ramping function to make sure the code is execured during the timer compare event, this is 
+// when the LDAC latch pulse is generated.
+// The queuing function have a Unique flag that will insure a function is present in the queue only
+// one time if set to true.
+//
+volatile TableQueueEntry TQE[MaxTableQueue] = {{TblEmpty,NULL},{TblEmpty,NULL},{TblEmpty,NULL},{TblEmpty,NULL},{TblEmpty,NULL}};
+
+void TABLEqueue(void (*function)(void), bool Unique)
+{
+  uint32_t *ptr;
+  
+  for(int i=0;i<MaxTableQueue;i++) 
+  {
+    if(Unique) if((void (*)(void))TQE[i].pointers.funcVoidVoid == (void (*)(void))function) break; 
+    if(TQE[i].pointers.funcVoidVoid == NULL)
+    {
+       ptr = (uint32_t *)(&(TQE[i].pointers.funcVoidVoid));
+       ptr[0] = (uint32_t)function;
+       TQE[i].Type = TblVoidVoid;
+       break;
+    }
+  }
+}
+
+void TABLEqueue(void (*function)(volatile TableEntry *),volatile TableEntry *te, bool Unique)
+{
+  uint32_t *ptr;
+  
+  for(int i=0;i<MaxTableQueue;i++) 
+  {
+    if(Unique) if((void (*)(volatile TableEntry *))TQE[i].pointers.funcTableEntryPtr == (void (*)(volatile TableEntry *))function) break;
+    if(TQE[i].pointers.funcTableEntryPtr == NULL)
+    {
+       ptr = (uint32_t *)(&TQE[i].pointers.funcTableEntryPtr);
+       ptr[0] = (uint32_t)(function);
+       TQE[i].Type = TblVoidTableEntryPtr;
+       TQE[i].TE   = te;
+       break;
+    }  
+  }
+}
+
+void ProcessTableQueue(void)
+{
+  for(int i=0;i<MaxTableQueue;i++)
+  {
+    if(TQE[i].pointers.funcVoidVoid != NULL) 
+    {
+      if(TQE[i].Type == TblVoidVoid) TQE[i].pointers.funcVoidVoid();
+      else if(TQE[i].Type == TblVoidTableEntryPtr) TQE[i].pointers.funcTableEntryPtr(TQE[i].TE);
+      TQE[i].pointers.funcVoidVoid = NULL;
+      TQE[i].Type = TblEmpty;
+    }
+  }
+}
+// End of queuing functions
+
 //**************************************************************************************************
 //
 // This section of the file contains all the serial IO processing routines.
 //
 //**************************************************************************************************
 
-// Low level routines to get token from the string.
+// Low level routines to get token from input ring buffer.
 
 // This function will wait for the next token or a timeout. This function blocks
 // and will return NULL on a timeout.
@@ -387,28 +219,8 @@ char *NextToken(void)
     timeout = millis();
     while(millis() < (timeout + 3000))
     {
-        WDT_Restart(WDT);
-        if((tk=GetToken(true))!=NULL) 
-        {
-          return(tk);
-        }
-        // Put serial received characters in the input ring buffer.
-        if (SerialUSB.available() > 0) 
-        {
-          serial = &SerialUSB;
-          PutCh(SerialUSB.read());
-        }
-        if (Serial.available() > 0) 
-        {
-          serial = &Serial;
-          PutCh(Serial.read());
-        }
-        if (Serial1.available() > 0) // Added Aug 2, 2018
-        {
-          serial = &Serial1;
-          PutCh(Serial1.read());
-        }
-        ProcessEthernet();
+       if((tk=GetToken(true))!=NULL) return(tk); 
+       ReadAllSerial();
     }
     SetErrorCode(ERR_TOKENTIMEOUT);
     return(NULL);
@@ -449,7 +261,7 @@ bool ExpectComma(void)
 bool Token2int(int *val)
 {
     char *TK;
-    
+ 
     if((TK = NextToken()) == NULL) return false;
     sscanf(TK,"%u",val);
     return true;
@@ -611,10 +423,10 @@ void SetTableTRG(char *cmd)
         SendNAK;
         return;
     }
-    if(strcmp(cmd,"SW") == 0) TriggerMode = SW;
+    if(strcmp(cmd,"SW") == 0)        TriggerMode = SW;
     else if(strcmp(cmd,"EDGE") == 0) TriggerMode = EDGE;
-    else if(strcmp(cmd,"POS") == 0) TriggerMode = POS;
-    else if(strcmp(cmd,"NEG") == 0) TriggerMode = NEG;
+    else if(strcmp(cmd,"POS") == 0)  TriggerMode = POS;
+    else if(strcmp(cmd,"NEG") == 0)  TriggerMode = NEG;
     else
     {
         SetErrorCode(ERR_BADARG);
@@ -682,8 +494,11 @@ void PerformSoftwareStart(void)
 {
     if(!IssueSoftwareTableStart) return;
     // If there is a update at count 0 then fire LDAC and setup for the next event
+    StartTimer();
     if(MPT.getRAcounter() == 0) 
     {
+      ProcessTableQueue();
+      if(RampEnabled) RampClock->softwareTrigger();
       if((MIPSconfigData.Rev <= 1) || (softLDAC)) // Rev 1 used software control of LDAC
       {
         LDAClow;
@@ -700,9 +515,7 @@ void PerformSoftwareStart(void)
       }
       SetupNextEntry();
     }
-    StartTimer();
     IssueSoftwareTableStart = false;
-//  if(MPT.getRAcounter() == 0) SetupNextEntry();
 }
 
 // Report table current frequency setting
@@ -710,9 +523,9 @@ void TableFreq(void)
 {
   int   freq;
   
-  if(ClockMode == MCK2) freq = VARIANT_MCK/2;
-  if(ClockMode == MCK8) freq = VARIANT_MCK/8;
-  if(ClockMode == MCK32) freq = VARIANT_MCK/32;
+  if(ClockMode == MCK2)   freq = VARIANT_MCK/2;
+  if(ClockMode == MCK8)   freq = VARIANT_MCK/8;
+  if(ClockMode == MCK32)  freq = VARIANT_MCK/32;
   if(ClockMode == MCK128) freq = VARIANT_MCK/128;
   SendACKonly;
   if(!SerialMute) serial->println(freq);
@@ -953,7 +766,6 @@ void ParseTableCommand(void)
             if(!Token2int(&TH->RepeatCount)) break;
             if(!ExpectComma()) break;
             // Now get the initial time point value
-//          if(iStat == 0) InitialOffset = i;           // This was the failed solution before the Nov 3, 2016 edits
             if(!Token2int(&i)) break;                   // First time point
             if(!ExpectColon()) break;
             if((TK = NextToken()) == NULL) break;       // First channel
@@ -1124,18 +936,26 @@ int ParseEntry(int Count, char *TK)
             if(!ExpectColon()) break;
             if(!Token2float(&fval)) break;
             *((float *)(&TE->Value)) = fval;  // Put the float value in the 32 bit int, for the ARB commands
-            if((i>=1)&&(i<=32))
+            if(((i>=1)&&(i<=32)) || ((i&RAMP)!=0))
             {
                // Convert value to DAC counts
-               TE->Value = DCbiasValue2Counts(TE->Chan, fval);
-               // Make value into bit image the DAC wants to see. This will allow fast DAC updating
-               // in the table execute mode. June 23 2016
-               uint8_t  *buf = (uint8_t *)&TE->Value;
-               int val = TE->Value;
-               buf[0] = 0;         // DAC command
-               buf[1] = ((TE->Chan & 7) << 4) | (val >> 12);
-               buf[2] = (val >> 4);
-               buf[3] = (val << 4);
+               TE->Value = DCbiasValue2Counts(TE->Chan & 0x1F, fval);
+               if((i&(RAMP | INITIAL))==RAMP)
+               {
+                  TE->Value -= DCbiasValue2Counts(TE->Chan & 0x1F, 0.0);
+                  TE->Value = (TE->Value << 4) & 0xFFFF0;
+               }
+               else
+               {
+                  // Make value into bit image the DAC wants to see. This will allow fast DAC updating
+                  // in the table execute mode. June 23 2016
+                  uint8_t  *buf = (uint8_t *)&TE->Value;
+                  int val = TE->Value;
+                  buf[0] = 0;         // DAC command
+                  buf[1] = ((TE->Chan & 7) << 4) | (val >> 12);
+                  buf[2] = (val >> 4);
+                  buf[3] = (val << 4);
+              }
             }
         }
         if((TK = NextToken()) == NULL) break;  // get next token to process
@@ -1198,6 +1018,7 @@ void ProcessTasks(void)
   uint32_t TCcount,RAcount,RCcount,AvalibleClocks;
 
   if(!TblTasks) return;   // Flag to enable this mode that will call tasks if there is time avalible to do so
+  if(Ramping) return;
   if(!TimerRunning)
   {
     // If we are software trigger mode its OK to call the task processor
@@ -1238,6 +1059,7 @@ void ProcessTables(void)
     // mode. Allow pressing the button to cause an abort
     DisplayMessage("Table Mode Enabled");
     StopCommanded = false;
+    StartRampClock();
     // Setup the table mode and start timer
     while(1)
     {
@@ -1309,7 +1131,6 @@ void ProcessTables(void)
             }
             #endif
             // Process any serial commands
-            //TRACE(7);
             ProcessSerial();
             if(ReadVin() < 10.0) break;
             serial->flush();
@@ -1348,6 +1169,7 @@ void ProcessTables(void)
         TableTriggered = false;
     }
     // Clean up and exit
+    StopRampClock();
     TableTriggered = false;
     StopCommanded = false;
     TableReady = false;
@@ -1392,14 +1214,14 @@ void SetupTimer(void)
     int i;
     if(DCbDarray[0] != NULL)
     {
-       for(i=0;i<8;i++) Chan2Brd[i] = 0; 
-       for(i=0;i<8;i++) Chan2Brd[i+8] = 1; 
-       for(i=0;i<8;i++) Chan2Brd[i+16] = 0; 
-       for(i=0;i<8;i++) Chan2Brd[i+24] = 1; 
+       for(i=0;i<8;i++) if(DCbDarray[0] != NULL) Chan2Brd[i]    = (DCbDarray[0]->DACspi << 4) & 0x70;       else Chan2Brd[i]    = 0x20;
+       for(i=0;i<8;i++) if(DCbDarray[1] != NULL) Chan2Brd[i+8]  = ((DCbDarray[1]->DACspi << 4) & 0x70) | 1; else Chan2Brd[i+8]  = 0x21;
+       for(i=0;i<8;i++) if(DCbDarray[2] != NULL) Chan2Brd[i+16] = (DCbDarray[2]->DACspi << 4) & 0x70;       else Chan2Brd[i+16] = 0x00;
+       for(i=0;i<8;i++) if(DCbDarray[3] != NULL) Chan2Brd[i+24] = ((DCbDarray[3]->DACspi << 4) & 0x70) | 1; else Chan2Brd[i+24] = 0x01;
     }
     else if(DCbDarray[1] != NULL)
     {
-       for(i=0;i<8;i++) Chan2Brd[i] = 1;      
+       for(i=0;i<8;i++) Chan2Brd[i] = ((DCbDarray[1]->DACspi << 4) & 0x70) | 1;      
     }
     // Setup counter, use MPT
     MPT.begin();  
@@ -1489,6 +1311,7 @@ void StartTimer(void)
     if(TablesLoaded[CT] <= 0) return;
     // Start the timer
     TimerRunning = true;
+    StartRampClock();
     MPT.softwareTrigger();
 }
 
@@ -1610,17 +1433,12 @@ void ClockSstop(void)
 inline void SetupNextEntry(void)
 {
    static int   i,k,maxc;
-   int SPIadd,cSPIadd;
    static bool  DIOchange;
-   static Pio *pio = g_APinDescription[ADDR0].pPort;
 
 //  ValueChange = true;
     DIOchange=false;
     // Set the address
 SetupNextEntryAgain:
-    pio->PIO_CODR = 7;                                                                 // Set all bits low
-    if(DCbDarray[0] != NULL)      SPIadd = pio->PIO_SODR = DCbDarray[0]->DACspi & 7;   // Set address for channels 0 through 15
-    else if(DCbDarray[1] != NULL) SPIadd = pio->PIO_SODR = DCbDarray[1]->DACspi & 7;
     // Set the next event counts. These are compare registers that will cause interrtups
     // and generate LDAC latch signal
     MPTtc.TC_RA = TEheader->Count;
@@ -1663,7 +1481,6 @@ SetupNextEntryAgain2:
                     {
                        // Update the DIO hardware if needed
                        if(DIOchange) DOrefresh;
-                       SPIadd = -1;
                        goto SetupNextEntryAgain2;  // Changed from SetupNextEntryAgain on Nov 25, 2017
                        //SetupNextEntry();
                        //return;
@@ -1685,7 +1502,6 @@ SetupNextEntryAgain2:
                     {
                        // Update the DIO hardware if needed
                        if(DIOchange) DOrefresh;
-                       SPIadd = -1;
                        goto SetupNextEntryAgain2;  // Changed from SetupNextEntryAgain on Nov 25, 2017
                        //SetupNextEntry();
                        //return;
@@ -1698,35 +1514,21 @@ SetupNextEntryAgain2:
             if((Tentry[i].Chan >= 0) && (Tentry[i].Chan <= 31))
             {
               // See if the SPI address is correct, if not update
-              if(Tentry[i].Chan <= 15)
+              //if(SPIadd != ((Chan2Brd[Tentry[i].Chan] >> 4) & 7))
+              if((pioA->PIO_PDSR & 7) != ((Chan2Brd[Tentry[i].Chan] >> 4) & 7))
               {
-                cSPIadd = 2; // Just in case
-                if(DCbDarray[0] != NULL) cSPIadd = DCbDarray[0]->DACspi & 7;
-                else if(DCbDarray[1] != NULL) cSPIadd = DCbDarray[1]->DACspi & 7;
-                if(SPIadd != cSPIadd)
-                {
-                   pio->PIO_CODR = 7;
-                   SPIadd = pio->PIO_SODR = cSPIadd;
-                }
-              }
-              else if(Tentry[i].Chan <= 31)
-              {
-                cSPIadd = 0; // Just in case
-                if(DCbDarray[2] != NULL) cSPIadd = DCbDarray[2]->DACspi & 7;
-                if(SPIadd != cSPIadd)
-                {
-                   pio->PIO_CODR = 7;
-                   SPIadd = pio->PIO_SODR = cSPIadd;
-                }                
-              }
-              //DCbiasDACupdate(Tentry[i].Chan, Tentry[i].Value);
+                   pioA->PIO_CODR = 7;
+                   pioA->PIO_SODR = ((Chan2Brd[Tentry[i].Chan] >> 4) & 7);                
+                   //SPIadd = pio->PIO_SODR = ((Chan2Brd[Tentry[i].Chan] >> 4) & 7);                
+              }              
               DCbiasUpdaated = true;
               int cb = SelectedBoard();               // Added 9/3/17
-              SelectBoard(Chan2Brd[Tentry[i].Chan]);
+              SelectBoard(Chan2Brd[Tentry[i].Chan] & 1);
               k=Tentry[i].Value;
               SPI.transfer(SPI_CS, (uint8_t *)&k, 4);
               SelectBoard(cb);                        // Added 9/3/17
             }
+            else if((Tentry[i].Chan & RAMP)!=0) TABLEqueue(ProcessRamp,&Tentry[i]);
             else if((Tentry[i].Chan >= 100) && (Tentry[i].Chan <= 107))
             {
               // Here if ARB commands
@@ -1738,31 +1540,32 @@ SetupNextEntryAgain2:
               else if(Tentry[i].Chan == 105) UpdateOffsetB(0, *(float *)&Tentry[i].Value, false); // 106, j
               else if(Tentry[i].Chan == 106) UpdateOffsetA(1, *(float *)&Tentry[i].Value, false); // 107, k
               else if(Tentry[i].Chan == 107) UpdateOffsetB(1, *(float *)&Tentry[i].Value, false); // 108, l
+              TABLEqueue(ProcessARB,true);
             }
             // if Chan is A through P its a DIO to process
             else if((Tentry[i].Chan >= 'A') && (Tentry[i].Chan <= 'P'))
             {
-                DIOchange = true;
-                SDIO_Set_Image(Tentry[i].Chan,Tentry[i].Value);
+               DIOchange = true;
+               SDIO_Set_Image(Tentry[i].Chan,Tentry[i].Value);
             }
             // if Chan is d then the time count delta is adjusted and RA re-written
             else if(Tentry[i].Chan == 'd')
             {
-              TimeDelta += Tentry[i].Value;
-              MPTtc.TC_RA = TEheader->Count + TimeDelta;
+               TimeDelta += Tentry[i].Value;
+               MPTtc.TC_RA = TEheader->Count + TimeDelta;
             }
             // if Chan is p then the time count delta max is adjusted and RA re-written
             else if(Tentry[i].Chan == 'p')
             {
-              TimeDeltaMax += Tentry[i].Value;
-              MPTtc.TC_RC = Theader->MaxCount + TimeDeltaMax;
+               TimeDeltaMax += Tentry[i].Value;
+               MPTtc.TC_RC = Theader->MaxCount + TimeDeltaMax;
             }
             // if Chan is t then this is a trigger out pulse so queue it up for next ISR
-            else if(Tentry[i].Chan == 't') QueueTriggerOut(Tentry[i].Value);
+            else if(Tentry[i].Chan == 't') {QueueTriggerOut(Tentry[i].Value); TABLEqueue(ProcessTriggerOut,true);}
             // if Chan is b then this is a trigger burst pulse so queue it up for next ISR
-            else if(Tentry[i].Chan == 'b') QueueBurst(Tentry[i].Value);
+            else if(Tentry[i].Chan == 'b') {QueueBurst(Tentry[i].Value); TABLEqueue(ProcessBurst,true);}
             // if Chan is c then this is a trigger for the compression table, value = A for ARB, T for Twave
-            else if(Tentry[i].Chan == 'c') QueueCompressionTrigger(Tentry[i].Value);
+            else if(Tentry[i].Chan == 'c') {QueueCompressionTrigger(Tentry[i].Value); TABLEqueue(ProcessCompressionTrigger,true);}
         }
         break;
     }
@@ -1770,17 +1573,14 @@ SetupNextEntryAgain2:
     if(DIOchange) DOrefresh;
     TentryCount++;
     // Advance to next entry
-    if(TentryCount < Theader->NumEntries)
-    {
-        AdvanceEntryPointer();
-    }
+    if(TentryCount < Theader->NumEntries) AdvanceEntryPointer();
     else
     {
         if(!AdvanceTablePointer())
         {
             // All done so stop the timer
             StopRequest = true;
-            return;
+//            return;
         }
         else
         {
@@ -1798,18 +1598,14 @@ SetupNextEntryAgain2:
 
 void Dummy_ISR(void)
 {
-  TRACE(3);
 }
 
 void Trigger_ISR(void)
 {
-  static Pio *pio = g_APinDescription[BRDSEL].pPort;
-  static uint32_t pin =g_APinDescription[BRDSEL].ulPin;
-
    uint32_t csb = pio->PIO_ODSR & pin;
-   TRACE(4);
    if(MPT.getRAcounter() == 0)
    {
+     ProcessTableQueue();
      if(DCbiasUpdaated) { ValueChange = true; DCbiasUpdaated = false; }
      if((MIPSconfigData.Rev <= 1) || (softLDAC))// Rev 1 used software control of LDAC
      {
@@ -1817,16 +1613,16 @@ void Trigger_ISR(void)
        LDAChigh;
      }
      SetupNextEntry();
-     if(csb == 0)  pio->PIO_CODR = pin;
-     else pio->PIO_SODR = pin; 
    }
-   if(ClockMode == EXTS)
+   if(ClockMode == EXTS) StartTimer();
+   if(csb == 0)  pio->PIO_CODR = pin;
+   else pio->PIO_SODR = pin; 
+   // If retigger option is false then turn off external interrupts
+   if(!MIPSconfigData.TableRetrig)
    {
-     StartTimer();
+     MPT.setTrigger(TC_CMR_EEVTEDG_NONE);
+     detachInterrupt(TRIGGER);
    }
-  // Set trigger to software, this prevents hardware retriggering. Added Jan 14, 2015 GAA
-//  MPT.setTrigger(TC_CMR_EEVTEDG_NONE);
-//  detachInterrupt(TRIGGER);
 }
 
 // This interrupt happens when the compare register matches the timer value. At this time the
@@ -1836,16 +1632,9 @@ void Trigger_ISR(void)
 // toggels and then LDAC is generated but the ISR does not fire. Strange.
 inline void RAmatch_Handler(void)
 {
-  static Pio *pio = g_APinDescription[BRDSEL].pPort;
-  static uint32_t pin =g_APinDescription[BRDSEL].ulPin;
-
   uint32_t csb = pio->PIO_ODSR & pin;
-  TRACE(5);
   if(DCbiasUpdaated) { ValueChange = true; DCbiasUpdaated = false; }
-  ProcessTriggerOut();
-  ProcessBurst();
-  ProcessCompressionTrigger();
-  ProcessARB();
+  ProcessTableQueue();
   if((MIPSconfigData.Rev <= 1) || (softLDAC)) // Rev 1 used software control of LDAC
   {
     LDAClow;
@@ -1860,34 +1649,161 @@ inline void RAmatch_Handler(void)
 // max count.
 inline void RCmatch_Handler(void)
 {
-  static Pio *pio = g_APinDescription[BRDSEL].pPort;
-  static uint32_t pin =g_APinDescription[BRDSEL].ulPin;
-
-    uint32_t csb = pio->PIO_ODSR & pin;
-    TRACE(6);
-    if(StopRequest == true)
-    {
-        StopTimer();
-        StopRequest = false;
-        return;
-    }
-     if(DCbiasUpdaated) { ValueChange = true; DCbiasUpdaated = false; }
-    // If compare register A is zero then at this point call setup next,
-    // also if rev 1 pulse LDAC as well
-    if(MPT.getRAcounter() == 0)
-    {
-      ProcessTriggerOut();
-      ProcessBurst();
-      ProcessCompressionTrigger();
-      ProcessARB();
-      if((MIPSconfigData.Rev <= 1) || (softLDAC)) // Rev 1 used software control of LDAC
-      {
-        LDAClow;
-        LDAChigh;
-      }
-      SetupNextEntry();
-      if(csb == 0)  pio->PIO_CODR = pin;
-      else pio->PIO_SODR = pin; 
-    }
+   uint32_t csb = pio->PIO_ODSR & pin;  // Save board select and restore on exit
+   if(StopRequest == true)
+   {
+       StopTimer();
+       StopRequest = false;
+       return;
+   }
+   if(RampEnabled) RampClock->softwareTrigger();
+   if(DCbiasUpdaated) { ValueChange = true; DCbiasUpdaated = false; }
+   // If compare register A is zero then at this point call setup next,
+   // also if rev 1 pulse LDAC as well
+   if(MPT.getRAcounter() == 0)
+   {
+     ProcessTableQueue();
+     if((MIPSconfigData.Rev <= 1) || (softLDAC)) // Rev 1 used software control of LDAC
+     {
+       LDAClow;
+       LDAChigh;
+     }
+     SetupNextEntry();
+     if(csb == 0)  pio->PIO_CODR = pin;
+     else pio->PIO_SODR = pin; 
+   }
 }
+
+//**************************************************************************************************
+//
+// Ramp functions, added April 16, 2019
+//
+// Ramping is implemended using a timer interrupt to update the DCbias outputs channels that are
+// generating ramps. The table contains flags bits in the channel number definition to indicate
+// channels that are generating ramps. Two flags are used:
+// RAMP to indicate this channel is ramping and the channel value contains the voltage step incremented
+//      at each clock cycle.
+// RAMP | INITIAL sets the initial or starting value for a ramp. This must be done before a ramp 
+//                starts and it can be done at the same time point as the RAMP command.
+// The ramp capability must first be enabled and the clock rate set before a table with ramp commands
+// is executed. Below is a series of commands that will generate a simple ramp:
+// 
+// STBLRMPENA,TRUE,1000
+// STBLDAT;0:[A:100,100:1:10:194:1:130:4,5000:1:15:130:-1.0,10000:130:0,13000:1:0,20000:];
+// SMOD,ONCE
+// TBLSTRT
+//
+//**************************************************************************************************
+
+// This ISR needs to select the board and set the SPI address.
+void RampISR()
+{
+   volatile int i,sum=0,k;
+   volatile uint8_t *s,*d;
+
+   uint32_t csb = pio->PIO_ODSR & pin;  // Save board select and restore on exit
+   Ramping = false;
+   for(int i=0;i<NUM_RAMPS;i++) if((RE[i].chan & RAMP_DONE) == 0)
+   {
+      if(RE[i].delta == 0) RE[i].chan |= RAMP_DONE;
+      else
+      {
+        s = (uint8_t *)&RE[i].initial;
+        d = (uint8_t *)&sum;
+        d[0] = s[3];
+        d[1] = s[2];
+        d[2] = s[1] & 0x0F;
+        sum += RE[i].delta;
+        s[3] = d[0];
+        s[2] = d[1];
+        s[1] = (s[1] & 0xF0) | (d[2] & 0x0F);
+        s[0] = 3;
+        // send to DAC output register, no LDAC
+        AtomicBlock< Atomic_RestoreState > a_Block;
+        k = RE[i].initial;
+        if((pioA->PIO_PDSR & 7) != ((Chan2Brd[RE[i].chan] >> 4) & 7))
+        {
+           pioA->PIO_CODR = 7;
+           pioA->PIO_SODR = ((Chan2Brd[RE[i].chan] >> 4) & 7);                
+        }              
+        SelectBoard(Chan2Brd[RE[i].chan & ~RAMP_DONE] & 1);
+        SPI.transfer(SPI_CS, (uint8_t *)&k, 4);
+        Ramping = true;
+      }
+   }  
+   if(csb == 0)  pio->PIO_CODR = pin;
+   else pio->PIO_SODR = pin; 
+}
+
+// This function is called by the command processor and enables the ramp capability.
+// The freq parameter defines the update frequency for the ramp clock.
+// Timer channel defined by TMR_RampClock
+void EnableRamp(char *ena, char *freq)
+{
+  String token;
+  float  Freq;
+
+  token = ena;
+  if(token == "TRUE") RampEnabled = true;
+  else if(token == "FALSE") RampEnabled = false;
+  else
+  {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;
+     return;    
+  }
+  SendACK;
+  token = freq;
+  Freq = token.toFloat();
+  if(RampClock == NULL) RampClock = new MIPStimer(TMR_RampClock);
+  RampClock->attachInterrupt(RampISR);
+  RampClock->setFrequency((double)Freq);
+}
+
+// Called at table setup time to enable the ramp clock
+void StartRampClock(void)
+{
+  if(!RampEnabled) return;
+  for(int i=0;i<NUM_RAMPS;i++) RE[i].chan = 0xFF;
+  RampClock->start(-1, 0, false);  
+  RampClock->softwareTrigger();
+}
+
+// Called when table completes to stop the clock
+void StopRampClock(void)
+{
+  if(!RampEnabled) return;
+  RampClock->stop();
+}
+
+// This function is called from SetupNextEntry and its only called if
+// the RAMP bit is set in the channel variable
+void ProcessRamp(volatile TableEntry *TE)
+{
+  int i;
+
+  if(!RampEnabled) return;
+  if((TE->Chan & INITIAL) != 0)
+  {
+     for(i=0;i<NUM_RAMPS;i++)
+     {
+        if((RE[i].chan==0xFF) || (RE[i].chan & (~RAMP_DONE)) == (TE->Chan & ~(RAMP | INITIAL)))
+        {
+           RE[i].chan    = TE->Chan & ~(RAMP | INITIAL);
+           RE[i].initial = TE->Value;
+           break;
+        }
+     }
+  }
+  else
+  {
+     for(i=0;i<NUM_RAMPS;i++) if((RE[i].chan & (~RAMP_DONE)) == (TE->Chan & ~(RAMP | INITIAL)))
+     {
+        RE[i].chan &= ~RAMP_DONE;
+        RE[i].delta = TE->Value;
+        break;
+     }
+  }
+}
+
 #endif

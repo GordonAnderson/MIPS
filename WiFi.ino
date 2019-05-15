@@ -373,10 +373,3 @@ void SetPassword(char *pswd)
   else strcpy(wifidata.password,pswd);     
   SendACK;
 }
-
-
-
-
-
-
-

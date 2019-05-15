@@ -270,11 +270,3 @@ char *BoardAddressList = "A 0x50,A 0x52,A 0x54,A 0x56,B 0x50,B 0x52,B 0x54,B 0x5
 char *BoardVariantsNames = "RFdrvA R1,RFdrvB R1,RFdrvA R2,RFdrvB R2,DC250V R1,DC250V R2,DC750V R1,DC50V  R1,DC60V  R1,Twave R1,Twave R2,Twave R3,Twave R5,FAIMS R1,ESI  R1,FIL R1,ARB R1,HOFAIMS,DAC R1,RFamp R1";
 // List of variant board default data structure pointers with a one to one corespondence to list of board names
 void *BoardVariants[] = {(void *)&RFDD_A_Rev_1,(void *)&RFDD_B_Rev_1,(void *)&RFDD_A_Rev_2,(void *)&RFDD_B_Rev_2,(void *)&DCbD_250_Rev_1,(void *)&DCbD_250_Rev_2,(void *)&DCbD_750_Rev_1,(void *)&DCbD_50_Rev_1,(void *)&DCbD_60_Rev_1,(void *)&Twave_Rev1,(void *)&Twave_Rev2,(void *)&Twave_Rev3,(void *)&Twave_Rev5,(void *)&FAIMS_Rev_1,(void *)&ESI_Rev_1,(void *)&FILAMENT_Rev_1,(void *)&ARB_Rev_1,(void *)&HOFAIMS_Rev_1,(void *)&DAC_Rev1,(void *)&RFA_Rev1};
-
-
-
-
-
-
-
-

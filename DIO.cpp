@@ -28,7 +28,7 @@ extern Menu MainMenu;
 extern ThreadController control;
 extern DialogBox DODialog;
 extern DialogBox DIDialog;
-void AddMainMenuEntry(MenuEntry *);
+void   AddMainMenuEntry(MenuEntry *);
 
 //MIPS Threads
 Thread DIOThread  = Thread();
@@ -279,13 +279,3 @@ void SDIO_Serial(char *CH, char *State)
   PulseLDAC;
   UpdateDigitialOutputArray();
 }
-
-
-
-
-
-
-
-
-
-

@@ -49,8 +49,3 @@ void ReportEGATE(void);
 void SetEGATE(char *ips);
 
 #endif
-
-
-
-
-

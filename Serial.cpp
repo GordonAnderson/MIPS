@@ -16,7 +16,7 @@
 #include "Menu.h"
 #include "Dialog.h"
 #include "DIO.h"
-#include "Table.h"
+//#include "Table.h"
 #include "Hardware.h"
 #include "ClockGenerator.h"
 #include "DCbias.h"
@@ -30,8 +30,11 @@
 #include "ethernet.h"
 #include "arb.h"
 #include "adcdrv.h"
-#include "Variants.h"
+#include "FAIMSfb.h"
+#include "TWIext.h"
 #include <ThreadController.h>
+#include "Variants.h"
+#include "Table.h"
 
 extern ThreadController control;
 
@@ -65,7 +68,7 @@ char *OnMessage = "I'm on!";
 
 bool echoMode = false;
 
-Commands  CmdArray[] = 	{
+const Commands  CmdArray[] = 	{
 // General commands
   {"GVER",  CMDstr, 0, (char *)Version},                 // Report version
   {"ISPWR",  CMDstr, 0, (char *)OnMessage},              // Report power status
@@ -325,11 +328,13 @@ Commands  CmdArray[] = 	{
   {"GTBLREPLY",CMDbool, 0, (char *)&TableResponse},        // Returns TRUE or FALSE state of enable table response flag
   {"STBLREPLY",CMDbool, 1, (char *)&TableResponse},        // TRUE or FALSE, set to TRUE enable table response messages (default)
   {"TBLRPT",CMDfunction,1, (char *)ReportTable},           // Report table as hex bytes
-  {"STBLREPLY",CMDbool, 1, (char *)&TableResponse},        // TRUE or FALSE, set to TRUE enable table response messages (default)
   {"STBLTSKS",CMDbool, 1, (char *)&TblTasks},              // Set to TRUE to enable tasks in table mode based on avalible time, FALSE is default
   {"GTBLTSKS",CMDbool, 0, (char *)&TblTasks},              // Returns the TblTasks flag status
   {"SEXTFREQ",CMDint, 1, (char *)&ExtFreq},                // Sets the external frequency used for the table clock, needed for TblTasks capability, 0 by default
   {"GEXTFREQ",CMDint, 0, (char *)&ExtFreq},                // Returns the ExtFreq value, in Hz
+  #if TABLE2code
+  {"STBLRMPENA", CMDfunctionStr, 2, (char *)EnableRamp},   // Enable the table ramp mode and set ramp ISR frequency
+  #endif
 // Macro commands
   {"MRECORD", CMDfunctionStr, 1, (char *) MacroRecord},    // Turn on macro recording into the filename argument
   {"MSTOP", CMDfunction, 0, (char *) MacroStop},           // Stop macro recording and close the file
@@ -390,6 +395,7 @@ Commands  CmdArray[] = 	{
 // Twave configuration commands  
   {"STWCCLK", CMDbool, 1, (char *)&TDarray[0].UseCommonClock},   // Flag to indicate common clock mode for two Twave modules.
   {"STWCMP", CMDbool, 1, (char *)&TDarray[0].CompressorEnabled}, // Flag to indicate Twave compressor mode is enabled.
+#if FAIMScode
 // FAIMS  General FAIMS commands
   {"SFMENA", CMDbool, 1, (char *)&faims.Enable},                // Set the FAIMS enable flag, TRUE enables waveform generation
   {"GFMENA", CMDbool, 0, (char *)&faims.Enable},                // Returns the FAIMS enable flag
@@ -433,6 +439,7 @@ Commands  CmdArray[] = 	{
   {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},     // Set FAIMS RF harmonic positive peak readback calibration
   {"SRFHNCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharNcal},     // Set FAIMS RF harmonic negative peak readback calibration
   {"SARCDIS",CMDbool, 1, (char *)&DiableArcDetect},               // TRUE or FALSE, set to TRUE disable arc detection
+#endif
 // Filament commands
   {"GFLENA", CMDfunction, 1, (char *)GetFilamentEnable},             // Get filament ON/OFF status
   {"SFLENA", CMDfunctionStr, 2, (char *)SetFilamentEnable},          // Set filament ON/OFF status
@@ -561,51 +568,79 @@ Commands  CmdArray[] = 	{
   {"GDACUN", CMDfunctionStr, 1, (char *)GetDACUnits},                // Returns the named DAC channel's units  
   {"SDACNM", CMDfun2int1str, 3, (char *)SetDACName},                 // Sets the DAC channel name defined by module and channel number 
   {"GDACMN", CMDfunction, 2, (char *)GetDACName},                    // Returns the DAC channel name defined by module and channel number 
+#if FAIMSFBcode
+// FAIMSFB commands
+  {"SFBENA",  CMDfunctionStr, 2, (char *)SetFAIMSfbEnable},          // Set module number to TRUE to enable FAIMS
+  {"GFBENA",  CMDfunction, 1, (char *)ReturnFAIMSfbEnable},          // Returns enable status for selected module
+  {"SFBMODE", CMDfunctionStr, 2, (char *)SetFAIMSfbMode},            // Set module number to TRUE to enable closed loop control of Vrf
+  {"GFBMODE", CMDfunction, 1, (char *)ReturnFAIMSfbMode},            // Returns mode control for selected module
+  {"SFBFREQ", CMDfunction, 2, (char *)SetFAIMSfbFreq},               // Set FAIMS frequency, in Hz for seletced module
+  {"GFBFREQ", CMDfunction, 1, (char *)ReturnFAIMSfbFreq},            // Returns frequency for the selected module
+  {"SFBDUTY", CMDfunction, 2, (char *)SetFAIMSfbDuty},               // Set FAIMS duty cycle in percent for seletced module
+  {"GFBDUTY", CMDfunction, 1, (char *)ReturnFAIMSfbDuty},            // Returns duty cycle for selected module
+  {"SFBDRV", CMDfunctionStr,2, (char *)SetFAIMSfbDrive},             // Set FAIMS drive level in percent for the selected module
+  {"GFBDRV", CMDfunction,1, (char *)ReturnFAIMSfbDrive},             // Returns drive level for the selected module
+  {"GDRVV", CMDfunction,  1, (char *)ReturnFAIMSfbDriveV},           // Returns voltage level into drive FET, V for the selected module
+  {"GDRVI", CMDfunction,  1, (char *)ReturnFAIMSfbDriveI},           // Returns current into drive FET, mA for the selected module
+  {"SVRF", CMDfunctionStr, 2, (char *)SetFAIMSfbVrf},                // Sets the drive level setpoint to achieve the desired voltage for the selected module
+  {"GVRF", CMDfunction,  1, (char *)ReturnFAIMSfbVrf},               // Returns the Vrf peak voltage for the selected module
+  {"GVRFV", CMDfunction,  1, (char *)ReturnFAIMSfbVrfV},             // Returns the Vrf peak voltage readback for the selected module
+  {"GPWR", CMDfunction,  1, (char *)ReturnFAIMSfbPWR},               // Returns the power in watts for the selected module
+  {"SVRFN", CMDfunctionStr, 2, (char *)SetFAIMSfbVrfNow},            // Sets the drive level setpoint achieve the desired voltage for the selected module
+                                                                     // and adjusts the drive level to reach the setpoint
+  {"SVRFT", CMDfunctionStr, 2, (char *)SetFAIMSfbVrfTable},          // Sets the drive level setpoint achieve the desired voltage for the selected module
+                                                                     // and adjusts the drive level to reach the setpoint using the drive level table
+  {"GENVRFTBL", CMDfunction, 1, (char *)GenerateVrfTable},           // This function will generate 
+  // FAIMSFB Limits
+  {"SFBMAXDRV",CMDfunctionStr,2, (char *)SetFAIMSfbMaxDrive},        // Set the maximum drive level allowed for the selected module
+  {"GFBMAXDRV",CMDfunction, 1,(char *)ReturnFAIMSfbMaxDrive},        // Returns the maximum drive level for the selected module
+  {"SFBMAXPWR",CMDfunctionStr,2, (char *)SetFAIMSfbMaxPower},        // Set the maximum power allowed for the selected module
+  {"GFBMAXPWR",CMDfunction,1,(char *)ReturnFAIMSfbMaxPower},         // Returns the maximum power limit for the selected module
+  // FAIMSFB DC bias commands
+  {"SCV", CMDfunctionStr,  2, (char *)SetFAIMSfbCV},                 // Set the current CV for the seletced module
+  {"GCV", CMDfunction,  1, (char *)ReturnFAIMSfbCV},                 // Return the current CV for the seletced module
+  {"GCVV", CMDfunction, 1, (char *)ReturnFAIMSfbCVrb},               // Return the CV readback value for the seletced module
+  {"SBIAS", CMDfunctionStr,  2, (char *)SetFAIMSfbBIAS},             // Set the current BIAS for the seletced module
+  {"GBIAS", CMDfunction,  1, (char *)ReturnFAIMSfbBIAS},             // Return the current BIAS for the seletced module
+  {"GBIASV", CMDfunction,  1, (char *)ReturnFAIMSfbBIASrb},          // Set the current BIAS for the seletced module 
+  // FAIMSFB scanning commands
+  {"SFBCVSTRT",  CMDfunctionStr, 2, (char *)SetFAIMSfbCVstart},      // set the CV scan start voltage for the seletced module 
+  {"GFBCVSTRT",  CMDfunction, 1, (char *)ReturnFAIMSfbCVstart},      // returns the CV scan start voltage for the seletced module 
+  {"SFBCVEND",   CMDfunctionStr, 2, (char *)SetFAIMSfbCVend},        // set the CV scan end voltage for the seletced module 
+  {"GFBCVEND",   CMDfunction, 1, (char *)ReturnFAIMSfbCVend},        // returns the CV scan end voltage for the seletced module 
+  {"SFBVRFSTRT", CMDfunctionStr, 2, (char *)SetFAIMSfbVRFstart},     // set the Vrf scan start voltage for the seletced module 
+  {"GFBVRFSTRT", CMDfunction, 1, (char *)ReturnFAIMSfbVRFstart},     // returns the Vrf scan start voltage for the seletced module 
+  {"SFBVRFEND",  CMDfunctionStr, 2, (char *)SetFAIMSfbVRFend},       // set the Vrf scan end voltage for the seletced module 
+  {"GFBVRFEND",  CMDfunction, 1, (char *)ReturnFAIMSfbVRFend},       // returns the Vrf scan end voltage for the seletced module 
+  {"SFBSTEPDUR", CMDfunction, 2, (char *)SetFAIMSfbStepDuration},    // set the scan step duration in mS for the seletced module 
+  {"GFBSTEPDUR", CMDfunction, 1, (char *)ReturnFAIMSfbStepDuration}, // returns the scan step duration in mS for the seletced module 
+  {"SFBNUMSTP",  CMDfunction, 2, (char *)SetFAIMSfbSteps},           // set the scan number of steps for the seletced module 
+  {"GFBNUMSTP",  CMDfunction, 1, (char *)ReturnFAIMSfbSteps},        // returns the scan number of steps for the seletced module 
+  {"FBSCNSTRT",  CMDfunction, 1, (char *)InitFAIMSfbScan},           // Start the scan for the seletced module 
+  {"FBSCNSTP",  CMDfunction, 1, (char *)StopFAIMSfbScan},            // Stop a scn that is in process for the seletced module 
+  // Electrometer commands
+  {"SELTMTRENA",  CMDfunctionStr, 1, (char *)SetEMRTenable},         // Set the electrometer enabled flag, TRUE or FALSE 
+  {"GELTMTRENA",  CMDfunction, 0, (char *)ReturnEMRTenable},         // Return the electrometer enable flag
+  {"GELTMTRPOS",  CMDfunction, 0, (char *)ReturnEMRTpos},            // Return the electrometer positive channel
+  {"GELTMTRNEG",  CMDfunction, 0, (char *)ReturnEMRTneg},            // Return the electrometer negative channel
+  {"SELTMTRPOSOFF",  CMDfunctionStr, 1, (char *)SetEMRTposOff},      // Set the electrometer positive channel offset
+  {"GELTMTRPOSOFF",  CMDfunction, 0, (char *)ReturnEMRTposOff},      // Returns the electrometer positive channel offset
+  {"SELTMTRNEGOFF",  CMDfunctionStr, 1, (char *)SetEMRTnegOff},      // Set the electrometer negative channel offset
+  {"GELTMTRNEGOFF",  CMDfunction, 0, (char *)ReturnEMRTnegOff},      // Returns the electrometer negative channel offset
+  {"ELTMTRZERO",  CMDfunction, 0, (char *)SetEMRTzero},              // Execute the electrometer zero procedure
+#endif
 // End of table marker
   {0},
 };
 
-extern void (*gpf_isr)(void);
-extern bool USBtimeout;
-extern bool USBfatalError;
-void (*usb_isr)(void);
-void myUSB_ISR(void)
-{
-    digitalWrite(73,LOW);
-    usb_isr();  // calls USB_ISR() from USBCore.cpp
-    if(USBtimeout || USBfatalError) 
-    {
-      delayMicroseconds(100000);
-      return;
-    }
-    digitalWrite(73,HIGH);
-}
 void Debug(int function)
 {
-  bool flag;
+  uint8_t  *ptr;
 
-  // This code will replace the current USB ISR
-  usb_isr = gpf_isr;
-  UDD_SetStack(&myUSB_ISR);
-  return;
-  
-  serial->println(micros());      // Prints the microseconds counter
-  serial->println(SysTick->VAL);  // Prints the system tick count value. Starts at 84000 and counts down to 0. Used to
-                                  // Generate the 1mS timer.
-                                  
-  // Loop used in USB serial code, tested here to deterime valid timeout count to use
-  for(int i=0;i<function;i++) // 5376 loops = ~1mS
-  {
-    if(!(UOTGHS->UOTGHS_DEVEPTISR[EP0] & UOTGHS_DEVEPTISR_TXINI)) break;
-  }
-  
-// This code will reset the serial USB port
-//  otg_disable();       // Disable the hardware
-//  delay(10);
-//  otg_enable();        // Enable the hardware
-//  USBDevice.attach();  // Inits the USB serial port
-
-//  while(1); // User to test watchdog
+//  ptr = new uint8_t[function];
+  ptr = (uint8_t *)malloc(function);
+  if(ptr == NULL) serial->println("Out of memory!");
+  else serial->println((uint)ptr,16);
 }
 
 void UpTime(void)
@@ -658,7 +693,7 @@ void TWItalk(int brd, int TWIadd)
   SelectBoard(brd);
   AcquireTWI();
   Wire.beginTransmission(TWIadd);
-  Wire.write(TWI_SERIAL);
+  Wire.write(TWI_ARB_SERIAL);
   Wire.endTransmission();
   // Echo all communications through the TWI port
   while(1)
@@ -676,7 +711,7 @@ void TWItalk(int brd, int TWIadd)
          serial->println(" TWI redirection terminated by slave!");
          return;
       }
-      if(i != 120) serial->write((char) i);   
+      if((i != 120) && (i != 255)) serial->write((char) i);   
     }
     while (serial->available() > 0)
     {
@@ -812,7 +847,9 @@ void SaveModule(char *Module)
   if (strcmp(Module, "RF") == 0) SaveRF2EEPROM();
   else if (strcmp(Module, "DCB") == 0) SaveDCB2EEPROM();
   else if (strcmp(Module, "ESI") == 0) SaveESI2EEPROM();
+  #if FAIMScode
   else if (strcmp(Module, "FAIMS") == 0) SaveFAIMS2EEPROM();
+  #endif
   else if (strcmp(Module, "TWAVE") == 0) SaveTWAVE2EEPROM();
   else if (strcmp(Module, "ARB") == 0) SaveARB2EEPROM();
   else if (strcmp(Module, "FIL") == 0) SaveFIL2EEPROM();
@@ -841,7 +878,9 @@ void GetNumChans(char *cmd)
   else if (strcmp(cmd, "DCB") == 0) DCbiasNumber();
   else if (strcmp(cmd, "ESI") == 0) ESInumberOfChannels();
   else if (strcmp(cmd, "TWAVE") == 0) TWAVEnumberOfChannels();
+  #if FAIMScode
   else if (strcmp(cmd, "FAIMS") == 0) FAIMSnumberOfChannels();
+  #endif
   else if (strcmp(cmd, "FIL") == 0) FilamentChannels();
   else if (strcmp(cmd, "ARB") == 0) ReportARBchannels();
   else if (strcmp(cmd, "DAC") == 0) ReportDACchannels();
@@ -972,7 +1011,7 @@ char *LastToken(void)
   return Token;
 }
 
-void ExecuteCommand(Commands *cmd, int arg1, int arg2, char *args1, char *args2, float farg1)
+void ExecuteCommand(const Commands *cmd, int arg1, int arg2, char *args1, char *args2, float farg1)
 {
   if(echoMode) SelectedACKonlyString = ACKonlyString2;
   else SelectedACKonlyString = ACKonlyString1;

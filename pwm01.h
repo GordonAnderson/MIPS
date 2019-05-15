@@ -128,11 +128,3 @@ void  pwm_stop( uint32_t  pwm_pin )
     pinMode(pwm_pin, OUTPUT);      // sets the digital pin as output
     digitalWrite(pwm_pin, LOW);    // sets the LED off
 };
-
-
-
-
-
-
-
-

@@ -237,6 +237,3 @@ void ADCabort(void)
   ReleaseADC();
   SendACK;
 }
-
-
-

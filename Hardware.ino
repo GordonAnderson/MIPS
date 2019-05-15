@@ -716,144 +716,6 @@ int WriteEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count)
   return (0);
 }
 
-// The following code sopports the TWI interface by implementing the protocol in
-// software, i.e. bit banging. This provides maximum flexibility but is only
-// used when the Wire function will not work.
-#define TWI_SCL_OUT            pinMode(TWI_SCL,OUTPUT)
-#define TWI_SDA_OUT            pinMode(TWI_SDA,OUTPUT)
-#define TWI_SDA_IN             pinMode(TWI_SDA,INPUT)
-#define TWI_SCL_HI             digitalWrite(TWI_SCL,HIGH)
-#define TWI_SCL_LOW            digitalWrite(TWI_SCL,LOW)
-#define TWI_SDA_HI             digitalWrite(TWI_SDA,HIGH)
-#define TWI_SDA_LOW            digitalWrite(TWI_SDA,LOW)
-#define TWI_SDA_data           digitalRead(TWI_SDA)
-
-// TWI bus reset function.
-// The bus recovery procedure is as follows
-//  1.) Master tries to assert logic 1 on SDA line
-//  2.) Master still sees a logig 0 then generate a clock pulse on SLC (1,0,1 transistion)
-//  3.) Master examines SDA. If SDA = 0 goto step 2 if SDA = 1 goto step 4
-//  4.) Generate a STOP condition
-void TWI_RESET(void)
-{
-  // Do resect procedure for both board addresses
-  int brd = SelectedBoard();
-  for(int b=0; b<2;b++)
-  {
-    SelectBoard(b);
-    for(int i=0;i<2;i++)
-    {
-      TWI_START();
-      TWI_STOP();
-      TWI_SDA_IN;
-      TWI_SCL_OUT;
-      for(int i = 0; i < 10; i++)
-      {
-        TWI_SCL_HI;
-        TWI_SCL_LOW;
-        delayMicroseconds(5);
-        TWI_SCL_HI;
-        delayMicroseconds(5);
-        if(TWI_SDA_data == HIGH) break;
-      }
-      TWI_STOP();
-      TWI_STOP();
-    }
-  }
-  SelectBoard(brd);
-  return;
- 
-  TWI_START();
-  TWI_STOP();
-  // Generate a bunch of clocks
-  for (int i = 0; i < 1000; i++)
-  {
-    TWI_SCL_LOW;
-    TWI_SCL_HI;
-  }
-  TWI_STOP();
-  TWI_STOP();
-}
-
-// Issue a start condition
-void TWI_START(void)
-{
-  TWI_SCL_OUT;
-  TWI_SDA_OUT;
-  TWI_SCL_HI;
-  TWI_SDA_HI;
-  TWI_SDA_LOW;
-  TWI_SCL_LOW;
-}
-
-// Issue a stop condition
-void TWI_STOP(void)
-{
-  TWI_SDA_OUT;
-  TWI_SDA_LOW;
-  TWI_SDA_LOW;
-  TWI_SCL_HI;
-  TWI_SDA_HI;
-}
-
-// Write a byte to the TWI bus, this function returns true if acked and false if naked
-bool TWI_WRITE(int8_t val)
-{
-  int8_t Response;
-
-//  AtomicBlock< Atomic_RestoreState > a_Block;
-  TWI_SDA_OUT;
-  for (int i = 0; i < 8; i++)
-  {
-    if ((val & 0x80) != 0) TWI_SDA_HI;
-    else TWI_SDA_LOW;
-    val = val << 1;
-    TWI_SCL_HI;
-    TWI_SCL_LOW;
-  }
-  // Now read the ACK or NAK from the device
-  TWI_SDA_IN;
-  TWI_SCL_HI;
-  Response = TWI_SDA_data;
-  TWI_SCL_LOW;
-  if (Response == HIGH) return (false);
-  return (true);
-}
-
-// Reads and returns a byte from the TWI interface, if reply is true than ACK is sent to device,
-// if reply is false the NAK is sent.
-int8_t TWI_READ(bool Reply)
-{
-  int8_t val, r;
-
-//  AtomicBlock< Atomic_RestoreState > a_Block;
-  val = 0;
-  TWI_SDA_IN;
-  for (int i = 0; i < 8; i++)
-  {
-    val = val << 1;
-    TWI_SCL_HI;
-    if (TWI_SDA_data == HIGH) val |= 1;
-    TWI_SCL_LOW;
-  }
-  // Now write the ACK or NAK to the device
-  TWI_SDA_OUT;
-  if (Reply == HIGH) TWI_SDA_HI;
-  else TWI_SDA_LOW;
-  TWI_SCL_HI;
-  TWI_SCL_LOW;
-  TWI_SDA_IN;
-  return (val);
-}
-
-// Called when a TWI error is detected. This function will reset the TWI interface and reinit the
-// wire driver
-void TWIerror(void)
-{
-  TWI_RESET();
-  Wire.begin();
-}
-
 // The following routines support the Analog Devices DAC and ADC used to monitor and
 // control voltages in the MIPS system.
 
@@ -1001,6 +863,12 @@ int AD7994(int8_t adr, int8_t chan)
 }
 
 // This function reads one channel from the AD7998 ADC
+// March 26, 2019
+// This function needs to be rewitten. Basicalliy it needs to
+// be reduced to:
+//   Wire.requestFrom(adr, 2, 0x80 | chan << 4, 1, 0);
+//   val = (Wire.read() << 8) & 0xFF00;
+//   val |= (Wire.read()) & 0xFF;
 int AD7998_b (int8_t adr, int8_t chan)
 {
   unsigned int val;
@@ -1127,12 +995,14 @@ int AD5593readWord(uint8_t addr, uint8_t pb)
   // Now read the data word
   int i = 0,j = 0;
   Wire.requestFrom(addr, (uint8_t)2);
-  while(Wire.available())
-  {
-     if(i==0) j = Wire.read() << 8;
-     if(i==1) j |= Wire.read();
-     i++;
-  }
+//  while(Wire.available())
+//  {
+//     if(i==0) j = Wire.read() << 8;
+//     if(i==1) j |= Wire.read();
+//     i++;
+//  }
+  j = Wire.read() << 8;
+  j |= Wire.read();
   ReleaseTWI();
   return(j);
 }
@@ -1171,6 +1041,105 @@ int AD5593writeDAC(int8_t addr, int8_t chan, int val)
    // convert 16 bit DAC value into the DAC data data reg format
    d = (val>>4) | (chan << 12) | 0x8000;
    return(AD5593write(addr, 0x10 | chan, d));
+}
+
+// AD5593 IO routines for Wire1 interface. This is a analog and digitial IO chip with
+// a TWI interface. The following are low level read and write functions,
+// the modules using this device are responsible for initalizing the chip.
+
+// Write to AD5593
+// Return 0 if no error else an error code is returned
+int AD5593writeWire1(uint8_t addr, uint8_t pb, uint16_t val)
+{
+  int iStat;
+  
+  Wire1.beginTransmission(addr);
+  Wire1.write(pb);
+  Wire1.write((val >> 8) & 0xFF);
+  Wire1.write(val & 0xFF);
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    iStat = Wire1.endTransmission();
+  }
+  return (iStat);
+}
+
+// Read from AD5593R
+// returns -1 on any error
+int AD5593readWordWire1(uint8_t addr, uint8_t pb)
+{
+  int iStat;
+
+  Wire1.beginTransmission(addr);
+  Wire1.write(pb);
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    iStat = Wire1.endTransmission();
+  }
+  if(iStat != 0) return (-1);
+  // Now read the data word
+  int i = 0,j = 0;
+  Wire1.requestFrom(addr, (uint8_t)2);
+//  while(Wire1.available())
+//  {
+//     if(i==0) j = Wire1.read() << 8;
+//     else if(i==1) j |= Wire1.read();
+//     if(++i>=1) break;
+//  }
+  j = Wire1.read() << 8;
+  j |= Wire1.read();
+  return(j);
+}
+
+int AD5593readADCWire1(int8_t addr, int8_t chan)
+{
+   int iStat;
+   
+   // Select the ADC channel number
+   if((iStat = AD5593writeWire1(addr, 0x02, (1 << chan))) != 0) return(-1);
+   // Read the data and make sure the address is correct then left 
+   // justify in 16 bits
+   int i = AD5593readWordWire1(addr, 0x40);
+   if(((i >> 12) & 0x7) != chan) return(-1);
+   i <<= 4;
+   return(i & 0xFFFF);
+}
+
+int AD5593readADCWire1(int8_t addr, int8_t chan, int8_t num)
+{
+  int i,j,k,val=0;
+  int iStat;
+
+  // Select the ADC channel number for repeat read
+  if((iStat = AD5593writeWire1(addr, 0x02, 0x200 | (1 << chan))) != 0) return(-1);
+  // Read the data and make sure the address is correct then left 
+  // justify in 16 bits
+  Wire1.beginTransmission(addr);
+  Wire1.write(0x40);
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    iStat = Wire1.endTransmission();
+  }
+  if(iStat != 0) return (-1);
+  // Now read the data word
+  k = 0;
+  Wire1.requestFrom(addr, (uint8_t)2 * num);
+  for(i=0;i<num;i++)
+  {
+    j  = Wire1.read() << 8;
+    j |= Wire1.read();
+    if(((j >> 12) & 0x7) != chan) return(-1);
+    k += (j << 4) & 0xFFFF;
+  }
+  return(k/num);
+}
+
+int AD5593writeDACWire1(int8_t addr, int8_t chan, int val)
+{
+   uint16_t  d;
+   // convert 16 bit DAC value into the DAC data data reg format
+   d = (val>>4) | (chan << 12) | 0x8000;
+   return(AD5593writeWire1(addr, 0x10 | chan, d));
 }
 
 // End of AD5593 routines
@@ -1246,7 +1215,7 @@ void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali)
   AD5668(spiAdr, DACchan, vali, 0);
 }
 
-// Select only one more of operation!
+// Select only one mode of operation!
 //#define useSPIclass
 #define useSPIinline
 //#define useSPIDMA
@@ -1376,131 +1345,6 @@ int MCP2300(int8_t adr, uint8_t reg, uint8_t *data)
   if (Wire.available()) *data = Wire.read();
   ReleaseTWI();
   return (0);
-}
-
-//
-// Routines used to allow TWI use in ISR. The TWI queue functions allow you to
-// queue function with parameters.
-//
-#define MaxQueued 10
-
-enum TWIcbType
-{
-  Empty,
-  VoidVoid,
-  VoidIntIntFloat,
-  VoidIntIntBool,
-  VoidIntIntWord
-};
-
-union TWIfunctions
-{
-  void  (*funcVoidVoid)(void);
-  void  (*funcIntIntFloat)(int, int, float);
-  void  (*funcIntIntBool)(int, int, bool);
-  void  (*funcIntIntWord)(int, int, uint16_t);
-};
-
-typedef struct 
-{
-  TWIcbType             Type;
-  union   TWIfunctions  pointers;
-  int                   Int1,Int2;
-  float                 Float1;
-  bool                  Bool1;
-  uint16_t              Word1;
-} TWIqueueEntry;
-
-TWIqueueEntry TWIq[MaxQueued] = {{Empty,NULL},{Empty,NULL},{Empty,NULL},{Empty,NULL},{Empty,NULL}};
-
-bool TWIbusy=false;
-// This functoin acquires the TWI interface.
-// Returns false if it was busy.
-bool AcquireTWI(void)
-{
- // AtomicBlock< Atomic_RestoreState > a_Block;
-  if(TWIbusy) return(false);
-  TWIbusy = true;
-  return(true);
-}
-
-// This routine releases the TWI interface and if there are any queued functions they are called
-// and then the queued pointer it set to NULL. This allows an ISR to use this function
-// and queue up its io if the TWI interface is busy.
-void ReleaseTWI(void)
-{
-  static bool busy = false;
-
-  if(busy) return;
-  busy = true;
-  //AtomicBlock< Atomic_RestoreState > a_Block;
-  if(TWIbusy)
-  {
-    for(int i=0;i<MaxQueued;i++)
-    {
-      if(TWIq[i].pointers.funcVoidVoid != NULL) 
-      {
-        if(TWIq[i].Type == VoidVoid) TWIq[i].pointers.funcVoidVoid();
-        else if(TWIq[i].Type == VoidIntIntFloat) TWIq[i].pointers.funcIntIntFloat(TWIq[i].Int1,TWIq[i].Int2,TWIq[i].Float1);
-        else if(TWIq[i].Type == VoidIntIntBool) TWIq[i].pointers.funcIntIntFloat(TWIq[i].Int1,TWIq[i].Int2,TWIq[i].Bool1);
-        else if(TWIq[i].Type == VoidIntIntWord) TWIq[i].pointers.funcIntIntFloat(TWIq[i].Int1,TWIq[i].Int2,TWIq[i].Word1);
-        TWIq[i].pointers.funcVoidVoid = NULL;
-        TWIq[i].Type = Empty;
-      }
-    }
-    TWIbusy=false;
-  }
-  busy=false;
-}
-
-// This queues up a function to call when the current TWI operation finishes.
-void TWIqueue(void (*TWIfunction)(void))
-{
-  for(int i=0;i<MaxQueued;i++) if(TWIq[i].pointers.funcVoidVoid == NULL)
-  {
-     TWIq[i].pointers.funcVoidVoid = TWIfunction;
-     TWIq[i].Type = VoidVoid;
-     break;
-  }
-}
-
-void TWIqueue(void (*TWIfunction)(int,int,float),int arg1,int arg2,float arg3)
-{
-  for(int i=0;i<MaxQueued;i++) if(TWIq[i].pointers.funcIntIntFloat == NULL)
-  {
-     TWIq[i].pointers.funcIntIntFloat = TWIfunction;
-     TWIq[i].Type   = VoidIntIntFloat;
-     TWIq[i].Int1   = arg1;
-     TWIq[i].Int2   = arg2;
-     TWIq[i].Float1 = arg3;
-     break;
-  }  
-}
-
-void TWIqueue(void (*TWIfunction)(int,int,bool),int arg1,int arg2,bool arg3)
-{
-  for(int i=0;i<MaxQueued;i++) if(TWIq[i].pointers.funcIntIntBool == NULL)
-  {
-     TWIq[i].pointers.funcIntIntBool = TWIfunction;
-     TWIq[i].Type   = VoidIntIntBool;
-     TWIq[i].Int1   = arg1;
-     TWIq[i].Int2   = arg2;
-     TWIq[i].Bool1  = arg3;
-     break;
-  }  
-}
-
-void TWIqueue(void (*TWIfunction)(int,int,uint16_t),int arg1,int arg2,uint16_t arg3)
-{
-  for(int i=0;i<MaxQueued;i++) if(TWIq[i].pointers.funcIntIntWord == NULL)
-  {
-     TWIq[i].pointers.funcIntIntWord = TWIfunction;
-     TWIq[i].Type   = VoidIntIntWord;
-     TWIq[i].Int1   = arg1;
-     TWIq[i].Int2   = arg2;
-     TWIq[i].Word1  = arg3;
-     break;
-  }  
 }
 
 // Trigger output functions. These functions support pulsing the output in micro second units as
@@ -2374,14 +2218,14 @@ void spiDmaTX(uint32_t* src, uint16_t count,void (*isr)())
   DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_DADDR = (uint32_t)&SPI0->SPI_TDR;
   DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_DSCR =  0;
   DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_CTRLA = count |
-    DMAC_CTRLA_SRC_WIDTH_WORD | DMAC_CTRLA_DST_WIDTH_WORD;
+  DMAC_CTRLA_SRC_WIDTH_WORD | DMAC_CTRLA_DST_WIDTH_WORD;
 
   DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_CTRLB =  DMAC_CTRLB_SRC_DSCR |
-    DMAC_CTRLB_DST_DSCR | DMAC_CTRLB_FC_MEM2PER_DMA_FC |
-    DMAC_CTRLB_SRC_INCR_INCREMENTING | DMAC_CTRLB_DST_INCR_FIXED;
+  DMAC_CTRLB_DST_DSCR | DMAC_CTRLB_FC_MEM2PER_DMA_FC |
+  DMAC_CTRLB_SRC_INCR_INCREMENTING | DMAC_CTRLB_DST_INCR_FIXED;
 
   DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_CFG = DMAC_CFG_DST_PER(SPI_TX_IDX) |
-      DMAC_CFG_DST_H2SEL | DMAC_CFG_SOD | DMAC_CFG_FIFOCFG_ALAP_CFG;
+  DMAC_CFG_DST_H2SEL | DMAC_CFG_SOD | DMAC_CFG_FIFOCFG_ALAP_CFG;
 
   // If isr is != NULL then enable interrupts and call the isr routine
   // when transfer completes
@@ -3198,12 +3042,4 @@ void CPUtemp(void)
   float treal = (( (3300 * mV)/4096 ) - 800) * 0.37736 + 25.5;
   SendACKonly;
   if(!SerialMute) serial->println(treal);
-}
-
-void TWIreset(void)
-{
-  TWI_RESET();
-  Wire.begin();
-  Wire.setClock(100000);
-  SendACK;
 }

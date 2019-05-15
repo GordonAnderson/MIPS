@@ -7,6 +7,22 @@
 //
 #ifndef Variants_h
 #define Variants_h
+
+// Set false to disable sections of code when the application is built. This was added with rev 1.154 to
+// manage the memory problem. Options are provided for modules that are not very common.
+// Make sure to include all the header files that depend on these flags directly after these 
+// definitions
+#define FAIMSFBcode true
+#define FAIMScode   false
+#define HOFAIMcode  false
+#define TABLE2code  true
+#define RFdriver2   false
+
+#include "errors.h"
+#include "DIO.h"
+#include "Hardware.h"
+#include "Menu.h"
+#include "Dialog.h"
 #include "DCbias.h"
 #include "RFdriver.h"
 #include "Twave.h"
@@ -18,7 +34,12 @@
 #include "HOFAIMS.h"
 #include "DAC.h"
 #include "RFamp.h"
+#include "Serial.h"
+#include "Table.h"
+#include "DCbiasList.h"
 
+
+// Test mode flags, uncomment to enable selected test mode
 //#define TestMode
 //#define TestFilament
 //#define TestTwave
@@ -50,6 +71,8 @@ extern bool     Serial1Echo;
 #define    TMR_ARBclock       6       // Used for common clock generation for ARB
 #define    TMR_DelayedTrigger 0 // Used by the delayed trigger capability
 #define    TMR_ADCclock       1       // Used by the ADC digitizer function
+#define    FAIMSFB_ScanClock  6       // Used to generate scan clock in FAIMSFB module
+#define    TMR_RampClock      2       // Used to generate voltage ramps in table mode
 
 // Table mode software clock input pin, use S (DI2), default
 #define    SoftClockDIO DI2
@@ -127,5 +150,8 @@ extern char *BoardVariantsNames;
 
 // List of variant board default data structure pointers with a one to one corespondence to list of board names
 extern void *BoardVariants[];
+
+// Prototype for functions in MIPS
+void ReadAllSerial(void);
 
 #endif

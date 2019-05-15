@@ -2492,9 +2492,3 @@ void SaveTWAVE2EEPROM(void)
   }
   SendACK;
 }
-
-
-
-
-
-

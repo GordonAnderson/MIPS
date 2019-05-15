@@ -750,48 +750,6 @@ void DCbias_loop(void)
   {
     SelectBoard(b);
     if(DCbDarray[b] == NULL) continue;
-    /*  Removed and replaced with rampup update code above, done on version 1.150
-    // Update the offset output, its TWI not SPI!
-    if(SuppliesOff == false)
-    {
-      if((DCbDarray[b]->DCoffset.VoltageSetpoint != DCbiasStates[b]->DCbiasO) || DCbiasUpdate)
-      {
-        DCbiasStates[b]->DCbiasO = DCbDarray[b]->DCoffset.VoltageSetpoint;
-        if((DCbDarray[b]->DACadr & 0xFE) == 0x10) AD5593writeDAC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(DCbDarray[b]->DCoffset.VoltageSetpoint,&DCbDarray[b]->DCoffset.DCctrl));
-        else AD5625(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(DCbDarray[b]->DCoffset.VoltageSetpoint,&DCbDarray[b]->DCoffset.DCctrl),3);
-      }
-    }
-    else
-    {
-      // Set to zero if power is off
-      DCbiasStates[b]->DCbiasO = 0;
-      if((DCbDarray[b]->DACadr & 0xFE) == 0x10) AD5593writeDAC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCoffset.DCctrl));
-      else AD5625(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCoffset.DCctrl),3);      
-    }
-    // Update all output channels. SPI interface for speed
-    if(DCbiasUpdate) DelayMonitoring();
-    for(i=0;i<DCbDarray[b]->NumChannels;i++)
-    {
-      if(SuppliesOff == false)
-      {
-        V = DCbDarray[b]->DCCD[i].VoltageSetpoint - DCbDarray[b]->DCoffset.VoltageSetpoint;
-        if(V > DCbDarray[b]->MaxVoltage) V = DCbDarray[b]->MaxVoltage;
-        if(V < DCbDarray[b]->MinVoltage) V = DCbDarray[b]->MinVoltage;
-        DCbDarray[b]->DCCD[i].VoltageSetpoint = V + DCbDarray[b]->DCoffset.VoltageSetpoint;
-        if((V != DCbiasStates[b]->DCbiasV[i]) || DCbiasUpdate)
-        {
-          DCbiasStates[b]->DCbiasV[i] = V;
-          if(!DCbiasProfileApplied) AD5668(DCbDarray[b]->DACspi,DCbDarray[b]->DCCD[i].DCctrl.Chan,Value2Counts(V,&DCbDarray[b]->DCCD[i].DCctrl),3);
-        }
-      }
-      else
-      {
-        // Set to zero if power is off
-        AD5668(DCbDarray[b]->DACspi,DCbDarray[b]->DCCD[i].DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCCD[i].DCctrl), 3);
-        DCbiasStates[b]->DCbiasV[i] = 0;
-      }
-    }
-    */
     // Read the monitor inputs and update the display buffer
     ValueChange = false;
     delay(1);
@@ -799,13 +757,13 @@ void DCbias_loop(void)
     {
       if(!ValueChange)
       {
-         if(DCbDarray[0]->OffsetReadback)
+         if((DCbDarray[0]->OffsetReadback) && (i == 0))   // Added i==0 April 6, 2019.
          {
            if((DCbDarray[b]->DACadr & 0xFE) == 0x10)
            {
               if(DCbDarray[0]->UseOneOffset)
               {
-                if(NumberOfDCChannels > 24) { if(b == 3) offsetV = Counts2Value(AD5593readADC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCmon.Chan),&DCbDarray[b]->DCoffset.DCmon); }
+                if(NumberOfDCChannels > 24)      { if(b == 3) offsetV = Counts2Value(AD5593readADC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCmon.Chan),&DCbDarray[b]->DCoffset.DCmon); }
                 else if(NumberOfDCChannels > 16) { if(b == 2) offsetV = Counts2Value(AD5593readADC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCmon.Chan),&DCbDarray[b]->DCoffset.DCmon); }
                 else if(NumberOfDCChannels > 8)  { if(b == 1) offsetV = Counts2Value(AD5593readADC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCmon.Chan),&DCbDarray[b]->DCoffset.DCmon); }
                 else if(NumberOfDCChannels <= 8) { if(b == 0) offsetV = Counts2Value(AD5593readADC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCmon.Chan),&DCbDarray[b]->DCoffset.DCmon); }
@@ -818,7 +776,7 @@ void DCbias_loop(void)
               else if((NumberOfDCChannels < 8) && (b == 0)) offsetV = Counts2Value(ADCvals[7],&DCbDarray[b]->DCCD[7].DCmon); 
            }
          }
-         else offsetV = DCbDarray[b]->DCoffset.VoltageSetpoint;
+         else if(i==0) offsetV = DCbDarray[b]->DCoffset.VoltageSetpoint;
          if(SuppliesOff) offsetV = 0;
          DCbiasStates[b]->Readbacks[i] = Filter * (Counts2Value(ADCvals[i],&DCbDarray[b]->DCCD[i].DCmon) + offsetV) + (1-Filter) * DCbiasStates[b]->Readbacks[i];
          if(abs(DCbiasStates[b]->Readbacks[i]) > MaxDCbiasVoltage) MaxDCbiasVoltage = abs(DCbiasStates[b]->Readbacks[i]);

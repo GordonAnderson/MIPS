@@ -36,12 +36,12 @@ Encoder::Encoder(void)
   ENC_PB = -1;
 }
 
-Encoder Encoder::start(int A, int B, int PB)
+Encoder Encoder::start(int A, int B, int PushButton)
 {
   ValuePtr = NULL;
   ENC_A = A;
   ENC_B = B;
-  ENC_PB = PB;
+  ENC_PB = PushButton;
   // Setup the io pins for the encoder
   pinMode(ENC_A, INPUT_PULLUP);
   pinMode(ENC_B, INPUT_PULLUP);
@@ -181,11 +181,3 @@ void encoderPBISR(void)
   }
   pt = millis();
 }
-
-
-
-
-
-
-
-

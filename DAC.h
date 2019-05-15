@@ -67,6 +67,3 @@ void SetDACName(int module, int channel, char *Name);
 void GetDACName(int module, int channel);
 
 #endif
-
-
-

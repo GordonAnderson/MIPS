@@ -22,6 +22,7 @@
 #include "Hardware.h"
 #include "Errors.h"
 
+#if HOFAIMSmodule
 //MIPS Threads
 Thread HOFAIMSthread  = Thread();
 
@@ -409,7 +410,4 @@ void HOFAIMS_loop(void)
   }
   else ShutdownArmed = false;
 }
-
-
-
-
+#endif

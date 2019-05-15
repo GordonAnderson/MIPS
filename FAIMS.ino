@@ -62,6 +62,10 @@
 #include "Errors.h"
 #include <Adafruit_PWMServoDriver.h>
 
+float MaxFAIMSVoltage = 0;    // This value is set to the highest DC bias voltage
+
+#if FAIMScode
+
 extern DialogBox FAIMSMainMenu;
 extern DialogBox FAIMSTuneMenu;
 extern DialogBox FAIMSDriveMenu;
@@ -96,7 +100,6 @@ float  EnvCorrection=0;      // Drive level correct in %
 
 // FAIMS variables
 int   NumberOfFAIMS = 0;      // Number of FAIMS modules
-float MaxFAIMSVoltage = 0;    // This value is set to the highest DC bias voltage
 
 float  DrvChange = 0;         // Global drive change that is applied to all drive channels
 float  KVoutP = 0;            // Positive peak output voltage in KV
@@ -1510,3 +1513,5 @@ void FAIMSsetLockSP(char *KV)
    DriveChange = 0;
    SendACK;
 }
+
+#endif

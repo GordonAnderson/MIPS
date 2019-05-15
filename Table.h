@@ -87,6 +87,36 @@ extern bool TableResponse;
 extern bool TblTasks;
 extern int  ExtFreq;
 
+#if TABLE2code
+// Funtion queue enum and structures to support queuing functions that need
+// to execute at compare events when LDAC is generated
+
+#define MaxTableQueue 5
+
+enum TableFunctionType
+{
+  TblEmpty,
+  TblVoidVoid,
+  TblVoidTableEntryPtr
+};
+
+union Tablefunctions
+{
+  void  (*funcVoidVoid)(void);
+  void  (*funcTableEntryPtr)(volatile TableEntry *);
+};
+
+typedef struct 
+{
+  TableFunctionType     Type;
+  union Tablefunctions  pointers;
+  volatile TableEntry   *TE;
+} TableQueueEntry;
+
+void TABLEqueue(void (*function)(void), bool Unique = false);
+void TABLEqueue(void (*function)(volatile TableEntry *),volatile TableEntry *te, bool Unique = false);
+void ProcessTableQueue(void);
+#endif
 
 // ProcessEntry return codes
 #define PEprocessed 1
@@ -95,7 +125,7 @@ extern int  ExtFreq;
 #define PEEndTables 4
 #define PEerror 0
 
-void SetImageRegs(void);
+//void SetImageRegs(void);
 void ProcessSerial(void);
 // Function prototypes
 
@@ -121,6 +151,12 @@ void SetTableAdvance(char *cmd);
 void GetTableEntryValue(int Count, int Chan);
 void SetTableEntryValue(int Count, int Chan, float fval);
 void SetTableEntryCount(int Count, int Chan, float NewCount);
+#if TABLE2code
+void EnableRamp(char *ena, char *freq);
+void ProcessRamp(volatile TableEntry *TE);
+void StartRampClock(void);
+void StopRampClock(void);
+#endif
 
 // Real time processing routines
 void UserSetAbort(void);

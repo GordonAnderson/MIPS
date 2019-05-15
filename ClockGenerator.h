@@ -39,10 +39,3 @@ int FAIMSclockSet(int8_t adr, int Freq);
 void FAIMSphase(int harmonic, int phase);
 
 #endif /* CLOCKGENERATOR_H_ */
-
-
-
-
-
-
-

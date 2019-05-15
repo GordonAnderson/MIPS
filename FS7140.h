@@ -21,10 +21,3 @@ void FindScaler(int target, int *Np1,int *Np2,int *Np3) ;
 void FS7140setup(int addr, int Fout);
 
 #endif
-
-
-
-
-
-
-

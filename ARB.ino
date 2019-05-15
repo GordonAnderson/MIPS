@@ -51,10 +51,7 @@
 //
 // Gordon Anderson
 //
-#include "ARB.h"
 #include "Variants.h"
-#include "Hardware.h"
-#include "Errors.h"
 
 //MIPS Threads
 Thread ARBthread  = Thread();
@@ -259,7 +256,7 @@ void ARB_1_SWEEP_ISR(void)
    {
       int brd = SelectedBoard();
       // Send the start command to the ARB
-      SetByte(b, TWI_SWPGO, SS_START);
+      SetByte(b, TWI_ARB_SWPGO, SS_START);
       SelectBoard(brd);
       return;
    }
@@ -276,7 +273,7 @@ void ARB_2_SWEEP_ISR(void)
    {
       int brd = SelectedBoard();
       // Send the start command to the ARB
-      SetByte(b, TWI_SWPGO, SS_START);
+      SetByte(b, TWI_ARB_SWPGO, SS_START);
       SelectBoard(brd);
       return;
    }
@@ -293,7 +290,7 @@ void ARB_3_SWEEP_ISR(void)
    {
       int brd = SelectedBoard();
       // Send the start command to the ARB
-      SetByte(b, TWI_SWPGO, SS_START);
+      SetByte(b, TWI_ARB_SWPGO, SS_START);
       SelectBoard(brd);
       return;
    }
@@ -310,7 +307,7 @@ void ARB_4_SWEEP_ISR(void)
    {
       int brd = SelectedBoard();
       // Send the start command to the ARB
-      SetByte(b, TWI_SWPGO, SS_START);
+      SetByte(b, TWI_ARB_SWPGO, SS_START);
       SelectBoard(brd);
       return;
    }
@@ -322,7 +319,7 @@ void ARB_1_DIR_ISR(void)
   delayMicroseconds(5);
   if (DIdirARB[0]->test(ARBarray[0]->ARBdirLevel)) ARBarray[0]->Direction = true;
   else ARBarray[0]->Direction = false;
-  if(AcquireTWI()) SetBool(0, TWI_SET_DIR, !ARBarray[0]->Direction); else TWIqueue(SetBool, 0, TWI_SET_DIR, !ARBarray[0]->Direction);
+  if(AcquireTWI()) SetBool(0, TWI_ARB_SET_DIR, !ARBarray[0]->Direction); else TWIqueue(SetBool, 0, TWI_ARB_SET_DIR, !ARBarray[0]->Direction);
   if (0 == SelectedARBboard) ARBstates[0]->Direction = ARBarray[0]->Direction;
 }
 void ARB_2_DIR_ISR(void)
@@ -330,7 +327,7 @@ void ARB_2_DIR_ISR(void)
   delayMicroseconds(5);
   if (DIdirARB[1]->test(ARBarray[1]->ARBdirLevel)) ARBarray[1]->Direction = true;
   else ARBarray[1]->Direction = false;
-  if(AcquireTWI()) SetBool(1, TWI_SET_DIR, !ARBarray[1]->Direction); else TWIqueue(SetBool, 1, TWI_SET_DIR, !ARBarray[1]->Direction);
+  if(AcquireTWI()) SetBool(1, TWI_ARB_SET_DIR, !ARBarray[1]->Direction); else TWIqueue(SetBool, 1, TWI_ARB_SET_DIR, !ARBarray[1]->Direction);
   if (1 == SelectedARBboard) ARBstates[1]->Direction = ARBarray[1]->Direction;
 }
 void ARB_3_DIR_ISR(void)
@@ -338,7 +335,7 @@ void ARB_3_DIR_ISR(void)
   delayMicroseconds(5);
   if (DIdirARB[2]->test(ARBarray[2]->ARBdirLevel)) ARBarray[2]->Direction = true;
   else ARBarray[2]->Direction = false;
-  if(AcquireTWI()) SetBool(2, TWI_SET_DIR, !ARBarray[2]->Direction); else TWIqueue(SetBool, 2, TWI_SET_DIR, !ARBarray[2]->Direction);
+  if(AcquireTWI()) SetBool(2, TWI_ARB_SET_DIR, !ARBarray[2]->Direction); else TWIqueue(SetBool, 2, TWI_ARB_SET_DIR, !ARBarray[2]->Direction);
   if (2 == SelectedARBboard) ARBstates[2]->Direction = ARBarray[2]->Direction;
 }
 void ARB_4_DIR_ISR(void)
@@ -346,7 +343,7 @@ void ARB_4_DIR_ISR(void)
   delayMicroseconds(5);
   if (DIdirARB[3]->test(ARBarray[3]->ARBdirLevel)) ARBarray[3]->Direction = true;
   else ARBarray[3]->Direction = false;
-  if(AcquireTWI()) SetBool(3, TWI_SET_DIR, !ARBarray[3]->Direction); else TWIqueue(SetBool, 3, TWI_SET_DIR, !ARBarray[3]->Direction);
+  if(AcquireTWI()) SetBool(3, TWI_ARB_SET_DIR, !ARBarray[3]->Direction); else TWIqueue(SetBool, 3, TWI_ARB_SET_DIR, !ARBarray[3]->Direction);
   if (3 == SelectedARBboard) ARBstates[3]->Direction = ARBarray[3]->Direction;
 }
 //
@@ -355,8 +352,8 @@ void ARB_4_DIR_ISR(void)
 // defined by board
 void SetMode(int board, char *mode)
 {
-  if(strcmp(mode,"TWAVE") == 0) SetByte(board, TWI_SET_MODE, 0);
-  else SetByte(board, TWI_SET_MODE, 1);
+  if(strcmp(mode,"TWAVE") == 0) SetByte(board, TWI_ARB_SET_MODE, 0);
+  else SetByte(board, TWI_ARB_SET_MODE, 1);
 }
 
 void ARBmoduleSelected(void)
@@ -412,7 +409,7 @@ void ModeSelected(void)
 
 void SetChans(void)
 {
-  SetFloat(SelectedARBboard, TWI_SET_SET_BUFFER, ChanLevelAll);
+  SetFloat(SelectedARBboard, TWI_ARB_SET_SET_BUFFER, ChanLevelAll);
 }
 
 // Sets channel range in ARB mode
@@ -428,7 +425,7 @@ void SetChannelRangeMessage(int board, int channel, int strtI, int stpI, float v
   SelectBoard(board);
   AcquireTWI();
   Wire.beginTransmission(ARBarray[board]->ARBadr);
-  Wire.write(TWI_SET_SET_CHN_RNG);
+  Wire.write(TWI_ARB_SET_SET_CHN_RNG);
 
   channel--;
   b = (uint8_t *)&channel;
@@ -462,7 +459,7 @@ void SetBufferLength(int board, int BufferLength)
   b = (uint8_t *)&BufferLength;
   AcquireTWI();
   Wire.beginTransmission(ARBarray[board]->ARBadr);
-  Wire.write(TWI_SET_BUFFER_LEN);
+  Wire.write(TWI_ARB_SET_BUFFER_LEN);
   Wire.write(b[0]);
   Wire.write(b[1]);
   {
@@ -480,7 +477,7 @@ void SetNumBuffers(int board, int NumBuffers)
   b = (uint8_t *)&NumBuffers;
   AcquireTWI();
   Wire.beginTransmission(ARBarray[board]->ARBadr);
-  Wire.write(TWI_SET_NUM_BUFFER);
+  Wire.write(TWI_ARB_SET_NUM_BUFFER);
   Wire.write(b[0]);
   Wire.write(b[1]);
   {
@@ -793,7 +790,7 @@ void SetFrequency(int board, int freq)
   // Send the frequency to the ARB module
   AcquireTWI();
   Wire.beginTransmission(ARBarray[board]->ARBadr);
-  Wire.write(TWI_SET_FREQ);
+  Wire.write(TWI_ARB_SET_FREQ);
   Wire.write(b[0]);
   Wire.write(b[1]);
   Wire.write(b[2]);
@@ -815,7 +812,7 @@ void SetAmplitude(int board, float Voltage)
   if (i < 0) i = 0;
   AcquireTWI();
   Wire.beginTransmission(ARBarray[board]->ARBadr);
-  Wire.write(TWI_SET_REF);
+  Wire.write(TWI_ARB_SET_REF);
   Wire.write(i & 0xFF);
   Wire.write((i >> 8) & 0xFF);
   {
@@ -824,7 +821,7 @@ void SetAmplitude(int board, float Voltage)
   }
   ReleaseTWI();
 
-  SetFloat(board, TWI_SET_RANGE, Voltage);
+  SetFloat(board, TWI_ARB_SET_RANGE, Voltage);
 }
 
 // This command support the dual output amplifier board option. Each board
@@ -856,7 +853,7 @@ void SetWaveform(int board, WaveFormTypes wft)
   AcquireTWI();
   SelectBoard(board);
   Wire.beginTransmission(ARBarray[board]->ARBadr);
-  Wire.write(TWI_SET_WAVEFORM);
+  Wire.write(TWI_ARB_SET_WAVEFORM);
   switch (wft)
   {
     case ARB_SIN:
@@ -893,7 +890,7 @@ void SetARBwaveform(int board)
   // Send to the ARB module
   AcquireTWI();
   Wire.beginTransmission(ARBarray[board]->ARBadr);
-  Wire.write(TWI_SET_VECTOR);
+  Wire.write(TWI_ARB_SET_VECTOR);
   Wire.write(0);
   Wire.write(16);
   for (i = 0; i < 16; i++) Wire.write(ARBarray[board]->WaveForm[i]);
@@ -902,7 +899,7 @@ void SetARBwaveform(int board)
     Wire.endTransmission();
   }
   Wire.beginTransmission(ARBarray[board]->ARBadr);
-  Wire.write(TWI_SET_VECTOR);
+  Wire.write(TWI_ARB_SET_VECTOR);
   Wire.write(16);
   Wire.write(16);
   for (i = 0; i < 16; i++) Wire.write(ARBarray[board]->WaveForm[i+16]);
@@ -1007,7 +1004,7 @@ void ARB_init(int8_t Board, int8_t addr)
   digitalWrite(ARBsync,LOW);
   // Read the points per waveform for this ARB channel
   int i;
-  if(Read8bitUnsigned(Board,TWI_READ_PPP,&i))
+  if(Read8bitUnsigned(Board,TWI_ARB_READ_PPP,&i))
   {
     if((i>=8) && (i<=32)) ARBarray[Board]->PPP = i;
   }
@@ -1041,10 +1038,10 @@ void ARB_init(int8_t Board, int8_t addr)
   // Set the frequency
   //SetFrequency(Board,ARBarray[Board]->Frequency);
   // If we are using a common clock then signal the ARB module to use external clock
-  if(ARBarray[Board]->UseCommonClock) SetBool(Board, TWI_SET_EXT_CLOCK, true);
+  if(ARBarray[Board]->UseCommonClock) SetBool(Board, TWI_ARB_SET_EXT_CLOCK, true);
   // Read the arb version and set the global variable, we assume all ARBs are the
   // same version
-  if(!ReadFloat(Board,TWI_READ_VERSION,&ARBversion)) ARBversion = 0;
+  if(!ReadFloat(Board,TWI_ARB_READ_VERSION,&ARBversion)) ARBversion = 0;
   if(ARBversion > 1.13)
   {
     DialogBoxEntry *de = GetDialogEntries(ARBentriesPage2, "Sweep");
@@ -1147,17 +1144,17 @@ void ARB_loop(void)
             }
           }
         }
-        SetFloat(b, TWI_SET_OFFSETV, ARBarray[b]->Offset);
+        SetFloat(b, TWI_ARB_SET_OFFSETV, ARBarray[b]->Offset);
         ARBstates[b]->Offset = ARBarray[b]->Offset;
       }
       if((ARBstates[b]->update) || (ARBstates[b]->Aux != ARBarray[b]->Aux))
       {
-        SetFloat(b, TWI_SET_AUX, ARBarray[b]->Aux);
+        SetFloat(b, TWI_ARB_SET_AUX, ARBarray[b]->Aux);
         ARBstates[b]->Aux = ARBarray[b]->Aux;
       }
       if((ARBstates[b]->update) || (ARBstates[b]->RampRate != ARBarray[b]->RampRate))
       {
-        SetFloat(b, TWI_SET_RAMP, ARBarray[b]->RampRate);
+        SetFloat(b, TWI_ARB_SET_RAMP, ARBarray[b]->RampRate);
         ARBstates[b]->RampRate = ARBarray[b]->RampRate;
       }
       if((ARBstates[b]->update) || (ARBstates[b]->BufferLength != ARBarray[b]->BufferLength))
@@ -1172,7 +1169,7 @@ void ARB_loop(void)
       }
       if((ARBstates[b]->update) || (ARBstates[b]->Direction != ARBarray[b]->Direction))
       {
-        SetBool(b, TWI_SET_DIR, !ARBarray[b]->Direction);
+        SetBool(b, TWI_ARB_SET_DIR, !ARBarray[b]->Direction);
         ARBstates[b]->Direction = ARBarray[b]->Direction;
       }
       if((ARBstates[b]->update) || (ARBstates[b]->WFT != ARBarray[b]->wft))
@@ -1182,7 +1179,7 @@ void ARB_loop(void)
       }
       if((ARBstates[b]->update) || (ARBstates[b]->Enable != ARBarray[b]->Enable))
       {
-        SetBool(b, TWI_SET_ENABLE, ARBarray[b]->Enable);
+        SetBool(b, TWI_ARB_SET_ENABLE, ARBarray[b]->Enable);
         ARBstates[b]->Enable = ARBarray[b]->Enable;
       }
       if((ARBstates[b]->update) || (ARBarray[b]->DualOutputs))
@@ -1209,7 +1206,7 @@ void ARB_loop(void)
          if((int)ARBarray[b]->ARBsyncIn != 0)
          {
             bstate = ARBsyncIN[b]->attached(ARBarray[b]->ARBsyncIn, ARBarray[b]->ARBsyncLevel, ARBsyncISR);
-            SetBool(b, TWI_SET_SYNC_ENA, bstate);
+            SetBool(b, TWI_ARB_SET_SYNC_ENA, bstate);
          }
       }
       if ((ARBarray[b]->ARBdirDI != DIdirARB[b]->di) || (ARBarray[b]->ARBdirLevel != DIdirARB[b]->mode) || ARBstates[b]->update)
@@ -1222,27 +1219,27 @@ void ARB_loop(void)
       {
         if((ARBstates[b]->StartFreq != ARBarray[b]->StartFreq) || ARBstates[b]->update)
         {
-           SetInt(b, TWI_SWPSTARTFREQ, ARBarray[b]->StartFreq);
+           SetInt(b, TWI_ARB_SWPSTARTFREQ, ARBarray[b]->StartFreq);
            ARBstates[b]->StartFreq = ARBarray[b]->StartFreq;
         }
         if((ARBstates[b]->StopFreq != ARBarray[b]->StopFreq) || ARBstates[b]->update)
         {
-           SetInt(b, TWI_SWPSTOPFREQ, ARBarray[b]->StopFreq);
+           SetInt(b, TWI_ARB_SWPSTOPFREQ, ARBarray[b]->StopFreq);
            ARBstates[b]->StopFreq = ARBarray[b]->StopFreq;
         }
         if((ARBstates[b]->StartVoltage != ARBarray[b]->StartVoltage) || ARBstates[b]->update)
         {
-           SetFloat(b, TWI_SWPSTARTV, ARBarray[b]->StartVoltage);
+           SetFloat(b, TWI_ARB_SWPSTARTV, ARBarray[b]->StartVoltage);
            ARBstates[b]->StartVoltage = ARBarray[b]->StartVoltage;
         }
         if((ARBstates[b]->StopVoltage != ARBarray[b]->StopVoltage) || ARBstates[b]->update)
         {
-           SetFloat(b, TWI_SWPSTOPV, ARBarray[b]->StopVoltage);
+           SetFloat(b, TWI_ARB_SWPSTOPV, ARBarray[b]->StopVoltage);
            ARBstates[b]->StopVoltage = ARBarray[b]->StopVoltage;
         }
         if((ARBstates[b]->SweepTime != ARBarray[b]->SweepTime) || ARBstates[b]->update)
         {
-           SetFloat(b, TWI_SWPTIME, ARBarray[b]->SweepTime);
+           SetFloat(b, TWI_ARB_SWPTIME, ARBarray[b]->SweepTime);
            ARBstates[b]->SweepTime = ARBarray[b]->SweepTime;
         }
         // process the sweep trigger options
@@ -1350,12 +1347,12 @@ void SetARBUseCommonClock(char *module, char *flag)
      if(smode == String("TRUE")) 
      {
         ARBarray[b]->UseCommonClock = true;
-        SetBool(b, TWI_SET_EXT_CLOCK, true);
+        SetBool(b, TWI_ARB_SET_EXT_CLOCK, true);
      }
      else  
      {
         ARBarray[b]->UseCommonClock = false;
-        SetBool(b, TWI_SET_EXT_CLOCK, false);
+        SetBool(b, TWI_ARB_SET_EXT_CLOCK, false);
      }
      SendACK;
      return;
@@ -1493,7 +1490,7 @@ void SetWFdisable(int module)
   if((b = ARBmoduleToBoard(module,true)) == -1) return;
   SendACK;
   ARBarray[b]->Enable = false;
-  SetBool(b,TWI_SET_ENABLE,false);
+  SetBool(b,TWI_ARB_SET_ENABLE,false);
 }
 
 void SetWFenable(int module)
@@ -1503,7 +1500,7 @@ void SetWFenable(int module)
   if((b = ARBmoduleToBoard(module,true)) == -1) return;
   SendACK;
   ARBarray[b]->Enable = true;
-  SetBool(b,TWI_SET_ENABLE,true);
+  SetBool(b,TWI_ARB_SET_ENABLE,true);
 }
 
 // This function sets the ARB DAC voltage range
@@ -1552,7 +1549,7 @@ void SetWFoffsetV(char *module, char *srange)
   if((range >= -50) && (range <= 50))
   {
     ARBarray[b]->Offset = range;
-    SetFloat(b, TWI_SET_OFFSETV, range);
+    SetFloat(b, TWI_ARB_SET_OFFSETV, range);
     SendACK;
     return;
   }
@@ -1583,7 +1580,7 @@ void SetWFaux(char *module, char *srange)
   if((range >= -50) && (range <= 50))
   {
     ARBarray[b]->Aux = range;
-    SetFloat(b, TWI_SET_AUX, range);
+    SetFloat(b, TWI_ARB_SET_AUX, range);
     SendACK;
     return;
   }
@@ -1788,7 +1785,7 @@ void SetARBchns(char *module, char *sval)
      SendNAK;
      return;
    }
-   SetFloat(b, TWI_SET_SET_BUFFER, val);
+   SetFloat(b, TWI_ARB_SET_SET_BUFFER, val);
    SendACK;
 }
 
@@ -1987,6 +1984,10 @@ void GetARBoffsetBoardB(int module)
    if(!SerialMute) serial->println(ARBarray[b]->OffsetB);  
 }
 
+// Update this function to first put all arb modules in external sync mode then perform
+// the sync, finally return the module status
+// This functions needs to be updated to first but all ARBs in remote sync mode and then
+// toggle the sync line. The ARB sync mode must be restored before exit
 void ARBmoduleSync(void)
 {
   ARBsyncISR();
@@ -2031,7 +2032,7 @@ void UpdateAux(int8_t brd, float val, bool FlushQueued)
     {
       if(Queued[i])
       {
-         SetFloat(i, TWI_UPDATE_AUX, vals[i]);     
+         SetFloat(i, TWI_ARB_UPDATE_AUX, vals[i]);     
          ARBupdatesSent |= 1 << i;
       }
     }
@@ -2045,7 +2046,7 @@ void UpdateAux(int8_t brd, float val, bool FlushQueued)
   {
     // Here if TWI interface is avalible
     int b=SelectedBoard();
-    SetFloat(brd, TWI_UPDATE_AUX, val);
+    SetFloat(brd, TWI_ARB_UPDATE_AUX, val);
     SelectBoard(b);           
     ARBupdatesSent |= 1 << brd;
   }
@@ -2071,7 +2072,7 @@ void UpdateOffsetA(int8_t brd, float val, bool FlushQueued)
     {
       if(Queued[i])
       {
-         SetBoardBias(i, 0, vals[i], TWI_UPDATE_BRD_BIAS); 
+         SetBoardBias(i, 0, vals[i], TWI_ARB_UPDATE_BRD_BIAS); 
          ARBupdatesSent = 1 << i;        
       }
     }
@@ -2085,7 +2086,7 @@ void UpdateOffsetA(int8_t brd, float val, bool FlushQueued)
   {
     // Here if TWI interface is avalible
     int b=SelectedBoard();
-    SetBoardBias(brd, 0, val, TWI_UPDATE_BRD_BIAS);    
+    SetBoardBias(brd, 0, val, TWI_ARB_UPDATE_BRD_BIAS);    
     SelectBoard(b);           
     ARBupdatesSent |= 1 << brd;
   }
@@ -2111,7 +2112,7 @@ void UpdateOffsetB(int8_t brd, float val, bool FlushQueued)
     {
       if(Queued[i])
       {
-        SetBoardBias(i, 1, vals[i], TWI_UPDATE_BRD_BIAS); 
+        SetBoardBias(i, 1, vals[i], TWI_ARB_UPDATE_BRD_BIAS); 
         ARBupdatesSent = 1 << i;
       }
     }
@@ -2125,7 +2126,7 @@ void UpdateOffsetB(int8_t brd, float val, bool FlushQueued)
   {
     // Here if TWI interface is avalible
     int b=SelectedBoard();
-    SetBoardBias(brd, 1, val, TWI_UPDATE_BRD_BIAS);    
+    SetBoardBias(brd, 1, val, TWI_ARB_UPDATE_BRD_BIAS);    
     SelectBoard(b);           
     ARBupdatesSent |= 1 << brd;
   }
@@ -2180,7 +2181,7 @@ void ProcessARB(void)
          int b=SelectedBoard();
          SelectBoard(i);
          Wire.beginTransmission(ARBarray[i]->ARBadr);
-         Wire.write(TWI_LOAD_UPDATES);
+         Wire.write(TWI_ARB_LOAD_UPDATES);
          {
             AtomicBlock< Atomic_RestoreState > a_Block;
             Wire.endTransmission();
@@ -2227,7 +2228,7 @@ void GetARBversion(int module)
    if(SerialMute) return;
    // Read version float from ARB
    float fVer;
-   if(ReadFloat(b,TWI_READ_VERSION,&fVer))
+   if(ReadFloat(b,TWI_ARB_READ_VERSION,&fVer))
    {
       serial->print("ARB version: ");
       serial->println(fVer);
@@ -2264,10 +2265,10 @@ void SetARBppp(int module, int PPP)
    }
    SendACK;
    // Set the PPP on the ARB module
-   SetByte(b, TWI_SET_PPP, PPP);
+   SetByte(b, TWI_ARB_SET_PPP, PPP);
    // Save changes on the ARB module
    Wire.beginTransmission(ARBarray[b]->ARBadr);
-   Wire.write(TWI_SAVE);
+   Wire.write(TWI_ARB_SAVE);
    Wire.endTransmission();
    // Delay and warn
    serial->println("The MIPS system will reboot soon...");
@@ -2292,8 +2293,8 @@ void SetARBext(char *module, char *val)
      SendNAK;
      return;
    }
-   if(sToken == "MIPS") SetByte(b, TWI_SET_SEXTSRC, 0);
-   else SetByte(b, TWI_SET_SEXTSRC, 1);
+   if(sToken == "MIPS") SetByte(b, TWI_ARB_SET_SEXTSRC, 0);
+   else SetByte(b, TWI_ARB_SET_SEXTSRC, 1);
    SendACK;    
 }
 
@@ -2304,7 +2305,7 @@ void ARBstartSweep(int module)
   
   if((b = ARBmoduleToBoard(module,true)) == -1) return;
   // Send TWI command to start a sweep
-  SetByte(b, TWI_SWPGO, SS_START);
+  SetByte(b, TWI_ARB_SWPGO, SS_START);
   SendACK;
 }
 
@@ -2314,7 +2315,7 @@ void ARBstopSweep(int module)
   
   if((b = ARBmoduleToBoard(module,true)) == -1) return;
   // Send TWI command to stop a sweep
-  SetByte(b, TWI_SWPGO, SS_STOP);
+  SetByte(b, TWI_ARB_SWPGO, SS_STOP);
   SendACK;  
 }
 
@@ -2327,7 +2328,7 @@ void GetARBsweepStatus(int module)
   if(SerialMute) return;
   // Send read status from ARB module.
   int i;
-  if(!Read8bitUnsigned(b,TWI_READ_SWEEP_STATUS, &i)) return;
+  if(!Read8bitUnsigned(b,TWI_ARB_READ_SWEEP_STATUS, &i)) return;
   switch (i)
   {
     case SS_IDLE:

@@ -26,10 +26,7 @@
 //
 // Gordon Anderson
 //
-#include "RFdriver.h"
 #include "Variants.h"
-#include "Hardware.h"
-#include "Errors.h"
 #include <DIhandler.h>
 
 #define MinFreq    500000
@@ -75,10 +72,10 @@ float RFnVpp;
 float Power;
 
 // Auto tune parameters
-bool TuneRequest = false;
+bool TuneRequest   = false;
 bool RetuneRequest = false;
-bool Tuning = false;
-bool TuneReport = false;
+bool Tuning        = false;
+bool TuneReport    = false;
 int  TuneRFChan;
 int  TuneRFBoard;
 // Tune states
@@ -730,17 +727,17 @@ void RF_A1_ISR(void)
 }
 void RF_A2_ISR(void)
 {
-  if (DIh[0][1]->activeLevel()) analogWrite(RFDDarray[0].RFCD[1].PWMchan, (RFDDarray[0].RFCD[1].DriveLevel * PWMFS) / 100);
+  if(DIh[0][1]->activeLevel()) analogWrite(RFDDarray[0].RFCD[1].PWMchan, (RFDDarray[0].RFCD[1].DriveLevel * PWMFS) / 100);
   else analogWrite(RFDDarray[0].RFCD[1].PWMchan, 0);
 }
 void RF_B1_ISR(void)
 {
-  if (DIh[1][0]->activeLevel()) analogWrite(RFDDarray[1].RFCD[0].PWMchan, (RFDDarray[1].RFCD[0].DriveLevel * PWMFS) / 100);
+  if(DIh[1][0]->activeLevel()) analogWrite(RFDDarray[1].RFCD[0].PWMchan, (RFDDarray[1].RFCD[0].DriveLevel * PWMFS) / 100);
   else analogWrite(RFDDarray[1].RFCD[0].PWMchan, 0);
 }
 void RF_B2_ISR(void)
 {
-  if (DIh[1][1]->activeLevel()) analogWrite(RFDDarray[1].RFCD[1].PWMchan, (RFDDarray[1].RFCD[1].DriveLevel * PWMFS) / 100);
+  if(DIh[1][1]->activeLevel()) analogWrite(RFDDarray[1].RFCD[1].PWMchan, (RFDDarray[1].RFCD[1].DriveLevel * PWMFS) / 100);
   else analogWrite(RFDDarray[1].RFCD[1].PWMchan, 0);
 }
 

@@ -391,11 +391,3 @@ void DismissMessageIfButton(void)
   PopupDismissed = true;
   DismissMessage();
 }
-
-
-
-
-
-
-
-
