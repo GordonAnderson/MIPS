@@ -11,12 +11,14 @@
 // Set false to disable sections of code when the application is built. This was added with rev 1.154 to
 // manage the memory problem. Options are provided for modules that are not very common.
 // Make sure to include all the header files that depend on these flags directly after these 
-// definitions
-#define FAIMSFBcode true
-#define FAIMScode   false
-#define HOFAIMcode  false
-#define TABLE2code  true
-#define RFdriver2   false
+// definitions.
+// The state is the flags will add a leter to the end of the version number to signal the version
+// of the code that is being built. If no leter is added that all options are false.
+#define FAIMSFBcode false    // appends b to version 
+#define FAIMScode   false    // appends f to version
+#define HOFAIMcode  false    // appends h to version
+#define TABLE2code  true     // appends t to version
+#define RFdriver2   false    // appends r to version
 
 #include "errors.h"
 #include "DIO.h"
@@ -37,6 +39,7 @@
 #include "Serial.h"
 #include "Table.h"
 #include "DCbiasList.h"
+#include "FILEIO.h"
 
 
 // Test mode flags, uncomment to enable selected test mode

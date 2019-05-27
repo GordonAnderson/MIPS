@@ -29,7 +29,9 @@
 #include "Variants.h"
 #include <DIhandler.h>
 
-#define MinFreq    500000
+#if RFdriver2 == false
+
+#define MinFreq    400000
 #define MaxFreq    5000000
 
 extern bool NormalStartup;
@@ -89,7 +91,7 @@ void (*GateTriggerISRs[2][2])(void) = {RF_A1_ISR, RF_A2_ISR, RF_B1_ISR, RF_B2_IS
 
 DialogBoxEntry RFdriverDialogEntriesPage1[] = {
   {" RF channel", 0, 1, D_INT, 1, 2, 1, 21, false, "%2d", &Channel, NULL, SelectChannel},
-  {" Freq, Hz"  , 0, 2, D_INT, 500000, 5000000, 1000, 16, false, "%7d", &RFCD.Freq, NULL, NULL},
+  {" Freq, Hz"  , 0, 2, D_INT, MinFreq, MaxFreq, 1000, 16, false, "%7d", &RFCD.Freq, NULL, NULL},
   {" Drive %"   , 0, 3, D_FLOAT, 0, 100, 0.1, 18, false, "%5.1f", &RFCD.DriveLevel, NULL, NULL},
   {" Vout Vpp"  , 0, 3, D_OFF, 0, 5000, 1, 18, false, "%5.0f", &RFCD.Setpoint, NULL, NULL},
   {" RF+ Vpp"   , 0, 5, D_FLOAT, 0, 1000, 0.1, 18, true, "%5.0f", &RFpVpp, NULL, NULL},
@@ -480,7 +482,7 @@ void RFdriver_tune(void)
           if(TuneStep == 100000) NumDown = -MaxNumDown;
         }
         RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq -= TuneStep;
-        if((NumDown >= MaxNumDown) || (RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq < 500000))
+        if((NumDown >= MaxNumDown) || (RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq < MinFreq))
         {
           TuneState = TUNE_SCAN_UP;
           RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq = Freq;
@@ -501,13 +503,13 @@ void RFdriver_tune(void)
           if(TuneStep == 100000) NumDown = -MaxNumDown;
         }
         RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq += TuneStep;
-        if((NumDown >= MaxNumDown) || (RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq > 5000000))
+        if((NumDown >= MaxNumDown) || (RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq > MaxFreq))
         {
           // Here we have found the peak for this step size, this
           // process repeats until step size is 1KHz
           Freq = FreqMax;
-          if(Freq < 500000) Freq = 500000;
-          if(Freq > 5000000) Freq = 5000000;
+          if(Freq < MinFreq) Freq = MinFreq;
+          if(Freq > MaxFreq) Freq = MaxFreq;
           RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq = Freq;
           if(TuneStep == 1000)
           {
@@ -1159,6 +1161,7 @@ void RFcalP(char *channel, char *Vpp)
     MVpp = RFdriverCounts2Volts(RFDDarray[brd].Rev, ADCraw, &RFDDarray[brd].RFCD[(ch-1) & 1].RFpADCchan);
     RFDDarray[brd].RFCD[(ch-1) & 1].RFpADCchan.m -= 10*(vpp - MVpp)/vpp;
     if((vpp - MVpp) < 1) break;
+    WDT_Restart(WDT);
   }
   SendACK;
 }
@@ -1195,3 +1198,5 @@ void RFcalN(char *channel, char *Vpp)
   }
   SendACK;
 }
+
+#endif

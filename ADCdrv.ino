@@ -1,4 +1,6 @@
-// This file contails ADC routines that support reading the ARM ADC channels
+//
+// This file contails ADC routines that support reading the ARM ADC channels.
+//
 
 uint16_t *ADCbuffer = NULL;   // Pointer to ADC buffer used to hold the raw data.
 MIPStimer *ADCclock = NULL;   // Timer used to set the digitization rate
@@ -236,4 +238,23 @@ void ADCabort(void)
   analogRead(ADC0);
   ReleaseADC();
   SendACK;
+}
+
+// ADC output function to support the ADC command. This function takes an integer values and returns the 
+// Counts for the channel selected.
+// Valid channels numbers are 0 through 3.
+
+void ADCread(int chan)
+{
+   int i;
+  
+   if((chan >= 0) && (chan <=3))
+   {
+     SendACKonly;
+     i = analogRead(chan);
+     if(!SerialMute) serial->println(i);
+     return;
+   }
+   SetErrorCode(ERR_BADARG);
+   SendNAK;
 }

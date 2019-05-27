@@ -16,5 +16,6 @@ void ADCtrigger(void);
 void ADCprep(void);
 void ADCsoftTrigger(void);
 void ADCabort(void);
+void ADCread(int chan);
 
 #endif

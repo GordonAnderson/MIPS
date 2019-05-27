@@ -41,6 +41,9 @@ typedef struct  // 147 bytes
   // These parameters really belong in RFchnnelData but there were added after release so placing at end of struct gives backwards compatability
   char   RFgateDI[2];       // Gate input, 0 if not used otherwise its the input P-X
   int8_t RFgateTrig[2];     // Gate level, 0,CHANGE,RISING, or FALLING
+  #if RFdriver2
+  int    Signature;         // Must be 0xAA55A5A5 for valid data
+  #endif
 } RFdriverData;
 
 // Prototypes
@@ -86,15 +89,20 @@ void SaveRF2EEPROM(void);
 #define TWI_RF_SET_RTUNE          0x0A      // Start the auto re-tune process for selected channel
 #define TWI_RF_SET_CALP           0x0B      // Sets the calibration parameters for VRFP, m and b. two floats
 #define TWI_RF_SET_CALN           0x0C      // Sets the calibration parameters for VRFN, m and b. two floats
+#define TWI_RF_CALP               0x0D      // The command will adjust the positive channel gain to set the Vpp to the setpoint.
+                                            // If the setpoint is negative then the calibration is set to default, float
+#define TWI_RF_CALN               0x0E      // The command will adjust the negative channel gain to set the Vpp to the setpoint.
+                                            // If the setpoint is negative then the calibration is set to default, float
 
 #define TWI_RF_SERIAL             0x27      // This command enables the TWI port to process serial commands
 
 #define TWI_RF_READ_READBACKS     0x81      // Returns the readback structure
 #define TWI_RF_READ_AVALIBLE      0x82      // Returns the number of bytes avalible in output buffer, 16 bit unsigned int
 #define TWI_RF_READ_DRIVE         0x83      // Returns the current drive setting, float
-#define TWI_RF_READ_TUNE          0x84      // Returns the auto tune flag, bool
-#define TWI_RF_READ_CALP          0x85      // Returns the calibration parameters for VRFP, m and b. two floats
-#define TWI_RF_READ_CALN          0x88      // Returns the calibration parameters for VRFN, m and b. two floats
+#define TWI_RF_READ_FREQ          0x84      // Returns the current frequency setting, int
+#define TWI_RF_READ_TUNE          0x85      // Returns the auto tune flag, bool
+#define TWI_RF_READ_CALP          0x86      // Returns the calibration parameters for VRFP, m and b. two floats
+#define TWI_RF_READ_CALN          0x87      // Returns the calibration parameters for VRFN, m and b. two floats
 
 // Current status structure, used to determine if any values have changed. One
 // for each channel in module.

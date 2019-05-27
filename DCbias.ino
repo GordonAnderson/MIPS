@@ -778,7 +778,7 @@ void DCbias_loop(void)
          }
          else if(i==0) offsetV = DCbDarray[b]->DCoffset.VoltageSetpoint;
          if(SuppliesOff) offsetV = 0;
-         DCbiasStates[b]->Readbacks[i] = Filter * (Counts2Value(ADCvals[i],&DCbDarray[b]->DCCD[i].DCmon) + offsetV) + (1-Filter) * DCbiasStates[b]->Readbacks[i];
+         DCbiasStates[b]->Readbacks[i] = Filter * (Counts2Value(ADCvals[DCbDarray[b]->DCCD[i].DCmon.Chan],&DCbDarray[b]->DCCD[i].DCmon) + offsetV) + (1-Filter) * DCbiasStates[b]->Readbacks[i];
          if(abs(DCbiasStates[b]->Readbacks[i]) > MaxDCbiasVoltage) MaxDCbiasVoltage = abs(DCbiasStates[b]->Readbacks[i]);
          if(b == SelectedDCBoard) Readback[i] = DCbiasStates[b]->Readbacks[i];
       }

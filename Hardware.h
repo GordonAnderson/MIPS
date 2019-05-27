@@ -214,27 +214,9 @@ void SetAddress(int8_t addr);
 void SelectBoard(int8_t Board);
 int SelectedBoard(void);
 
-void TriggerOut(char *cmd);
-void TriggerOut(int microSec, bool WithLimits = false);
-void AuxOut(char *cmd);
-void QueueTriggerOut(int microSec);
-void ProcessTriggerOut(void);
-void ADCread(int chan);
-bool QueueTpulseFunction(void (*Tfunction)(), bool add);
-void PlayTpulseFunctions(void);
-
-void DIOopsReport(void);
-void DIOreport(char *port, char *mode);
-void DIOmirror(char *in, char *out);
-void DIOmonitor(char *port, char *mode);
-void DIOchangeReport(char *port);
-
 void SetDelayTrigInput(char *input, char *level);
 void SetDelayTrigEnable(char *sena);
 void SetDelayTrigModule(char *module);
-
-bool bmpDraw(char *filename, uint8_t x, uint8_t y);
-void bmpReport(char *filename);
 
 void CPUtemp(void); 
 
@@ -251,19 +233,5 @@ extern uint32_t *TracePointTimes;
 void TraceCapture(uint8_t tp);
 void TraceReport(void);
 void TraceEnable(void);
-
-// SD file io commands
-void ListFiles(void);
-void DeleteFile(char *FileName);
-void GetFile(char *FileName);
-void PutFile(char * FileName,char *Fsize);
-void EEPROMtoSD(void);
-void SDtoEEPROM(void);
-void SaveAlltoSD(void);
-void LoadAllfromSD(void);
-void EEPROMtoSerial(char *brd, char *add);
-void SerialtoEEPROM(char *brd, char *add);
-
-//void ShutterEnable(char *state);
 
 #endif

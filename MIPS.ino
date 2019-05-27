@@ -6,16 +6,43 @@
 // tasking system. Basically every module in MIPS is its own task. The modules are discoved on power up
 // and there init functions are called. The modules then insert there menu option into the main system
 // menu. There are a couple of additional threads defined in this main loop, one for the LED light
-// flashing and a system thread that monitors power.
+// flashing and a system thread that monitors power. All module tasks run at 10 herts, serial commands
+// allow you to see all running tasks and you can stop tasks if you wish.
 //
-// The code in the modules does not block unless it is desired to stop all other tasks. Very little is
+// The code in the modules do not block unless it is desired to stop all other tasks. Very little is
 // done in ISRs with the exception of the table execution for pulse sequence generation.
 //
-// MIPS used ADCs and DACs with TWI and SPI interfaces. The TFT display is also SPI as if the SD card
+// MIPS used ADCs and DACs with TWI and SPI interfaces. The TFT display is also SPI as is the SD card
 // interface.
 //
 // Host computer communications is supported through both the native USB and serial ports. On power up
 // it defaults to native USB and if serial traffic is seen it switches to the active port automatically.
+// Ethernet and WiFi interfaces are supported by connecting interfaces to a processor serial port.
+//
+// Incoming serial characters are placed in a ring buffer and processed in the main loop. All commands
+// are processed in the polling loop when there is avalible time. The serial command processor is table 
+// driven and the command table is in the serial.cpp file. 
+//
+// The Variants.h file has a number of options for building the application. See the Variants file for
+// details.
+//
+// All modules have a data structures and the first three parameters are the same in all structures, size,
+// name, and rev. These structures are saved on the module hardware in serial EPROM. When the system starts
+// it scans all posible locations for EEPROMS looking for modules. These modules are identified by the name
+// string. The MIPS system has a board select line and modules all have a A/B jumper to select there board
+// address. Modules address are 50,52,54,56 (hex) and with board selet this allows 8 modules maximumin one
+// MIPS system.
+//
+// The rev parameter in the module data structure will effect the module behavior and is used to signal 
+// different things on different modules. The module code comments define what the rev value will do, there
+// is a serial command to allow you to define the rev.
+//
+// Modules such as the FAIMSFB and RFdriver2 have a M0 on module processor. This processor emulates the
+// serial EEPROM. The ARB module also has a M3 on module processor. These modules also have a USB port 
+// that will allow you to communicate with the M0 processor for setup, testing, and calibration. Communications
+// with the on module processor is also enabled through MIPS using the TWITALK capability. TWITALK 
+// redirects communications through the TWI port between the MIPS controller and the module. In the case
+// of the ARB you can also update the ARB firmware through this interfaces if you use the MIPS host app.
 //
 // General Notes:
 //  1.) When SAVE command is sent MIPS will save its configuration data structure to a file called
@@ -42,11 +69,7 @@
 //        1.) When output voltages exceed 0 the blue LED will be on indicating output are on.
 //        2.) If any output voltgae exceeds 50 volts the red LED will be on to provide warning.
 //        3.) If any output exceeds 100 volts the red LED will flash.
-//
-// To do list: --------------------------------------------------------------------------------------
-//   1.) Add three point calibration to FAIMS high voltage levels
-//   2.) Make the USB id text indicate GAACE
-//
+//        4.) Commands are provided to allow an application to override the LED
 //
 // Revision history and notes *********************************************************************************
 //
@@ -736,35 +759,43 @@
 //  1.153, Feb 21, 2019
 //      1.) Fixed bug in serial auto reset that was introducted in version 1.151 and 1.152, this bug caused a comms slow
 //          down. 
-//  1.154, in progress
+//  1.154, May 26, 2019
 //      1.) Fixed bug in DCbias module, when useing readbacks on offset the AD5532 was read for every channel
 //          instead of being read only one time
 //      2.) Added the FAIMSfb module interface, includes electrometer code
 //      3.) Added the TWIext file and header file to hold all the TWI related functions and developed generic
 //          TWI higher level functions
-//      4.) Added compile switches to Variants.h to enable turing off modules
+//      4.) Added compile switches to Variants.h to enable turing off modules, also messaged at complie time and
+//          signaled in version number
 //      5.) Updated table code and cleaned up a number of issues
 //      6.) Added ramping to table code
 //      7.) A bug appeared when using a USB isolator on a PC, strings sent to the MIPS controller over 64 bytes
 //          were dropping characters. Fixed this bug by changing the endpoint buffer size to 64 in the CDC.cpp 
 //          file on lines 77 amd 78.
-//      8.) To do list for this version update
-//          a.) Move all the FILEIO from the hardware file to a FILEIO new file
-//          b.) Move all the DIO functions from hardware to the DIO file file
-//          d.) Move ADC functions from hardware file to ADCdvr file
-//          e.) Add support for new RF driver module with on module M0 processor
-//          f.) Update ARB TWI commands to use the new function in TWIext file
-//          g.) Update ARB sync command
+//      9.) Mike's MALDI app failed due to the DTR requirment, removed this requirement
+//      10.) Changed the DCbias driver readback to use the channel number index for the ADC array, look at ways to 
+//           disable channels from testing.
+//      11.) Moved all DIO function from Hardware to DIO.cpp
+//      12.) Moved all file io from hardware to FILEIO
+//      13.) Moved ADC functions from hardware file to ADCdvr file
+//      14.) Added support for new RF driver module with on module M0 processor
+//      15.) Update ARB sync command to work even if the arb channel is not setup for ext sync
+//
+//      To do list for this version update
+//          a.) Update ARB TWI commands to use the new function in TWIext file
+//          b.) General ARB code clean up
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
 //
-// Next version to dos:
+//  Next version to dos / topics to think about:
 //      1.) Update the display code to make it interrupt safe when ISR uses SPI, done but turned off for compressor
 //      2.) Fix the DIO to allow command processing in table mode, this will require a pending update flag for
 //          the DIO, only update if no pending update
 //      3.) Consider re-implementing the table mode dialog box code. This should work after the SPI upgrades to
 //          display driver from step 3.
+//      4.) Add three point calibration to FAIMS high voltage levels
+//      5.) Make the USB id text indicate GAACE
 //
 // Serial.println(); will print '\r' and '\n',
 //
@@ -831,7 +862,38 @@ int  LEDstate = 0;
 
 uint32_t BrightTime=0;
 
-const char Version[] PROGMEM = "Version 1.154a, April 24, 2019";
+#if FAIMSFBcode 
+   #pragma message "FAIMSFB module enabled."
+   #define FAIMSFBvf "b"
+#else
+   #define FAIMSFBvf ""
+#endif
+#if FAIMScode 
+   #pragma message "FAIMS module enabled."
+   #define FAIMSvf "f"
+#else
+   #define FAIMSvf ""
+#endif
+#if HOFAIMcode 
+   #pragma message "HOFAIMS module enabled."
+   #define HOFAIMSvf "f"
+#else
+   #define HOFAIMSvf ""
+#endif
+#if TABLE2code 
+   #pragma message "Table 2 module enabled."
+   #define TABLE2vf "t"
+#else
+   #define TABLE2vf ""
+#endif
+#if RFdriver2 
+   #pragma message "RFdriver 2 module enabled."
+   #define RFdriver2vf "r"
+#else
+   #define RFdriver2vf ""
+#endif
+
+const char Version[] PROGMEM = "Version 1.154" FAIMSFBvf FAIMSFBvf HOFAIMSvf TABLE2vf RFdriver2vf ", May 26, 2019";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -1828,7 +1890,8 @@ void ReadAllSerial(void)
 {
   WDT_Restart(WDT);
   // Put serial received characters in the input ring buffer
-  if(SerialUSB.dtr()) while (SerialUSB.available() > 0)
+  //if(SerialUSB.dtr()) while (SerialUSB.available() > 0)  // Mike's app does not set DTR! maybe make this an options and default to not needed
+  while (SerialUSB.available() > 0)
   {
     ResetFilamentSerialWD();
     serial = &SerialUSB;
@@ -1864,39 +1927,6 @@ void ReadAllSerial(void)
 void ProcessSerial(void)
 {
   ReadAllSerial();
-  /*
-  // Put serial received characters in the input ring buffer
-  if(SerialUSB.dtr()) while (SerialUSB.available() > 0)
-  {
-    ResetFilamentSerialWD();
-    serial = &SerialUSB;
-    char c = SerialUSB.read();
-    if(Serial1Echo)
-    {
-       Serial1.write(c);
-       Serial1.flush();
-    }
-    if (!SerialNavigation(c)) PutCh(c);
-  }
-#ifdef EnableSerial
-  if ((!MIPSconfigData.UseWiFi) || (wifidata.SerialPort != 0))
-  {
-    while (Serial.available() > 0)
-    {
-      ResetFilamentSerialWD();
-      serial = &Serial;
-      PutCh(Serial.read());
-    }
-  }
-#endif
-  while (WiFiSerial->available() > 0)
-  {
-    ResetFilamentSerialWD();
-    serial = WiFiSerial;
-    PutCh(WiFiSerial->read());
-  }
-  ProcessEthernet();
-  */
   // If there is a command in the input ring buffer, process it!
   while (RB_Commands(&RB) > 0) // Process until flag that there is nothing to do
   {
