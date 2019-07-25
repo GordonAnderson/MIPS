@@ -75,6 +75,9 @@
 #define TWI_ARB_SET_SEXTSRC     0x37      // Select the external clock source
 #define TWI_ARB_SET_RAMP        0x38      // Define ramp rate in v/s
 
+#define TWI_SET_SINE            0x39      // Define one sine wave cycle for the selected channel and defined starting phase
+                                          // This command is for convential ARB mode, channel 0 to 7 (byte), phase is a float in degrees
+
 #define TWI_ARB_READ_REQ_FREQ   0x81      // Returns requested frequency
 #define TWI_ARB_READ_ACT_FREQ   0x82      // Returns actual frequency
 #define TWI_ARB_READ_STATUS     0x83      // Returns status byte (ARB system status)
@@ -266,7 +269,7 @@ void SetARBext(char *module, char *val);
 void ARBstartSweep(int module);
 void ARBstopSweep(int module);
 void GetARBsweepStatus(int module);
-
+void SetARBsine(void);
 
 // Compressor prototypes
 void SetARBCompressorEnabled(char *flag);

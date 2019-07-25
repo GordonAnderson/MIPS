@@ -311,6 +311,7 @@ void RFAmodeSelected(void)
   {
     // Closed loop
     RFAdialogEntriesPage1[4] = RFAdialogEntrySetPoint;
+    RFAdialogEntriesPage1[4].Max = RFAarray[SelectedRFAboard]->FullScale;
   }
   // If this page of the dialog is displayed update
   if(ActiveDialog->Entry == RFAdialogEntriesPage1)
@@ -335,7 +336,8 @@ void RFAmoduleSelected(void)
   rfad = *RFAD;
   // Setup menu based on loop mode
   RFAmodeSelected();
-  // Update the page is displayed
+  SetupRFAentries();
+  // Update the page if displayed
   if(ActiveDialog->Entry == RFAdialogEntriesPage1) DialogBoxDisplay(&RFAdialog);
 }
 
@@ -357,7 +359,7 @@ void SaveRFAsettings(void)
 
 void RestoreRFAsettings(void)
 {
-  RestoreDACsettings(false);
+  RestoreRFAsettings(false);
 }
 
 void RestoreRFAsettings(bool NoDisplay)
@@ -367,7 +369,7 @@ void RestoreRFAsettings(bool NoDisplay)
   bool Success=true;
   bool Corrupted=false;
   
-  b = SelectedDACboard;
+  b = SelectedRFAboard;
   if(RFAarray[b] == NULL) return;
   SelectBoard(b);
   if(ReadEEPROM(&rfa_data, RFAarray[b]->EEPROMadr, 0, sizeof(RFAdata)) == 0)
@@ -381,7 +383,7 @@ void RestoreRFAsettings(bool NoDisplay)
      else Corrupted=true;
   }
   else Success=false;
-  rfad = *RFAarray[SelectedDACboard];
+  rfad = *RFAarray[SelectedRFAboard];
   RFAmoduleSelected();
   if(NoDisplay) return;
   if(Corrupted) DisplayMessage("Corrupted EEPROM data!",2000);
@@ -462,6 +464,7 @@ void SetupRFAentries(void)
 // This function is called at powerup to initiaize the RF amp modules(s).
 void RFA_init(int8_t Board, int8_t addr)
 {
+  int sb = SelectedRFAboard;
   DialogBoxEntry *de = GetDialogEntries(RFAdialogEntriesPage1, "Module");
   
   // Allocate the module data structure based on board number passed
@@ -483,11 +486,13 @@ void RFA_init(int8_t Board, int8_t addr)
   RFAstates[Board]->SWR = 0;
   RFAstates[Board]->ph = 0;
   SelectBoard(Board);
+  SelectedRFAboard = Board;
   // Fill the array with default data
   *RFAarray[Board] = RFA_Rev1;
   RFAarray[Board]->EEPROMadr = addr;
   // Restore parameters from module's memory
   if(NormalStartup) RestoreRFAsettings(true);
+  SelectedRFAboard = sb;
   // Set full scale limit
   RFAdialogEntrySetPoint.Max = RFAarray[Board]->FullScale;
   // Make sure K is a valid float
@@ -625,7 +630,7 @@ void RFA_loop(void)
       {
         // Here if closed loop mode is selected
         RFACPLDimage[brd] |= 1 << RFAcpldCLOSED; // Closed LED on
-        RFACPLDimage[brd] |= 1 << RFAcpldDRVSP_SELECT; // Selext the setpoint DAC control
+        RFACPLDimage[brd] |= 1 << RFAcpldDRVSP_SELECT; // Select the setpoint DAC control
       }
       RFAstates[brd]->Mode = RFAarray[brd]->Mode;
     }

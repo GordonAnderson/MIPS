@@ -449,6 +449,32 @@ void SetChannelRangeMessage(int board, int channel, int strtI, int stpI, float v
   ReleaseTWI();
 }
 
+void SetChannelSineMessage(int board, int channel, float phase)
+{
+  uint8_t *b;
+
+  SelectBoard(board);
+  AcquireTWI();
+  Wire.beginTransmission(ARBarray[board]->ARBadr);
+  Wire.write(TWI_SET_SINE);
+
+  channel--;
+  b = (uint8_t *)&channel;
+  Wire.write(b[0]);
+
+  b = (uint8_t *)&phase;
+  Wire.write(b[0]);
+  Wire.write(b[1]);
+  Wire.write(b[2]);
+  Wire.write(b[3]);
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
+  ReleaseTWI(); 
+}
+
+
 void SetBufferLength(int board, int BufferLength)
 {
   uint8_t *b;
@@ -1898,6 +1924,47 @@ void SetARBchanRange(void)
    // If here then we had bad arguments!
   SetErrorCode(ERR_BADARG);
   SendNAK;
+}
+
+// This command will set an ARB channel to one cycle of a sine wave.
+// All parameters are pulled from the ring buffer.
+//  Module,Channel,Phase
+void SetARBsine(void)
+{
+   char   *Token;
+   String sToken;
+   int    ch,b,mod;
+   float  phase;
+
+   while(1)
+   {
+     // Read all the arguments
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sToken = Token;
+     mod = sToken.toInt();
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sToken = Token;
+     ch = sToken.toInt();
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sToken = Token;
+     phase = sToken.toFloat();
+     if((Token = GetToken(true)) == NULL) break;
+     if(Token[0] != '\n') break;
+     // Test the range
+     if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+     if((ch < 1) || (ch > 8)) break;
+     // Now we can call the function!
+     SendACK;
+     SetChannelSineMessage(b,ch,phase);
+     return;
+   }
+   // If here then we had bad arguments!
+  SetErrorCode(ERR_BADARG);
+  SendNAK;
+  
 }
 
 // The following functions support the dual output board option avalible on rev 3.0

@@ -771,7 +771,7 @@
 //      6.) Added ramping to table code
 //      7.) A bug appeared when using a USB isolator on a PC, strings sent to the MIPS controller over 64 bytes
 //          were dropping characters. Fixed this bug by changing the endpoint buffer size to 64 in the CDC.cpp 
-//          file on lines 77 amd 78.
+//          file on lines 77 and 78.
 //      9.) Mike's MALDI app failed due to the DTR requirment, removed this requirement
 //      10.) Changed the DCbias driver readback to use the channel number index for the ADC array, look at ways to 
 //           disable channels from testing.
@@ -780,6 +780,17 @@
 //      13.) Moved ADC functions from hardware file to ADCdvr file
 //      14.) Added support for new RF driver module with on module M0 processor
 //      15.) Update ARB sync command to work even if the arb channel is not setup for ext sync
+//      16.) Updated the DCbias driver to allow two board on board select 0, also updated tabel code to support
+//           this change. This allows 16 channels of DCbias with all channels using the same board select
+//  1.155, July 3, 2019
+//      1.) Fixed bug in the table code, fixed in table2. This bug was only happened when using the EXTS clock mode.
+//          Ben in Bush's lab found the bug.
+//  1.156, July 6, 2019
+//      1.) Added the ARB sine wave generation capability for convention ARB mode, this is to support thermo project.
+//      2.) Fix bug in RFamp driver that caused the second modules setpoint limit to be applied to both channels.
+//  1.157, July 8, 2019
+//      1.) Updated table 2 code to dynamically allocate table space
+//      2.) Packed the table structures to provide more space, table 2 code
 //
 //      To do list for this version update
 //          a.) Update ARB TWI commands to use the new function in TWIext file
@@ -893,7 +904,7 @@ uint32_t BrightTime=0;
    #define RFdriver2vf ""
 #endif
 
-const char Version[] PROGMEM = "Version 1.154" FAIMSFBvf FAIMSFBvf HOFAIMSvf TABLE2vf RFdriver2vf ", May 26, 2019";
+const char Version[] PROGMEM = "Version 1.157" FAIMSFBvf FAIMSvf HOFAIMSvf TABLE2vf RFdriver2vf ", July 8, 2019";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();

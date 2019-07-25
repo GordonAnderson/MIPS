@@ -627,7 +627,7 @@ void PutFile(char * FileName,char *Fsize)
   {
     AtomicBlock< Atomic_RestoreState >   a_Block;
     SD.begin(_sdcs);
-    // Remove the existing default.cfg file
+    // Remove the existing file
     SD.remove(FileName);
     // Open file and write config structure to disk
     if(!(file=SD.open(FileName,FILE_WRITE)))

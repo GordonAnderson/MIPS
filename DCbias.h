@@ -1,6 +1,8 @@
 #ifndef DCBIAS_H_
 #define DCBIAS_H_
 
+#define MAXDCbiasMODULES   4
+
 extern float MaxDCbiasVoltage;
 extern int   NumberOfDCChannels;
 extern bool  DCbiasUpdate;

@@ -524,6 +524,8 @@ const Commands  CmdArray[] = 	{
   {"SARBCHS", CMDfunctionStr, 2, (char *)SetARBchns},                // Sets all ARB channels in the full buffer to a defined value  
   {"SARBCH", CMDfunctionLine, 0, (char *)SetARBchannel},             // Sets a defined ARB channel in the full buffer to a defined value  
   {"SACHRNG", CMDfunctionLine, 0, (char *)SetARBchanRange},          // Sets an ARB channel to a value over a defined range
+  {"SARBSINE", CMDfunctionLine, 0, (char *)SetARBsine},              // Sets a specific ARB channel to one sine wave cycle at select starting phase
+                                                                     // parameters; module, channel, phase
 // ARB compressor commands
   {"SARBCTBL", CMDlongStr, 100, (char *)TwaveCompressorTable},       // Twave compressor table definition setting command
   {"GARBCTBL", CMDstr, 0, (char *)TwaveCompressorTable},             // Twave compressor table definition reporting command
@@ -627,6 +629,10 @@ const Commands  CmdArray[] = 	{
   {"GELTMTRPOSOFF",  CMDfunction, 0, (char *)ReturnEMRTposOff},      // Returns the electrometer positive channel offset
   {"SELTMTRNEGOFF",  CMDfunctionStr, 1, (char *)SetEMRTnegOff},      // Set the electrometer negative channel offset
   {"GELTMTRNEGOFF",  CMDfunction, 0, (char *)ReturnEMRTnegOff},      // Returns the electrometer negative channel offset
+  {"SELTMTRPOSZERO",  CMDfunctionStr, 1, (char *)SetEMRTposZero},    // Set the electrometer positive channel zero
+  {"GELTMTRPOSZERO",  CMDfunction, 0, (char *)ReturnEMRTposZero},    // Returns the electrometer positive channel zero
+  {"SELTMTRNEGZERO",  CMDfunctionStr, 1, (char *)SetEMRTnegZero},    // Set the electrometer negative channel zero
+  {"GELTMTRNEGZERO",  CMDfunction, 0, (char *)ReturnEMRTnegZero},    // Returns the electrometer negative channel zero
   {"ELTMTRZERO",  CMDfunction, 0, (char *)SetEMRTzero},              // Execute the electrometer zero procedure
 #endif
 // End of table marker
@@ -637,6 +643,9 @@ void Debug(int function)
 {
   uint8_t  *ptr;
 
+  serial->println(Counter);
+  if(function>0) Counter = function;
+  return;
 //  ptr = new uint8_t[function];
   ptr = (uint8_t *)malloc(function);
   if(ptr == NULL) serial->println("Out of memory!");

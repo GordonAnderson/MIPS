@@ -949,6 +949,41 @@ void ReturnEMRTnegOff(void)
   SendACKonly; if(SerialMute) return;
   serial->println(faimsfbvars->NegOffset,4); 
 }
+
+void SetEMRTposZero(char *val)
+{
+    int brd;
+    
+    if((brd=isElectrometer()) == -1) return;
+    SetFAIMSfb("1",val,&FAIMSFBarray[brd]->ElectPosZero,&FAIMSFBarray[brd]->ElectPosZero,0,5.0);
+    AD5593writeDACWire1(FAIMSFBarray[brd]->ElectAdd, FAIMSFBarray[brd]->ElectPosZeroCtrl.Chan, Value2Counts(FAIMSFBarray[brd]->ElectPosZero,&FAIMSFBarray[brd]->ElectPosZeroCtrl));
+}
+void ReturnEMRTposZero(void)
+{
+  int brd;
+
+  if((brd=isElectrometer()) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  serial->println(FAIMSFBarray[brd]->ElectPosZero,4); 
+}
+void SetEMRTnegZero(char *val)
+{
+    int brd;
+    
+    if((brd=isElectrometer()) == -1) return;
+    SetFAIMSfb("1",val,&FAIMSFBarray[brd]->ElectNegZero,&FAIMSFBarray[brd]->ElectNegZero,0,5.0);
+    AD5593writeDACWire1(FAIMSFBarray[brd]->ElectAdd, FAIMSFBarray[brd]->ElectNegZeroCtrl.Chan, Value2Counts(FAIMSFBarray[brd]->ElectNegZero,&FAIMSFBarray[brd]->ElectNegZeroCtrl));
+}
+void ReturnEMRTnegZero(void)
+{
+  int brd;
+
+  if((brd=isElectrometer()) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  serial->println(FAIMSFBarray[brd]->ElectNegZero,4); 
+}
+
+
 void SetEMRTzero(void)
 {
   SendACK;

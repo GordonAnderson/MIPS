@@ -232,6 +232,10 @@ void SetEMRTposOff(char *val);
 void ReturnEMRTposOff(void);
 void SetEMRTnegOff(char *val);
 void ReturnEMRTnegOff(void);
+void SetEMRTposZero(char *val);
+void ReturnEMRTposZero(void);
+void SetEMRTnegZero(char *val);
+void ReturnEMRTnegZero(void);
 void SetEMRTzero(void);
 
 #endif

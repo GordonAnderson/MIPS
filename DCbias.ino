@@ -47,8 +47,6 @@
 #include "Table.h"
 #include "Errors.h"
 
-#define MAXDCbiasMODULES   4
-
 extern DialogBox DCbiasDialog;
 extern bool NormalStartup;
 
@@ -254,7 +252,8 @@ void SetNextDCbiasPage(void)
   if((DCbiasDialog.Entry == DCDialogEntriesPage1) && (NumberOfDCChannels > 8))
   {
     DCbiasDialog.Entry = DCDialogEntriesPage1a;
-    SelectedDCBoard = 1;
+    //SelectedDCBoard = 1;
+    SelectedDCBoard = DCbiasCH2Brd(8);
     SelectBoard(SelectedDCBoard);
     // Init the dcbd structure
     dcbd = *DCbD;
@@ -264,7 +263,8 @@ void SetNextDCbiasPage(void)
   else if((DCbiasDialog.Entry == DCDialogEntriesPage1a) && (NumberOfDCChannels > 16))
   {
     DCbiasDialog.Entry = DCDialogEntriesPage1b;
-    SelectedDCBoard = 2;
+    //SelectedDCBoard = 2;
+    SelectedDCBoard = DCbiasCH2Brd(16);
     SelectBoard(SelectedDCBoard);
     // Init the dcbd structure
     dcbd = *DCbD;
@@ -274,7 +274,8 @@ void SetNextDCbiasPage(void)
   else if((DCbiasDialog.Entry == DCDialogEntriesPage1b) && (NumberOfDCChannels > 24))
   {
     DCbiasDialog.Entry = DCDialogEntriesPage1c;
-    SelectedDCBoard = 3;
+    //SelectedDCBoard = 3;
+    SelectedDCBoard = DCbiasCH2Brd(24);
     SelectBoard(SelectedDCBoard);
     // Init the dcbd structure
     dcbd = *DCbD;
@@ -294,8 +295,9 @@ void SetFirstDCbiasPage(void)
   
   DCbiasDialog.Entry = DCDialogEntriesPage1;
   // Select the first board
-  if(DCbDarray[0] != NULL) SelectedDCBoard=0;
-  else if(DCbDarray[1] != NULL) SelectedDCBoard=1;
+  SelectedDCBoard = DCbiasCH2Brd(0);
+//  if(DCbDarray[0] != NULL) SelectedDCBoard=0;
+//  else if(DCbDarray[1] != NULL) SelectedDCBoard=1;
   SelectBoard(SelectedDCBoard);
   // Init the dcbd structure
   dcbd = *DCbD;
@@ -318,12 +320,51 @@ bool isDCbiasBoard(int Board)
 // If no valid board is found -1 is returned.
 int DCbiasCH2Brd(int ch)
 {
+/*
   // If channel < 8 then it could be board 0 to 1
   if((ch < 8) && isDCbiasBoard(0)) return(0);
   if((ch < 8) && isDCbiasBoard(1)) return(1);
   int bd = ch/8;
   if(!isDCbiasBoard(bd)) return(-1);
   return(bd);
+*/
+  int  i,j=8;
+
+  for(i=0;i<MAXDCbiasMODULES;i++)
+  {
+    if(DCbDarray[i] != NULL) 
+    {
+       if(ch < j) return(i);
+       else j += 8;
+    }
+  }
+  return(-1);
+}
+
+// Return the channel number 1 thur total channels based on
+// board address (0 to 3) and channel index (0 to 7)
+int DCBadd2chan(int brd, int ch)
+{
+/*
+  if(DCbDarray[brd] == NULL) return(0);  // this should never happen
+  if(brd == 0) return(ch+1);
+  if((DCbDarray[0] == NULL) && (brd == 1)) return(ch+1);
+  if(brd == 1)  return(ch+9);
+  if(brd == 2)  return(ch+17);
+  if(brd == 3)  return(ch+25);  
+  return(0);
+*/
+  int i, j = 0;
+  
+  for(i=0;i<MAXDCbiasMODULES;i++)
+  {
+    if(DCbDarray[i] != NULL) 
+    {
+      if(i == brd) return(j + ch + 1);
+      else j += 8;
+    }
+  }
+  return(0);
 }
 
 // This function allows calibration of the seleted channel
@@ -528,19 +569,6 @@ void DelayMonitoring(void)
   VerrorFiltered = 0;  // Reset the error filtered value
 }
 
-// Return the channel number 1 thur total channels based on
-// board address (0 to 3) and channel index (0 to 7)
-int DCBadd2chan(int brd, int ch)
-{
-  if(DCbDarray[brd] == NULL) return(0);  // this should never happen
-  if(brd == 0) return(ch+1);
-  if((DCbDarray[0] == NULL) && (brd == 1)) return(ch+1);
-  if(brd == 1)  return(ch+9);
-  if(brd == 2)  return(ch+17);
-  if(brd == 3)  return(ch+25);  
-  return(0);
-}
-
 // Init the AD5593 (Analog and digital IO chip) for the DCbias module. The following 
 // setup requirements:
 // CH0 = DAC out, offset control
@@ -576,7 +604,8 @@ void DCbias_init(int8_t Board, int8_t addr)
   // On first call set the profile pointers to NULL
   if(NumberOfDCChannels == 0) for(i=0;i<NumProfiles;i++) DCbiasProfiles[i] = NULL;
   // If there are already two or more modules add 2 to the board number
-  if(NumberOfDCChannels >= 16) Board += 2;
+//  if(NumberOfDCChannels >= 16) Board += 2;
+  if(DCbDarray[Board] != NULL) Board += 2;
   // Allocate the module data structure based on board number passed
   DCbDarray[Board] = new DCbiasData;
   DCbiasStates[Board] = new DCbiasState;
@@ -601,7 +630,7 @@ void DCbias_init(int8_t Board, int8_t addr)
     RestoreDCbiasSettings(true);
     *DCbD = dcbd;        // Copy back into the configuration data structure array
   }
-  // If the DAC TWI address is 0x10 or 0x11 thne the device is a AD5593.
+  // If the DAC TWI address is 0x10 or 0x11 then the device is a AD5593.
   // Setup as needed
   if((DCbDarray[Board]->DACadr & 0xFE) == 0x10)
   {
@@ -682,7 +711,11 @@ void DCbias_loop(void)
   for(i=0;i<DCbD->NumChannels;i++) if(abs(DCbD->DCCD[i].VoltageSetpoint - dcbd.DCCD[i].VoltageSetpoint) > 1.0) DelayMonitoring();
   if(abs(DCbD->DCoffset.VoltageSetpoint - dcbd.DCoffset.VoltageSetpoint) > 1.0) DelayMonitoring();
   if(ActiveDialog == &DCbiasDialog) *DCbD = dcbd;   // This writes any changes to the DCbias array  
-  if(DCbDarray[0]->UseOneOffset) DCbDarray[SelectedDCBoard ^ 1]->DCoffset.VoltageSetpoint = DCbDarray[SelectedDCBoard]->DCoffset.VoltageSetpoint;
+  //if(DCbDarray[0]->UseOneOffset) DCbDarray[SelectedDCBoard ^ 1]->DCoffset.VoltageSetpoint = DCbDarray[SelectedDCBoard]->DCoffset.VoltageSetpoint;
+  for(i=0;i<MAXDCbiasMODULES;i++)
+  {
+     if(DCbDarray[0]->UseOneOffset) if(DCbDarray[i] != 0) DCbDarray[i]->DCoffset.VoltageSetpoint = DCbDarray[SelectedDCBoard]->DCoffset.VoltageSetpoint;    
+  }
   MaxDCbiasVoltage = 0;
   Verror = 0;
   // This logic was add in version 1.150. This code will ramp the voltages back up after
@@ -695,10 +728,10 @@ void DCbias_loop(void)
     if(!SuppliesOff && !LastSuppliesState) Mult = 1.0;
     else Mult = (float)(StepUp+1)/100.0; 
     if(SuppliesOff) Mult = 1.0;
-    for(b=0;b<4;b++)
+    for(b=0;b<MAXDCbiasMODULES;b++)
     {
-      SelectBoard(b);
       if(DCbDarray[b] == NULL) continue;
+      SelectBoard(b);
       // Update the offset output, its TWI not SPI!
       if(SuppliesOff == false)
       {
@@ -1065,6 +1098,7 @@ void DCbiasSetFloat(char *Chan, char *Value)
 {
   DCbiasData *DCbData;
   int        chan;
+  int8_t     i;
   float      value;
   
   // Scan the parameters
@@ -1086,7 +1120,8 @@ void DCbiasSetFloat(char *Chan, char *Value)
   // loop update the outputs.
   DelayMonitoring();
   DCbData->DCoffset.VoltageSetpoint = value;
-  if(DCbDarray[0]->UseOneOffset) DCbDarray[0]->DCoffset.VoltageSetpoint = DCbDarray[1]->DCoffset.VoltageSetpoint = value;
+  //if(DCbDarray[0]->UseOneOffset) DCbDarray[0]->DCoffset.VoltageSetpoint = DCbDarray[1]->DCoffset.VoltageSetpoint = value;
+  if(DCbDarray[0]->UseOneOffset) for(i=0;i<MAXDCbiasMODULES;i++) if(DCbDarray[i] != NULL) DCbDarray[i]->DCoffset.VoltageSetpoint = value;
   // If this channel is being displayed in a dialog then refresh the display
   if(GetDCbiasBoard(chan) == SelectedDCBoard) dcbd = *DCbD;
 //  {

@@ -201,8 +201,8 @@ int8_t BoardFromSelectedChannel(int8_t SC)
     return (-1);
   }
   if(SC > 7) return(-1);
-  if(RFDDarray[SC << 1] == NULL) return(-1);
-  return(SC << 1);
+  if(RFDDarray[SC >> 1] == NULL) return(-1);
+  return(SC >> 1);
 }
 
 // This function is called at powerup to initiaize the RF driver.
@@ -230,7 +230,7 @@ void RFdriver_init(int8_t Board, int8_t addr)
   Channel = NumberOfRFChannels + 1;
   SelectedRFChan = Channel - 1;
   RFDDarray[Board]->EEPROMadr = addr;
-  SelectedRFChan=0;
+//  SelectedRFChan=0;
   RestoreRFdriverSettings(true);
   // Define the initial selected channel as 0 and setup
   Channel = 1;
@@ -258,6 +258,7 @@ void RFdriver_loop(void)
   float fval;
   int   ival;
   
+  MaxRFVoltage = 0;
   SelectedRFBoard = BoardFromSelectedChannel(SelectedRFChan);
   SelectBoard(SelectedRFBoard);
   if(ActiveDialog == &RFdriverDialog)
@@ -285,6 +286,8 @@ void RFdriver_loop(void)
       if(RFrb[b] != NULL)
       {
         TWIreadBlock(RFDDarray[b]->EEPROMadr | 0x20, b,TWI_RF_READ_READBACKS, (void *)RFrb[b][C], sizeof(RFreadBacks));
+        if(RFrb[b][C]->RFP > MaxRFVoltage) MaxRFVoltage = RFrb[b][C]->RFP;
+        if(RFrb[b][C]->RFN > MaxRFVoltage) MaxRFVoltage = RFrb[b][C]->RFN;
         if(c == SelectedRFChan)
         {
           // Update the display values
@@ -293,7 +296,7 @@ void RFdriver_loop(void)
           Power  = RFrb[b][C]->PWR;
         }
       }
-      if(Tuning & (TuningChannel = c))
+      if(Tuning & (TuningChannel == c))
       {
         // Get tuning status and if finished then clear flag and dismiss message
         if(TWIread8bitUnsigned(RFDDarray[b]->EEPROMadr | 0x20, b,TWI_RF_READ_TUNE, &ival))
@@ -312,8 +315,8 @@ void RFdriver_loop(void)
       if(RFstate[b][C]->update || (RFstate[b][C]->MaxPower   != RFDDarray[b]->RFCD[C].MaxPower))   TWIsetFloat(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_MAXPWR, RFstate[b][C]->MaxPower =   RFDDarray[b]->RFCD[C].MaxPower);
       if(RFstate[b][C]->update || (RFstate[b][C]->RFmode     != RFDDarray[b]->RFCD[C].RFmode))
       {
-        if(RFstate[b][C]->RFmode == RF_AUTO) TWIsetFloat(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_MODE, true);
-        else TWIsetFloat(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_MODE, false);
+        if(RFDDarray[b]->RFCD[C].RFmode == RF_AUTO) TWIsetBool(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_MODE, true);
+        else TWIsetBool(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_MODE, false);
         RFstate[b][C]->RFmode = RFDDarray[b]->RFCD[C].RFmode;
       }
       // Readback Drive and Frequency in case the module changed the values

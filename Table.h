@@ -49,12 +49,16 @@ enum TableModes
 //  Table header
 //  Entry header, one for each entry
 //  Entry, one for each entry
+#if TABLE2code
+#pragma pack(1)
+#endif
+
 typedef struct
 {
     char TableName;
     int  RepeatCount;
     int  MaxCount;
-    char NumEntries;
+    int  NumEntries;  // Changed to int, 07/18/2019
 } TableHeader;
 
 typedef struct
@@ -68,6 +72,10 @@ typedef struct
     char Chan;
     int  Value;
 } TableEntry;
+
+#if TABLE2code
+#pragma pack()
+#endif
 
 // Table nesting stack
 #define     MaxNesting  5
@@ -86,6 +94,7 @@ extern volatile bool softLDAC;
 extern bool TableResponse;
 extern bool TblTasks;
 extern int  ExtFreq;
+extern unsigned int Counter;
 
 #if TABLE2code
 // Funtion queue enum and structures to support queuing functions that need

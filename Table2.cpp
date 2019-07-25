@@ -61,10 +61,11 @@ static uint32_t pin = g_APinDescription[BRDSEL].ulPin;
 static Pio *pioA    = g_APinDescription[ADDR0].pPort;
 
 #define NumTables 5
-#define MaxTable  4096
+int     MaxTable = 0;  // Used while table is loading to allocate memory as needed for the table
 unsigned int Counter;
 
-volatile unsigned char VoltageTable[NumTables][MaxTable];
+//volatile unsigned char *VoltageTable[NumTables] = {NULL,NULL,NULL,NULL,NULL};
+unsigned char *VoltageTable[NumTables] = {NULL,NULL,NULL,NULL,NULL};
 volatile int ptr;     // Table pointer
 volatile int CT = 0;  // Current table number
 // These pointers are used by the real time processing of a table
@@ -721,10 +722,12 @@ void ParseTableCommand(void)
         return;
     }
     // Init processing loop
-    ptr          = 0;        // Memory block pointer
+    ptr              = 0;    // Memory block pointer
     TablesLoaded[CT] = 0;    // Number of tables loaded
-    TestNesting = 0;         // Clear this error counter
-    iStat = 0;
+    TestNesting      = 0;    // Clear this error counter
+    iStat            = 0;
+    VoltageTable[CT] = (unsigned char *)realloc((void *)VoltageTable[CT], 1000);
+    MaxTable = 1000;
     while(1)
     {
         // Start of table, pointer setup
@@ -778,10 +781,14 @@ void ParseTableCommand(void)
         {
             if((MaxTable - ptr) < (sizeof(TableHeader) + sizeof(TableEntryHeader) + sizeof(TableEntry)))
             {
-                // Out of space!
-                iStat = PEerror;
-                SetErrorCode(ERR_TBLTOOBIG);
-                break;
+                VoltageTable[CT] = (unsigned char *)realloc((void *)VoltageTable[CT], MaxTable += 1000);
+                if(VoltageTable[CT] == NULL)
+                {
+                   // Out of space!
+                   iStat = PEerror;
+                   SetErrorCode(ERR_TBLTOOBIG);
+                   break;
+                }
             }
             iStat = ParseEntry(i,TK);
             if(iStat == PEerror) break;
@@ -1211,7 +1218,17 @@ void SetupTimer(void)
         NS.Ptr++;
     }
     // Setup the channel to board number array this is used in table processing for speed!
-    int i;
+    int i,k,j=0;
+    
+    for(i=0;i<MAXDCbiasMODULES;i++)
+    {
+      if(DCbDarray[i] != NULL)
+      {
+        for(k=0;k<8;k++) Chan2Brd[k+j] = ((DCbDarray[i]->DACspi << 4) & 0x70) | (i & 1);
+        j += 8;
+      }
+    }
+/*
     if(DCbDarray[0] != NULL)
     {
        for(i=0;i<8;i++) if(DCbDarray[0] != NULL) Chan2Brd[i]    = (DCbDarray[0]->DACspi << 4) & 0x70;       else Chan2Brd[i]    = 0x20;
@@ -1223,6 +1240,7 @@ void SetupTimer(void)
     {
        for(i=0;i<8;i++) Chan2Brd[i] = ((DCbDarray[1]->DACspi << 4) & 0x70) | 1;      
     }
+*/
     // Setup counter, use MPT
     MPT.begin();  
     // Need to make sure the any pending interrupts are cleared on TRIGGER. So if we are in a hardware
@@ -1397,6 +1415,7 @@ void ISRclk(void)
 {
   static Pio *pio = g_APinDescription[SoftClockDIO].pPort;
   static uint32_t pin =g_APinDescription[SoftClockDIO].ulPin;
+  bool Amatch,Cmatch;
 
   // Exit if counter is not enabled
 //  if(!TableTriggered) return;
@@ -1407,14 +1426,23 @@ void ISRclk(void)
   // Advance the counter
   Counter++;
   // Compare to RA and call ISR if equal
-  if(Counter == MPTtc.TC_RA) 
+  if(Counter == MPTtc.TC_RA) Amatch = true;
+  else Amatch = false;
+  // Compare to RC and call ISR if equal and reset the count,
+  // Changed from == to >= July 1, 2019. Bush lab found bug with nested loops and this fixed?
+  // this change makes it work but the total table count is long, something else is going on.
+  if(Counter >= MPTtc.TC_RC) Cmatch = true;
+  else Cmatch = false;
+  if(Amatch)
   {
     if(StopRequest) StopTimer();
     RAmatch_Handler();
   }
-  // Compare to RC and call ISR if equal and reset the count  
-  if(Counter == MPTtc.TC_RC) RCmatch_Handler();
-  if(Counter == MPTtc.TC_RC) Counter = 0;
+  if(Cmatch)
+  {
+     RCmatch_Handler();
+     Counter = 0;
+  }
 }
 
 void ClockSsetup(void)
