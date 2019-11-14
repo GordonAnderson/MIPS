@@ -106,6 +106,8 @@ typedef struct
   bool     EnetUseTWI;        // If true the ethernet interface uses the TWI (wire1) interface
   char     InterlockIn;       // Interlock digital input
   char     InterlockOut;      // Interlock digital output
+  char     reserved[2];
+  bool     UseBRDSEL;         // True if board select line is used, this is the default case
 } MIPSconfigStruct;
 
 void   DisplayIntensity(void);

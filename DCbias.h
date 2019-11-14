@@ -8,6 +8,7 @@ extern int   NumberOfDCChannels;
 extern bool  DCbiasUpdate;
 extern bool  DCbiasBoards[2];
 extern bool  DCbiasTestEnable;
+extern bool  DCbiasUpdate;
 extern bool  AutoReset;
 
 // DCbias pulse channel variables

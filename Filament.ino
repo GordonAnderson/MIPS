@@ -72,6 +72,9 @@
 //  Rev 1 = Orginal 2 channel filament module
 //  Rev 2 = Current reversable single channel mode. Need to tie the two channels together.
 //  Rev 3 = Supports on module emission current monitoring, added on PCB rev 4.0
+//  Rev 4 = Supports the e-msion single board solution. This is a one channel filament 
+//          and uses the AD5593 analog and digital IO chip. A rev 4 variant is used to set up
+//          this mode. added sept 10, 2019
 //
 // Gordon Anderson
 // July 25, 2015
@@ -209,7 +212,8 @@ void CalFilamentSupplyV(void)
 
   SelectBoard(SelectedFilamentBoard);
   // Set up the calibration data structure
-  CC.ADCpointer = &AD7998;
+  if(FD.Rev == 4) CC.ADCpointer = &AD5593readADC;
+  else CC.ADCpointer = &AD7998;
   CC.Min = 0;
   CC.Max = 5;
   CC.DACaddr = FD.DACadr;
@@ -228,7 +232,8 @@ void CalFilamentV(void)
 
   SelectBoard(SelectedFilamentBoard);
   // Set up the calibration data structure
-  CC.ADCpointer = &AD7998;
+  if(FD.Rev == 4) CC.ADCpointer = &AD5593readADC;
+  else CC.ADCpointer = &AD7998;
   CC.Min = 0;
   CC.Max = 5;
   CC.DACaddr = FD.DACadr;
@@ -247,7 +252,8 @@ void CalFilamentI(void)
 
   SelectBoard(SelectedFilamentBoard);
   // Set up the calibration data structure
-  CC.ADCpointer = &AD7998;
+  if(FD.Rev == 4) CC.ADCpointer = &AD5593readADC;
+  else CC.ADCpointer = &AD7998;
   //  CC.Min = -2;
   //  CC.Max = 4;
   CC.DACaddr = FD.DACadr;
@@ -266,7 +272,8 @@ void CalEmissionI(void)
 
   SelectBoard(SelectedFilamentBoard);
   // Set up the calibration data structure
-  CC.ADCpointer = &AD7998;
+  if(FD.Rev == 4) CC.ADCpointer = &AD5593readADC;
+  else CC.ADCpointer = &AD7998;
   CC.DACaddr = 0;
   CC.ADCaddr = FD.ADCadr;
   CC.DACout = NULL;
@@ -438,6 +445,35 @@ void RestorFilamentSettings(void)
   RestorFilamentSettings(false);
 }
 
+// Init the AD5593 (Analog and digital IO chip) for the Filament module. The following 
+// setup requirements:
+// CH0 = Digital out, enable
+// CH1 = DAC output, voltage control
+// CH2 = ADC in, voltage monitor
+// CH3 = ADC in, filament voltage monitor
+// CH4 = DAC out, filament current control
+// CH5 = ADC in, filament current monitor
+// CH6 = ADC in, emission current
+// Internal 2.5V reference with 0 to 2.5V range
+// No pullups
+void FilamentAD5593init(int8_t addr)
+{
+   // General purpose configuration
+   AD5593write(addr, 3, 0x0100);
+   // Set reference
+   AD5593write(addr, 11, 0x0200);     // Set int reference
+   // Set LDAC mode
+   AD5593write(addr, 7, 0x0000);
+   // Set DAC outputs channels
+   AD5593write(addr, 5, 0x0012);
+   // Set ADC input channels
+   AD5593write(addr, 4, 0x006C);
+   // Set DIO outputs channels
+   AD5593write(addr, 8, 0x0001);
+   // Turn off all pulldowns
+   AD5593write(addr, 6, 0x0000);   
+}
+
 // This function is called on power up initilization. This function
 // will enable the filament driver module.
 void Filament_init(int8_t Board, int8_t addr)
@@ -453,8 +489,12 @@ void Filament_init(int8_t Board, int8_t addr)
   FDarray[Board].EEPROMadr = addr;
   if (NormalStartup) RestorFilamentSettings(true);
   // Init the hardware here...
-  pinMode(FDarray[Board].FCD[0].Fpwr, OUTPUT);
-  pinMode(FDarray[Board].FCD[1].Fpwr, OUTPUT);
+  if(FDarray[Board].Rev == 4) FilamentAD5593init(FDarray[Board].ADCadr);
+  else
+  {
+     pinMode(FDarray[Board].FCD[0].Fpwr, OUTPUT);
+     pinMode(FDarray[Board].FCD[1].Fpwr, OUTPUT);
+  }
   // If current sense resisance value is 0 then turn off the display,
   // Enable the display on rev 3
   de = GetDialogEntries(FilamentEntriesPage1, " Bias I, uA");
@@ -462,7 +502,7 @@ void Filament_init(int8_t Board, int8_t addr)
   {
     if(FDarray[Board].iSense == 0) de->Type = D_OFF;
     else de->Type = D_FLOAT;
-    if(FDarray[Board].Rev == 3) de->Type = D_FLOAT;
+    if(FDarray[Board].Rev >= 3) de->Type = D_FLOAT;
   }
   // If Rev is 2 or greater then enable the current direction option
   if(FDarray[Board].Rev >= 2)
@@ -474,11 +514,16 @@ void Filament_init(int8_t Board, int8_t addr)
     FDarray[Board].FCD[0].Mode |= FDarray[Board].FCD[1].Mode;
     FDarray[Board].FCD[1].Mode |= FDarray[Board].FCD[0].Mode;
   }
-  // If this is rev 3 then enable the emission current calibration option
-  if(FDarray[Board].Rev == 3)
+  // If this is rev 3 or Rev 4 then enable the emission current calibration option
+  if((FDarray[Board].Rev == 3) || (FDarray[Board].Rev == 4))
   {
     de = GetDialogEntries(FilamentEntriesCalibration, " Cal Emission I");
     if(de != NULL) de->Type = D_FUNCTION;
+  }
+  if(FDarray[Board].Rev == 4)
+  {
+    de = GetDialogEntries(FilamentEntriesPage2, " Current dir");
+    if(de != NULL) de->Type = D_OFF;    
   }
   // Define the initial selected channel as 0 and setup
   Fchannel = 1;
@@ -688,6 +733,7 @@ void Filament_loop(void)
     }
   }
   // If current sense resistance is not 0 then calculate the bias current
+  // This will not work with rev 4 and the sense resistance should be zero for rev 4
   if((FDarray[0].iSense != 0) && IsPowerON())
   {
     if(DCbDarray[0] != NULL) b = 0;
@@ -714,13 +760,23 @@ void Filament_loop(void)
     if (FilamentBoards[b])
     {
       SelectBoard(b);
-      adcStatus = AD7998(FDarray[b].ADCadr, ADCvals);
-      for (c = 0; c < 2; c++)
+      if((FDarray[b].ADCadr & 0xFE) == 0x10)  // This ADC/DAC used on rev 4 only
+      {
+        int i;
+        adcStatus = 0;
+        if((i=AD5593readADC(FDarray[b].ADCadr, 2)) == -1) adcStatus=-1; ADCvals[2] = i;
+        if((i=AD5593readADC(FDarray[b].ADCadr, 3)) == -1) adcStatus=-1; ADCvals[3] = i;
+        if((i=AD5593readADC(FDarray[b].ADCadr, 5)) == -1) adcStatus=-1; ADCvals[5] = i;
+        if((i=AD5593readADC(FDarray[b].ADCadr, 6)) == -1) adcStatus=-1; ADCvals[6] = i;
+      }
+      else adcStatus = AD7998(FDarray[b].ADCadr, ADCvals);  // adcStatus is zero if no errors
+      for (c = 0; c < FDarray[b].NumChannels; c++)
       {
         // Process power
         if (FDarray[b].FCD[c].FilamentPwr)
         {
-          digitalWrite(FDarray[b].FCD[c].Fpwr, LOW); // Power on
+          if((FDarray[b].ADCadr & 0xFE) == 0x10) AD5593write(FDarray[b].ADCadr, 9, 0);
+          else digitalWrite(FDarray[b].FCD[c].Fpwr, LOW); // Power on
           // Adjust the current setpoint applying the ramp rate limit, this logic assumes this loop runs 10 times a sec
           StepSize = FDarray[b].FCD[c].RampRate / 10;
           if (abs(FDarray[b].FCD[c].CurrentSetpoint - CurrentSetpoints[b][c]) < StepSize) CurrentSetpoints[b][c] = FDarray[b].FCD[c].CurrentSetpoint;
@@ -745,19 +801,28 @@ void Filament_loop(void)
           CurrentSetpoints[b][c] -= StepSize;
           if(CurrentSetpoints[b][c] <= 0)
           {
-             digitalWrite(FDarray[b].FCD[c].Fpwr, HIGH); // Power off
+             if((FDarray[b].ADCadr & 0xFE) == 0x10) AD5593write(FDarray[b].ADCadr, 9, 1 << FDarray[b].FCD[c].Fpwr);
+             else digitalWrite(FDarray[b].FCD[c].Fpwr, HIGH); // Power off
              CurrentSetpoints[b][c] = 0;
              FilamentVoltageSetpoints[b][c] = 0;
           }
         }
         // Output the voltage and current control data to the DAC
-        AD5625(FDarray[b].DACadr, FDarray[b].FCD[c].DCfsuply.Chan, Value2Counts(FilamentVoltageSetpoints[b][c], &FDarray[b].FCD[c].DCfsuply));
-        AD5625(FDarray[b].DACadr, FDarray[b].FCD[c].Fcurrent.Chan, Value2Counts(CurrentSetpoints[b][c], &FDarray[b].FCD[c].Fcurrent));
+        if((FDarray[b].ADCadr & 0xFE) == 0x10)
+        {
+           AD5593writeDAC(FDarray[b].DACadr, FDarray[b].FCD[c].DCfsuply.Chan, Value2Counts(FilamentVoltageSetpoints[b][c], &FDarray[b].FCD[c].DCfsuply));
+           AD5593writeDAC(FDarray[b].DACadr, FDarray[b].FCD[c].Fcurrent.Chan, Value2Counts(CurrentSetpoints[b][c], &FDarray[b].FCD[c].Fcurrent));          
+        }
+        else
+        {
+           AD5625(FDarray[b].DACadr, FDarray[b].FCD[c].DCfsuply.Chan, Value2Counts(FilamentVoltageSetpoints[b][c], &FDarray[b].FCD[c].DCfsuply));
+           AD5625(FDarray[b].DACadr, FDarray[b].FCD[c].Fcurrent.Chan, Value2Counts(CurrentSetpoints[b][c], &FDarray[b].FCD[c].Fcurrent));
+        }
         // Read and filter all the readback and monitor values
         if (adcStatus == 0)
         {
-          // If this is rev 3 then read the emission current per channel
-          if(FDarray[b].Rev == 3)
+          // If this is rev 3 or 4 then read the emission current per channel
+          if((FDarray[b].Rev == 3) || (FDarray[b].Rev == 4))
           {
              float BCfilter = 0.05;
              float Ei = Counts2Value(ADCvals[FDarray[b].Ecurrent.Chan], &FDarray[b].Ecurrent);
@@ -1016,7 +1081,7 @@ void GetCerrentDirection(int channel)
 
   if (!IsFilamentChannelValid(channel)) return;
   b = BoardFromSelectedFilamentChannel(channel-1);
-  if(FDarray[b].Rev < 2)
+  if((FDarray[b].Rev < 2) || (FDarray[b].Rev == 4))
   {
     SetErrorCode(ERR_BADARG);
     SendNAK;
@@ -1042,7 +1107,7 @@ void SetCurrentDirection(char *chan, char *dir)
   if (!IsFilamentChannelValid(channel)) return;
   b = BoardFromSelectedFilamentChannel(channel-1);
   res = dir;
-  if((FDarray[b].Rev < 2) || ((res != "FWD") && (res != "REV")))
+  if((FDarray[b].Rev < 2) || (FDarray[b].Rev == 4) || ((res != "FWD") && (res != "REV")))
   {
     SetErrorCode(ERR_BADARG);
     SendNAK;

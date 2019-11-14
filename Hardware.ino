@@ -354,6 +354,7 @@ void Init_IOpins(void)
   pinMode(BRDSEL, OUTPUT);
   pinMode(SPI_CS, OUTPUT);
   pinMode(PWR_ON, OUTPUT);
+  digitalWrite(PWR_ON,HIGH);
   pinMode(LDACctrl, OUTPUT);
   pinMode(TRGOUT, OUTPUT);
   digitalWrite(TRGOUT, HIGH);
@@ -395,8 +396,19 @@ void Reset_IOpins(void)
   digitalWrite(6, LOW);
   digitalWrite(7, LOW);
   digitalWrite(8, LOW);
-  digitalWrite(14, HIGH);
-  digitalWrite(48, HIGH);
+  // These two outputs used for enable on filament module, driven high to turn off supplies. Only
+  // drive these high if a Filament module is loaded else drive them low.
+  if(NumberOfFilamentChannels > 0)
+  {
+     digitalWrite(14, HIGH);       // Pin 11 of EXT1, used for enable 1 on Filament module, low enables supply
+     digitalWrite(48, HIGH);       // Pin 13 or EXT1, used for enable 2 on Filament module, low enables supply  
+  }
+  else
+  {
+     digitalWrite(14, LOW);
+     digitalWrite(48, LOW);
+  }
+  digitalWrite(15, LOW);          // Added 10/25/2019, for FAIMSFB module startup issue
 
   digitalWrite(ADDR0, LOW);
   digitalWrite(ADDR1, LOW);
@@ -967,7 +979,7 @@ int AD5593write(uint8_t addr, uint8_t pb, uint16_t val)
   Wire.write((val >> 8) & 0xFF);
   Wire.write(val & 0xFF);
   {
-    AtomicBlock< Atomic_RestoreState > a_Block;
+    //AtomicBlock< Atomic_RestoreState > a_Block;
     iStat = Wire.endTransmission();
   }
   ReleaseTWI();
@@ -984,7 +996,7 @@ int AD5593readWord(uint8_t addr, uint8_t pb)
   Wire.beginTransmission(addr);
   Wire.write(pb);
   {
-    AtomicBlock< Atomic_RestoreState > a_Block;
+    //AtomicBlock< Atomic_RestoreState > a_Block;
     iStat = Wire.endTransmission();
   }
   if(iStat != 0)
@@ -1581,15 +1593,11 @@ void spiDmaTX(uint32_t* src, uint16_t count,void (*isr)())
   DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_SADDR = (uint32_t)src;
   DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_DADDR = (uint32_t)&SPI0->SPI_TDR;
   DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_DSCR =  0;
-  DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_CTRLA = count |
-  DMAC_CTRLA_SRC_WIDTH_WORD | DMAC_CTRLA_DST_WIDTH_WORD;
+  DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_CTRLA = count | DMAC_CTRLA_SRC_WIDTH_WORD | DMAC_CTRLA_DST_WIDTH_WORD;
 
-  DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_CTRLB =  DMAC_CTRLB_SRC_DSCR |
-  DMAC_CTRLB_DST_DSCR | DMAC_CTRLB_FC_MEM2PER_DMA_FC |
-  DMAC_CTRLB_SRC_INCR_INCREMENTING | DMAC_CTRLB_DST_INCR_FIXED;
+  DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_CTRLB =  DMAC_CTRLB_SRC_DSCR | DMAC_CTRLB_DST_DSCR | DMAC_CTRLB_FC_MEM2PER_DMA_FC | DMAC_CTRLB_SRC_INCR_INCREMENTING | DMAC_CTRLB_DST_INCR_FIXED;
 
-  DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_CFG = DMAC_CFG_DST_PER(SPI_TX_IDX) |
-  DMAC_CFG_DST_H2SEL | DMAC_CFG_SOD | DMAC_CFG_FIFOCFG_ALAP_CFG;
+  DMAC->DMAC_CH_NUM[SPI_DMAC_TX_CH].DMAC_CFG = DMAC_CFG_DST_PER(SPI_TX_IDX) | DMAC_CFG_DST_H2SEL | DMAC_CFG_SOD | DMAC_CFG_FIFOCFG_ALAP_CFG;
 
   // If isr is != NULL then enable interrupts and call the isr routine
   // when transfer completes

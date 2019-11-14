@@ -88,14 +88,19 @@ void SetupTriggerSource(void)
        case 0:    // Software trigger, via command
          detachInterrupt(DI2);
          MPST.setTrigger(TC_CMR_EEVTEDG_NONE);
+         MPST.setTriggerQ(TC_CMR_EEVTEDG_NONE);
          break;
        case 'Q':  // Q input trigger source
          detachInterrupt(DI2);
+         MPST.setTrigger(TC_CMR_EEVTEDG_NONE);
+         MPST.setTriggerQ(TC_CMR_EEVTEDG_NONE);
          if(CurrentSegment->TriggerEdge == POS) MPST.setTriggerQ(TC_CMR_EEVTEDG_RISING);
          if(CurrentSegment->TriggerEdge == NEG) MPST.setTriggerQ(TC_CMR_EEVTEDG_FALLING);
          break;
        case 'R':  // R input trigger source
          detachInterrupt(DI2);
+         MPST.setTrigger(TC_CMR_EEVTEDG_NONE);
+         MPST.setTriggerQ(TC_CMR_EEVTEDG_NONE);
          if(CurrentSegment->TriggerEdge == POS) MPST.setTrigger(TC_CMR_EEVTEDG_RISING);
          if(CurrentSegment->TriggerEdge == NEG) MPST.setTrigger(TC_CMR_EEVTEDG_FALLING);
          break;
@@ -194,10 +199,19 @@ void PlaySegments(void)
   {
     ProcessSerial();
     WDT_Restart(WDT);
+    if(SegmentsAbort)
+    {
+      MPST.stop();
+      serial->println("Aborted!");
+      break;
+    }
   }
-  if(SegmentsAbort) serial->println("Aborted!");
+  //if(SegmentsAbort) serial->println("Aborted!");
   serial->println("Segments complete.");
+  CurrentSegment = NULL;
   SegmentsAbort = false;
+  MPST.stop();
+  LDACcapture;
 }
 
 void DACsetup(void)
@@ -215,9 +229,9 @@ void DACsetup(void)
      CurrentDCbiasModule = j;
      DCbiasStateBusy = true;
      // Start first transfer, set address and also board select
-     pio->PIO_CODR = 7;                                  // Set all bits low
-     pio->PIO_SODR = CurrentState->md[i].Address & 7;    // Set bit high
-     SelectBoard((CurrentState->md[i].Address & 0x80) >> 7);    // Added 2/14/18
+     pio->PIO_CODR = 7;                                  // Set all bits low     
+     pio->PIO_SODR = CurrentState->md[j].Address & 7;    // Set bit high, changed md[i] to md[j], 8/27/19
+     SelectBoard((CurrentState->md[j].Address & 0x80) >> 7);    // Added 2/14/18, changed md[i] to md[j], 8/27/19
      spiDmaTX(CurrentState->md[j].data, CurrentState->md[j].Count * 3, NextBufferISR);
      if((i+1) >= CurrentSegment->TimePoint[CurrentTimePoint]->NumStates) break;
      while(DCbiasStateBusy);
@@ -403,7 +417,7 @@ DCsegment* FindInList(DCsegment *list, char *name)
 }
 
 // This interrupt service routine fires when DMA buffer transfer completes,
-// the new module transfer is started.
+// the next module transfer is started.
 void NextBufferISR(void)
 {
    int i;
@@ -439,7 +453,7 @@ void SetDBbiasState(DCstate *dcs)
     Spi* pSpi = SPI0;
     static bool inited = false;
 
-    if(!inited)
+    //if(!inited)
     {
       spiDMAinit();
       inited = true;
@@ -616,6 +630,7 @@ void SetState(char *name)
    SPI.setClockDivider(SPI_CS,21);   // 21 MHz clock rate for DAC SPI speed
    
    // Pluse LDAC
+   LDACcapture;
    LDAClow;
    LDAChigh;
 
@@ -997,8 +1012,17 @@ void ListSegments(void)
    }
 }
 
+// Aborts segment execution if its in process.
+// Returns NAK if segment is not processing.
 void AbortSegments(void)
 {
+  if(CurrentSegment == NULL)
+  {
+     // Here is the segments are not executing so NAK
+     SetErrorCode(ERR_NOTSUPPORTED);
+     SendNAK;
+     return;
+  }
   SegmentsAbort = true;
   SendACK;
 }

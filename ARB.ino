@@ -77,7 +77,7 @@ int   SelectedARBboard     = 0;    // Active board, 0 or 1 = A or B
 int   CurrentModule        = -1;
 
 // Array used to edit the ARB waveform
-int ARBwaveform[32];
+int ARBwaveform[ppp];
 
 // Variables used for ARB channel editing
 int   ARBchan      = 1;
@@ -235,7 +235,7 @@ MenuEntry MEARBmodule = {" ARB module", M_DIALOG, 0, 0, 0, NULL, &ARBdialog, NUL
 // the user to edit a waveform. This function sets the number of points per period
 void SetupNumWaveformPoints(void)
 {
-  for(int i=0;i<ppp;i++)
+  for(int i=0;i<32;i++)  // UI only allows 32 max!
   {
     if(i < arb.PPP) ARBwaveformEdit[i+1].Type = D_INT;
     else ARBwaveformEdit[i+1].Type = D_OFF;
@@ -1030,9 +1030,9 @@ void ARB_init(int8_t Board, int8_t addr)
   int i;
   if(Read8bitUnsigned(Board,TWI_ARB_READ_PPP,&i))
   {
-    if((i>=8) && (i<=32)) ARBarray[Board]->PPP = i;
+    if((i>=8) && (i<=ppp)) ARBarray[Board]->PPP = i;
   }
-  else ARBarray[Board]->PPP = 32;
+  else ARBarray[Board]->PPP = ppp;
   if (NumberOfARBchannels == 0)
   {
     arb = *ARB;
@@ -2330,7 +2330,7 @@ void SetARBppp(int module, int PPP)
   
    if((b = ARBmoduleToBoard(module,true)) == -1) return;
    // Validate PPP
-   if((PPP < 8) || (PPP >32))
+   if((PPP < 8) || (PPP > ppp))
    {
      SetErrorCode(ERR_BADARG);
      SendNAK;

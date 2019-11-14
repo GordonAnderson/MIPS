@@ -15,7 +15,7 @@
 //  - Rev 1.0, this is the orginal design supporting the Matsusada 30 watt supplies. The module has a 
 //    positive and degative output, 1 channel for each
 //  - Rev 2.0, this is very simalar to rev 1.0 but adds hardware support for the EMCO C series modules.
-//    These modules do not have voltate readbacks of current monitors. Output current is estimated by 
+//    These modules do not have voltate readbacks or current monitors. Output current is estimated by 
 //    measureing the modules input current.
 //  - Rev 3.0, this version has a single output and uses relays to switch between the positive and 
 //    negative supplies. The EMCO C series C40 / C40N are supported
@@ -30,11 +30,14 @@
 //  - Rev 3.0 of the ESI hardware supports the EMCO C40 and C40N modules and includes relay polarity
 //    switching. The EMCO modules do not have readbacks or current monitoring. The input power to the
 //    modules is monitoried and used to estimate load current.
+//  - Rev 4.0 supports the Rev 3.1 hardware with the two output sent to two SHV connectors. The relays
+//    are used to disable and enable the outputs. This was added for the softlanding system 8/28/2019
 //
 // Gordon Anderson
 // March 28, 2015
 // Revised Feb 22, 2017
-// Revised Feb 25, 2017 added the rev 3 updated but not yet tested
+// Revised Feb 25, 2017 added the rev 3 updates
+// Revised Aug 28, 2019 added rev 4 updates
 //
 #include "ESI.h"
 #include "Variants.h"
@@ -71,7 +74,12 @@ float Imonitor[2];                   // Used for rev 3 current readback monitor
 ESIdata  ESIarray[2] = {ESI_Rev_1,ESI_Rev_1};
 
 ESIdata         esi;     // Holds the selected modules's data structure
-ESIChannellData esich;   // Holds the selected channel's data, only used in Rev 1 amd 2
+ESIChannellData esich;   // Holds the selected channel's data, only used in Rev 1, 2, and 4
+
+#define HVPOS_OFF   AD5625(esidata.DACadr,2,0)
+#define HVPOS_ON    AD5625(esidata.DACadr,2,65535)
+#define HVNEG_OFF   AD5625(esidata.DACadr,3,0)
+#define HVNEG_ON    AD5625(esidata.DACadr,3,65535)
 
 extern DialogBoxEntry ESIentriesLimits[];
 extern DialogBoxEntry ESIentriesLimitsR3[];
@@ -133,7 +141,7 @@ DialogBox ESIdialog = {
 MenuEntry MEESImonitor = {" ESI module", M_DIALOG,0,0,0,NULL,&ESIdialog,NULL,NULL};
 
 // This function converts the ESI channel number to a board address, 0 or 1.
-// channel is 1 or 2 for rev 3 and 1 through 4 for rev 1 and 2
+// channel is 1 or 2 for rev 3 and 1 through 4 for rev 1, 2, and 4
 int ESIchannel2board(int channel)
 {
   int i;
@@ -141,7 +149,7 @@ int ESIchannel2board(int channel)
   // First find an active board and test the rev
   if(ESIboards[0]) i = ESIarray[0].Rev;
   if(ESIboards[1]) i = ESIarray[1].Rev;
-  if((i == 1) || (i == 2)) // Rev 1 or Rev 2
+  if((i == 1) || (i == 2) || (i == 4)) // Rev 1 or Rev 2 or Rev 4
   {
     if(channel > 2) return(1); // has to be if more than 2 channels
     if(ESIboards[0]) return(0);
@@ -169,6 +177,7 @@ void ESIcalibrate(void)
   CC.Max=esidata.ESIchan[(ESIchannel-1)&1].MaxVoltage;
   CC.DACaddr=esidata.DACadr;  
   CC.ADCaddr=esidata.ADCadr;
+  if(esidata.Rev == 4) CC.ADCaddr=NULL;
   CC.DACout=&esidata.ESIchan[(ESIchannel-1)&1].DCctrl;
   CC.ADCreadback=&esidata.ESIchan[(ESIchannel-1)&1].DCVmon;
   // Define this channels name
@@ -242,7 +251,7 @@ void UpdateESIdialog(void)
   int b,c;
   DialogBoxEntry *de;
   
-  if((esidata.Rev == 1) || (esidata.Rev == 2))
+  if((esidata.Rev == 1) || (esidata.Rev == 2) || (esidata.Rev == 4))
   {
     de = GetDialogEntries(ESIentries, "Voltage");
     b = ESIchannel2board(ESIchannel);
@@ -329,7 +338,7 @@ void SaveESIsettings(void)
   bool Success = true;
   
   esidata = esi;
-  if((esidata.Rev == 1) || (esidata.Rev == 2)) esidata.ESIchan[(ESIchannel-1)&1] = esich;
+  if((esidata.Rev == 1) || (esidata.Rev == 2) || (esidata.Rev == 4)) esidata.ESIchan[(ESIchannel-1)&1] = esich;
   if(ESIboards[0])
   {
     SelectBoard(0);
@@ -381,7 +390,7 @@ void RestoreESIsettings(bool NoDisplay)
   }
   SelectBoard(SelectedESIboard);
   esi = esidata;
-  if((esidata.Rev == 1) || (esidata.Rev == 2)) esich = esi.ESIchan[(ESIchannel-1)&1];
+  if((esidata.Rev == 1) || (esidata.Rev == 2) || (esidata.Rev == 4)) esich = esi.ESIchan[(ESIchannel-1)&1];
   if(NoDisplay) return;
   if(Corrupted) DisplayMessage("Corrupted EEPROM data!",2000);
   else if(!Success)  DisplayMessage("Unable to Restore!",2000);
@@ -411,6 +420,11 @@ void ESI_init(int8_t Board, int8_t addr)
   if(esidata.Rev == 3) 
   {
     ESIdialog.Entry = ESIentriesR3;
+  }
+  if(esidata.Rev == 4)
+  {
+    HVPOS_OFF;
+    HVNEG_OFF;
   }
   if(NumberOfESIchannels == 0)
   {
@@ -445,6 +459,7 @@ void ESI_init(int8_t Board, int8_t addr)
   }
 }
 
+// ESI module polling loop, called from the scheduler at a 10 Hz rate.
 void ESI_loop(void)
 {
   int i,b,c;
@@ -452,6 +467,7 @@ void ESI_loop(void)
   static   float Setpoints[2][2] = {0,0,0,0};
   static   float SetpointsR3[2] = {0,0};
   static   bool Enabled[2] = {false,false};
+  static   bool Enable[2][2] = {false,false,false,false};
   static   int8_t ESIoverCurrentTimer[2] = {5,5};
   
   SelectBoard(SelectedESIboard);
@@ -459,7 +475,7 @@ void ESI_loop(void)
   {
     if(ActiveDialog->Changed)
     {
-      if((ESIarray[SelectedESIboard].Rev == 1) || (ESIarray[SelectedESIboard].Rev == 2))
+      if((ESIarray[SelectedESIboard].Rev == 1) || (ESIarray[SelectedESIboard].Rev == 2) || (ESIarray[SelectedESIboard].Rev == 4))
       {
         ESIarray[ESIchannel2board(ESIchannelLoaded)] = esi;
         ESIarray[ESIchannel2board(ESIchannelLoaded)].ESIchan[(ESIchannelLoaded-1)&1] = esich;
@@ -556,6 +572,20 @@ void ESI_loop(void)
       // If disabled drive setpoint to 0, else ramp it to value
       for(c=0;c<2;c++)
       {
+        if((ESIarray[b].Rev == 4) && (Enable[b][c] != ESIarray[b].ESIchan[c].Enable))
+        {
+          if(c==0)
+          {
+             if(ESIarray[b].ESIchan[c].Enable) HVPOS_ON;
+             else HVPOS_OFF;
+          }
+          else
+          {
+             if(ESIarray[b].ESIchan[c].Enable) HVNEG_ON;
+             else HVNEG_OFF;
+          }
+          Enable[b][c] = ESIarray[b].ESIchan[c].Enable;
+        }
         if(!ESIarray[b].ESIchan[c].Enable) Setpoints[b][c] = 0;
         else
         {
@@ -674,11 +704,31 @@ void ESI_loop(void)
           else ESIoverCurrentTimer[b] = 5;
         }
       }
+      if(ESIarray[b].Rev == 4)
+      {
+        ReadbackV[b][0] = Setpoints[b][0];
+        ReadbackV[b][1] = Setpoints[b][1];
+        ReadbackI[b][0] = abs((ReadbackI[b][0] - (abs(Setpoints[b][0]) / abs(ESIarray[b].ESIchan[0].MaxVoltage * 10))) / 1.53);
+        ReadbackI[b][1] = abs((ReadbackI[b][1] - (abs(Setpoints[b][1]) / abs(ESIarray[b].ESIchan[1].MaxVoltage *10))) / 1.53);
+
+        if(((ESIarray[b].ESIchan[0].MaxCurrent > 0) && (ReadbackI[b][0] > ESIarray[b].ESIchan[0].MaxCurrent)) ||
+           ((ESIarray[b].ESIchan[1].MaxCurrent > 0) && (ReadbackI[b][1] > ESIarray[b].ESIchan[1].MaxCurrent)))
+        {
+            if((--ESIoverCurrentTimer[b] <= 0) && (ESIcurrentTest))
+            {
+               ESIarray[b].ESIchan[0].Enable = ESIarray[b].ESIchan[1].Enable = false;
+               ESIarray[b].Enable = false;
+               DisplayMessageButtonDismiss("ESI excess current!");
+            }   
+        }
+        else ESIoverCurrentTimer[b] = 5;
+      }
+      MaxESIvoltage = 0;
     }
     if(abs(ReadbackV[b][0]) > MaxESIvoltage) MaxESIvoltage = abs(ReadbackV[b][0]);
     if(abs(ReadbackV[b][1]) > MaxESIvoltage) MaxESIvoltage = abs(ReadbackV[b][1]);
   }
-  if((ESIarray[SelectedESIboard].Rev == 1) || (ESIarray[SelectedESIboard].Rev == 2))
+  if((ESIarray[SelectedESIboard].Rev == 1) || (ESIarray[SelectedESIboard].Rev == 2) || (ESIarray[SelectedESIboard].Rev == 4))
   {
     esi = ESIarray[ESIchannel2board(ESIchannelLoaded)];
     esich = ESIarray[ESIchannel2board(ESIchannelLoaded)].ESIchan[(ESIchannelLoaded-1)&1];    

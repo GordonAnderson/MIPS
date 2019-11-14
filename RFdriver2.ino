@@ -53,7 +53,7 @@ int8_t rfgateTrig;
 
 DialogBoxEntry RFdriverDialogEntriesPage2[] = {
   {" Drive limit, %", 0, 1, D_FLOAT, 0, 100, 1, 18, false, "%5.1f", &RFCD.MaxDrive, NULL, NULL},
-  {" Power limit, W", 0, 2, D_FLOAT, 0, 50, 1, 18, false, "%5.1f", &RFCD.MaxPower, NULL, NULL},
+  {" Power limit, W", 0, 2, D_FLOAT, 0, 90, 1, 18, false, "%5.1f", &RFCD.MaxPower, NULL, NULL},
   {" Mode"          , 0, 3, D_LIST, 0, 0, 7, 16, false, ModeList, RFmode, NULL, RFmodeChange},
   {" Auto tune"     , 0, 6, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RFat, NULL},
   {" Auto retune"   , 0, 7, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RFart, NULL},
@@ -531,7 +531,7 @@ void RFautoTune(int channel)
   // Set the tune flag and exit
   SendACK;
   Tuning = true;
-  TuningChannel = channel;
+  TuningChannel = channel-1;
   b = BoardFromSelectedChannel(channel);
   TWIsetByte(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_CHAN, (TuningChannel & 1) +1);
   TWIcmd(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_ATUNE);
@@ -565,7 +565,7 @@ void RFautoRetune(int channel)
   // Set the tune flag and exit
   SendACK;
   Tuning = true;
-  TuningChannel = channel;
+  TuningChannel = channel-1;
   b = BoardFromSelectedChannel(channel);
   TWIsetByte(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_CHAN, (TuningChannel & 1) +1);
   TWIcmd(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_RTUNE);

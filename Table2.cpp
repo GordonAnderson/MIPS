@@ -128,7 +128,7 @@ bool IssueSoftwareTableStart = false;
 #define  INITIAL   0x40
 
 #define  RAMP_DONE 0x80
-#define  NUM_RAMPS 2
+#define  NUM_RAMPS 3
 
 typedef struct
 {
@@ -150,7 +150,7 @@ volatile  RampEntry RE[NUM_RAMPS];
 // The queuing function have a Unique flag that will insure a function is present in the queue only
 // one time if set to true.
 //
-volatile TableQueueEntry TQE[MaxTableQueue] = {{TblEmpty,NULL},{TblEmpty,NULL},{TblEmpty,NULL},{TblEmpty,NULL},{TblEmpty,NULL}};
+volatile TableQueueEntry TQE[MaxTableQueue] = {{TblEmpty,NULL},{TblEmpty,NULL},{TblEmpty,NULL},{TblEmpty,NULL},{TblEmpty,NULL},{TblEmpty,NULL},{TblEmpty,NULL},{TblEmpty,NULL}};
 
 void TABLEqueue(void (*function)(void), bool Unique)
 {
@@ -1815,7 +1815,7 @@ void ProcessRamp(volatile TableEntry *TE)
   {
      for(i=0;i<NUM_RAMPS;i++)
      {
-        if((RE[i].chan==0xFF) || (RE[i].chan & (~RAMP_DONE)) == (TE->Chan & ~(RAMP | INITIAL)))
+        if((RE[i].chan==0xFF) || ((RE[i].chan & (~RAMP_DONE)) == (TE->Chan & ~(RAMP | INITIAL))))
         {
            RE[i].chan    = TE->Chan & ~(RAMP | INITIAL);
            RE[i].initial = TE->Value;

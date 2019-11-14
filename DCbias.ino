@@ -38,6 +38,12 @@
 //          hardware in the future to use this chip. The firmware automatically detects this chip
 //          using it TWI address of 0x10 or 0x11.
 //      2.) Added host command to return supply voltages monitored with AD5593
+//   September 10, 2019
+//      1.) Added the rev = 3 functionality for the e-msion filament controller board. The
+//          following things are done:
+//          - AD5593 set for internal ref
+//          - Added rev 3 config for 60 volt board to options.
+//            Output channel order is: 4,0,5,1,6,2,7,3
 //
 // Gordon Anderson
 //
@@ -582,8 +588,9 @@ void DCbiasAD5593init(int8_t addr)
 {
    // General purpose configuration
    AD5593write(addr, 3, 0x0100);
-   // Set ext reference
-   AD5593write(addr, 11, 0x0000);
+   // Set reference
+   if(DCbD->Rev == 3) AD5593write(addr, 11, 0x0200);     // Set int reference
+   else AD5593write(addr, 11, 0x0000);     // Set ext reference
    // Set LDAC mode
    AD5593write(addr, 7, 0x0000);
    // Set DAC outputs channels
@@ -830,6 +837,15 @@ void DCbias_loop(void)
   DCbiasProfileApplied = false;
   DCbiasUpdate = false;
   dcbd = *DCbD;
+  /*
+  // Reporting code for hardware testing.
+  if(!Tripped)
+  {
+     serial->print(Verror);
+     serial->print(",");
+     serial->println(VerrorFiltered);
+  }
+  */
   VerrorFiltered = StrongFilter * Verror + (1-StrongFilter) * VerrorFiltered;
   // If the VerrorFiltered value exceeds the threshold then turn off the DC bias power supply and popup a message
   if(IsPowerON())

@@ -93,7 +93,7 @@
 #define TWI_WAVEFORM_ARB    0x05
 
 // Constants
-#define ppp   32  // Number of points per waveform period
+#define ppp   128   // Number of points per waveform period
 //#define NP    32  // Number of periods in buffer
 //#define CHANS 8   // Total number of DAC channels
 //#define MAXBUFFER 8000

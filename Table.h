@@ -100,7 +100,7 @@ extern unsigned int Counter;
 // Funtion queue enum and structures to support queuing functions that need
 // to execute at compare events when LDAC is generated
 
-#define MaxTableQueue 5
+#define MaxTableQueue 8
 
 enum TableFunctionType
 {

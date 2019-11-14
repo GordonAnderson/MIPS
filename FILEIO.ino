@@ -732,6 +732,7 @@ void SaveAlltoSD(void)
         return;   
       }
     }
+    if(!MIPSconfigData.UseBRDSEL) continue;
     // Set board select to B
     ENA_BRD_B;
     if (ReadEEPROM(signature, addr, 0, 20) == 0)

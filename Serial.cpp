@@ -139,6 +139,8 @@ const Commands  CmdArray[] = 	{
   {"SSETECHO", CMDbool, 1, (char *)&Serial1Echo},                 // Set the SerialUSB to Serial1 echo, TRUE enables echo.
   {"GSERECHO", CMDbool, 0, (char *)&Serial1Echo},                 // Return the SerialUSB to Serial1 echo, TRUE enables echo.
   {"POWER", CMDfunction, 0, (char *)PowerControl},                // Cycle MIPS system power
+  {"SUBRDSEL", CMDbool, 1, (char *)&MIPSconfigData.UseBRDSEL},    // Set to true to enable the use of board select, default
+  {"GUBRDSEL", CMDbool, 0, (char *)&MIPSconfigData.UseBRDSEL},    // Returns the state of the UseBRDSEL flag
 // Clock generation functions
   {"GWIDTH",  CMDint, 0, (char *)&PulseWidth},                // Report the pulse width in microseconds
   {"SWIDTH",  CMDint, 1, (char *)&PulseWidth},                // Set the pulse width in microseconds
@@ -200,6 +202,7 @@ const Commands  CmdArray[] = 	{
   {"SDCBEXT", CMDfunction, 1, (char *)&SetDCbiasExtended},            // Set the DCbias board for extended addressing, factory command
   {"RDCBSPLY", CMDfunction, 1, (char *)&ReportDCbiasSuppplies},       // Report the DCbias board supply voltages. Requires AD5593 for this
                                                                       // function to work.
+  {"SDCBUPDATE", CMDbool, 1, (char *)&DCbiasUpdate},                  // Set to TRUE to force all DC bias channels to update
 // DC bias module profile commands
   {"SDCBPRO", CMDfunctionLine, 0, (char *)SetDCbiasProfile},          // Sets a DC bias profile
   {"GDCBPRO", CMDfunction, 1, (char *)GetDCbiasProfile},              // Reports the select DC bias profile
@@ -210,14 +213,14 @@ const Commands  CmdArray[] = 	{
 // DC bias list functions, supports DMA high speed transfer
   {"DSTATE", CMDfunctionLine, 0, (char *)DefineState},                // Define a state, name,ch,val....
   {"SSTATE", CMDfunctionStr, 1, (char *)SetState},                    // Sets the DCbias channels to the values defined in named state
-  {"LTRIG", CMDfunction, 0, (char *)ListStateNames},                  // List all the defined state names
+  {"LSTATES", CMDfunction, 0, (char *)ListStateNames},                // List all the defined state names
   {"RSTATE", CMDfunctionStr, 1, (char *)RemoveState},                 // Remove a state from the linked list
   {"RSTATES", CMDfunction, 0, (char *)RemoveStates},                  // Clear the full linked list of states
   {"GSTATE", CMDfunctionStr, 1, (char *)IsState},                     // Returns true is named state is in list, else false
   {"DSEGMENT", CMDfunctionLine, 0, (char *)DefineSegment},            // Defines a segment with the following arguments: name, length, next, repeat count
   {"ADDSEGTP", CMDfunctionLine, 0, (char *)AddSegmentTimePoint},      // Adds a time point to a segment, arguments: name,count, state1, state 2... (variable number of states)
   {"ADDSEGTRG", CMDfunctionLine, 0, (char *)AddSegmentTrigger},       // Adds a trigger point to a segment, arguments: name,count,port,level
-  {"ADDSEGSTRG", CMDfunctionLine, 0, (char *)AddSegmentStartTrigger}, // Defines the staryt trigger for a segment, arguments: name,source,level
+  {"ADDSEGSTRG", CMDfunctionLine, 0, (char *)AddSegmentStartTrigger}, // Defines the start trigger for a segment, arguments: name,source,level
   {"LSEGMENTS", CMDfunction, 0, (char *)ListSegments},                // List all the defined segments
   {"RSEGMENT", CMDfunctionStr, 1, (char *)RemoveSegment},             // Remove a segment from the linked list
   {"RSEGMENTS", CMDfunction, 0, (char *)RemoveSegments},              // Clear the full linked list of segments

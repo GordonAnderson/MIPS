@@ -17,7 +17,7 @@
 uint32_t TWIfails = 0;
 bool     Serial1Echo = false;
 
-MIPSconfigStruct MIPSconfigData = {sizeof(MIPSconfigStruct),"MIPS",2,0,0,10,false,true,1.0,"",false,false,"",5,false,0xA55AE99E,false,false,false,false,0,0};
+MIPSconfigStruct MIPSconfigData = {sizeof(MIPSconfigStruct),"MIPS",2,0,0,10,false,true,1.0,"",false,false,"",5,false,0xA55AE99E,false,false,false,false,0,0,0,0,true};
 
 TwaveData Twave_Rev1 = {sizeof(TwaveData),"Twave",1,1000000,03,0x10,0x20,0x27,0x69,
                         20.0, 0, 76.53, 905, 0, 1, 0,
@@ -159,6 +159,20 @@ DCbiasData  DCbD_60_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 60, -60, true, 2
                              0, 0, -540, 32767, 1, -540, 32767,      // Offset control, DAC only unless using AD5593
                              false,false,
                             };
+// Supports the single board filament controller for e-msion. remaps the DAC channels for board routing,
+// also uses the AD5593 ADC/DAC                            
+DCbiasData  DCbD_60_Rev_3 = {sizeof(DCbiasData),"DCbias", 3, 8, 60, -60, true, 2, 0x23, 0x11, 0x52,
+                             0, 1, 540, 32767, 0, 540, 32767,        // Ch 1
+                             0, 3, 540, 32767, 1, 540, 32767,        // Ch 2
+                             0, 5, 540, 32767, 2, 540, 32767,        // Ch 3
+                             0, 7, 540, 32767, 3, 540, 32767,        // Ch 4
+                             0, 0, 540, 32767, 4, 540, 32767,        // Ch 5
+                             0, 2, 540, 32767, 5, 540, 32767,        // Ch 6
+                             0, 4, 540, 32767, 6, 540, 32767,        // Ch 7
+                             0, 6, 540, 32767, 7, 540, 32767,        // Ch 8
+                             0, 0, -540, 32767, 1, -540, 32767,      // Offset control, DAC only unless using AD5593
+                             false,false,
+                            };
                             
 FAIMSdata  FAIMS_Rev_1 = {sizeof(FAIMSdata),"FAIMS", 1, 1000000, 25.0, false, 4, 180, 75.2, 21.5, 100.0, 60.0,0.5,
                           0, 2, -113.7, 32767, 5, 113.7, 32767,            // DC offset
@@ -200,6 +214,17 @@ FilamentData FILAMENT_Rev_1 = {sizeof(FilamentData),"Filament",1,2,
                                false,1.0,4.0,20,
                                0,true,
                                7,2500,32767,
+                              };
+                              
+// Supports the single board filament controller for e-msion. only one filament channel and no reversal
+FilamentData FILAMENT_Rev_4 = {sizeof(FilamentData),"Filament",4,1,
+                               0,5.0,false,0.1,FmodeI,10, 0, 1,-3868,21206, 4,5392,13960, 2,13156,-137, 3,13050,-96, 5,2722,6421,
+                               0,5.0,false,0.1,FmodeI,10, 0, 1,-3868,21206, 4,5392,13960, 2,13156,-137, 3,13050,-96, 5,2722,6421,
+                               0x10,0x10,0x52,
+                               false,1.0,4.0,20,
+                               false,1.0,4.0,20,
+                               0,true,
+                               6,2500,32767,
                               };
 
 ARBdata  ARB_Rev_1 = {sizeof(ARBdata),"ARB", 1, false, 1, false, 100, 0, true,20000,25,0,32,ARB_SIN,
@@ -267,6 +292,6 @@ WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_IDLE,"MIPSnet","MIPS","MIPS
 // List of all posible board addresses. These addresses are those of the EEPROM on the modules
 char *BoardAddressList = "A 0x50,A 0x52,A 0x54,A 0x56,B 0x50,B 0x52,B 0x54,B 0x56";
 // List of board names used to allow user to select a board by name for inital setup or re-init
-char *BoardVariantsNames = "RFdrvA R1,RFdrvB R1,RFdrvA R2,RFdrvB R2,DC250V R1,DC250V R2,DC750V R1,DC50V  R1,DC60V  R1,Twave R1,Twave R2,Twave R3,Twave R5,FAIMS R1,ESI  R1,FIL R1,ARB R1,HOFAIMS,DAC R1,RFamp R1";
+char *BoardVariantsNames = "RFdrvA R1,RFdrvB R1,RFdrvA R2,RFdrvB R2,DC250V R1,DC250V R2,DC750V R1,DC50V  R1,DC60V  R1,DC60V  R3,Twave R1,Twave R2,Twave R3,Twave R5,FAIMS R1,ESI  R1,FIL R1,FIL R4,ARB R1,HOFAIMS,DAC R1,RFamp R1";
 // List of variant board default data structure pointers with a one to one corespondence to list of board names
-void *BoardVariants[] = {(void *)&RFDD_A_Rev_1,(void *)&RFDD_B_Rev_1,(void *)&RFDD_A_Rev_2,(void *)&RFDD_B_Rev_2,(void *)&DCbD_250_Rev_1,(void *)&DCbD_250_Rev_2,(void *)&DCbD_750_Rev_1,(void *)&DCbD_50_Rev_1,(void *)&DCbD_60_Rev_1,(void *)&Twave_Rev1,(void *)&Twave_Rev2,(void *)&Twave_Rev3,(void *)&Twave_Rev5,(void *)&FAIMS_Rev_1,(void *)&ESI_Rev_1,(void *)&FILAMENT_Rev_1,(void *)&ARB_Rev_1,(void *)&HOFAIMS_Rev_1,(void *)&DAC_Rev1,(void *)&RFA_Rev1};
+void *BoardVariants[] = {(void *)&RFDD_A_Rev_1,(void *)&RFDD_B_Rev_1,(void *)&RFDD_A_Rev_2,(void *)&RFDD_B_Rev_2,(void *)&DCbD_250_Rev_1,(void *)&DCbD_250_Rev_2,(void *)&DCbD_750_Rev_1,(void *)&DCbD_50_Rev_1,(void *)&DCbD_60_Rev_1,(void *)&DCbD_60_Rev_3,(void *)&Twave_Rev1,(void *)&Twave_Rev2,(void *)&Twave_Rev3,(void *)&Twave_Rev5,(void *)&FAIMS_Rev_1,(void *)&ESI_Rev_1,(void *)&FILAMENT_Rev_1,(void *)&FILAMENT_Rev_4,(void *)&ARB_Rev_1,(void *)&HOFAIMS_Rev_1,(void *)&DAC_Rev1,(void *)&RFA_Rev1};

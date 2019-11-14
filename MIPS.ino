@@ -795,6 +795,31 @@
 //      To do list for this version update
 //          a.) Update ARB TWI commands to use the new function in TWIext file
 //          b.) General ARB code clean up
+//  1.158, August 22, 2019
+//      1.) Updates to DCBlist functions
+//          - Fixed command type for LSTATES, it was somehow changed to LTRIG
+//          - Updated segment about function to no longer require and trigger to cause an abort
+//          - Release the LDAC signal when segment processing finishes
+//          - Fixed bug with multiple groups in one segment
+//      2.) Added command to update all DCbias channels, SDCBUPDATE,TRUE
+//      3.) Fixed bug in RFdriver2 that caused the wrong channel to auto tune
+//      4.) Added FW rev 4 to ESI module, this allows two ESI outputs on rev 3.1 hardware
+//  1.159, September 11, 2019 
+//      1.) Added the use board select flag and commands. 
+//      2.) Added support for the single board e-msion filament system
+//  1.160, September 17, 2019 
+//      1.) Allow PPP upto 128, still needs work on freq calculation and downloading waveforms. 
+//      2.) Removed a number of bugs in the rev 4 filament code (used on rev 3.0 hardware). System
+//          is fully calibrated and functional.
+//      3.) Raised max power of RFdriver2 to 90 watts.
+//      4.) Removed the interrupt disable in AD5593 code it fixed enet comm errors in filament system
+//  1.161, October 23, 2019
+//      1.) If no filament module is system then drive output pins used for filament enable to low state.
+//      2.) Changed the dual electrometer zero function range to 1 to 5 pA.
+//      3.) Increased the number of ramps in the table generator to 3.
+//  1.162, November 4, 2019
+//      1.) Fixed ramp function if statement missing set of ()
+//      2.) Increased the table processing queue size to 8 from 5.
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
@@ -904,7 +929,7 @@ uint32_t BrightTime=0;
    #define RFdriver2vf ""
 #endif
 
-const char Version[] PROGMEM = "Version 1.157" FAIMSFBvf FAIMSvf HOFAIMSvf TABLE2vf RFdriver2vf ", July 8, 2019";
+const char Version[] PROGMEM = "Version 1.162" FAIMSFBvf FAIMSvf HOFAIMSvf TABLE2vf RFdriver2vf ", Nov 4, 2019";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -1112,6 +1137,7 @@ void About(void)
       rev = signature[22];
       serial->println(rev);
     }
+    if(!MIPSconfigData.UseBRDSEL) continue;
     // Set board select to B
     ENA_BRD_B;
     {
@@ -1157,6 +1183,7 @@ void DisplayAbout(void)
       sprintf(buf, "  a,%x,%s,%d", addr, &signature[2], signature[22]);
       PrintDialog(&MIPSabout, 1, y++, buf);
     }
+    if(!MIPSconfigData.UseBRDSEL) continue;
     // Set board select to B
     ENA_BRD_B;
     if (ReadEEPROM(signature, addr, 0, 100) == 0)
@@ -1817,6 +1844,7 @@ void ScanHardware(void)
       if (strcmp(&signature[2], "FAIMSfb") == 0) FAIMSfb_init(0, addr);
       #endif
     }
+    if(!MIPSconfigData.UseBRDSEL) continue;
     // Set board select to B
     ENA_BRD_B;
     if (ReadEEPROM(signature, addr, 0, 100) == 0)

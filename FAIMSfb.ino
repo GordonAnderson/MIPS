@@ -822,7 +822,7 @@ void ZeroElectrometer(void)
   if(FAIMSFBarray[1] != NULL) if(FAIMSFBarray[1]->ElectrometerEnable) b = 1;
   if(FAIMSFBarray[0] != NULL) if(FAIMSFBarray[0]->ElectrometerEnable) b = 0;
   // Read the positive channel current, average several readings and
-  // adjust the zero channel to set to .1 to .5 range
+  // adjust the zero channel to set to 1 to 5 range
   for(i=0;i<25;i++)
   {
      Ival = Counts2Value(AD5593readADCWire1(FAIMSFBarray[b]->ElectAdd, FAIMSFBarray[b]->ElectPosCtrl.Chan,10), &FAIMSFBarray[b]->ElectPosCtrl);
@@ -831,11 +831,11 @@ void ZeroElectrometer(void)
      Ival += Counts2Value(AD5593readADCWire1(FAIMSFBarray[b]->ElectAdd, FAIMSFBarray[b]->ElectPosCtrl.Chan,10), &FAIMSFBarray[b]->ElectPosCtrl);
      Ival /= 4;
      //serial->println(Ival);
-     if((Ival > 0.1) && (Ival < 0.5)) break;
+     if((Ival > 2) && (Ival < 10)) break;
      // Adjust zero voltage
      //serial->print("Zero val :");
      //serial->println(FAIMSFBarray[b]->ElectPosZero);
-     FAIMSFBarray[b]->ElectPosZero += (Ival - 0.3) * - 0.01;
+     FAIMSFBarray[b]->ElectPosZero += (Ival - 7) * - 0.01;
      if(FAIMSFBarray[b]->ElectPosZero < 0.0) FAIMSFBarray[b]->ElectPosZero = 0.0;
      if(FAIMSFBarray[b]->ElectPosZero > 5.0) FAIMSFBarray[b]->ElectPosZero = 5.0;
      AD5593writeDACWire1(FAIMSFBarray[b]->ElectAdd, FAIMSFBarray[b]->ElectPosZeroCtrl.Chan, Value2Counts(FAIMSFBarray[b]->ElectPosZero,&FAIMSFBarray[b]->ElectPosZeroCtrl));
@@ -843,7 +843,7 @@ void ZeroElectrometer(void)
      WDT_Restart(WDT);
   }
  // Read the negative channel current, average several readings and
- // adjust the zero channel to set to .1 to .5 range
+ // adjust the zero channel to set to 1 to 5 range
   for(i=0;i<25;i++)
   {
      Ival = Counts2Value(AD5593readADCWire1(FAIMSFBarray[b]->ElectAdd, FAIMSFBarray[b]->ElectNegCtrl.Chan,10), &FAIMSFBarray[b]->ElectNegCtrl);
@@ -852,11 +852,11 @@ void ZeroElectrometer(void)
      Ival += Counts2Value(AD5593readADCWire1(FAIMSFBarray[b]->ElectAdd, FAIMSFBarray[b]->ElectNegCtrl.Chan,10), &FAIMSFBarray[b]->ElectNegCtrl);
      Ival /= 4;
      //serial->println(Ival);
-     if((Ival > 0.1) && (Ival < 0.5)) break;
+     if((Ival > 2) && (Ival < 10)) break;
      // Adjust zero voltage
      //serial->print("Zero val :");
      //serial->println(FAIMSFBarray[b]->ElectPosZero);
-     FAIMSFBarray[b]->ElectNegZero += (Ival - 0.3) * -0.1;
+     FAIMSFBarray[b]->ElectNegZero += (Ival - 7) * -0.01;
      if(FAIMSFBarray[b]->ElectNegZero < 0.0) FAIMSFBarray[b]->ElectNegZero = 0.0;
      if(FAIMSFBarray[b]->ElectNegZero > 5.0) FAIMSFBarray[b]->ElectNegZero = 5.0;
      AD5593writeDACWire1(FAIMSFBarray[b]->ElectAdd, FAIMSFBarray[b]->ElectNegZeroCtrl.Chan, Value2Counts(FAIMSFBarray[b]->ElectNegZero,&FAIMSFBarray[b]->ElectNegZeroCtrl));
