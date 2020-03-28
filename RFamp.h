@@ -109,6 +109,7 @@ typedef struct
 extern int   NumberOfRFAchannels;
 
 // Prototypes
+void RFA_init(int8_t Board, int8_t addr);
 void RFAsetRange(char *Module, char *value);
 void RFAgetRange(int Module);
 void ReportRFAchannels(void);

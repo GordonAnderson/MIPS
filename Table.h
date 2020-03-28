@@ -179,6 +179,13 @@ void SetupNextEntry(void);
 void ClockSsetup(void);
 void ClockSstop(void);
 
+// Prototypes for ADC triggering host commands
+void SelectTPforAdjust(int count, int chan);
+void DefineAdjustRange(int mint, int maxt);
+void SetADCtoMZcal(char *gain, char *offset);
+void DefineMZtarget(void);
+void TableTrigOnADC(void);
+
 // Call backs
 void Dummy_ISR(void);
 void Trigger_ISR(void);

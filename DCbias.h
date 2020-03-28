@@ -46,6 +46,13 @@ typedef struct
   DCbiasChannellData  DCoffset;  // Offset channel data
   bool    UseOneOffset;          // If true only one offset is used for both boards
   bool    OffsetReadback;        // True if the offset channel has readback. This is always on the last ADC channel
+  // The following variables support application of an offset voltage
+  float   OffsetOffset;          // This offset is added to the offset channel
+  uint8_t OffsetChanMsk;         // Offset channel mask. Set a bits to enable offset on a channel
+  float   ChannelOffset;         // Channel offset applied to the channels enabled via OffsetChanMsk bits
+  float   ADCgainOff;            // Gain to be applied to the ADC value when offset adjust is enabled
+  float   ADCgainCh;             // Gain to be applied to the ADC value when channel offset adjust is enabled
+  char    PolDIO;                // This defines a DIO signal to use for polarity control of the offset
 } DCbiasData;
 
 typedef struct
@@ -101,5 +108,20 @@ void SetDCbiasPtrigger(char *src);
 void GetDCbiasPtrigger(void);
 
 void SaveDCB2EEPROM(void);
+
+void DCbiasCalParms(int chan);
+void DCbiasCalsetM(char *chan, char *val);
+void DCbiasCalsetB(char *chan, char *val);
+
+void SetDCbiasOffOff(char *brd, char *fval);
+void GetDCbiasOffOff(int board);
+void SetDCbiasCHOff(char *brd, char *fval);
+void GetDCbiasCHOff(int board);
+void SetDCbiasCHMK(char *brd, char *mask);
+void GetDCbiasCHMK(int board);
+void SetADCoffsetAdjust(char *brd, char *gain);
+void SetADCchannelAdjust(char *brd, char *gain);
+void SetADCgainPol(char *brd, char *dio);
+void GetADCgainPol(int board);
 
 #endif

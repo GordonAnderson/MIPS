@@ -1,6 +1,8 @@
 #ifndef ARB_H_
 #define ARB_H_
 
+#define MAXARBMODULES 6
+
 // This is the max digitizer frequency in the ARB mode, this sets the max frequency.
 #define MAXARBRATE 1280000
 
@@ -15,7 +17,8 @@
 
 // TWI commands and constants
 #define TWI_ARB_ADD             0x40      // This is the TWI address for the ARB module's Arduino for channels 1 and 2
-                                          // use 0x42 for channels 3 and 4. (40 = 64, 42 = 66)
+                                          // use 0x42 for channels 3 and 4. (0x40 = 64, 0x42 = 66)
+                                          // use 0x44 for channels 5 and 6. 0x44 = 68
 
 #define TWI_ARB_SET_FREQ        0x01      // Set frequency, Hz, 16 bit unsigned word
 #define TWI_ARB_SET_WAVEFORM    0x02      // Set waveform type, 8 bit unsigned type
@@ -78,6 +81,23 @@
 #define TWI_SET_SINE            0x39      // Define one sine wave cycle for the selected channel and defined starting phase
                                           // This command is for convential ARB mode, channel 0 to 7 (byte), phase is a float in degrees
 
+#define TWI_SET_AEXT            0x3A      // Enable alternate waveform mode trigger on hardware line, byte: true if alternate waveform trig enabled 
+#define TWI_SET_ATMODE          0x3B      // Defines the alternate waveform trigger mode. 0 = level trigger, 1 = pos edge, 2 = neg edge 
+#define TWI_SET_AMODE           0x3C      // Enable alternate waveform mode, byte: true if alternate waveform enabled 
+#define TWI_SET_AWFRM           0x3D      // Define alternate waveform, byte: 1=compress (default),2=reverse,3=arb,4=fixed
+#define TWI_SET_ARNGENA         0x3E      // Enable range change in compress or alternate waveform mode, byte: true if enabled
+#define TWI_SET_ARNG            0x3F      // Compress or alternate range, float.
+#define TWI_SET_FIXED           0x40      // Set fixed voltage profile value, byte,float. byte=index, 0 thru 7. float = value in %
+#define TWI_SET_TRGDELAY        0x41      // Set the trigger delay time in mS, float
+#define TWI_SET_PLYTIME         0x42      // Set the alt mode play time in mS, float
+
+#define TWI_SET_REVAV           0x43      // Set reverse aux voltage, this value is applied when the Twave direction is reversed
+#define TWI_SET_CLRRAV          0x44      // Clears the application of unique reverse guard voltage
+
+#define TWI_SET_HWDISR          0x45      // Enables the use of hardware interrupts to process the Compress mode signal
+#define TWI_SET_SYNCLINE        0x46      // Allows defining the hardware line used for sync control, 1 or 2, 1 = default
+#define TWI_SET_COMPLINE        0x47      // Allows defining the hardware line used for Compress control, 1 or 2, 2 = default
+
 #define TWI_ARB_READ_REQ_FREQ   0x81      // Returns requested frequency
 #define TWI_ARB_READ_ACT_FREQ   0x82      // Returns actual frequency
 #define TWI_ARB_READ_STATUS     0x83      // Returns status byte (ARB system status)
@@ -86,11 +106,11 @@
 #define TWI_ARB_READ_SWEEP_STATUS 0x86    // Returns sweep system status
 
 // Waveform types, used in TWI command
-#define TWI_WAVEFORM_SIN    0x01
-#define TWI_WAVEFORM_RAMP   0x02
-#define TWI_WAVEFORM_TRI    0x03
-#define TWI_WAVEFORM_PULSE  0x04
-#define TWI_WAVEFORM_ARB    0x05
+#define TWI_WAVEFORM_SIN        0x01
+#define TWI_WAVEFORM_RAMP       0x02
+#define TWI_WAVEFORM_TRI        0x03
+#define TWI_WAVEFORM_PULSE      0x04
+#define TWI_WAVEFORM_ARB        0x05
 
 // Constants
 #define ppp   128   // Number of points per waveform period
@@ -110,6 +130,7 @@ enum WaveFormTypes
 typedef struct
 {
   bool   update;
+  bool   updateALT;
   char   Mode[7];
   int    Freq;
   float  Amplitude;
@@ -195,10 +216,21 @@ typedef struct
   char          ARBsweepTrig;       // Sweep start external input trigger channel
   int8_t        ARBsweepLevel;      // Sweep start external input trigger level
   // Output voltage ramp rate
-  float         RampRate;
+  float         RampRate;  // 192 bytes in size
+  // Updates for alternate waveform +++
+  char          AltExtTrg;          // Alternate waveform external trigger input
+  bool          AlternateEnable;
+  bool          AlternateHardware;
+  byte          AltHwdMode;         // External alt enable mode, 0=level active high, 1 = pos edge, 2 = neg edge
+  float         TriggerDly;         // Delay in mS when in pos or neg edge mode
+  float         PlayDuration;       // Duration in mS when in pos of neg edge mode
+  float         Fixed[8];           // Fixed voltage profile
+  bool          AlternateRngEna;
+  float         AlternateRng;
+  byte          AltWaveform;
 } ARBdata;
 
-extern ARBdata  *ARBarray[4];
+extern ARBdata  *ARBarray[MAXARBMODULES];
 extern DialogBoxEntry ARBCompressorEntries2[];
 extern DialogBox ARBCompressorDialog;
 extern MIPStimer *ARBclock;
@@ -288,5 +320,35 @@ void ARBCtrigger(void);
 void SetARBCswitch(char *mode);
 
 void SaveARB2EEPROM(void);
+
+// Prototypes for the alternate waveform capability
+void SetARBaltTrgInp(char *module, char *trgin);
+void GetARBaltTrgInp(int module);
+void SetARBaltEna(char *module, char *bval);
+void GetARBaltEna(int module);
+void SetARBaltTrg(char *module, char *bval);
+void GetARBaltTrg(int module);
+void SetAltTrigMode(char *module, char *tmode);
+void GetAltTrigMode(int module);
+void SetFixedValue(int module, int index, char *ival);
+void GetFixedValue(int module, int index);
+void SetAltWaveFrm(char *module, char *wtype);
+void GetAltWaveFrm(int module);
+void SetARBaltTrgDly(char *module, char *fval);
+void GetARBaltTrgDly(int module);
+void SetARBaltTrgDur(char *module, char *fval);
+void GetARBaltTrgDur(int module);
+void SetARBaltRngEna(char *module, char *bval);
+void GetARBaltRngEna(int module);
+void SetARBaltRng(char *module, char *fval);
+void GetARBaltRng(int module);
+
+void SetARBrevAuxV(char *module, char *fval);
+void ClearARBrevAuxV(int module);
+
+void SetARBcompExt(char *module, char *state);
+void SetARBhwdISR(char *module, char *state);
+void SetARBsyncLine(int module, int line);
+void SetARBcompLine(int module, int line);
 
 #endif

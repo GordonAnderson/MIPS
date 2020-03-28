@@ -7,6 +7,8 @@ enum TWIcbType
 {
   Empty,
   VoidVoid,
+  VoidIntIntByte,
+  VoidIntFloat,
   VoidIntIntFloat,
   VoidIntIntBool,
   VoidIntIntWord
@@ -15,6 +17,8 @@ enum TWIcbType
 union TWIfunctions
 {
   void  (*funcVoidVoid)(void);
+  void  (*funcIntIntByte)(int, int, byte);
+  void  (*funcIntFloat)(int, float);
   void  (*funcIntIntFloat)(int, int, float);
   void  (*funcIntIntBool)(int, int, bool);
   void  (*funcIntIntWord)(int, int, uint16_t);
@@ -49,12 +53,27 @@ void   TWIerror(void);
 void   TWIreset(void);
 
 // Function prototypes for TWI acquire / release and function queqing system.
+void TWI_RESET(void);
 bool AcquireTWI(void);
 void ReleaseTWI(void);
 void TWIqueue(void (*TWIfunction)());
+void TWIqueue(void (*TWIfunction)(int,int,float),int arg1,float arg3);
 void TWIqueue(void (*TWIfunction)(int,int,float),int arg1,int arg2,float arg3);
 void TWIqueue(void (*TWIfunction)(int,int,bool),int arg1,int arg2,bool arg3);
+void TWIqueue(void (*TWIfunction)(int,int,byte),int arg1,int arg2,byte arg3);
 void TWIqueue(void (*TWIfunction)(int,int,uint16_t),int arg1,int arg2,uint16_t arg3);
+
+int TWIstart(uint8_t add, int board, int cmd);
+// These macros will send various data types using the TWI port
+#define  TWIBYTE(b)  {Wire.write(b);}
+#define  TWIBOOL(b)  {Wire.write(b);}
+#define  TWI16BIT(w) {Wire.write(w & 0xFF); Wire.write((w >> 8) & 0xFF);}
+#define  TWI24BIT(w) {Wire.write(w & 0xFF); Wire.write((w >> 8) & 0xFF); Wire.write((w >> 16) & 0xFF);}
+#define  TWI32BIT(w) {Wire.write(w & 0xFF); Wire.write((w >> 8) & 0xFF); Wire.write((w >> 16) & 0xFF); Wire.write((w >> 24) & 0xFF);}
+//#define  F2INT(f)    (*(int *)&f;)
+//#define  TWIFLOAT(w) {Wire.write(F2INT((w)) & 0xFF); Wire.write((F2INT((w)) >> 8) & 0xFF); Wire.write((F2INT((w)) >> 16) & 0xFF); Wire.write((F2INT((w)) >> 24) & 0xFF);}
+#define  TWIFLOAT(w) {Wire.write((w) & 0xFF); Wire.write(((w) >> 8) & 0xFF); Wire.write(((w) >> 16) & 0xFF); Wire.write(((w) >> 24) & 0xFF);}
+void TWIend(uint8_t add, int board);
 
 // Function prototypes for TWI data types read and write functions
 void TWIcmd(uint8_t add, int board, int cmd);

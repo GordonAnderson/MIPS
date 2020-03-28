@@ -212,6 +212,8 @@ void PlaySegments(void)
   SegmentsAbort = false;
   MPST.stop();
   LDACcapture;
+  pinMode(LDAC,OUTPUT);
+  LDAClow;
 }
 
 void DACsetup(void)
@@ -1069,4 +1071,31 @@ void RemoveSegments(void)
       DCsegmentList = DCsegmentList->next;
    }
    SendACK;  
+}
+
+// Report the current segment name, this is the next segment that will execute when a
+// trigger is received. NAK is return if the current segment is NULL.
+void ReportCurrentSegment(void)
+{
+  if(CurrentSegment != NULL)
+  {
+    SendACKonly;
+    serial->println((char *)CurrentSegment->name);
+    return;
+  }
+  SetErrorCode(ERR_NOTSUPPORTED);
+  SendNAK;
+}
+
+// Forces a trigger of the current segment.
+void ForceTrigger(void)
+{
+  if(CurrentSegment != NULL)
+  {
+    SendACK;
+    MPST.softwareTrigger();
+    return;
+  }
+  SetErrorCode(ERR_NOTSUPPORTED);
+  SendNAK;
 }

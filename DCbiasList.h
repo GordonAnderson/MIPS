@@ -70,5 +70,7 @@ void ListStateNames(void);
 void RemoveState(char *name);
 void RemoveStates(void);
 void IsState(char *name);
+void ReportCurrentSegment(void);
+void ForceTrigger(void);
 
 #endif

@@ -276,6 +276,11 @@ bool ARBgetValueFromTable(int *index, int *value)
 // m      Mode, channel, N or C
 // J      Compression order, channel order
 //
+// Added Feb 22, 2020
+//
+// A      Set aux voltage to positive value, channel, voltage
+// a      Set aux voltage to negative value, channel, voltage
+//
 char ARBgetNextOperationFromTable(bool init)
 {
   bool   valfound;
@@ -541,7 +546,7 @@ char ARBgetNextOperationFromTable(bool init)
       if(valfound)
       {
          c = TwaveCompressorTable[tblindex++];
-         if((count>=1) && (count<=4) && ((c=='N') || (c=='C')))
+         if((count>=1) && (count<=MAXARBMODULES) && ((c=='N') || (c=='C')))
          {
             if(c=='C') CE = true; else CE = false;
             if(AcquireTWI()) SetBool(count - 1, TWI_ARB_SET_COMP_ENA, CE); else TWIqueue(SetBool,count - 1, TWI_ARB_SET_COMP_ENA, CE);
@@ -550,14 +555,40 @@ char ARBgetNextOperationFromTable(bool init)
     }
     else if(OP == 'J')   // Set selected ARB compression order
     {
-       // Syntax is J followed by ARB channel (1 thru 4) followed by order
+       // Syntax is J followed by ARB channel (1 thru MAXARBMODULES) followed by order
        b = count;
        int m = 1;
-       while(b > 4) { b /= 10; m *= 10; }
+       while(b > MAXARBMODULES) { b /= 10; m *= 10; }
        count -= m * b;
-       if((b>=1) && (b<=4))
+       if((b>=1) && (b<=MAXARBMODULES))
        {
           if(AcquireTWI()) SetWord(b-1,TWI_ARB_SET_COMP_ORDER_EX, count); else TWIqueue(SetWord,b-1,TWI_ARB_SET_COMP_ORDER_EX, count);
+       }
+    }
+    else if(OP == 'A')   // Set selected ARB Aux voltage output, positive
+    {
+       // Syntax is A followed by ARB channel (1 thru MAXARBMODULES) followed by Aux voltage, float
+    
+       b = count;
+       int m = 1;
+       while(b > MAXARBMODULES) { b /= 10; m *= 10; }
+       fval -= m * b;
+       if((b>=1) && (b<=MAXARBMODULES))
+       {
+          if(AcquireTWI()) SetFloat(b-1,TWI_ARB_SET_AUX, fval); else TWIqueue(SetFloat,b-1,TWI_ARB_SET_AUX, fval);
+       }
+    }
+    else if(OP == 'a')   // Set selected ARB Aux voltage output, negative
+    {
+       // Syntax is A followed by ARB channel (1 thru MAXARBMODULES) followed by Aux voltage, float
+    
+       b = count;
+       int m = 1;
+       while(b > MAXARBMODULES) { b /= 10; m *= 10; }
+       fval -= m * b;
+       if((b>=1) && (b<=MAXARBMODULES))
+       {
+          if(AcquireTWI()) SetFloat(b-1,TWI_ARB_SET_AUX, -fval); else TWIqueue(SetFloat,b-1,TWI_ARB_SET_AUX, -fval);
        }
     }
     else if(OP == 's') ARBclock->stop();                            // Stop the clock

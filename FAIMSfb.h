@@ -103,6 +103,7 @@ typedef struct // 76 bytes
   float         NegOffset;
 } FAIMSFBstate;
 
+// This must match the structure in the FAIMSFB module's CPU
 typedef struct  // 260 byte
 {
   int16_t       Size;                   // This data structures size in bytes

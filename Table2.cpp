@@ -29,6 +29,7 @@ TBLSTRT
 
 #include "Arduino.h"
 #include "variant.h"
+#include "ADCdrv.h"
 #include <stdio.h>
 #include <Thread.h>
 #include <ThreadController.h>
@@ -484,11 +485,10 @@ void SWTableTrg(void)
       return;
     }
     // This function was changed Jan 22, 2019 to just set a flag and let the table real time loop processing
-    // code actiall call the start function. This allows the real time loop to call tasks (if enabled) while 
+    // code actually call the start function. This allows the real time loop to call tasks (if enabled) while 
     // waiting for a trigger.
     IssueSoftwareTableStart = true;
     SendACK;
-    return;
 }
 
 void PerformSoftwareStart(void)
@@ -1139,7 +1139,11 @@ void ProcessTables(void)
             #endif
             // Process any serial commands
             ProcessSerial();
-            if(ReadVin() < 10.0) break;
+            if(AcquireADC())
+            {
+               if(ReadVin() < 10.0) break;
+               ReleaseADC();           
+            }
             serial->flush();
             // If full command processing in table mode is enabled then run tasks.
             if(TasksEnabled)
@@ -1167,7 +1171,11 @@ void ProcessTables(void)
             StopTimer();
             break;
         }
-        if(ReadVin() < 10.0) break;
+        if(AcquireADC())
+        {
+           if(ReadVin() < 10.0) break;
+           ReleaseADC();           
+        }
         if(TableOnce) break;
         StopTimer();  // not sure about this, testing
         // Advance to next table if advance mode is enabled
@@ -1832,6 +1840,172 @@ void ProcessRamp(volatile TableEntry *TE)
         break;
      }
   }
+}
+
+// The following functions support time table count parameter adjustment via ADC change value detection.
+// Three main functions support this capability.
+// - Selection of the time point for adjustment. This requires the initial count and a channel at the initial count.
+// - Table trigger on ADC change detection, gain and offset for ADC value.
+// - Time parameter adjustment range.
+
+TableEntryHeader *TEHopen  = NULL;
+TableEntryHeader *TEHclose = NULL;
+int GateWidth              = 0;
+int MinAdjTime             = 100;
+int MaxAdjTime             = 10000;
+float ADCttGain            = 1;
+float ADCttOff             = 0;
+float mzList[5]            = {0,0,0,0,0};
+int   countList[5];
+
+// This function finds the gate open and if possible the gate close table headers in the current table.
+// If the close is found then the gate width is calculated and will be adjusted to keep the width constant.
+void SelectTPforAdjust(int count, int chan)
+{
+    TableEntry *TE;
+    int i;
+
+    TEHopen = TEHclose = NULL;
+    TEHopen = FindTableEntryHeader(count, chan);
+    if(TEHopen==NULL)
+    {
+        SetErrorCode(ERR_CANTFINDENTRY);
+        SendNAK;
+        return;
+    }
+    // The next event should hold the close time event
+    TEHclose = (TableEntryHeader *)((char *)TEHopen + (sizeof(TableEntryHeader) + (sizeof(TableEntry) * TEHopen->NumChans)));
+    TE = (TableEntry *)((char *)TEHclose + (sizeof(TableEntryHeader)));
+    // If chan is in this event then its the close event and we can use its time to calculate the gate width
+    SendACK;  
+    for(i=0;i<TEHclose->NumChans;i++) if(TE[i].Chan == (chan-1)) 
+    {
+      GateWidth = TEHclose->Count - count;
+      return;
+    }
+    GateWidth = 0;
+    TEHclose = NULL;
+}
+
+// Sets the minimum and maximum allowable tabe times. These times are in clock cycles
+void DefineAdjustRange(int mint, int maxt)
+{
+  // Range test and adjust
+  if(mint < 0) mint = 0;
+  if(maxt < 0) maxt = 0;
+  if(mint >= (maxt-100)) maxt = mint + 100;
+  // Apply values
+  MinAdjTime = mint;
+  MaxAdjTime = maxt;
+  SendACK;
+}
+
+// Find the closest m/z in the list, must be at least within 10.
+// Returns the index if fould else -1
+int FindCloseMZ(float mz)
+{
+  float mzerror = 50;
+  int   mzindex = -1;
+  int   i;
+  
+  for(i=0;i<5;i++)
+  {
+    if(abs(mz-mzList[i]) < mzerror)
+    {
+      mzerror = abs(mz-mzList[i]);
+      mzindex = i;
+    }
+  }
+  return(mzindex);
+}
+
+void ADCtableTriggerISR(int adcVal)
+{
+  if(TableMode != TBL) return;
+  if(!TableReady) return;
+  if((!MIPSconfigData.TableRetrig) && (TimerRunning == true)) return;
+  if(TEHopen != NULL) 
+  {
+    float mz = (float)adcVal*ADCttGain + ADCttOff;
+    int i = FindCloseMZ(mz);
+    if(i >= 0)
+    {
+      int j = countList[i] - GateWidth/2;
+      if(j<MinAdjTime) j = MinAdjTime;
+      if(j>MaxAdjTime) j = MaxAdjTime;
+      TEHopen->Count = j;
+      if(TEHclose != NULL)
+      {
+         j = countList[i] + GateWidth/2;
+         if(j<MinAdjTime) j = MinAdjTime;
+         if(j>MaxAdjTime) j = MaxAdjTime;
+         TEHclose->Count = j;        
+      }
+    }
+  }
+  IssueSoftwareTableStart = true;
+ }
+
+// This function allows the user to adjust the ADC value using the following equation:
+// value = ADC * gain + offset
+void SetADCtoMZcal(char *gain, char *offset)
+{
+  String sToken;
+
+  sToken = gain;
+  ADCttGain = sToken.toFloat();
+  sToken = offset;
+  ADCttOff = sToken.toFloat();
+  SendACK;
+}
+
+// This function will set a m/z and count value in the list of targets.
+// Three parameters, index,m/z,count.
+// Maximum of 5 entries in the list
+// The user is expected to update all 5 poosible entries.
+// This function is called with the parameters in the ring buffer
+void DefineMZtarget(void)
+{
+   char   *Token;
+   String sToken;
+   int    ch,count;
+   float  mz;
+
+   while(1)
+   {
+     // Read all the arguments
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sToken = Token;
+     ch = sToken.toInt();
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sToken = Token;
+     mz = sToken.toFloat();
+     GetToken(true);
+     if((Token = GetToken(true)) == NULL) break;
+     sToken = Token;
+     count = sToken.toInt();
+     if((Token = GetToken(true)) == NULL) break;
+     if(Token[0] != '\n') break;
+     // Test the channel and exit if error
+     if((ch < 0) || (ch > 4)) break;
+     mzList[ch] = mz;
+     countList[ch] = count;
+     SendACK;
+     return;
+   }
+   // If here then we had bad arguments!
+  SetErrorCode(ERR_BADARG);
+  SendNAK;
+}
+
+// This function sets the ADC change interrupt to call back to the
+// Table trigger function
+void TableTrigOnADC(void)
+{
+  ADCattachInterrupt(ADCtableTriggerISR);
+  SendACK;
 }
 
 #endif

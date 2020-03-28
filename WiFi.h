@@ -31,6 +31,7 @@ typedef struct
 extern WiFiData wifidata;
 
 // Prototypes
+void WiFi_init(void);
 void SetHost(char *host);
 void SetSSID(char *ssid);
 void SetPassword(char *pswd);

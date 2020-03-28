@@ -35,6 +35,7 @@
 #include <ThreadController.h>
 #include "Variants.h"
 #include "Table.h"
+#include "SC16IS740.h"
 
 extern ThreadController control;
 
@@ -123,6 +124,7 @@ const Commands  CmdArray[] = 	{
   {"GSPND", CMDbool, 0, (char *)&Suspend},                     // Returns suspend status, TRUE or FALSE
   {"CPUTEMP", CMDfunction, 0, (char *)CPUtemp},                // Returns the CPU temp in degrees C, not an accurate reading 
   {"TWITALK", CMDfunction, 2, (char *)TWItalk},                // Redirect the serial communications through a board and TWI address passed
+  {"TWI1TALK", CMDfunction, 2, (char *)TWI1talk},              // Redirect the serial communications through a board and TWI address passed
   {"SSER1ENA", CMDbool, 1, (char *)&MIPSconfigData.Ser1ena},   // Set the Serial1 port enable, TRUE = general use
   {"GSER1ENA", CMDbool, 0, (char *)&MIPSconfigData.Ser1ena},   // Get the Serial1 port enable status
   {"SETADDRESS", CMDfunctionStr, 1, (char *)&SetMemAddress},   // Set memory address to read or write, hex
@@ -141,6 +143,12 @@ const Commands  CmdArray[] = 	{
   {"POWER", CMDfunction, 0, (char *)PowerControl},                // Cycle MIPS system power
   {"SUBRDSEL", CMDbool, 1, (char *)&MIPSconfigData.UseBRDSEL},    // Set to true to enable the use of board select, default
   {"GUBRDSEL", CMDbool, 0, (char *)&MIPSconfigData.UseBRDSEL},    // Returns the state of the UseBRDSEL flag
+  {"USBPWR", CMDfunctionStr, 1, (char *)&USBpower},               // Enables or disables USB powering controller. TRUE = enable. Note if false
+                                                                  // and power is lost the system will reboot to being powered by USB                                                                 
+  {"DREAD", CMDfunction, 1, (char *)Dread},                       // Read an arduino pin, returns HIGH or LOW
+  {"DWRITE", CMDfunctionStr, 2, (char *)Dwrite},                  // Write an arduino pin, Set HIGH or LOW or PULSE or SPLUSE
+  {"DSET", CMDfunctionStr, 2, (char *)Dset},                      // Sets an arduino pin, INPUT, PULLUP, OUTPUT  
+  {"DEBUG", CMDfunction, 1, (char *)Debug},                       // Debug function, as needed
 // Clock generation functions
   {"GWIDTH",  CMDint, 0, (char *)&PulseWidth},                // Report the pulse width in microseconds
   {"SWIDTH",  CMDint, 1, (char *)&PulseWidth},                // Set the pulse width in microseconds
@@ -162,9 +170,12 @@ const Commands  CmdArray[] = 	{
   {"SDTRIGMOD", CMDfunctionStr, 1, (char *)SetDelayTrigModule},// Defines the delay trigger module, ARB, ADC, SWEEP, AUXTRIG
   {"SDTRIGENA", CMDfunctionStr, 1, (char *)SetDelayTrigEnable},// TRUE enables the trigger FALSE disables
   {"GDTRIGENA", CMDbool, 0, (char *)&DtrigEnable},             // Returns the trigger delay enable status
-  {"DEBUG", CMDfunction, 1, (char *)Debug},                    // Debug function, as needed
 // ADC functions
   {"ADC", CMDfunction, 1, (char *)ADCread},                    // Read and report ADC channel. Valid range 0 through 3
+  {"ADCGAIN", CMDfunction, 2, (char *)ADRsetGain},             // Set ADC channel gain. Channel range 0 to 3, gains are 1,2, or 4
+  {"ADCCHG", CMDfunction, 2, (char *)ADCchangeDet},            // Enable ADC change detection. Channel range 0 to 3, threshold 0 to 100
+  {"ADCCPRM", CMDfunction, 2, (char *)SetADCchangeParms},      // Set ADC change filter parameters
+  {"RADCCHG", CMDfunctionStr, 1, (char *)MonitorADCchange},    // This function will report ADC value changes to the host, the ADC value is multiplied by gain
   {"ADCINIT", CMDfunction, 0, (char *)ADCprep},                // ADC vector recording setup
   {"ADCTRIG", CMDfunction, 0, (char *)ADCsoftTrigger},         // ADC vector recording software trigger
   {"ADCABORT", CMDfunction, 0, (char *)ADCabort},              // ADC system abort
@@ -203,6 +214,20 @@ const Commands  CmdArray[] = 	{
   {"RDCBSPLY", CMDfunction, 1, (char *)&ReportDCbiasSuppplies},       // Report the DCbias board supply voltages. Requires AD5593 for this
                                                                       // function to work.
   {"SDCBUPDATE", CMDbool, 1, (char *)&DCbiasUpdate},                  // Set to TRUE to force all DC bias channels to update
+  {"GDCBCAL", CMDfunction, 1, (char *)DCbiasCalParms},                // This command will return the selected channels calibration parameters
+  {"SDCCALM", CMDfunctionStr, 2, (char *)DCbiasCalsetM},              // Set the DC bias channels cal parameter M
+  {"SDCCALB", CMDfunctionStr, 2, (char *)DCbiasCalsetB},              // Set the DC bias channels cal parameter B
+//DC bias module offset control
+  {"SDCBOFOF", CMDfunctionStr, 2, (char *)SetDCbiasOffOff},           // Set the DC bias global offset, will apply to all channels on module
+  {"GDCBOFOF", CMDfunction, 1, (char *)GetDCbiasOffOff},              // Returns the DC bias global offset
+  {"SDCBCHOF", CMDfunctionStr, 2, (char *)SetDCbiasCHOff},            // Set the DC bias channel offset, will apply to all enabled channels on the module
+  {"GDCBCHOF", CMDfunction, 1, (char *)GetDCbiasCHOff},               // Returns the DC bias channel offset
+  {"SDCBCHMK", CMDfunctionStr, 2, (char *)SetDCbiasCHMK},             // Set the DC bias channel offset mask, value in hex, defines channels to apply offset
+  {"GDCBCHMK", CMDfunction, 1, (char *)GetDCbiasCHMK},                // Returns the DC bias channel offset mask, in hex
+  {"DCBCADCOF", CMDfunctionStr, 2, (char *)SetADCoffsetAdjust},       // Connect the ADC change detector to the OffsetOffset on select board
+  {"DCBCADCCO", CMDfunctionStr, 2, (char *)SetADCchannelAdjust},      // Connect the ADC change detector to the Channel Offset on select board
+  {"SDCBCADCP", CMDfunctionStr, 2, (char *)SetADCgainPol},            // Sets the ADC gain polarity control DIO, Q thru X or NA
+  {"GDCBCADCP", CMDfunction, 1, (char *)GetADCgainPol},               // Returns the ADC gain polarity control DIO
 // DC bias module profile commands
   {"SDCBPRO", CMDfunctionLine, 0, (char *)SetDCbiasProfile},          // Sets a DC bias profile
   {"GDCBPRO", CMDfunction, 1, (char *)GetDCbiasProfile},              // Reports the select DC bias profile
@@ -216,7 +241,7 @@ const Commands  CmdArray[] = 	{
   {"LSTATES", CMDfunction, 0, (char *)ListStateNames},                // List all the defined state names
   {"RSTATE", CMDfunctionStr, 1, (char *)RemoveState},                 // Remove a state from the linked list
   {"RSTATES", CMDfunction, 0, (char *)RemoveStates},                  // Clear the full linked list of states
-  {"GSTATE", CMDfunctionStr, 1, (char *)IsState},                     // Returns true is named state is in list, else false
+  {"GSTATE", CMDfunctionStr, 1, (char *)IsState},                     // Returns true if named state is in list, else false
   {"DSEGMENT", CMDfunctionLine, 0, (char *)DefineSegment},            // Defines a segment with the following arguments: name, length, next, repeat count
   {"ADDSEGTP", CMDfunctionLine, 0, (char *)AddSegmentTimePoint},      // Adds a time point to a segment, arguments: name,count, state1, state 2... (variable number of states)
   {"ADDSEGTRG", CMDfunctionLine, 0, (char *)AddSegmentTrigger},       // Adds a trigger point to a segment, arguments: name,count,port,level
@@ -226,7 +251,9 @@ const Commands  CmdArray[] = 	{
   {"RSEGMENTS", CMDfunction, 0, (char *)RemoveSegments},              // Clear the full linked list of segments
   {"PSEGMENTS", CMDfunction, 0, (char *)PlaySegments},                // Execute the segment list
   {"SABORT", CMDfunction, 0, (char *)AbortSegments},                  // Abort an executing the segment list
-  {"TSEGMENT", CMDfunction, 0, (char *)SoftTriggerSegment},           // Software trigger the segment is ready
+  {"TSEGMENT", CMDfunction, 0, (char *)SoftTriggerSegment},           // Software trigger the segment if ready
+  {"RCURSEG", CMDfunction, 0, (char *)ReportCurrentSegment},          // Report the current segment
+  {"FRCTRIG", CMDfunction, 0, (char *)ForceTrigger},                  // Force a trigger of the current segment
 // DC bias channel pulse commands
   {"SDCBPCH", CMDint, 1, (char *)&DCbiasPchan},                       // Set DC bias pulse channel
   {"GDCBPCH", CMDint, 0, (char *)&DCbiasPchan},                       // Get DC bias pulse channel
@@ -280,8 +307,8 @@ const Commands  CmdArray[] = 	{
   {"GRFAPB", CMDfunction, 1, (char *)RFAgetPoleBias},        // Returns the pole bias DC
   {"SRFARDC", CMDfunctionStr, 2, (char *)RFAsetResolvingDC}, // Sets the resolving DC + and - voltages using DC bias channels 1 and 2
   {"GRFARDC", CMDfunction, 1, (char *)RFAgetResolvingDC},    // Returns the resolving DC + and - voltages using DC bias channels 1 and 2
-  {"SRFAR0", CMDfunctionStr, 2, (char *)RFAsetRo},           // Sets the Ro value in cm
-  {"GRFAR0", CMDfunction, 1, (char *)RFAgetRo},              // Returns the Ro value in cm
+  {"SRFAR0", CMDfunctionStr, 2, (char *)RFAsetRo},           // Sets the Ro value in mm
+  {"GRFAR0", CMDfunction, 1, (char *)RFAgetRo},              // Returns the Ro value in mm
   {"SRFAMZ", CMDfunctionStr, 2, (char *)RFAsetMZ},           // Sets the m/z in amu
   {"GRFAMZ", CMDfunction, 1, (char *)RFAgetMZ},              // Returns the m/z in amu
   {"SRFARES", CMDfunctionStr, 2, (char *)RFAsetRes},         // Sets the resolution in AMU
@@ -337,6 +364,12 @@ const Commands  CmdArray[] = 	{
   {"GEXTFREQ",CMDint, 0, (char *)&ExtFreq},                // Returns the ExtFreq value, in Hz
   #if TABLE2code
   {"STBLRMPENA", CMDfunctionStr, 2, (char *)EnableRamp},   // Enable the table ramp mode and set ramp ISR frequency
+  // ADC change triggering of table
+  {"STPADJ",CMDfunction,2, (char *)SelectTPforAdjust},     // Select table time point for adjustment on ADC change detection
+  {"SADJRNG",CMDfunction,2, (char *)DefineAdjustRange},    // Define the time point valid range for ADC
+  {"SADCMZCAL", CMDfunctionStr, 2, (char *)SetADCtoMZcal}, // Set ADC to m/z calibration parameters, m and b
+  {"SMZTARG", CMDfunctionLine, 1, (char *)DefineMZtarget}, // Define target mz. parms index, mx, coount
+  {"TRGTBLADC",CMDfunction, 0, (char *)TableTrigOnADC},    // Enables triggering on ADC change 
   #endif
 // Macro commands
   {"MRECORD", CMDfunctionStr, 1, (char *) MacroRecord},    // Turn on macro recording into the filename argument
@@ -547,6 +580,35 @@ const Commands  CmdArray[] = 	{
   {"TARBTRG",CMDfunction, 0, (char *)ARBCtrigger},                   // Force a Twave compressor trigger
   {"GARBCSW",CMDstr, 0, (char *)CswitchState},                       // Report Twave compressor Switch state
   {"SARBCSW",CMDfunctionStr, 1, (char *)SetARBCswitch},              // Set Twave compressor Switch state
+// ARB alternate waveform commands  
+  {"SALTTRG", CMDfunctionStr, 2, (char *)SetARBaltTrgInp},           // Defines the alternate waveform external trigger input on MIPS, Input Q thru W or NA to disable
+  {"GALTTRG", CMDfunction, 1, (char *)GetARBaltTrgInp},              // Returns the alternate waveform external trigger input on MIPS, Input Q thru W or NA to disable
+
+  {"SALTENA", CMDfunctionStr, 2, (char *)SetARBaltEna},              // Enables alternate waveform for selected module, TRUE or FALSE
+  {"GALTENA", CMDfunction, 1, (char *)GetARBaltEna},                 // Returns alternate waveform enable status for selected module
+  {"SALTHWD", CMDfunctionStr, 2, (char *)SetARBaltTrg},              // Enables alternate waveform harware triggering for selected module. TRUE or FALSE
+  {"GALTHWD", CMDfunction, 1, (char *)GetARBaltTrg},                 // Returns alternate waveform harware triggering status for selected module
+  {"SALTTMODE",CMDfunctionStr, 2, (char *)SetAltTrigMode},           // Sets the alternate trigger mode for selected module, LEVEL, POS, NEG
+  {"GALTTMODE",CMDfunction, 1, (char *)GetAltTrigMode},              // Return the alternate trigger mode for the selected module
+
+  {"SALTFVAL",CMDfun2int1str, 3, (char *)SetFixedValue},             // Sets the alternate waveform fixed value in percent for selected module, -100 to 100. first argument is index 0 to 7
+  {"GALTFVAL",CMDfunction, 2, (char *)GetFixedValue},                // Returns the alternate waveform fixed value in percent for selected module, -100 to 100. first argument is index 0 to 7
+
+  {"SALTWFM",CMDfunctionStr, 2, (char *)SetAltWaveFrm},              // Sets the alternate waveform type for the selected module, COMP (default),REV,ARB,FIX
+  {"GALTWFM",CMDfunction, 1, (char *)GetAltWaveFrm},                 // Returns the alternate waveform type for the selected module, COMP (default),REV,ARB,FIX
+ 
+  {"SALTDLY", CMDfunctionStr,2, (char *)SetARBaltTrgDly},            // Sets the alternate waveform trigger delay for pos or neg edge trigging only, in mS, for selected module
+  {"GALTDLY", CMDfunction,1, (char *)GetARBaltTrgDly},               // Returns the alternate waveform trigger delay for pos or neg edge trigging only, in mS, for selected module
+  {"SALTPLY", CMDfunctionStr,2, (char *)SetARBaltTrgDur},            // Sets the alternate waveform play or apply time for pos or neg edge trigging only, in mS, for selected module
+  {"GALTPLY", CMDfunction,1, (char *)GetARBaltTrgDur},               // Returns the alternate waveform play or apply time for pos or neg edge trigging only, in mS, for selected module
+  
+  {"SALTRENA", CMDfunctionStr, 2, (char *)SetARBaltRngEna},          // Enables alternate waveform range for selected module. TRUE or FALSE
+  {"GALTRENA", CMDfunction, 1, (char *)GetARBaltRngEna},             // Returns alternate waveform range enable flag for selected module
+  {"SALTRNG",  CMDfunctionStr,2, (char *)SetARBaltRng},              // Sets the alternate waveform range in volts, for selected module
+  {"GALTRNG",  CMDfunction,1, (char *)GetARBaltRng},                 // Returns the alternate waveform range in volts, for selected module
+// ARB commands for application of reverse direction aux voltage change
+  {"SARBREVA", CMDfunctionStr,2, (char *)SetARBrevAuxV},             // Sets the reverse direction ARB AUX output voltage, for selected module
+  {"CLRARBRV", CMDfunction,21, (char *)ClearARBrevAuxV},             // Clears the reverse direction ARB AUX output voltage application, for selected module
 // ARB sweep commands, ARB module based
   {"SARBSGO",CMDfunction, 1, (char *)ARBstartSweep},                 // Start the sweep
   {"SARBSHLT",CMDfunction, 1, (char *)ARBstopSweep},                 // Stop the sweep
@@ -562,6 +624,11 @@ const Commands  CmdArray[] = 	{
   {"GARBPPP",CMDfunction, 1, (char *)GetARBppp},                     // Returns the ARB module points per period, 8 to 32
   {"SARBPPP",CMDfunction, 2, (char *)SetARBppp},                     // Sets the ARB module points per period, 8 to 32
   {"SARBEXT",CMDfunctionStr, 2, (char *)SetARBext},                  // Sets the selected ARB external clock source, MIPS or EXT
+// ARB advanced setup commands
+  {"SARBCPEX",CMDfunctionStr, 2, (char *)SetARBcompExt},             // Sets the ARB compress line hardware control, TRUE enables
+  {"SARBHISR",CMDfunctionStr, 2, (char *)SetARBhwdISR},              // Sets the ARB compress line process to ISR if true
+  {"SARBSYNLN",CMDfunction, 2, (char *)SetARBsyncLine},              // Sets the ARB sync line to use, 1 or 2, 1 = default
+  {"SARBCMPLN",CMDfunction, 2, (char *)SetARBcompLine},              // Sets the ARB comp line to use, 1 or 2, 2 = default
 // DAC module commands
   {"SDACV", CMDfunctionStr, 2, (char *)SetDACValue},                 // Sets the named DAC channel's value  
   {"GDACV", CMDfunctionStr, 1, (char *)GetDACValue},                 // Returns the named DAC channel's value  
@@ -644,15 +711,108 @@ const Commands  CmdArray[] = 	{
 
 void Debug(int function)
 {
-  uint8_t  *ptr;
+   #if FAIMSFBcode
+   static int i = 0;
 
-  serial->println(Counter);
-  if(function>0) Counter = function;
-  return;
-//  ptr = new uint8_t[function];
-  ptr = (uint8_t *)malloc(function);
-  if(ptr == NULL) serial->println("Out of memory!");
-  else serial->println((uint)ptr,16);
+   if(i==0)
+   {
+      Wire1.begin();
+      Wire1.setClock(400000);
+
+      setSC16IS740wire(&Wire1);
+      init_SC16IS740(0x48);
+   }
+   i = -1;
+   serial->println(writeSC16IS740char(0x48, 'g'));
+   serial->println(readSC16IS740char(0x48));
+   #endif
+   if(function == 1) digitalWrite(ARBsync, HIGH);
+   if(function == 0) digitalWrite(ARBsync, LOW);
+   if(function == 2)
+   {
+      digitalWrite(ARBsync, HIGH);
+      digitalWrite(ARBsync, LOW);
+   }
+   if(function == 3) digitalWrite(ARBmode, HIGH);
+   if(function == 4) digitalWrite(ARBmode, LOW);
+   if(function == 5)
+   {
+      digitalWrite(ARBmode, HIGH);
+      digitalWrite(ARBmode, LOW);
+   }
+}
+
+void Dread(int pin)
+{
+  SendACKonly;
+  if(digitalRead(pin) == HIGH) serial->println("HIGH");
+  else serial->println("LOW");
+}
+
+void Dwrite(char *pin, char *state)
+{
+  String  sToken;
+  int     p;
+
+  sToken = pin;
+  p = sToken.toInt();
+  sToken = state;
+  if(sToken == "HIGH") digitalWrite(p,HIGH);
+  else if(sToken == "LOW") digitalWrite(p,LOW);
+  else if(sToken == "PULSE")
+  {
+    if(digitalRead(p) == LOW) {digitalWrite(p,HIGH); digitalWrite(p,LOW);}
+    else {digitalWrite(p,LOW); digitalWrite(p,HIGH);}
+  }
+  else if(sToken == "SPULSE")
+  {
+    if(digitalRead(p) == LOW) {digitalWrite(p,HIGH); delay(1); digitalWrite(p,LOW);}
+    else {digitalWrite(p,LOW);  delay(1); digitalWrite(p,HIGH);}    
+  }
+  else BADARG;
+  SendACK;
+}
+
+void Dset(char *pin, char *mode)
+{
+  String  sToken;
+  int     p;
+
+  sToken = pin;
+  p = sToken.toInt();
+  sToken = mode;
+  if(sToken == "INPUT") pinMode(p, INPUT);
+  else if(sToken == "PULLUP") pinMode(p, INPUT_PULLUP);
+  else if(sToken == "OUTPUT") pinMode(p, OUTPUT);
+  else BADARG;
+  SendACK;
+}
+
+// This function does control the Arduino USB power pin but given the way the hardware is
+// desiged USB power will always power the processor reguardless of this setting.
+void USBpower(char *bval)
+{
+  String  sToken;
+
+  sToken = bval;
+
+  pinMode(85,OUTPUT); 
+  if(sToken == "TRUE") 
+  {
+    //UOTGHS->UOTGHS_CTRL |= UOTGHS_CTRL_VBUSPO;
+    UOTGHS->UOTGHS_CTRL &= ~0x2100;
+    UOTGHS->UOTGHS_CTRL |= 0x2000;
+    digitalWrite(85,HIGH);
+  }
+  else if(sToken == "FALSE") 
+  {
+    //UOTGHS->UOTGHS_CTRL &= ~UOTGHS_CTRL_VBUSPO;
+    UOTGHS->UOTGHS_CTRL &= ~0x2100;
+    UOTGHS->UOTGHS_CTRL |= 0x0000;
+    digitalWrite(85,LOW);
+  }
+  else BADARG;
+  SendACK;
 }
 
 void UpTime(void)
@@ -696,25 +856,33 @@ void ReadMemory(char *type)
   else if(sType == "FLOAT") serial->println(*(float *)MemoryAddress,16);    
 }
 
-void TWItalk(int brd, int TWIadd)
+void twitalk(TwoWire *wire, int brd, int TWIadd)
 {
-  serial->println("Redirecting the serial host commands through the TWI port for the");
-  serial->println("selected  device. Press escape to exit this mode. If you don't know");
-  serial->println("what your doing do not use this function!");
+  wire->begin();
+  wire->setClock(100000);
+  serial->println("Redirecting the serial host commands through the");
+  delay(100);
+  serial->println("TWI port for the selected  device. Press escape");
+  delay(100);
+  serial->println("to exit this mode. If you don't know what your");
+  delay(100);
+  serial->println("doing, do not use this function!");
+  delay(100);
   // Select the board and send the TWIadd the communications enable command
   SelectBoard(brd);
   AcquireTWI();
-  Wire.beginTransmission(TWIadd);
-  Wire.write(TWI_ARB_SERIAL);
-  Wire.endTransmission();
+  wire->beginTransmission(TWIadd);
+  wire->write(TWI_ARB_SERIAL);
+  wire->endTransmission();
+  delay(100);
   // Echo all communications through the TWI port
   while(1)
   {
     WDT_Restart(WDT);
-    Wire.requestFrom(TWIadd, 32);
-    while (int i = Wire.available())
+    wire->requestFrom(TWIadd, 32);
+    for(int j=0;j<32;j++)
     {
-      i = Wire.read();
+      int i = wire->read();
       if(i == -1) break;
       if(i == 27)
       {
@@ -728,9 +896,9 @@ void TWItalk(int brd, int TWIadd)
     while (serial->available() > 0)
     {
       char c = serial->read();
-      Wire.beginTransmission(TWIadd);
-      Wire.write(c);
-      Wire.endTransmission();
+      wire->beginTransmission(TWIadd);
+      wire->write(c);
+      wire->endTransmission();
       if(c == 27)
       {
          ReleaseTWI();
@@ -741,6 +909,16 @@ void TWItalk(int brd, int TWIadd)
   }
   ReleaseTWI();
   serial->println("Exiting TWI redirection.");
+}
+
+void TWItalk(int brd, int TWIadd)
+{
+  twitalk(&Wire, brd, TWIadd);
+}
+
+void TWI1talk(int brd, int TWIadd)
+{
+  twitalk(&Wire1, brd, TWIadd);
 }
 
 void CheckImage(char *filename)
@@ -977,6 +1155,11 @@ void SerialInit(void)
 // This function builds a token string from the characters passed.
 void Char2Token(char ch)
 {
+  if(ch == 0x08)
+  {
+     if(Tptr > 0) Tptr--;
+     return;
+  }
   Token[Tptr++] = ch;
 //  if (Tptr >= MaxToken) Tptr = MaxToken - 1;
   Token[MaxToken - 1] = 0;  // Make sure its null terminated

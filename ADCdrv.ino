@@ -1,15 +1,43 @@
 //
-// This file contails ADC routines that support reading the ARM ADC channels.
+// This file contails ADC routines that support reading the ARM ADC channels. Low level
+// functions allow you to set the channel gain and read raw data from a channel. Additionally
+// there are two higher level functions to support high speed data acquisition and ADC
+// value change detection.
+//
+// High speed acquisition
+//   This mode acquires one of more vectors and streams the data out the USB port.
+//   The vector acquire can be triggered by software or an external trigger using the
+//   delay trigger MIPS ca[ability. The acquire function blocks during the vector acquire and
+//   you need to be running the MIPS host app to record the data. This fuction will 
+//   support speeds up to 600KHz and long vectors, 100K points or more.
+//
+// Change detection
+//   This mode uses the ADC window function to signal an acquire if the ADC value 
+//   is outside of a programmed window. The window is repositioned around the ADC value
+//   every time its read. The uses can define the window width in ADC counts. The user
+//   can also define a function to call when a change is detected.
+//
+// Note: Arduino DUE adc channel 0 thru 7 are channels 7 thru 0 on the ARM processor!
+//
+// Gordon Anderson
+//    - Added gain control and change detection, Jan 26, 2020
 //
 
-uint16_t *ADCbuffer = NULL;   // Pointer to ADC buffer used to hold the raw data.
+uint16_t  *ADCbuffer = NULL;  // Pointer to ADC buffer used to hold the raw data.
 MIPStimer *ADCclock = NULL;   // Timer used to set the digitization rate
 
+#define      SMPS 32
+
+bool         ADCacquire     = true;   // Sets the ADC mode, true if in acquire mode and false if in 
+                                      //change detect mode
 volatile int bufn,obufn;
 volatile int ADCchannel     = 0;
 volatile int ADCnumsamples  = 10000;
-volatile int ADCvectors     = 1;
 volatile int ADCrate        = 200000;
+volatile int ADCvectors     = 1;
+volatile int Threshold      = 4;
+volatile int WindowCount    = 4;
+volatile int SameCount      = 6;
 uint16_t     ADCvectorNum   = 0;
 uint32_t     ADCsamples     = 0;
 uint32_t     ADCsamplesSent = 0;
@@ -18,6 +46,11 @@ uint8_t      ADCtrailer[6]  = {0xAE,0xAE,0xAE,0xAE,0xEA,0};
 
 static bool ADCinuse = false;
 static bool ADCready = false;
+
+void  (*ADCchangeFunc)(int) = NULL;
+float ADCchangeGain = 1.0;
+float ADCvalue;
+bool  ADCchanged=false;
 
 bool AcquireADC(void)
 {
@@ -31,18 +64,54 @@ void ReleaseADC(void)
   ADCinuse = false;
 }
 
-// This interrupt fires after the first 256 samples are collected
+// ADC change interrupt call back function
+void ADCattachInterrupt(void (*isr)(int))
+{
+  ADCchangeFunc = isr;
+}
+
+// This interrupt fires after the first block of samples are collected in
+// the ADC acquire mode or fires when a value is converted in the window
+// change detect mode.
 void ADC_Handler(void)
 {
   int f = ADC->ADC_ISR;
+  int ll,hl;
+  int val;
+  int static count;
+  unsigned int static countatvalue;
+
+  if(!ADCacquire) 
+  {
+    if ((f & ADC_IER_DRDY) == ADC_IER_DRDY) val=adc_get_latest_value(ADC);
+    if ((f & ADC_IER_COMPE) == ADC_IER_COMPE)
+    {
+      if(++count >= WindowCount)
+      {
+        countatvalue = count = 0;
+        //val=adc_get_latest_value(ADC);
+        //serial->println(val);
+        ll = val - Threshold;
+        if(ll < 0) ll = 0;
+        hl = val + Threshold;
+        if(hl > 4095) hl = 4095;
+        adc_set_comparison_window(ADC,ll,hl);
+        //if(ADCchangeFunc != NULL) ADCchangeFunc(val);
+      }
+    }
+    else { count = 0; countatvalue++; }
+    if(countatvalue == SameCount) if(ADCchangeFunc != NULL) ADCchangeFunc(val);
+    f = ADC->ADC_ISR;
+    return;
+  }
   if (f & ADC_IER_ENDRX)
   {
     bufn = (bufn+1) & 3;
-    if(ADCsamples > 256)
+    if(ADCsamples > SMPS)
     {
-      ADC->ADC_RNPR = (uint32_t) &ADCbuffer[bufn * 256];
-      ADC->ADC_RNCR = 256;
-      ADCsamples -= 256;
+      ADC->ADC_RNPR = (uint32_t) &ADCbuffer[bufn * SMPS];
+      ADC->ADC_RNCR = SMPS;
+      ADCsamples -= SMPS;
     }
     else if(ADCsamples == 0)
     {
@@ -52,8 +121,8 @@ void ADC_Handler(void)
     }
     else
     {
-//      ADC->ADC_RNPR = (uint32_t) &ADCbuffer[bufn * ADCsamples];
-      ADC->ADC_RNPR = (uint32_t) &ADCbuffer[bufn * 256];
+//    ADC->ADC_RNPR = (uint32_t) &ADCbuffer[bufn * ADCsamples];
+      ADC->ADC_RNPR = (uint32_t) &ADCbuffer[bufn * SMPS];
       ADC->ADC_RNCR = ADCsamples;
       ADCsamples = 0;
     }
@@ -75,8 +144,9 @@ int ADCsetup(void)
 {
   if(ADCready) return(ERR_ADCALREARYSETUP);
   if(!AcquireADC()) return(ERR_ADCNOTAVALIABLE);
-  // Allocate the buffers, four 256 sample buffers
-  if(ADCbuffer == NULL) ADCbuffer = new uint16_t [1024];
+  ADCacquire = true;
+  // Allocate the buffers, four sets of sample buffers
+  if(ADCbuffer == NULL) ADCbuffer = new uint16_t [SMPS * 4];
   if(ADCbuffer == NULL) return(ERR_CANTALLOCATE);
   // Setup the timer used to set the ADC trigger rate
   if(ADCclock == NULL) ADCclock = new MIPStimer(TMR_ADCclock);
@@ -109,9 +179,9 @@ int ADCsetup(void)
   ADC->ADC_IER = ADC_IER_ENDRX;
   ADC->ADC_IMR = ADC_IER_ENDRX;
   ADC->ADC_RPR = (uint32_t) &ADCbuffer[0];
-  ADC->ADC_RCR = 256;
-  ADC->ADC_RNPR = (uint32_t) &ADCbuffer[256];
-  ADC->ADC_RNCR = 256;
+  ADC->ADC_RCR = SMPS;
+  ADC->ADC_RNPR = (uint32_t) &ADCbuffer[SMPS];
+  ADC->ADC_RNCR = SMPS;
   bufn = obufn = 1;
   ADC->ADC_PTCR = 1;
   NVIC_ClearPendingIRQ(ADC_IRQn);
@@ -145,10 +215,10 @@ void ADCtrigger(void)
   {
     while(obufn==bufn); // wait for buffer to fill
     obufn = (obufn - 1) & 3; 
-    if(ADCsamplesSent > 256)
+    if(ADCsamplesSent > SMPS)
     {
-       serial->write((uint8_t *)&ADCbuffer[obufn * 256],512); // send filled buffer
-       ADCsamplesSent -= 256;
+       serial->write((uint8_t *)&ADCbuffer[obufn * SMPS],SMPS*2); // send filled buffer
+       ADCsamplesSent -= SMPS;
     }
     else if(ADCsamplesSent == 0)
     {
@@ -156,7 +226,7 @@ void ADCtrigger(void)
     }
     else
     {
-       serial->write((uint8_t *)&ADCbuffer[obufn * 256],ADCsamplesSent * 2); // send filled buffer
+       serial->write((uint8_t *)&ADCbuffer[obufn * SMPS],ADCsamplesSent * 2); // send filled buffer
        ADCsamplesSent = 0;      
     }
     obufn=(obufn+2)&3;
@@ -168,9 +238,9 @@ void ADCtrigger(void)
   {
     // Set up for the next vector
     ADC->ADC_RPR = (uint32_t) &ADCbuffer[0];
-    ADC->ADC_RCR = 256;
-    ADC->ADC_RNPR = (uint32_t) &ADCbuffer[256];
-    ADC->ADC_RNCR = 256;
+    ADC->ADC_RCR = SMPS;
+    ADC->ADC_RNPR = (uint32_t) &ADCbuffer[SMPS];
+    ADC->ADC_RNCR = SMPS;
     bufn = obufn = 0;
     ADC->ADC_PTCR = 1;
     NVIC_ClearPendingIRQ(ADC_IRQn);
@@ -189,6 +259,45 @@ void ADCtrigger(void)
   analogReadResolution(12);
   analogRead(ADC0);
   ReleaseADC();
+}
+
+// This function enables the ADC system to monitor the selected channel or a change in value. The ADC interrupt fires
+// when the ADC value is out of the range window. The range window is recentered around the ADC value
+// in the ISR. When the ISR fires the ADC has detected a change. 
+int ADCchangeDet(void)
+{
+  if(ADCready) return(ERR_ADCALREARYSETUP);
+  if(!AcquireADC()) return(ERR_ADCNOTAVALIABLE);
+  ADCacquire = false;
+  ADCready = true;
+  // Setup the ADC
+  adc_set_writeprotect(ADC, 1);  // Enable the write registers
+  pmc_enable_periph_clk(ID_ADC); // To use peripheral, we must enable clock distributon to it
+  adc_init(ADC, SystemCoreClock, ADC_FREQ_MIN, ADC_STARTUP_NORM); // initialize, set minumum speed
+  adc_disable_interrupt(ADC, 0xFFFFFFFF);
+  adc_set_resolution(ADC, ADC_12_BITS);
+  adc_configure_power_save(ADC, 0, 0); // Disable sleep
+  adc_configure_timing(ADC, 15, ADC_SETTLING_TIME_3, 3); // Set timings - standard values
+  adc_set_bias_current(ADC, 1); // Bias current - maximum performance over current consumption
+  adc_stop_sequencer(ADC); // not using it
+  adc_disable_tag(ADC);    // it has to do with sequencer, not using it
+  adc_disable_ts(ADC);     // disable temperature sensor
+  adc_disable_channel_differential_input(ADC, (adc_channel_num_t)ADCchannel);
+  adc_configure_trigger(ADC, ADC_TRIG_SW, 1); // triggering from software, freerunning mode
+  adc_disable_all_channel(ADC);
+  adc_enable_channel(ADC, (adc_channel_num_t)(7-ADCchannel)); // just one channel enabled
+  adc_set_comparison_channel(ADC,(adc_channel_num_t)(7-ADCchannel));
+  adc_set_comparison_mode(ADC,ADC_EMR_CMPMODE_OUT);
+  adc_set_comparison_window(ADC,0,Threshold);
+  // Setup interrupt
+  //adc_enable_interrupt(ADC,ADC_IER_COMPE);
+  adc_enable_interrupt(ADC,ADC_IER_DRDY);
+  // Set filter to max
+  ADC->ADC_EMR |= 0x0000;
+  NVIC_EnableIRQ(ADC_IRQn);
+  // Start the ADC
+  adc_start(ADC);  
+  return(0);
 }
 
 //
@@ -240,10 +349,63 @@ void ADCabort(void)
   SendACK;
 }
 
+// This host command sets up the ADC change monitor function
+void ADCchangeDet(int chan, int thres)
+{
+   if((chan < 0) || (chan > 3) || (thres < 0) || (thres > 100))
+   {
+     SetErrorCode(ERR_BADARG);
+     SendNAK;
+     return;
+   }
+   ADCchannel = chan;
+   Threshold = thres;
+   int iStat = ADCchangeDet();
+   if(iStat != 0)
+   {
+     SetErrorCode(iStat);
+     SendNAK;
+     return;
+   }
+   SendACK;
+}
+
+void SetADCchangeParms(int wc, int sc)
+{
+  WindowCount = wc;
+  SameCount = sc;
+  SendACK;
+}
+
+void ReportADCchange(void)
+{
+  if(!ADCchanged) return;
+  if(SerialMute) return;
+  serial->print("ADC changed: ");
+  serial->println(ADCvalue);
+  ADCchanged = false;
+}
+
+void RecordADCchangeISR(int ADCval)
+{
+   ADCvalue = (float)ADCval * ADCchangeGain;
+   ADCchanged = true;  
+}
+
+// This function will monitor for a ADC value change, when change is detected the ADC value
+// is multiplied by gain and reported by MIPS to the host. This function is used for testing
+void MonitorADCchange(char *gain)
+{
+  String sToken;
+
+  sToken = gain;
+  ADCchangeGain = sToken.toFloat();
+  ADCattachInterrupt(RecordADCchangeISR);
+}
+
 // ADC output function to support the ADC command. This function takes an integer values and returns the 
 // Counts for the channel selected.
 // Valid channels numbers are 0 through 3.
-
 void ADCread(int chan)
 {
    int i;
@@ -257,4 +419,41 @@ void ADCread(int chan)
    }
    SetErrorCode(ERR_BADARG);
    SendNAK;
+}
+
+// Set ADC channel gain, valid gains are 1,2, or 4.
+void ADRsetGain(int chan, int gain)
+{
+   if((chan >= 0) && (chan <=3) && ((gain==1)||(gain==2)||(gain==4)))
+   {
+     adc_set_writeprotect(ADC, 1);  // Enable the write registers
+     if(gain == 1) gain = 0;
+     if(gain == 4) gain = 3;
+     ADC->ADC_MR |= 0x800000;
+     ADC->ADC_CGR &= ~(0x03u << (2 * (7-chan)));
+     ADC->ADC_CGR |= (gain << (2 * (7-chan)));
+     SendACK;
+     return;
+   }
+   SetErrorCode(ERR_BADARG);
+   SendNAK;
+  
+}
+
+// This function reads analog input on A8 and returns the value. A8 is connected to Vin through
+// a voltage divider, 10K in series with 1K. This is used to determine in MIPS power is applied
+// or if the USB is powering up the DUE.
+// This function returns the Vin voltage as a float. The ADC input is left in its default 10 bit mode.
+// A8 input is D62
+//
+// Updated on 2/4/2015 to read return average of 100 readings.
+float ReadVin(void)
+{
+  int ADCvalue;
+  int i;
+
+  ADCvalue = 0;
+  for (i = 0; i < 100; i++) ADCvalue += analogRead(62);
+  ADCvalue = ADCvalue / 100;
+  return ((((float)ADCvalue * 3.3) / 4096.0) * 11.0);
 }

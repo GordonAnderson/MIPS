@@ -80,7 +80,7 @@ DialogBoxEntry RFAdialogEntriesPage1[] = {
   {"Module"             , 1, 0, D_INT      , 1, 1, 1, 20, false, "%2d", &RFAmodule, NULL, RFAmoduleSelected},
   {"Enable"             , 1, 1, D_ONOFF    , 0, 1, 1, 19, false, NULL, &rfad.Enabled, NULL, NULL},
   {"Mode"               , 1, 2, D_OPENCLOSE, 0, 1, 1, 17, false, NULL, &rfad.Mode, NULL, NULL},
-  {"Frequency"          , 1, 3, D_INT      , 500000, 5000000, 1000, 15, false, "%7d", &rfad.Freq, NULL, NULL},
+  {"Frequency"          , 1, 3, D_INT      , 100000, 5000000, 1000, 15, false, "%7d", &rfad.Freq, NULL, NULL},
   RFAdialogEntryDrive,
   {"RF+ Vp-p"           , 1, 6, D_FLOAT    , 0, 0, 0, 17, true, "%5.0f", NULL, NULL, NULL},
   {"RF- Vp-p"           , 1, 7, D_FLOAT    , 0, 0, 0, 17, true, "%5.0f", NULL, NULL, NULL},
@@ -107,7 +107,7 @@ DialogBoxEntry RFAdialogEntriesQUAD[] = {
   {"ResolvingDC, V"     , 1, 3, D_FLOAT    , -400, 400, 0.1, 17, false, "%5.1f", &rfad.ResolvingDC, NULL, NULL},
   {"Pole Bias, V"       , 1, 4, D_FLOAT    , -400, 400, 1, 17, false, "%5.0f", &rfad.PoleBias, NULL, NULL},
   {"Resolution, AMU"    , 1, 5, D_FLOAT    , 0, 100, 1, 19, false, "%3.0f", &rfad.Res, NULL, NULL},
-  {"m/z"                , 1, 6, D_FLOAT    , 100, 2000, 1, 17, false, "%5.0f", &rfad.mz, NULL, NULL},
+  {"m/z"                , 1, 6, D_FLOAT    , 100, 4000, 1, 17, false, "%5.0f", &rfad.mz, NULL, NULL},
   {"Update"             , 1, 7, D_FUNCTION , 0, 0, 0, 0, false, NULL, NULL, SetUpdateFlag, NULL},
   {"Previous page"      , 1,10, D_PAGE     , 0, 0, 0, 0, false, NULL, RFAdialogEntriesPage2, NULL, NULL},
   {NULL},
@@ -553,12 +553,16 @@ void RFA_loop(void)
         // Here if enabled so set the drive and SetPoint levels
         AD5625(RFAarray[brd]->DACadr,RFAdacDRIVE,Value2Counts(RFAarray[brd]->Drive,&RFAarray[brd]->DACchans[RFAdacDRIVE]),3);
         AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[brd]->SetPoint,&RFAarray[brd]->DACchans[RFAdacSETPOINT]),3);
+        MIPSconfigData.PowerEnable = true;
+        SetPowerSource();
       }
       else
       {
         // Here if disabled, set drive and setpoint outputs to 0
         AD5625(RFAarray[brd]->DACadr,RFAdacDRIVE,Value2Counts(0,&RFAarray[brd]->DACchans[RFAdacDRIVE]),3);
         AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(0,&RFAarray[brd]->DACchans[RFAdacSETPOINT]),3);
+        MIPSconfigData.PowerEnable = false;
+        SetPowerSource();
       }
       RFAstates[brd]->Enabled = RFAarray[brd]->Enabled;
     }
@@ -880,7 +884,8 @@ void RFAsetPoleBias(char *Module, char *value)
   if((b = RFAmodule2board(mod)) == -1) return;
   token = value;
   v = token.toFloat();
-  RFAarray[b]->PoleBias = v;
+  if(MIPSconfigData.PowerEnable) RFAarray[b]->PoleBias = v;
+  SendACK;
 }
 
 void RFAgetPoleBias(int Module)
@@ -889,7 +894,9 @@ void RFAgetPoleBias(int Module)
   
   if((b = RFAmodule2board(Module)) == -1) return;
   SendACKonly;
-  if(!SerialMute) serial->println(RFAarray[b]->PoleBias);  
+  if(SerialMute) return;
+  if(MIPSconfigData.PowerEnable) serial->println(RFAarray[b]->PoleBias); 
+  else serial->println("0.00");  
 }
 
 void RFAsetResolvingDC(char *Module, char *value)
@@ -904,7 +911,8 @@ void RFAsetResolvingDC(char *Module, char *value)
   if((b = RFAmodule2board(mod)) == -1) return;
   token = value;
   v = token.toFloat();
-  RFAarray[b]->ResolvingDC = v;
+  if(MIPSconfigData.PowerEnable) RFAarray[b]->ResolvingDC = v;
+  SendACK;
 }
 
 void RFAgetResolvingDC(int Module)
@@ -913,7 +921,9 @@ void RFAgetResolvingDC(int Module)
   
   if((b = RFAmodule2board(Module)) == -1) return;
   SendACKonly;
-  if(!SerialMute) serial->println(RFAarray[b]->ResolvingDC);  
+  if(SerialMute) return;
+  if(MIPSconfigData.PowerEnable) serial->println(RFAarray[b]->ResolvingDC);
+  else serial->println("0.00");
 }
 
 void RFAsetRange(char *Module, char *value)
@@ -991,7 +1001,7 @@ void RFAsetMZ(char *Module, char *value)
   if((b = RFAmodule2board(mod)) == -1) return;
   token = value;
   v = token.toFloat();
-  if((v < 100) || (v > 2000))
+  if((v < 100) || (v > 4000))
   {
      SetErrorCode(ERR_BADARG);
      SendNAK;   
@@ -1069,6 +1079,7 @@ void RFAsetGain(char *Module, char *value)
   }
   if(token == "HIGH") RFACPLDimage[b] |= 1<<RFAcpldRANGE;
   else RFACPLDimage[b] &= ~(1<<RFAcpldRANGE);
+  SendACK;
 }
 
 void RFAreport(int module)
@@ -1105,8 +1116,19 @@ void RFAsetENA(char *Module, char *value)
      SendNAK;
      return;
   }
-  if(token == "ON") RFAarray[b]->Enabled = true;
-  else RFAarray[b]->Enabled = false;
+  if(token == "ON") 
+  {
+    RFAarray[b]->Enabled = true;
+//    MIPSconfigData.PowerEnable = true;
+//    SetPowerSource();
+  }
+  else 
+  {
+    RFAarray[b]->Enabled = false;
+//    MIPSconfigData.PowerEnable = false;
+//    SetPowerSource();
+  }
+  SendACK;
 }
 
 void RFAgetENA(int Module)
@@ -1136,6 +1158,7 @@ void RFAsetK(char *Module, char *value)
      return;
   }
   RFAarray[b]->K = token.toFloat();
+  SendACK;
 }
 
 void RFAgetK(int Module)

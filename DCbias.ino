@@ -326,14 +326,6 @@ bool isDCbiasBoard(int Board)
 // If no valid board is found -1 is returned.
 int DCbiasCH2Brd(int ch)
 {
-/*
-  // If channel < 8 then it could be board 0 to 1
-  if((ch < 8) && isDCbiasBoard(0)) return(0);
-  if((ch < 8) && isDCbiasBoard(1)) return(1);
-  int bd = ch/8;
-  if(!isDCbiasBoard(bd)) return(-1);
-  return(bd);
-*/
   int  i,j=8;
 
   for(i=0;i<MAXDCbiasMODULES;i++)
@@ -351,15 +343,6 @@ int DCbiasCH2Brd(int ch)
 // board address (0 to 3) and channel index (0 to 7)
 int DCBadd2chan(int brd, int ch)
 {
-/*
-  if(DCbDarray[brd] == NULL) return(0);  // this should never happen
-  if(brd == 0) return(ch+1);
-  if((DCbDarray[0] == NULL) && (brd == 1)) return(ch+1);
-  if(brd == 1)  return(ch+9);
-  if(brd == 2)  return(ch+17);
-  if(brd == 3)  return(ch+25);  
-  return(0);
-*/
   int i, j = 0;
   
   for(i=0;i<MAXDCbiasMODULES;i++)
@@ -481,7 +464,7 @@ void RestoreDCbiasSettings(bool NoDisplay)
        {
          // Here if the name matches so copy the data to the operating data structure
          dcb_data.EEPROMadr = DCbDarray[b]->EEPROMadr;
-         memcpy(DCbDarray[b], &dcb_data, sizeof(DCbiasData));
+         memcpy(DCbDarray[b], &dcb_data, dcb_data.Size);  // sizeof(DCbiasData)); 01-27-2020
        } 
        else Corrupted=true;
     }
@@ -567,12 +550,61 @@ bool IsPowerON(void)
   return false;
 }
 
-// Call this function to cause a 1 sec delay ion monitoring the outputs for the trip logic. This
+// Call this function to cause a 1 sec delay on monitoring the outputs for the trip logic. This
 // needs to be called when a change is made in the output voltages.
 void DelayMonitoring(void)
 {
   MonitorDelay = 100;
   VerrorFiltered = 0;  // Reset the error filtered value
+}
+
+// This function sets the OffsetOffset value and updates the Offset DAC
+void SetOffsetOffset(int brd, float fval)
+{
+  if(DCbDarray[brd] == NULL) return;
+  DCbDarray[brd]->OffsetOffset = fval;
+  if(SelectedDCBoard == brd) dcbd.OffsetOffset = fval;  // Sets the UI buffer if this module is seleted
+  if(digitalRead(PWR_ON) != 0) return;
+  AcquireTWI();
+  int b = SelectedBoard();
+  SelectBoard(brd);
+  float V = DCbDarray[brd]->DCoffset.VoltageSetpoint + DCbDarray[brd]->OffsetOffset;
+  if(V > DCbDarray[brd]->MaxVoltage) V = DCbDarray[brd]->MaxVoltage;
+  if(V < DCbDarray[brd]->MinVoltage) V = DCbDarray[brd]->MinVoltage;
+  if((DCbDarray[brd]->DACadr & 0xFE) == 0x10) AD5593writeDAC(DCbDarray[brd]->DACadr,DCbDarray[brd]->DCoffset.DCctrl.Chan,Value2Counts(V,&DCbDarray[brd]->DCoffset.DCctrl));
+  else AD5625(DCbDarray[brd]->DACadr,DCbDarray[brd]->DCoffset.DCctrl.Chan,Value2Counts(V,&DCbDarray[brd]->DCoffset.DCctrl),3);
+  if(b != brd) SelectBoard(b);
+  ReleaseTWI();
+}
+
+// This function sets the Channel offset value and updates the output DACs
+void SetChannelOffset(int brd, float fval)
+{
+  float delta;
+  
+  if(DCbDarray[brd] == NULL) return;
+  delta = fval - DCbDarray[brd]->ChannelOffset;
+  DCbDarray[brd]->ChannelOffset = fval;
+  if(SelectedDCBoard == brd) dcbd.ChannelOffset = fval;  // Sets the UI buffer if this module is seleted
+  if(digitalRead(PWR_ON) != 0) return;
+  AcquireTWI();
+  int b = SelectedBoard();
+  SelectBoard(brd);
+  for(int i=0;i<DCbDarray[brd]->NumChannels;i++)
+  {
+    if((DCbDarray[brd]->OffsetChanMsk & (1 << i)) != 0)
+    {
+      if(SelectedDCBoard == brd) DCbiasStates[brd]->Readbacks[i] += delta;
+      // If here update the DAC channel
+      float V = DCbDarray[brd]->DCCD[i].VoltageSetpoint - DCbDarray[brd]->DCoffset.VoltageSetpoint + DCbDarray[brd]->ChannelOffset;
+      if(V > DCbDarray[brd]->MaxVoltage) {V = DCbDarray[brd]->MaxVoltage; DCbDarray[brd]->DCCD[i].VoltageSetpoint = V + DCbDarray[brd]->DCoffset.VoltageSetpoint; }
+      if(V < DCbDarray[brd]->MinVoltage) {V = DCbDarray[brd]->MinVoltage; DCbDarray[brd]->DCCD[i].VoltageSetpoint = V + DCbDarray[brd]->DCoffset.VoltageSetpoint; }
+      AD5668(DCbDarray[brd]->DACspi,DCbDarray[brd]->DCCD[i].DCctrl.Chan,Value2Counts(V,&DCbDarray[brd]->DCCD[i].DCctrl),3);
+    }
+  }
+  if(b != brd) SelectBoard(b);
+  MonitorDelay += 1;  // think about this a bit
+  ReleaseTWI();
 }
 
 // Init the AD5593 (Analog and digital IO chip) for the DCbias module. The following 
@@ -745,8 +777,11 @@ void DCbias_loop(void)
         if((DCbDarray[b]->DCoffset.VoltageSetpoint != DCbiasStates[b]->DCbiasO) || DCbiasUpdate)
         {
           DCbiasStates[b]->DCbiasO = DCbDarray[b]->DCoffset.VoltageSetpoint * Mult;
-          if((DCbDarray[b]->DACadr & 0xFE) == 0x10) AD5593writeDAC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(DCbDarray[b]->DCoffset.VoltageSetpoint*Mult,&DCbDarray[b]->DCoffset.DCctrl));
-          else AD5625(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(DCbDarray[b]->DCoffset.VoltageSetpoint*Mult,&DCbDarray[b]->DCoffset.DCctrl),3);
+          V = DCbDarray[b]->DCoffset.VoltageSetpoint * Mult + DCbDarray[b]->OffsetOffset * Mult;
+          if(V > DCbDarray[b]->MaxVoltage) V = DCbDarray[b]->MaxVoltage;
+          if(V < DCbDarray[b]->MinVoltage) V = DCbDarray[b]->MinVoltage;
+          if((DCbDarray[b]->DACadr & 0xFE) == 0x10) AD5593writeDAC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(V,&DCbDarray[b]->DCoffset.DCctrl));
+          else AD5625(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(V,&DCbDarray[b]->DCoffset.DCctrl),3);
         }
       }
       else
@@ -763,6 +798,7 @@ void DCbias_loop(void)
         if(SuppliesOff == false)
         {
           V = DCbDarray[b]->DCCD[i].VoltageSetpoint*Mult - DCbDarray[b]->DCoffset.VoltageSetpoint*Mult;
+          if((DCbDarray[b]->OffsetChanMsk & (1 << i)) != 0) V += DCbDarray[b]->ChannelOffset * Mult;
           if(V > DCbDarray[b]->MaxVoltage) {V = DCbDarray[b]->MaxVoltage; DCbDarray[b]->DCCD[i].VoltageSetpoint = V + DCbDarray[b]->DCoffset.VoltageSetpoint*Mult; }
           if(V < DCbDarray[b]->MinVoltage) {V = DCbDarray[b]->MinVoltage; DCbDarray[b]->DCCD[i].VoltageSetpoint = V + DCbDarray[b]->DCoffset.VoltageSetpoint*Mult; }
           //DCbDarray[b]->DCCD[i].VoltageSetpoint = V + DCbDarray[b]->DCoffset.VoltageSetpoint*Mult;
@@ -829,8 +865,10 @@ void DCbias_loop(void)
     {
       if((TableMode == LOC) && (DCbiasTestEnable))
       {
-       errorPercentage = (abs(DCbiasStates[b]->Readbacks[i] - DCbDarray[b]->DCCD[i].VoltageSetpoint) / DCbDarray[b]->MaxVoltage) * 100.0;
-       if(errorPercentage > Verror) { Verror = errorPercentage; VerrorCh = DCBadd2chan(b,i); }
+        V = 0;
+        if((DCbDarray[b]->OffsetChanMsk & (1 << i)) != 0) V = DCbDarray[b]->ChannelOffset;
+        errorPercentage = (abs(DCbiasStates[b]->Readbacks[i] - DCbDarray[b]->DCCD[i].VoltageSetpoint - V) / DCbDarray[b]->MaxVoltage) * 100.0;
+        if(errorPercentage > Verror) { Verror = errorPercentage; VerrorCh = DCBadd2chan(b,i); }
       }
     }
   }
@@ -925,7 +963,7 @@ int GetDCbiasBoard(int chan, bool Response = true)
 
 // This function determines the data structure that holds the data for the channel number passed.
 // NULL is returned if it can't be found.
-// chan is in the range of 1 to 16
+// chan is in the range of 1 to 32
 // If there is a channel error this function will send the NAK
 // out the serial port.
 DCbiasData *GetDCbiasDataPtr(int chan, bool Response = true)
@@ -990,12 +1028,7 @@ void DCbiasOffsetable(char *schan, char *state)
   // Process the request
   if(!CheckChannel(chan)) return;
   if((DCbData = GetDCbiasDataPtr(chan)) == NULL) return;
-  if((strcmp(state,"TRUE") != 0) && (strcmp(state,"FALSE") != 0))
-  {
-    SetErrorCode(ERR_BADARG);
-    SendNAK;
-    return;
-  }
+  if((strcmp(state,"TRUE") != 0) && (strcmp(state,"FALSE") != 0)) BADARG;
   if(strcmp(state,"TRUE") == 0) DCbData->Offsetable = true;
   if(strcmp(state,"FALSE") == 0) DCbData->Offsetable = false;
   SendACK;
@@ -1430,46 +1463,32 @@ void  DCbiasOffsetReadback(char *state)
 }
 
 // Sets the ADC TWI address, radix 10
-void SetDCbiasADCtwiADD(int module, int add)
+void SetDCbiasADCtwiADD(int board, int add)
 {
   int b;
   
-  if((DCbDarray[module] == NULL) || (module < 0) || (module >3))
-  {
-     SetErrorCode(ERR_BADARG);
-     SendNAK;    
-     return;    
-  }
-  DCbDarray[module]->ADCadr = add;
+  if((DCbDarray[board] == NULL) || (board < 0) || (board >3)) BADARG;
+  DCbDarray[board]->ADCadr = add;
   SendACK;  
 }
 
 // Sets the DAC TWI address, radix 10
-void SetDCbiasDACtwiADD(int module, int add)
+void SetDCbiasDACtwiADD(int board, int add)
 {
   int b;
   
-  if((DCbDarray[module] == NULL) || (module < 0) || (module >3))
-  {
-     SetErrorCode(ERR_BADARG);
-     SendNAK;    
-     return;    
-  }
-  DCbDarray[module]->DACadr = add;
+  if((DCbDarray[board] == NULL) || (board < 0) || (board >3)) BADARG;
+  DCbDarray[board]->DACadr = add;
   SendACK;  
 }
 
-void ReportDCbiasSuppplies(int module)
+// board = 0 thru 3
+void ReportDCbiasSuppplies(int board)
 {
   int b;
   
-  if((DCbDarray[module] == NULL) || (module < 0) || (module >3))
-  {
-     SetErrorCode(ERR_BADARG);
-     SendNAK;    
-     return;    
-  }
-  if((DCbDarray[module]->DACadr & 0xFE) != 0x10)
+  if((DCbDarray[board] == NULL) || (board < 0) || (board >3)) BADARG;
+  if((DCbDarray[board]->DACadr & 0xFE) != 0x10)
   {
      SetErrorCode(ERR_NOTSUPPORTED);
      SendNAK;    
@@ -1479,23 +1498,23 @@ void ReportDCbiasSuppplies(int module)
   if(SerialMute) return;
   // Report logic voltage
   int brd = SelectedBoard();
-  SelectBoard(module);
-  if(DCbDarray[module]->MaxVoltage < 100)
+  SelectBoard(board);
+  if(DCbDarray[board]->MaxVoltage < 100)
   {
-     int i = AD5593readADC(DCbDarray[module]->DACadr, 4, 10);
+     int i = AD5593readADC(DCbDarray[board]->DACadr, 4, 10);
      serial->print("Logic supply = "); serial->print((2.5 * i / 65536) * 2.0); serial->println(" volts"); 
-     i = AD5593readADC(DCbDarray[module]->DACadr, 2, 10);
+     i = AD5593readADC(DCbDarray[board]->DACadr, 2, 10);
      serial->print("Positive supply = "); serial->print((2.5 * i / 65536) * 101); serial->println(" volts"); 
-     i = AD5593readADC(DCbDarray[module]->DACadr, 3, 10);
+     i = AD5593readADC(DCbDarray[board]->DACadr, 3, 10);
      serial->print("Negative supply = "); serial->print((-3.3 + (2.5 * i / 65536)) * 31.3); serial->println(" volts"); 
   }
   else
   {
-     int i = AD5593readADC(DCbDarray[module]->DACadr, 4, 10);
+     int i = AD5593readADC(DCbDarray[board]->DACadr, 4, 10);
      serial->print("Logic supply = "); serial->print((2.5 * i / 65536) * 2.0); serial->println(" volts"); 
-     i = AD5593readADC(DCbDarray[module]->DACadr, 3, 10);
+     i = AD5593readADC(DCbDarray[board]->DACadr, 3, 10);
      serial->print("Positive supply = "); serial->print((2.5 * i / 65536) * 201); serial->println(" volts"); 
-     i = AD5593readADC(DCbDarray[module]->DACadr, 2, 10);
+     i = AD5593readADC(DCbDarray[board]->DACadr, 2, 10);
      serial->print("Negative supply = "); serial->print((-3.3 + (2.5 * i / 65536)) * 201); serial->println(" volts");
   } 
   SelectBoard(brd);
@@ -1575,12 +1594,7 @@ SetDCbiasProfileError:    // Sorry but it works in this case...
 // This function returns the selected DCbias profile.
 void GetDCbiasProfile(int num)
 {
-   if((num < 1)||(num > NumProfiles))
-   {
-     SetErrorCode(ERR_BADARG);
-     SendNAK;
-     return;
-   }
+   if((num < 1)||(num > NumProfiles)) BADARG;
    SendACKonly;
    num--;
    // If profile pointer is NULL then exit with error
@@ -1629,12 +1643,7 @@ void ApplyDCbiasProfile(int num)
 
 void SetApplyDCbiasProfile(int num)
 {
-   if((num < 1)||(num > NumProfiles))
-   {
-     SetErrorCode(ERR_BADARG);
-     SendNAK;
-     return;
-   }
+   if((num < 1)||(num > NumProfiles)) BADARG;
    // If profile pointer is NULL then exit with error
    if(DCbiasProfiles[num-1] == NULL) 
    {
@@ -1663,12 +1672,7 @@ void SetDCbiasProfileFromCurrent(int num)
          return;
      }
    }   
-   if((num < 1)||(num > NumProfiles))
-   {
-     SetErrorCode(ERR_BADARG);
-     SendNAK;
-     return;
-   }
+   if((num < 1)||(num > NumProfiles)) BADARG;
    // Move current values to the select profile
    for(ch = 0; ch < NumberOfDCChannels; ch++)
    {
@@ -1954,4 +1958,223 @@ void SaveDCB2EEPROM(void)
     return;
   }
   SendACK;
+}
+
+void DCbiasCalParms(int chan)
+{
+  DCbiasData *DCbData;
+  
+  if(!CheckChannel(chan)) return;
+  if((DCbData = GetDCbiasDataPtr(chan)) == NULL) return;
+  SendACKonly;
+  if(SerialMute) return;
+  serial->print(DCbData->DCCD[(chan-1) & 0x07].DCctrl.m);
+  serial->print(",");
+  serial->println(DCbData->DCCD[(chan-1) & 0x07].DCctrl.b);  
+}
+
+void DCbiasCalsetM(char *chan, char *val)
+{
+  String sToken;
+  int    ch;
+  float  fval;
+  DCbiasData *DCbData;
+
+  sToken = chan;
+  ch = sToken.toInt();
+  if(!CheckChannel(ch)) return;
+  if((DCbData = GetDCbiasDataPtr(ch)) == NULL) return;
+  SendACK;
+  sToken = val;
+  fval = sToken.toFloat();
+  DCbData->DCCD[(ch-1) & 0x07].DCctrl.m = fval;
+}
+
+void DCbiasCalsetB(char *chan, char *val)
+{
+  String sToken;
+  int    ch;
+  float  fval;
+  DCbiasData *DCbData;
+
+  sToken = chan;
+  ch = sToken.toInt();
+  if(!CheckChannel(ch)) return;
+  if((DCbData = GetDCbiasDataPtr(ch)) == NULL) return;
+  SendACK;
+  sToken = val;
+  fval = sToken.toFloat();
+  DCbData->DCCD[(ch-1) & 0x07].DCctrl.b = fval;  
+}
+
+// The following functions support host commands for the channel and global offset capability
+
+// Set the global offset parameter. Module = 1 thru 4.
+void SetDCbiasOffOff(char *brd, char *fval)
+{
+  String sToken;
+  float  f;
+  int    board;
+
+  sToken = brd;
+  if((DCbDarray[board = sToken.toInt()] == NULL) || (board < 0) || (board >3)) BADARG;
+  sToken = fval;
+  f = sToken.toFloat();
+  SetOffsetOffset(board, f);
+  SendACK;
+}
+
+void GetDCbiasOffOff(int board)
+{
+  if((DCbDarray[board] == NULL) || (board < 0) || (board >3)) BADARG;
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(DCbDarray[board]->OffsetOffset);    
+}
+
+void SetDCbiasCHOff(char *brd, char *fval)
+{
+  String sToken;
+  float  f;
+  int    board;
+
+  sToken = brd;
+  if((DCbDarray[board = sToken.toInt()] == NULL) || (board < 0) || (board >3)) BADARG;
+  sToken = fval;
+  f = sToken.toFloat();
+  SetChannelOffset(board, f);
+  SendACK;  
+}
+
+void GetDCbiasCHOff(int board)
+{
+  if((DCbDarray[board] == NULL) || (board < 0) || (board >3)) BADARG;
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(DCbDarray[board]->ChannelOffset);      
+}
+
+void SetDCbiasCHMK(char *brd, char *mask)
+{
+  String sToken;
+  int    board;
+
+  sToken = brd;
+  if((DCbDarray[board = sToken.toInt()] == NULL) || (board < 0) || (board >3)) BADARG;
+  DCbDarray[board]->OffsetChanMsk = strtol(mask,NULL,16);
+  if(SelectedDCBoard == board) dcbd.OffsetChanMsk = DCbDarray[board]->OffsetChanMsk;  // Sets the UI buffer if this module is seleted
+  SetChannelOffset(board, DCbDarray[board]->ChannelOffset);
+  SendACK;
+}
+
+void GetDCbiasCHMK(int board)
+{
+  if((DCbDarray[board] == NULL) || (board < 0) || (board >3)) BADARG;
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(DCbDarray[board]->OffsetChanMsk, HEX);  
+}
+
+// The following function allow the user to connect the ADC value change function to the DCbias
+// module's offset control. This allows an external analog voltages to be read and used to adjust
+// DCbias module output voltages.
+
+// This ISR will apply an offset voltage to the DCbias module's offset channel and or channel offset. 
+void ADCoffsetAdjustISR(int i)
+{
+  int   b;
+  float pol;
+
+  if(AcquireTWI()) 
+  {
+    for(b=0;b<MAXDCbiasMODULES;b++) if(DCbDarray[b] != NULL)   
+    {
+       if(DCbDarray[b]->ADCgainOff != 0) 
+       {  
+          pol = 1;
+          if(DCbDarray[b]->PolDIO != 0) if(ReadDIO(DCbDarray[b]->PolDIO) == HIGH) pol = -1;
+          SetOffsetOffset(b, (float)i * DCbDarray[b]->ADCgainOff * pol);
+       }
+       if(DCbDarray[b]->ADCgainCh != 0) 
+       {
+          pol = 1;
+          if(DCbDarray[b]->PolDIO != 0) if(ReadDIO(DCbDarray[b]->PolDIO) == HIGH) pol = -1;
+          if(DCbDarray[b]->OffsetChanMsk != 0) SetChannelOffset(b, (float)i * DCbDarray[b]->ADCgainCh * pol);
+       }
+    }
+  }
+  else 
+  {
+    for(b=0;b<MAXDCbiasMODULES;b++) if(DCbDarray[b] != NULL)   
+    {
+       if(DCbDarray[b]->ADCgainOff != 0) 
+       {
+           pol = 1;
+           if(DCbDarray[b]->PolDIO != 0) if(ReadDIO(DCbDarray[b]->PolDIO) == HIGH) pol = -1;
+           TWIqueue(SetOffsetOffset, b, (float)i * DCbDarray[b]->ADCgainOff * pol);
+       }
+       if(DCbDarray[b]->ADCgainCh != 0) if(DCbDarray[b]->OffsetChanMsk != 0) 
+       {
+           pol = 1;
+           if(DCbDarray[b]->PolDIO != 0) if(ReadDIO(DCbDarray[b]->PolDIO) == HIGH) pol = -1;
+           TWIqueue(SetChannelOffset, b, (float)i * DCbDarray[b]->ADCgainCh * pol);
+       }
+    }
+  }
+}
+
+void SetADCoffsetAdjust(char *brd, char *gain)
+{
+  String sToken;
+  int    board;
+
+  sToken = brd;
+  if((DCbDarray[board = sToken.toInt()] == NULL) || (board < 0) || (board >3)) BADARG;
+  sToken = gain;
+  DCbDarray[board]->ADCgainOff = sToken.toFloat();
+  ADCattachInterrupt(ADCoffsetAdjustISR);
+  SendACK;
+}
+
+void SetADCchannelAdjust(char *brd, char *gain)
+{
+  String sToken;
+  int    board;
+
+  sToken = brd;
+  if((DCbDarray[board = sToken.toInt()] == NULL) || (board < 0) || (board >3)) BADARG;
+  sToken = gain;
+  DCbDarray[board]->ADCgainCh = sToken.toFloat();
+  ADCattachInterrupt(ADCoffsetAdjustISR);
+  SendACK;
+}
+
+void SetADCgainPol(char *brd, char *dio)
+{
+  String sToken;
+  int    board;
+
+   sToken = brd;
+   if((DCbDarray[board = sToken.toInt()] == NULL) || (board < 0) || (board >3)) BADARG;
+   sToken = dio;
+   if(sToken == "Q")      DCbDarray[board]->PolDIO = 'Q';
+   else if(sToken == "R") DCbDarray[board]->PolDIO = 'R';
+   else if(sToken == "S") DCbDarray[board]->PolDIO = 'S';
+   else if(sToken == "T") DCbDarray[board]->PolDIO = 'T';
+   else if(sToken == "U") DCbDarray[board]->PolDIO = 'U';
+   else if(sToken == "V") DCbDarray[board]->PolDIO = 'V';
+   else if(sToken == "W") DCbDarray[board]->PolDIO = 'W';
+   else if(sToken == "X") DCbDarray[board]->PolDIO = 'X';
+   else if(sToken == "NA")DCbDarray[board]->PolDIO = 0;
+   else BADARG;
+   SendACK;  
+}
+
+void GetADCgainPol(int board)
+{
+  if((DCbDarray[board] == NULL) || (board < 0) || (board >3)) BADARG;
+  SendACKonly;
+  if(SerialMute) return;
+  if(DCbDarray[board]->PolDIO == 0) serial->println("NA");
+  else serial->println(DCbDarray[board]->PolDIO); 
 }

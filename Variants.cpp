@@ -106,6 +106,7 @@ DCbiasData  DCbD_250_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 250, -250, true
                               0, 7, 113.7, 32767, 7, 113.7, 32767,        // Ch 8
                               0, 0, -113.7, 32767, 1, -113.7, 32767,      // Offset control, DAC only unless using AD5593
                               false,false,
+                              0.0,0,0.0,0.0,0.0,0,
                              };
 
 DCbiasData  DCbD_250_Rev_2 = {sizeof(DCbiasData),"DCbias", 2, 8, 250, -250, true, 0, 0x20, 0x1A, 0x54,
@@ -119,6 +120,7 @@ DCbiasData  DCbD_250_Rev_2 = {sizeof(DCbiasData),"DCbias", 2, 8, 250, -250, true
                               0, 7, 113.7, 32767, 7, 113.7, 32767,        // Ch 8
                               0, 0, -113.7, 32767, 1, -113.7, 32767,      // Offset control, DAC only unless using AD5593
                               false,false,
+                              0.0,0,0.0,0.0,0.0,0,
                              };
 
 DCbiasData  DCbD_750_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 750, -750, true, 2, 0x23, 0x18, 0x52,
@@ -132,7 +134,8 @@ DCbiasData  DCbD_750_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 750, -750, true
                               0, 7, -26, 32767, 7, 26, 32767,        // Ch 8
                               0, 0, 26, 32767, 1, 26, 32767,         // Offset control, DAC only unless using AD5593
                               false,false,
-                             };
+                              0.0,0,0.0,0.0,0.0,0,
+                            };
           
 DCbiasData  DCbD_50_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 50, -50, true, 2, 0x23, 0x18, 0x52,
                              0, 0, 609.48, 32767, 0, 609.48, 32767,        // Ch 1
@@ -145,7 +148,8 @@ DCbiasData  DCbD_50_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 50, -50, true, 2
                              0, 7, 609.48, 32767, 7, 609.48, 32767,        // Ch 8
                              0, 0, -609.48, 32767, 1, -609.48, 32767,      // Offset control, DAC only unless using AD5593
                              false,false,
-                            };
+                              0.0,0,0.0,0.0,0.0,0,
+                          };
 
 DCbiasData  DCbD_60_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 60, -60, true, 2, 0x23, 0x18, 0x52,
                              0, 0, 540, 32767, 0, 540, 32767,        // Ch 1
@@ -158,6 +162,7 @@ DCbiasData  DCbD_60_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 60, -60, true, 2
                              0, 7, 540, 32767, 7, 540, 32767,        // Ch 8
                              0, 0, -540, 32767, 1, -540, 32767,      // Offset control, DAC only unless using AD5593
                              false,false,
+                              0.0,0,0.0,0.0,0.0,0,
                             };
 // Supports the single board filament controller for e-msion. remaps the DAC channels for board routing,
 // also uses the AD5593 ADC/DAC                            
@@ -172,6 +177,7 @@ DCbiasData  DCbD_60_Rev_3 = {sizeof(DCbiasData),"DCbias", 3, 8, 60, -60, true, 2
                              0, 6, 540, 32767, 7, 540, 32767,        // Ch 8
                              0, 0, -540, 32767, 1, -540, 32767,      // Offset control, DAC only unless using AD5593
                              false,false,
+                              0.0,0,0.0,0.0,0.0,0,
                             };
                             
 FAIMSdata  FAIMS_Rev_1 = {sizeof(FAIMSdata),"FAIMS", 1, 1000000, 25.0, false, 4, 180, 75.2, 21.5, 100.0, 60.0,0.5,
@@ -238,7 +244,9 @@ ARBdata  ARB_Rev_1 = {sizeof(ARBdata),"ARB", 1, false, 1, false, 100, 0, true,20
                       0,1,
                       0,
                       20000,20000,25,25,1,
-                      0,-1
+                      0,-1,
+                      0,
+                      0,false,false,0,0,10,100,0,0,0,0,0,0,100,false,10,1
                      };
 
 HOFAIMSdata  HOFAIMS_Rev_1 = {sizeof(HOFAIMSdata),"HOFAIMS", 1, false, 0, 25.0, 0, 20, 50,

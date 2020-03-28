@@ -8,6 +8,10 @@
 #define F(string_literal) string_literal
 #endif
 
+extern int mapDItoPIN[8];
+
+#define ReadDIO(a) digitalRead(mapDItoPIN[a-'Q'])
+
 // Macros
 #define DOrefresh  DigitalOut(MIPSconfigData.DOmsb, MIPSconfigData.DOlsb)
 
@@ -28,7 +32,6 @@ void TriggerFollowS(void);
 void TriggerOut(int microSec, bool WithLimits = false);
 void QueueTriggerOut(int microSec);
 void ProcessTriggerOut(void);
-void ADCread(int chan);
 bool QueueTpulseFunction(void (*Tfunction)(), bool add);
 void PlayTpulseFunctions(void);
 void AuxTrigger(void);

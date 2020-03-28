@@ -175,8 +175,10 @@ void ReleaseTWI(void)
       {
         if(TWIq[i].Type == VoidVoid) TWIq[i].pointers.funcVoidVoid();
         else if(TWIq[i].Type == VoidIntIntFloat) TWIq[i].pointers.funcIntIntFloat(TWIq[i].Int1,TWIq[i].Int2,TWIq[i].Float1);
+        else if(TWIq[i].Type == VoidIntFloat) TWIq[i].pointers.funcIntFloat(TWIq[i].Int1,TWIq[i].Float1);
         else if(TWIq[i].Type == VoidIntIntBool) TWIq[i].pointers.funcIntIntFloat(TWIq[i].Int1,TWIq[i].Int2,TWIq[i].Bool1);
         else if(TWIq[i].Type == VoidIntIntWord) TWIq[i].pointers.funcIntIntFloat(TWIq[i].Int1,TWIq[i].Int2,TWIq[i].Word1);
+        else if(TWIq[i].Type == VoidIntIntByte) TWIq[i].pointers.funcIntIntFloat(TWIq[i].Int1,TWIq[i].Int2,(byte)TWIq[i].Word1);
         TWIq[i].pointers.funcVoidVoid = NULL;
         TWIq[i].Type = Empty;
       }
@@ -195,6 +197,18 @@ void TWIqueue(void (*TWIfunction)(void))
      TWIq[i].Type = VoidVoid;
      break;
   }
+}
+
+void TWIqueue(void (*TWIfunction)(int,float),int arg1,float arg2)
+{
+  for(int i=0;i<MaxQueued;i++) if(TWIq[i].pointers.funcIntFloat == NULL)
+  {
+     TWIq[i].pointers.funcIntFloat = TWIfunction;
+     TWIq[i].Type   = VoidIntFloat;
+     TWIq[i].Int1   = arg1;
+     TWIq[i].Float1 = arg2;
+     break;
+  }  
 }
 
 void TWIqueue(void (*TWIfunction)(int,int,float),int arg1,int arg2,float arg3)
@@ -223,6 +237,19 @@ void TWIqueue(void (*TWIfunction)(int,int,bool),int arg1,int arg2,bool arg3)
   }  
 }
 
+void TWIqueue(void (*TWIfunction)(int,int,byte),int arg1,int arg2,byte arg3)
+{
+  for(int i=0;i<MaxQueued;i++) if(TWIq[i].pointers.funcIntIntBool == NULL)
+  {
+     TWIq[i].pointers.funcIntIntByte = TWIfunction;
+     TWIq[i].Type   = VoidIntIntByte;
+     TWIq[i].Int1   = arg1;
+     TWIq[i].Int2   = arg2;
+     TWIq[i].Word1  = arg3;
+     break;
+  }  
+}
+
 void TWIqueue(void (*TWIfunction)(int,int,uint16_t),int arg1,int arg2,uint16_t arg3)
 {
   for(int i=0;i<MaxQueued;i++) if(TWIq[i].pointers.funcIntIntWord == NULL)
@@ -236,6 +263,30 @@ void TWIqueue(void (*TWIfunction)(int,int,uint16_t),int arg1,int arg2,uint16_t a
   }  
 }
 
+
+// The TWIstart function will start a TWI send cycle. This function returns the board address
+// that was active when called, this value is -1 if the requested board address matches the
+// current address.
+int TWIstart(uint8_t add, int board, int cmd)
+{
+  AcquireTWI();
+  int cb=SelectedBoard();
+  SelectBoard(board);
+  Wire.beginTransmission(add);
+  Wire.write(cmd);
+  if(cb == board) return -1;
+  return cb;  
+}
+// This function will close a TWI send cycle. The value board is the value returned by the TWIstart function.
+void TWIend(uint8_t add, int board)
+{
+  {
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    Wire.endTransmission();
+  }
+  if(board != -1) SelectBoard(board);
+  ReleaseTWI();  
+}
 
 // TWI command routines used to send and received various data types to and from MIPS modules.
 
@@ -272,8 +323,9 @@ void TWIsetBool(uint8_t add, int board, int cmd, bool flag)
 
 void TWIsetByte(uint8_t add, int board, int cmd, byte bval)
 {
-  SelectBoard(board);
   AcquireTWI();
+  int cb=SelectedBoard();
+  SelectBoard(board);
   Wire.beginTransmission(add);
   Wire.write(cmd);
   Wire.write(bval);
@@ -281,6 +333,7 @@ void TWIsetByte(uint8_t add, int board, int cmd, byte bval)
     AtomicBlock< Atomic_RestoreState > a_Block;
     Wire.endTransmission();
   }
+  if(cb != board) SelectBoard(cb);
   ReleaseTWI();
 }
 
@@ -303,8 +356,9 @@ void TWIsetWord(uint8_t add, int board, int cmd, uint16_t wval)
 
 void TWIset16bitInt(uint8_t add, int board, int cmd, int ival)
 {
-  SelectBoard(board);
   AcquireTWI();
+  int cb=SelectedBoard();
+  SelectBoard(board);
   uint8_t *b = (uint8_t *)&ival;
   Wire.beginTransmission(add);
   Wire.write(cmd);
@@ -314,13 +368,15 @@ void TWIset16bitInt(uint8_t add, int board, int cmd, int ival)
     AtomicBlock< Atomic_RestoreState > a_Block;
     Wire.endTransmission();
   }
+  if(cb != board) SelectBoard(cb);
   ReleaseTWI();  
 }
 
 void TWIsetInt(uint8_t add, int board, int cmd, int ival)
 {
-  SelectBoard(board);
   AcquireTWI();
+  int cb=SelectedBoard();
+  SelectBoard(board);
   uint8_t *b = (uint8_t *)&ival;
   Wire.beginTransmission(add);
   Wire.write(cmd);
@@ -332,6 +388,7 @@ void TWIsetInt(uint8_t add, int board, int cmd, int ival)
     AtomicBlock< Atomic_RestoreState > a_Block;
     Wire.endTransmission();
   }
+  if(cb != board) SelectBoard(cb);
   ReleaseTWI();  
 }
 
@@ -339,6 +396,7 @@ void TWIsetFloat(uint8_t add, int board, int cmd, float fval)
 {
   AcquireTWI();
   int cb=SelectedBoard();
+  SelectedBoard();
   SelectBoard(board);
   uint8_t *b = (uint8_t *)&fval;
   Wire.beginTransmission(add);
@@ -360,15 +418,17 @@ bool TWIreadFloat(uint8_t add, int board,int cmd, float *value)
   byte *b;
   int  i=0;
 
-  b = (byte *)value;
-  SelectBoard(board);
   AcquireTWI();
+  b = (byte *)value;
+  int cb=SelectedBoard();
+  SelectBoard(board);
   AtomicBlock< Atomic_RestoreState > a_Block;
   Wire.beginTransmission(add);
   Wire.write(cmd);
-  if(Wire.endTransmission() !=0) {ReleaseTWI(); return false;}
+  if(Wire.endTransmission() !=0) {if(cb != board) SelectBoard(cb); ReleaseTWI(); return false;}
   Wire.requestFrom((uint8_t)add, (uint8_t)4);
   while (Wire.available()) b[i++] = Wire.read();
+  if(cb != board) SelectBoard(cb);
   ReleaseTWI();
   if(fpclassify(*value) != FP_NORMAL)
   {
@@ -384,15 +444,17 @@ bool TWIread32bitInt(uint8_t add, int board,int cmd, int *value)
   byte *b;
   int  i=0;
 
-  b = (byte *)value;
-  SelectBoard(board);
   AcquireTWI();
+  b = (byte *)value;
+  int cb=SelectedBoard();
+  SelectBoard(board);
   AtomicBlock< Atomic_RestoreState > a_Block;
   Wire.beginTransmission(add);
   Wire.write(cmd);
-  if(Wire.endTransmission() !=0) {ReleaseTWI(); return false;}
+  if(Wire.endTransmission() !=0) {if(cb != board) SelectBoard(cb);ReleaseTWI(); return false;}
   Wire.requestFrom((uint8_t)add, (uint8_t)4);
   while (Wire.available()) b[i++] = Wire.read();
+  if(cb != board) SelectBoard(cb);
   ReleaseTWI();
   if(i==4) return true;
   return false;
@@ -403,16 +465,18 @@ bool TWIread24bitUnsigned(uint8_t add, int board,int cmd, int *value)
   byte *b;
   int  i=0;
 
+  AcquireTWI();
   *value = 0;
   b = (byte *)value;
+  int cb=SelectedBoard();
   SelectBoard(board);
-  AcquireTWI();
   AtomicBlock< Atomic_RestoreState > a_Block;
   Wire.beginTransmission(add);
   Wire.write(cmd);
-  if(Wire.endTransmission() !=0) {ReleaseTWI(); return false;}
+  if(Wire.endTransmission() !=0) {if(cb != board) SelectBoard(cb); ReleaseTWI(); return false;}
   Wire.requestFrom((uint8_t)add, (uint8_t)3);
   while (Wire.available()) b[i++] = Wire.read();
+  if(cb != board) SelectBoard(cb);
   ReleaseTWI();
   if(i==3) return true;
   return false;
@@ -423,16 +487,18 @@ bool TWIread16bitUnsigned(uint8_t add, int board,int cmd, int *value)
   byte *b;
   int  i=0;
 
+  AcquireTWI();
   *value = 0;
   b = (byte *)value;
+  int cb=SelectedBoard();
   SelectBoard(board);
-  AcquireTWI();
   AtomicBlock< Atomic_RestoreState > a_Block;
   Wire.beginTransmission(add);
   Wire.write(cmd);
-  if(Wire.endTransmission() !=0) {ReleaseTWI(); return false;}
+  if(Wire.endTransmission() !=0) {if(cb != board) SelectBoard(cb); ReleaseTWI(); return false;}
   Wire.requestFrom((uint8_t)add, (uint8_t)2);
   while (Wire.available()) b[i++] = Wire.read();
+  if(cb != board) SelectBoard(cb);
   ReleaseTWI();
   if(i==2) return true;
   return false;
@@ -443,16 +509,18 @@ bool TWIread8bitUnsigned(uint8_t add, int board,int cmd, int *value)
   byte *b;
   int  i=0;
 
+  AcquireTWI();
   *value = 0;
   b = (byte *)value;
+  int cb=SelectedBoard();
   SelectBoard(board);
-  AcquireTWI();
   AtomicBlock< Atomic_RestoreState > a_Block;
   Wire.beginTransmission(add);
   Wire.write(cmd);
-  if(Wire.endTransmission() !=0) {ReleaseTWI(); return false;}
+  if(Wire.endTransmission() !=0) {if(cb != board) SelectBoard(cb); ReleaseTWI(); return false;}
   Wire.requestFrom((uint8_t)add, (uint8_t)1);
   while (Wire.available()) b[i++] = Wire.read();
+  if(cb != board) SelectBoard(cb);
   ReleaseTWI();
   if(i==1) return true;
   return false;
@@ -460,18 +528,21 @@ bool TWIread8bitUnsigned(uint8_t add, int board,int cmd, int *value)
 
 bool TWIreadBlock(uint8_t add, int board,int cmd, void *ptr, int numbytes)
 {
+  AcquireTWI();
+  int cb=SelectedBoard();
   SelectBoard(board);
   if(cmd != 0)
   {
     Wire.beginTransmission(add);
     Wire.write(cmd);
-    if(Wire.endTransmission() !=0) {ReleaseTWI(); return false;}  
+    if(Wire.endTransmission() !=0) {if(cb != board) SelectBoard(cb); ReleaseTWI(); return false;}  
   }
   uint8_t  *bptr;
   int i = 0;
   bptr = (uint8_t *)ptr;
   Wire.requestFrom((uint8_t)add, (uint8_t)numbytes);
   while (Wire.available()) bptr[i++] = Wire.read();
+  if(cb != board) SelectBoard(cb);
   ReleaseTWI();
   if(i==numbytes) return true;
   return false;

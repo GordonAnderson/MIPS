@@ -47,6 +47,23 @@
 //  - Board address becomes module number - 1, and with LSB to select board used as
 //    array index, the array index fetches the DUE TWI address
 //
+// Updated to support 6 total ARB modules
+//
+// Update to support remaping the two hardware trigger lines that connect MIPS to the
+// ARBs. 
+//    ARBsync (9), connects to A0 on Arnuino based ARB, A6 on rev 4.2, left off on 4.1
+//    ARBmode (48), connects to 22 on ARB 
+//    ARB sync is a 1uS pulse and it can share a function that require a state change
+//    like compress / normal. This requires updates to the ARB firmware.
+//    Map hardware lines.
+//    ARBsync (9) = Line1
+//    ARBmode (48) = Line2
+//    Add the following commands:
+//    Set Sync line: 1 or 2
+//      - Set in MIPS arb struct and send message to ARB on startup
+//    Set Mode line: 1 or 2
+//      - Set MIPS arb struct and send message to ARB on startup
+//
 // Gordon Anderson
 //
 #include "Variants.h"
@@ -60,15 +77,16 @@ MIPStimer *ARBclock;
 
 float ARBversion=0;
 
-ARBdata  *ARBarray[4]  = {NULL,NULL,NULL,NULL};
-ARBstate *ARBstates[4] = {NULL,NULL,NULL,NULL};
+ARBdata  *ARBarray[MAXARBMODULES]  = {NULL,NULL,NULL,NULL,NULL,NULL};
+ARBstate *ARBstates[MAXARBMODULES] = {NULL,NULL,NULL,NULL,NULL,NULL};
 ARBdata  arb;   // This is the display / UI data structure
 
-DIhandler *ARBsweepTrigDI[4];
-DIhandler *ARBsyncIN[4];
-void (*ARBsweepISRs[4])(void) = {ARB_1_SWEEP_ISR, ARB_2_SWEEP_ISR, ARB_3_SWEEP_ISR, ARB_3_SWEEP_ISR};
-DIhandler *DIdirARB[4];
-void (*ARBdirISRs[4])(void) = {ARB_1_DIR_ISR, ARB_2_DIR_ISR, ARB_3_DIR_ISR, ARB_4_DIR_ISR};
+DIhandler *ARBsweepTrigDI[MAXARBMODULES] = {NULL,NULL,NULL,NULL,NULL,NULL};
+DIhandler *ARBsyncIN[MAXARBMODULES];
+DIhandler *ARBaltTrig;
+void (*ARBsweepISRs[MAXARBMODULES])(void) = {ARB_1_SWEEP_ISR, ARB_2_SWEEP_ISR, ARB_3_SWEEP_ISR, ARB_4_SWEEP_ISR,ARB_5_SWEEP_ISR,ARB_6_SWEEP_ISR};
+DIhandler *DIdirARB[MAXARBMODULES] = {NULL,NULL,NULL,NULL,NULL,NULL};
+void (*ARBdirISRs[MAXARBMODULES])(void)   = {ARB_1_DIR_ISR, ARB_2_DIR_ISR, ARB_3_DIR_ISR, ARB_4_DIR_ISR,ARB_5_DIR_ISR,ARB_6_DIR_ISR};
 
 int   ARBmodule            = 1;
 int   ARBselectModule      = 1;
@@ -243,108 +261,33 @@ void SetupNumWaveformPoints(void)
 }
 
 // ISRs
-void ARB_1_SWEEP_ISR(void)
+void ARB_SWEEP_ISR(int b)
 {
-   int b;
-  
-   // Acquire the TWI resource, if bust then put this function
+   // Acquire the TWI resource, if busy then put this function
    // in the queue to run when its freeded
-   if((b = ARBmoduleToBoard(1,false)) == -1) return;
-   if(AcquireTWI()) 
-   {
-      int brd = SelectedBoard();
-      // Send the start command to the ARB
-      SetByte(b, TWI_ARB_SWPGO, SS_START);
-      SelectBoard(brd);
-      return;
-   }
-   TWIqueue(ARB_1_SWEEP_ISR);
+   if(AcquireTWI()) SetByte(b, TWI_ARB_SWPGO, SS_START); else TWIqueue(SetByte, b, TWI_ARB_SWPGO, SS_START);
 }
-void ARB_2_SWEEP_ISR(void)
-{
-   int b;
-  
-   // Acquire the TWI resource, if bust then put this function
-   // in the queue to run when its freeded
-   if((b = ARBmoduleToBoard(2,false)) == -1) return;
-   if(AcquireTWI()) 
-   {
-      int brd = SelectedBoard();
-      // Send the start command to the ARB
-      SetByte(b, TWI_ARB_SWPGO, SS_START);
-      SelectBoard(brd);
-      return;
-   }
-   TWIqueue(ARB_2_SWEEP_ISR);
-}
-void ARB_3_SWEEP_ISR(void)
-{
-   int b;
-  
-   // Acquire the TWI resource, if bust then put this function
-   // in the queue to run when its freeded
-   if((b = ARBmoduleToBoard(3,false)) == -1) return;
-   if(AcquireTWI()) 
-   {
-      int brd = SelectedBoard();
-      // Send the start command to the ARB
-      SetByte(b, TWI_ARB_SWPGO, SS_START);
-      SelectBoard(brd);
-      return;
-   }
-   TWIqueue(ARB_3_SWEEP_ISR);
-}
-void ARB_4_SWEEP_ISR(void)
-{
-   int b;
-  
-   // Acquire the TWI resource, if bust then put this function
-   // in the queue to run when its freeded
-   if((b = ARBmoduleToBoard(4,false)) == -1) return;
-   if(AcquireTWI()) 
-   {
-      int brd = SelectedBoard();
-      // Send the start command to the ARB
-      SetByte(b, TWI_ARB_SWPGO, SS_START);
-      SelectBoard(brd);
-      return;
-   }
-   TWIqueue(ARB_4_SWEEP_ISR);
-}
+void ARB_1_SWEEP_ISR(void) { ARB_SWEEP_ISR(0); }
+void ARB_2_SWEEP_ISR(void) { ARB_SWEEP_ISR(1); }
+void ARB_3_SWEEP_ISR(void) { ARB_SWEEP_ISR(2); }
+void ARB_4_SWEEP_ISR(void) { ARB_SWEEP_ISR(3); }
+void ARB_5_SWEEP_ISR(void) { ARB_SWEEP_ISR(4); }
+void ARB_6_SWEEP_ISR(void) { ARB_SWEEP_ISR(5); }
 
-void ARB_1_DIR_ISR(void)
+void ARB_DIR_ISR(int b)
 {
   delayMicroseconds(5);
-  if (DIdirARB[0]->test(ARBarray[0]->ARBdirLevel)) ARBarray[0]->Direction = true;
-  else ARBarray[0]->Direction = false;
-  if(AcquireTWI()) SetBool(0, TWI_ARB_SET_DIR, !ARBarray[0]->Direction); else TWIqueue(SetBool, 0, TWI_ARB_SET_DIR, !ARBarray[0]->Direction);
-  if (0 == SelectedARBboard) ARBstates[0]->Direction = ARBarray[0]->Direction;
+  if (DIdirARB[b]->test(ARBarray[b]->ARBdirLevel)) ARBarray[b]->Direction = true;
+  else ARBarray[b]->Direction = false;
+  if(AcquireTWI()) SetBool(b, TWI_ARB_SET_DIR, !ARBarray[b]->Direction); else TWIqueue(SetBool, b, TWI_ARB_SET_DIR, !ARBarray[b]->Direction);
+  if (b == SelectedARBboard) ARBstates[b]->Direction = ARBarray[b]->Direction;
 }
-void ARB_2_DIR_ISR(void)
-{
-  delayMicroseconds(5);
-  if (DIdirARB[1]->test(ARBarray[1]->ARBdirLevel)) ARBarray[1]->Direction = true;
-  else ARBarray[1]->Direction = false;
-  if(AcquireTWI()) SetBool(1, TWI_ARB_SET_DIR, !ARBarray[1]->Direction); else TWIqueue(SetBool, 1, TWI_ARB_SET_DIR, !ARBarray[1]->Direction);
-  if (1 == SelectedARBboard) ARBstates[1]->Direction = ARBarray[1]->Direction;
-}
-void ARB_3_DIR_ISR(void)
-{
-  delayMicroseconds(5);
-  if (DIdirARB[2]->test(ARBarray[2]->ARBdirLevel)) ARBarray[2]->Direction = true;
-  else ARBarray[2]->Direction = false;
-  if(AcquireTWI()) SetBool(2, TWI_ARB_SET_DIR, !ARBarray[2]->Direction); else TWIqueue(SetBool, 2, TWI_ARB_SET_DIR, !ARBarray[2]->Direction);
-  if (2 == SelectedARBboard) ARBstates[2]->Direction = ARBarray[2]->Direction;
-}
-void ARB_4_DIR_ISR(void)
-{
-  delayMicroseconds(5);
-  if (DIdirARB[3]->test(ARBarray[3]->ARBdirLevel)) ARBarray[3]->Direction = true;
-  else ARBarray[3]->Direction = false;
-  if(AcquireTWI()) SetBool(3, TWI_ARB_SET_DIR, !ARBarray[3]->Direction); else TWIqueue(SetBool, 3, TWI_ARB_SET_DIR, !ARBarray[3]->Direction);
-  if (3 == SelectedARBboard) ARBstates[3]->Direction = ARBarray[3]->Direction;
-}
-//
+void ARB_1_DIR_ISR(void) { ARB_DIR_ISR(0); }
+void ARB_2_DIR_ISR(void) { ARB_DIR_ISR(1); }
+void ARB_3_DIR_ISR(void) { ARB_DIR_ISR(2); }
+void ARB_4_DIR_ISR(void) { ARB_DIR_ISR(3); }
+void ARB_5_DIR_ISR(void) { ARB_DIR_ISR(4); }
+void ARB_6_DIR_ISR(void) { ARB_DIR_ISR(5); }
 
 // This function sends the mode command to the ARB module
 // defined by board
@@ -699,8 +642,9 @@ void SetBool(int board, int cmd, bool flag)
 
 void SetByte(int board, int cmd, byte bval)
 {
-  SelectBoard(board);
   AcquireTWI();
+  int cb=SelectedBoard();
+  SelectBoard(board);
   Wire.beginTransmission(ARBarray[board]->ARBadr);
   Wire.write(cmd);
   Wire.write(bval);
@@ -708,6 +652,7 @@ void SetByte(int board, int cmd, byte bval)
     AtomicBlock< Atomic_RestoreState > a_Block;
     Wire.endTransmission();
   }
+  if(cb != board) SelectBoard(cb);
   ReleaseTWI();
 }
 
@@ -791,13 +736,13 @@ void SetARBcommonClock(ARBdata *ad, int freq)
   ARBclock->stop();
   if(strcmp(ad->Mode,"TWAVE") == 0)
   {
-    clkdiv = VARIANT_MCK / (2 * ad->PPP * freq) + 1;
+    clkdiv = (float)VARIANT_MCK / (float)(2 * ad->PPP * freq) + 0.5; // gaa 2/6/2020
     actualF = VARIANT_MCK / (2 * ad->PPP * clkdiv);
     ARBclock->setFrequency(actualF * ad->PPP);
   }
   else
   {
-    clkdiv = VARIANT_MCK / (2 * freq) + 1;
+    clkdiv = (float)VARIANT_MCK / (float)(2 * freq) + 0.5; // gaa 2/6/2020
     actualF = VARIANT_MCK / (2 * clkdiv);
     ARBclock->setFrequency(actualF);
   }
@@ -809,6 +754,7 @@ void SetFrequency(int board, int freq)
 {
   uint8_t *b;
 
+  freq++;   // gaa 2/6/2020
   SelectBoard(board);
   b = (uint8_t *)&freq;
   // Send the frequency to the ARB module
@@ -974,6 +920,7 @@ void RestorARBsettings(void)
 }
 
 // External trigger interrupt vectors here!
+// This function will pulse the sync line and keep its status fixed
 void ARBsyncISR(void)
 {
    static Pio *pio = g_APinDescription[ARBsync].pPort;
@@ -981,16 +928,25 @@ void ARBsyncISR(void)
 
    // digitalWrite(ARBsync,HIGH);
    // digitalWrite(ARBsync,LOW); 
-   pio->PIO_SODR = pin;   // Set sync line high
-   delayMicroseconds(1);  
-   pio->PIO_CODR = pin;   // Set sync line low
+   if((pio->PIO_ODSR & pin) == 0)
+   {
+      pio->PIO_SODR = pin;   // Set sync line high
+      delayMicroseconds(1);  
+      pio->PIO_CODR = pin;   // Set sync line low
+   }
+   else
+   {
+      pio->PIO_CODR = pin;   // Set sync line low
+      delayMicroseconds(1);  
+      pio->PIO_SODR = pin;   // Set sync line high
+   }
 }
 
 // This function is called at powerup to initiaize the ARB board(s).
 // 
 void ARB_init(int8_t Board, int8_t addr)
 {
-  // If this is the first board then reset all the ARB CPUs
+  // If this is the first board then reset all the ARB CPUs and perform needed init
   if (NumberOfARBchannels == 0)
   {
      pinMode(14,OUTPUT);
@@ -998,9 +954,13 @@ void ARB_init(int8_t Board, int8_t addr)
      delay(10);
      digitalWrite(14,HIGH);
      delay(100);
+     ARBaltTrig = new DIhandler;
+     
   }
   // If there are already two or more channels add 2 to the board number
   if(NumberOfARBchannels >= 16) Board += 2;
+  if(NumberOfARBchannels >= 32) Board += 2;
+  if(Board >= MAXARBMODULES) return;
   // Allocate the module data structure based on board number passed
   ARBarray[Board]  = new ARBdata;
   ARBstates[Board] = new ARBstate;
@@ -1009,12 +969,13 @@ void ARB_init(int8_t Board, int8_t addr)
   // Init the state array
   strcpy(ARBstates[Board]->Mode,"------");
   ARBstates[Board]->update = true;
+  ARBstates[Board]->updateALT = true;
   // Set active board to board being inited
   SelectedARBboard = Board;
   SelectBoard(Board);
   ARB->EEPROMadr   = addr;
   ARBsyncIN[Board] = new DIhandler;
-  DIdirARB[Board]  = new DIhandler;
+  //DIdirARB[Board]  = new DIhandler;
   // If normal startup load the EEPROM parameters from the ARB module card.
   if (NormalStartup)
   {
@@ -1024,6 +985,8 @@ void ARB_init(int8_t Board, int8_t addr)
   ARBsyncIN[Board]->detach();
   ARBsyncIN[Board]->attached(ARB->ARBsyncIn, ARB->ARBsyncLevel, ARBsyncISR);
   // Init the hardware here...
+  pinMode(ARBmode,OUTPUT);
+  digitalWrite(ARBmode,LOW);
   pinMode(ARBsync,OUTPUT);
   digitalWrite(ARBsync,LOW);
   // Read the points per waveform for this ARB channel
@@ -1070,7 +1033,7 @@ void ARB_init(int8_t Board, int8_t addr)
   {
     DialogBoxEntry *de = GetDialogEntries(ARBentriesPage2, "Sweep");
     de->Type = D_PAGE;
-    ARBsweepTrigDI[Board] = new DIhandler;
+//    ARBsweepTrigDI[Board] = new DIhandler;
   }
   if(ARBversion > 1.16)
   {
@@ -1081,6 +1044,34 @@ void ARB_init(int8_t Board, int8_t addr)
   // Set the maximum number of channels in the selection menu
   ARBentriesPage1[0].Max = NumberOfARBchannels / 8;
   ARBentriesPage1arb[0].Max = NumberOfARBchannels / 8;
+}
+
+// Update all the alternate waveform parameters on the selected ARB
+void UpdateALTparms(int b)
+{
+  int   i;
+   
+
+  if(ARBarray[b]->AltExtTrg != 0)
+  {
+    ARBaltTrig->detach();
+    ARBaltTrig->attached(ARBarray[b]->AltExtTrg, CHANGE, ARBaltISR);
+  }
+  TWIsetBool(ARBarray[b]->ARBadr, b, TWI_SET_AMODE, ARBarray[b]->AlternateEnable);
+  TWIsetBool(ARBarray[b]->ARBadr, b, TWI_SET_AEXT, ARBarray[b]->AlternateHardware);
+  TWIsetByte(ARBarray[b]->ARBadr, b, TWI_SET_ATMODE, ARBarray[b]->AltHwdMode);
+  for(i=0;i<8;i++)
+  {
+    int cb = TWIstart(ARBarray[b]->ARBadr, b, TWI_SET_FIXED);
+    TWIBYTE(i);
+    TWIFLOAT(*(int *)&(ARBarray[b]->Fixed[i]));
+    TWIend(ARBarray[b]->ARBadr,cb);
+  }
+  TWIsetByte(ARBarray[b]->ARBadr, b, TWI_SET_AWFRM, ARBarray[b]->AltWaveform);
+  TWIsetFloat(ARBarray[b]->ARBadr, b, TWI_SET_TRGDELAY, ARBarray[b]->TriggerDly);
+  TWIsetFloat(ARBarray[b]->ARBadr, b, TWI_SET_PLYTIME, ARBarray[b]->PlayDuration);
+  TWIsetBool(ARBarray[b]->ARBadr, b, TWI_SET_ARNGENA, ARBarray[b]->AlternateRngEna);
+  TWIsetFloat(ARBarray[b]->ARBadr, b, TWI_SET_ARNG, ARBarray[b]->AlternateRng);  
 }
 
 // This is the ARB processing loop. This function is called by the task controller
@@ -1111,7 +1102,7 @@ void ARB_loop(void)
   ProcessSweep();
   ARBcompressor_loop();
   // Process each ARB board. Look for changes in parameters and update as needed
-  for(b = 0; b < 4; b++)
+  for(b = 0; b < MAXARBMODULES; b++)
   {
     if(ARBarray[b] != NULL)
     {
@@ -1139,11 +1130,13 @@ void ARB_loop(void)
         {
           SetARBcommonClock(ARBarray[b], ARBarray[b]->Frequency);
           // Set all channels with the common clock flag set
-          for(int i=0;i<4;i++)
+          for(int i=0;i<MAXARBMODULES;i++)
           {
             if(ARBarray[i] != NULL)
             {
-              if(ARBarray[i]->UseCommonClock) ARBarray[i]->Frequency = ARBarray[b]->Frequency;
+//              if(ARBarray[i]->UseCommonClock) ARBarray[i]->Frequency = ARBarray[b]->Frequency;
+              if(ARBarray[i]->UseCommonClock) ARBarray[i]->Frequency = (ARBarray[b]->Frequency * ARBarray[b]->PPP)/ARBarray[i]->PPP;
+//              serial->println(ARBarray[i]->Frequency);
             }
           }
         }
@@ -1160,7 +1153,7 @@ void ARB_loop(void)
         if (ARBarray[0]->ARBcommonOffset)  // True is using a common offset
         {
           // Set all offset channels channels
-          for(int i=0;i<4;i++)
+          for(int i=0;i<MAXARBMODULES;i++)
           {
             if(ARBarray[i] != NULL)
             {
@@ -1233,11 +1226,31 @@ void ARB_loop(void)
             SetBool(b, TWI_ARB_SET_SYNC_ENA, bstate);
          }
       }
-      if ((ARBarray[b]->ARBdirDI != DIdirARB[b]->di) || (ARBarray[b]->ARBdirLevel != DIdirARB[b]->mode) || ARBstates[b]->update)
+      if ((ARBarray[b]->ARBdirDI == 0) && (DIdirARB[b] != NULL))
       {
-         DIdirARB[b]->detach();
-         DIdirARB[b]->attached(ARBarray[b]->ARBdirDI, CHANGE, ARBdirISRs[b]);
+         delete DIdirARB[b];
+         DIdirARB[b] = NULL;
       }
+      else if(ARBarray[b]->ARBdirDI != 0)
+      {
+         if(DIdirARB[b] == NULL) DIdirARB[b] = new DIhandler;
+         if ((ARBarray[b]->ARBdirDI != DIdirARB[b]->di) || (ARBarray[b]->ARBdirLevel != DIdirARB[b]->mode))
+         {
+           if(ARBdirISRs[b] != NULL)
+           {
+              DIdirARB[b]->detach();
+              DIdirARB[b]->attached(ARBarray[b]->ARBdirDI, CHANGE, ARBdirISRs[b]);
+           }
+        }   
+      }
+//      if ((ARBarray[b]->ARBdirDI != DIdirARB[b]->di) || (ARBarray[b]->ARBdirLevel != DIdirARB[b]->mode) || ARBstates[b]->update)
+//      {
+//        if(ARBdirISRs[b] != NULL)
+//        {
+//           DIdirARB[b]->detach();
+//           DIdirARB[b]->attached(ARBarray[b]->ARBdirDI, CHANGE, ARBdirISRs[b]);
+//        }
+//      }
       // Process sweep parameters only for version 1.14 and greater
       if(ARBversion > 1.13)
       {
@@ -1267,14 +1280,42 @@ void ARB_loop(void)
            ARBstates[b]->SweepTime = ARBarray[b]->SweepTime;
         }
         // process the sweep trigger options
-        if ((ARBarray[b]->ARBsweepTrig != ARBsweepTrigDI[b]->di) || (ARBarray[b]->ARBsweepLevel != ARBsweepTrigDI[b]->mode) || ARBstates[b]->update)
+        if(ARBversion > 1.13)
         {
-           ARBsweepTrigDI[b]->detach();
-           ARBsweepTrigDI[b]->attached(ARBarray[b]->ARBsweepTrig, ARBarray[b]->ARBsweepLevel, ARBsweepISRs[b]);
-        }
+           if((ARBarray[b]->ARBsweepTrig == 0) && (ARBsweepTrigDI[b] != NULL))
+           {
+             delete ARBsweepTrigDI[b];
+             ARBsweepTrigDI[b] = NULL;
+           }
+           else if(ARBarray[b]->ARBsweepTrig != 0)
+           {
+             if(ARBsweepTrigDI[b] == NULL) ARBsweepTrigDI[b] = new DIhandler;
+             if ((ARBarray[b]->ARBsweepTrig != ARBsweepTrigDI[b]->di) || (ARBarray[b]->ARBsweepLevel != ARBsweepTrigDI[b]->mode))
+             {
+               if(ARBsweepISRs[b] != NULL)
+               {
+                  ARBsweepTrigDI[b]->detach();
+                  ARBsweepTrigDI[b]->attached(ARBarray[b]->ARBsweepTrig, ARBarray[b]->ARBsweepLevel, ARBsweepISRs[b]);
+               }
+             }
+           }
+        }        
+//        if ((ARBarray[b]->ARBsweepTrig != ARBsweepTrigDI[b]->di) || (ARBarray[b]->ARBsweepLevel != ARBsweepTrigDI[b]->mode) || ARBstates[b]->update)
+//        {
+//           if(ARBsweepISRs[b] != NULL)
+//           {
+//              ARBsweepTrigDI[b]->detach();
+//              ARBsweepTrigDI[b]->attached(ARBarray[b]->ARBsweepTrig, ARBarray[b]->ARBsweepLevel, ARBsweepISRs[b]);
+//           }
+//        }
       }
     }
     ARBstates[b]->update = false;
+    if(ARBstates[b]->updateALT)
+    {
+      if(ARBversion >= 2.1) UpdateALTparms(b);
+      ARBstates[b]->updateALT = false;
+    }
   }
   SelectBoard(SelectedARBboard);
   if (ActiveDialog->Entry == ARBentriesPage1) RefreshAllDialogEntries(&ARBdialog);
@@ -1312,8 +1353,8 @@ bool IsARBmodule(int index)
   return true;
 }
 
-// This function converts the ARB module number (1 thru 4) into the board index.
-// The board index is returned, -1 if invalud. If the report flag is
+// This function converts the ARB module number (1 thru MAXARBMODULES) into the board index.
+// The board index is returned, -1 if invalid. If the report flag is
 // true this function will send NAK to host.
 int ARBmoduleToBoard(int Module, bool report)
 {
@@ -1327,6 +1368,8 @@ int ARBmoduleToBoard(int Module, bool report)
   if((Module == 2) && (ARBarray[0] != NULL) && (ARBarray[1] != NULL)) b = 1;
   if((Module == 3) && (ARBarray[2] != NULL)) b = 2;
   if((Module == 4) && (ARBarray[3] != NULL)) b = 3;
+  if((Module == 5) && (ARBarray[4] != NULL)) b = 4;
+  if((Module == 6) && (ARBarray[5] != NULL)) b = 5;
   if(b != -1) return(b);
   if(report)
   {
@@ -1496,12 +1539,12 @@ void GetWFfreq(int module)
    SendACKonly;
    if(strcmp(ARBarray[b]->Mode,"TWAVE") == 0)
    {
-     clkdiv = VARIANT_MCK / (2 * ARBarray[b]->PPP * ARBarray[b]->Frequency) + 1;
+     clkdiv = (float)VARIANT_MCK / (float)(2 * ARBarray[b]->PPP * ARBarray[b]->Frequency) + 0.5;
      actualF = VARIANT_MCK / (2 * ARBarray[b]->PPP * clkdiv);
    }
    else
    {
-     clkdiv = VARIANT_MCK / (2 * ARBarray[b]->Frequency) + 1;
+     clkdiv = (float)VARIANT_MCK / (float)(2 * ARBarray[b]->Frequency) + 0.5;
      actualF = VARIANT_MCK / (2 * clkdiv);
    }
    if (!SerialMute) serial->println(actualF);
@@ -1701,12 +1744,7 @@ void SetARBwfType(char *sMod, char *Swft)
    else if(strcmp(Swft,"TRI") == 0)   ARBarray[b]->wft = ARB_TRIANGLE;
    else if(strcmp(Swft,"PULSE") == 0) ARBarray[b]->wft = ARB_PULSE;
    else if(strcmp(Swft,"ARB") == 0)   ARBarray[b]->wft = ARB_ARB;
-   else
-   {
-     SetErrorCode(ERR_BADARG);
-     SendNAK;
-     return;
-   }
+   else BADARG;
    if(SelectedARBboard == b) strcpy(WFT,Swft);
    SendACK;
 }
@@ -1751,12 +1789,7 @@ void SetARBwaveform(void)
 //   if(Token == NULL) break;
      // Test arguments
      if((b = ARBmoduleToBoard(mod,true)) == -1) return;
-     if(i != ARBarray[b]->PPP)
-     {
-       SetErrorCode(ERR_BADARG);
-       SendNAK;
-       return;      
-     }
+     if(i != ARBarray[b]->PPP) BADARG;
      for(i=0;i<ARBarray[b]->PPP;i++) if((vals[i] < -100) || (vals[i] > 100))
      {
        SetErrorCode(ERR_BADARG);
@@ -1803,12 +1836,7 @@ void SetARBchns(char *module, char *sval)
    if((b = ARBmoduleToBoard(mod,true)) == -1) return;
    sToken = sval;
    val = sToken.toFloat();
-   if((val < -100) || (val > 100))
-   {
-     SetErrorCode(ERR_BADARG);
-     SendNAK;
-     return;
-   }
+   if((val < -100) || (val > 100)) BADARG;
    SetFloat(b, TWI_ARB_SET_SET_BUFFER, val);
    SendACK;
 }
@@ -1822,12 +1850,7 @@ void SetARBDualBoard(char *module, char *sval)
    mod = sToken.toInt();
    if((b = ARBmoduleToBoard(mod,true)) == -1) return;
    sToken = sval;
-   if((sToken != "TRUE") && (sToken != "FALSE"))
-   {
-     SetErrorCode(ERR_BADARG);
-     SendNAK;
-     return;
-   }
+   if((sToken != "TRUE") && (sToken != "FALSE")) BADARG;
    if(sToken == "TRUE") ARBarray[b]->DualOutputs = true;
    else  ARBarray[b]->DualOutputs = false;
    SendACK;
@@ -1984,12 +2007,7 @@ void SetARBoffsetBoardA(char *module, char *val)
      SendNAK;
      return;    
    }
-   if((sToken.toFloat() < -10.0) || (sToken.toFloat() > 10.0))
-   {
-     SetErrorCode(ERR_BADARG);
-     SendNAK;
-     return;
-   }
+   if((sToken.toFloat() < -10.0) || (sToken.toFloat() > 10.0)) BADARG;
    ARBarray[b]->OffsetA = sToken.toFloat();
    SendACK;
 }
@@ -2024,12 +2042,7 @@ void SetARBoffsetBoardB(char *module, char *val)
      SendNAK;
      return;    
    }
-   if((sToken.toFloat() < -10.0) || (sToken.toFloat() > 10.0))
-   {
-     SetErrorCode(ERR_BADARG);
-     SendNAK;
-     return;
-   }
+   if((sToken.toFloat() < -10.0) || (sToken.toFloat() > 10.0)) BADARG;
    ARBarray[b]->OffsetB = sToken.toFloat();
    SendACK;  
 }
@@ -2055,14 +2068,16 @@ void ARBmoduleSync(void)
 {
   int i;
 
-  for(i=0;i<4;i++) if(ARBarray[i] != NULL)
+  for(i=0;i<MAXARBMODULES;i++) if(ARBarray[i] != NULL)
   {
-    if(!ARBsyncIN[i]->isAttached()) SetBool(i, TWI_ARB_SET_SYNC_ENA, true);
+    if(!ARBsyncIN[i]->isAttached()) SetBool(i, TWI_ARB_SET_SYNC_ENA, 1);
+//    if(!ARBsyncIN[i]->isAttached()) SetBool(i, TWI_ARB_SET_SYNC_ENA, true);
   }
   ARBsyncISR();
-  for(i=0;i<4;i++) if(ARBarray[i] != NULL)
+  for(i=0;i<MAXARBMODULES;i++) if(ARBarray[i] != NULL)
   {
-    if(!ARBsyncIN[i]->isAttached()) SetBool(i, TWI_ARB_SET_SYNC_ENA, false);
+    if(!ARBsyncIN[i]->isAttached()) SetBool(i, TWI_ARB_SET_SYNC_ENA, 0);
+//    if(!ARBsyncIN[i]->isAttached()) SetBool(i, TWI_ARB_SET_SYNC_ENA, false);
   }
 }
 
@@ -2113,7 +2128,7 @@ void UpdateAux(int8_t brd, float val, bool FlushQueued)
     Queued[0] = Queued[1] = Queued[2] = Queued[3] = false;
     return;
   }
-  if((brd < 0) || (brd > 3)) return;
+  if((brd < 0) || (brd > (MAXARBMODULES-1))) return;
   // Acquire the TWI interface
   if(AcquireTWI())
   {
@@ -2246,7 +2261,7 @@ void ProcessARB(void)
     return;
   }
   // Send the update command to each ARB board that has updates pending
-  for(int i=0; i<4; i++)
+  for(int i=0; i<MAXARBMODULES; i++)
   {
       if(ARBupdatesSent & (1 << i))
       {
@@ -2274,7 +2289,7 @@ void SaveARB2EEPROM(void)
   bool berr = false;
   
   brd = SelectedBoard();
-  for(int b=0; b<4; b++)
+  for(int b=0; b<MAXARBMODULES; b++)
   {
     if(ARBarray[b] != NULL)
     {
@@ -2330,12 +2345,7 @@ void SetARBppp(int module, int PPP)
   
    if((b = ARBmoduleToBoard(module,true)) == -1) return;
    // Validate PPP
-   if((PPP < 8) || (PPP > ppp))
-   {
-     SetErrorCode(ERR_BADARG);
-     SendNAK;
-     return;    
-   }
+   if((PPP < 8) || (PPP > ppp)) BADARG;
    SendACK;
    // Set the PPP on the ARB module
    SetByte(b, TWI_ARB_SET_PPP, PPP);
@@ -2360,12 +2370,7 @@ void SetARBext(char *module, char *val)
    mod = sToken.toInt();
    if((b = ARBmoduleToBoard(mod,true)) == -1) return;
    sToken = val;
-   if((sToken != "MIPS") && (sToken != "EXT"))
-   {
-     SetErrorCode(ERR_BADARG);
-     SendNAK;
-     return;
-   }
+   if((sToken != "MIPS") && (sToken != "EXT")) BADARG;
    if(sToken == "MIPS") SetByte(b, TWI_ARB_SET_SEXTSRC, 0);
    else SetByte(b, TWI_ARB_SET_SEXTSRC, 1);
    SendACK;    
@@ -2420,4 +2425,366 @@ void GetARBsweepStatus(int module)
       serial->println("Invalid response from ARB"); 
       break;
   }
+}
+
+// The following commands support the alternate waveform ARB functions. These functions require
+// ARB firmware version 2.1 or later.
+
+// Pass input trigger to ARB hardware party line
+void ARBaltISR(void)
+{
+  
+  if(ARBaltTrig->state()) ARBcompress;
+  else ARBnormal;
+}
+
+// While this function supports all the ARM modules you only need to and sould enable the trigger
+// on one module.
+void SetARBaltTrgInp(char *module, char *trgin)
+{
+   String sToken;
+   int    b,mod;
+   char   io;
+
+   sToken = module;
+   mod = sToken.toInt();
+   if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+   sToken = trgin;
+   if(sToken == "Q")      io = 'Q';
+   else if(sToken == "R") io = 'R';
+   else if(sToken == "S") io = 'S';
+   else if(sToken == "T") io = 'T';
+   else if(sToken == "U") io = 'U';
+   else if(sToken == "V") io = 'V';
+   else if(sToken == "W") io = 'W';
+   else if(sToken == "X") io = 'X';
+   else if(sToken == "NA")io = 0;
+   else BADARG;
+   if(ARBarray[b]->AltExtTrg != 0) ARBaltTrig->detach();
+   if(io != 0) ARBaltTrig->attached(io, CHANGE, ARBaltISR);
+   ARBarray[b]->AltExtTrg = io;
+   SendACK;
+}
+void GetARBaltTrgInp(int module)
+{
+  int b;
+  
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  if(ARBarray[b]->AltExtTrg == 0) serial->println("NA");
+  else serial->println(ARBarray[b]->AltExtTrg);
+}
+void SetARBaltEna(char *module, char *bval)
+{
+   String sToken;
+   int    b,mod;
+
+   sToken = module;
+   mod = sToken.toInt();
+   if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+   sToken = bval;
+   if((sToken != "TRUE") && (sToken != "FALSE")) BADARG;
+   if(sToken == "TRUE") ARBarray[b]->AlternateEnable = true;
+   else ARBarray[b]->AlternateEnable = false;
+   TWIsetBool(ARBarray[b]->ARBadr, b, TWI_SET_AMODE, ARBarray[b]->AlternateEnable);
+   SendACK;
+}
+void GetARBaltEna(int module)
+{
+  int    b;
+
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  if(ARBarray[b]->AlternateEnable) serial->println("TRUE");
+  else serial->println("FALSE");
+}
+void SetARBaltTrg(char *module, char *bval)
+{
+   String sToken;
+   int    b,mod;
+
+   sToken = module;
+   mod = sToken.toInt();
+   if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+   sToken = bval;
+   if((sToken != "TRUE") && (sToken != "FALSE")) BADARG;
+   if(sToken == "TRUE") ARBarray[b]->AlternateHardware = true;
+   else ARBarray[b]->AlternateHardware = false;
+   TWIsetBool(ARBarray[b]->ARBadr, b, TWI_SET_AEXT, ARBarray[b]->AlternateHardware);
+   SendACK;  
+}
+void GetARBaltTrg(int module)
+{
+  int    b;
+
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  if(ARBarray[b]->AlternateHardware) serial->println("TRUE");
+  else serial->println("FALSE");  
+}
+void SetAltTrigMode(char *module, char *tmode)
+{
+   String sToken;
+   int    b,mod;
+
+   sToken = module;
+   mod = sToken.toInt();
+   if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+   sToken = tmode;
+   if(sToken == "LEVEL")    ARBarray[b]->AltHwdMode = 0;
+   else if(sToken == "POS") ARBarray[b]->AltHwdMode = 1;
+   else if(sToken == "NEG") ARBarray[b]->AltHwdMode = 2;
+   else BADARG;
+   TWIsetByte(ARBarray[b]->ARBadr, b, TWI_SET_ATMODE, ARBarray[b]->AltHwdMode);
+   SendACK; 
+}
+void GetAltTrigMode(int module)
+{
+  int    b;
+
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  if(ARBarray[b]->AltHwdMode == 0) serial->println("LEVEL");
+  if(ARBarray[b]->AltHwdMode == 1) serial->println("POS");
+  if(ARBarray[b]->AltHwdMode == 2) serial->println("NEG");
+}
+void SetFixedValue(int module, int index, char *ival)
+{
+   String sToken;
+   int    b;
+   float  f;
+
+   if((b = ARBmoduleToBoard(module,true)) == -1) return;
+   sToken = index;
+   if((index<0) || (index>7)) BADARG;
+   sToken=ival;
+   f = sToken.toFloat();
+   ARBarray[b]->Fixed[index] = f;
+   int cb = TWIstart(ARBarray[b]->ARBadr, b, TWI_SET_FIXED);
+   TWIBYTE(index);
+   TWIFLOAT(*(int *)&(f));
+   TWIend(ARBarray[b]->ARBadr,cb);
+   SendACK;
+}
+void GetFixedValue(int module, int index)
+{
+  int    b;
+
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  if((index<0) || (index>7)) BADARG;
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(ARBarray[b]->Fixed[index]);
+}
+void SetAltWaveFrm(char *module, char *wtype)
+{
+   String sToken;
+   int    b,mod;
+
+   sToken = module;
+   mod = sToken.toInt();
+   if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+   sToken = wtype;
+   if(sToken == "COMP")     ARBarray[b]->AltWaveform = 1;
+   else if(sToken == "REV") ARBarray[b]->AltWaveform = 2;
+   else if(sToken == "ARB") ARBarray[b]->AltWaveform = 3;
+   else if(sToken == "FIX") ARBarray[b]->AltWaveform = 4;
+   else BADARG;
+   TWIsetByte(ARBarray[b]->ARBadr, b, TWI_SET_AWFRM, ARBarray[b]->AltWaveform);
+   SendACK;   
+}
+void GetAltWaveFrm(int module)
+{
+  int    b;
+
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  if(ARBarray[b]->AltWaveform == 1)      serial->println("COMP");
+  else if(ARBarray[b]->AltWaveform == 2) serial->println("REV");
+  else if(ARBarray[b]->AltWaveform == 3) serial->println("ARB");
+  else if(ARBarray[b]->AltWaveform == 4) serial->println("FIX");
+  else serial->println("?");
+}
+void SetARBaltTrgDly(char *module, char *fval)
+{
+   String sToken;
+   int    b,mod;
+   float  f;
+
+   sToken = module;
+   mod = sToken.toInt();
+   if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+   sToken = fval;
+   f = sToken.toFloat();
+   if(f < 0) BADARG;
+   ARBarray[b]->TriggerDly = f;
+   TWIsetFloat(ARBarray[b]->ARBadr, b, TWI_SET_TRGDELAY, ARBarray[b]->TriggerDly);
+   SendACK;
+}
+void GetARBaltTrgDly(int module)
+{
+  int    b;
+
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(ARBarray[b]->TriggerDly);
+}
+void SetARBaltTrgDur(char *module, char *fval)
+{
+   String sToken;
+   int    b,mod;
+   float  f;
+
+   sToken = module;
+   mod = sToken.toInt();
+   if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+   sToken = fval;
+   f = sToken.toFloat();
+   if(f < 0) BADARG;
+   ARBarray[b]->PlayDuration = f;
+   TWIsetFloat(ARBarray[b]->ARBadr, b, TWI_SET_PLYTIME, ARBarray[b]->PlayDuration);
+   SendACK;  
+}
+void GetARBaltTrgDur(int module)
+{
+  int    b;
+
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(ARBarray[b]->PlayDuration);  
+}
+void SetARBaltRngEna(char *module, char *bval)
+{
+   String sToken;
+   int    b,mod;
+
+   sToken = module;
+   mod = sToken.toInt();
+   if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+   sToken = bval;
+   if((sToken != "TRUE") && (sToken != "FALSE")) BADARG;
+   if(sToken == "TRUE") ARBarray[b]->AlternateRngEna = true;
+   else ARBarray[b]->AlternateRngEna = false;
+   TWIsetBool(ARBarray[b]->ARBadr, b, TWI_SET_ARNGENA, ARBarray[b]->AlternateRngEna);
+   SendACK;  
+}
+void GetARBaltRngEna(int module)
+{
+  int    b;
+
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  if(ARBarray[b]->AlternateRngEna) serial->println("TRUE");
+  else serial->println("FALSE");    
+}
+void SetARBaltRng(char *module, char *fval)
+{
+   String sToken;
+   int    b,mod;
+   float  f;
+
+   sToken = module;
+   mod = sToken.toInt();
+   if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+   sToken = fval;
+   f = sToken.toFloat();
+   if((f < 0) || (f > 100)) BADARG;
+   ARBarray[b]->AlternateRng = f;
+   TWIsetFloat(ARBarray[b]->ARBadr, b, TWI_SET_ARNG, ARBarray[b]->AlternateRng);
+   SendACK;
+}
+void GetARBaltRng(int module)
+{
+  int    b;
+
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(ARBarray[b]->AlternateRng);    
+}
+
+// Reverse direction AUX voltage change commands
+void SetARBrevAuxV(char *module, char *fval)
+{
+   String sToken;
+   int    b,mod;
+   float  f;
+
+   sToken = module;
+   mod = sToken.toInt();
+   if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+   sToken = fval;
+   f = sToken.toFloat();
+   if((f < -50) || (f > 50)) BADARG;
+   TWIsetFloat(ARBarray[b]->ARBadr, b, TWI_SET_REVAV, f);
+   SendACK;  
+}
+
+void ClearARBrevAuxV(int module)
+{
+  int    b;
+
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  TWIcmd(ARBarray[b]->ARBadr, b, TWI_SET_CLRRAV);
+  SendACK;    
+}
+
+void SetARBcompExt(char *module, char *state)
+{
+   String sToken;
+   int    b,mod;
+
+   sToken = module;
+   mod = sToken.toInt();
+   if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+   sToken = state;
+   if(sToken == "TRUE") TWIsetBool(ARBarray[b]->ARBadr, b, TWI_ARB_SET_COMP_EXT, true);
+   else if(sToken == "FALSE") TWIsetBool(ARBarray[b]->ARBadr, b, TWI_ARB_SET_COMP_EXT, false);
+   else BADARG;
+   SendACK;
+}
+
+void SetARBhwdISR(char *module, char *state)
+{
+   String sToken;
+   int    b,mod;
+
+   sToken = module;
+   mod = sToken.toInt();
+   if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+   sToken = state;
+   if(sToken == "TRUE") TWIsetBool(ARBarray[b]->ARBadr, b, TWI_SET_HWDISR, true);
+   else if(sToken == "FALSE") TWIsetBool(ARBarray[b]->ARBadr, b, TWI_SET_HWDISR, false);
+   else BADARG;
+   SendACK;
+}
+
+void SetARBsyncLine(int module, int line)
+{
+  int    b;
+
+   if((b = ARBmoduleToBoard(module,true)) == -1) return;
+   if(line == 1) TWIsetByte(ARBarray[b]->ARBadr, b, TWI_SET_SYNCLINE, 1);
+   else if(line == 2) TWIsetByte(ARBarray[b]->ARBadr, b, TWI_SET_SYNCLINE, 2);
+   else BADARG;
+   SendACK;
+}
+
+void SetARBcompLine(int module, int line)
+{
+  int    b;
+
+   if((b = ARBmoduleToBoard(module,true)) == -1) return;
+   if(line == 1) TWIsetByte(ARBarray[b]->ARBadr, b, TWI_SET_COMPLINE, 1);
+   else if(line == 2) TWIsetByte(ARBarray[b]->ARBadr, b, TWI_SET_COMPLINE, 2);
+   else BADARG;
+   SendACK;
 }

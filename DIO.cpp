@@ -31,6 +31,8 @@ extern DialogBox DODialog;
 extern DialogBox DIDialog;
 void   AddMainMenuEntry(MenuEntry *);
 
+int mapDItoPIN[8] = {DI0,DI1,DI2,DI3,DI4,DI5,DI6,DI7};
+
 //MIPS Threads
 Thread DIOThread  = Thread();
 

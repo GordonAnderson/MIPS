@@ -113,6 +113,7 @@ void TWcpldLoad(int board, bool Strobe = true);
 void ConfigureTrig(void);
 void ConfigureSwitch(void);
 void SetSwitch(void);
+void CompressorTriggerISR(void);
 
 // Host command prototypes
 void TWAVEnumberOfChannels(void);

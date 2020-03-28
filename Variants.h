@@ -23,6 +23,7 @@
 #include "errors.h"
 #include "DIO.h"
 #include "Hardware.h"
+#include "TWIext.h"
 #include "Menu.h"
 #include "Dialog.h"
 #include "DCbias.h"

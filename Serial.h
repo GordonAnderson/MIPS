@@ -116,6 +116,7 @@ extern const char Version[] PROGMEM;
 
 // Function prototypes
 void Debug(int function);
+void USBpower(char *bval);
 void CheckImage(char *filename);
 void LoadImage(char *filename);
 void SetThreadEnable(char *, char *);
@@ -144,11 +145,15 @@ void GetCommands(void);
 void DelayCommand(int dtime);
 void ReportUniqueID(void);
 void TWItalk(int brd, int TWIadd);
+void TWI1talk(int brd, int TWIadd);
 void SetMemAddress(char *address);
 void WriteMemory(char *type, char *val);
 void ReadMemory(char *type);
 void SaveModule(char *Module);
 void UpTime(void);
+void Dread(int pin);
+void Dwrite(char *pin, char *state);
+void Dset(char *pin, char *mode);
 
 // Prototypes for external functions called
 void SAVEparms(void);

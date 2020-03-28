@@ -67,6 +67,7 @@ typedef struct
 extern FilamentData  FDarray[2];
 
 // Function prototypes
+void Filament_init(int8_t Board, int8_t addr);
 void FilamentChannels(void);
 bool IsFilamentChannelValid(int channel, bool Response);
 void GetFilamentEnable(int channel);

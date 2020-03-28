@@ -52,6 +52,7 @@ void RF_A2_ISR(void);
 void RF_B1_ISR(void);
 void RF_B2_ISR(void);
 
+void RFdriver_init(int8_t Board, int8_t addr);
 void RFfreq(int channel, int freq);
 void RFdrive(int channel, float Drive);
 void RFdrive(char *Chan, char *Val);

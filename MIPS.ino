@@ -820,11 +820,58 @@
 //  1.162, November 4, 2019
 //      1.) Fixed ramp function if statement missing set of ()
 //      2.) Increased the table processing queue size to 8 from 5.
+//  1.163, November 17, 2019
+//      1.) Updated the read AD7998 to return error is there is a channel mismatch or any tranfer issues
+//  1.164, November 30, 2019
+//      1.) Added support for ESI hardware rev 4.1, use firmware rev 5.0
+//  1.165, December 13, 2019
+//      1.) Several updates to the command processing routine in the RFamp drivers
+//      2.) Updated RFamp enable to also enable and disable the DCbias supply
+//  1.166, December 16, 2019
+//      1.) Added commands to the DCbias module to allow reading and setting DAC gain and offset.
+//      2.) Fixed bug in ADC read vector function
+//  1.167, Jan 11, 2020
+//      1.) Added support for up to 6 ARB modules
+//      2.) Added support for the ARB alternate waveform capability
+//      3.) Redesigned the ARB drivers use of the DIhandlers to be more efficient
+//  1.168, Jan 27, 2020
+//      1.) Added the ADC change detection function and commands
+//      2.) Added DCbias offset offset, and commands
+//      3.) Added DCbias channel offset, mask, and commands
+//      4.) Added commands to connect ADC to DCbias offset control and channel control
+//      5.) Added command to disable USB powering controller, UOTGHS->UOTGHS_CTRL |= UOTGHS_CTRL_VBUSPO
+//                                                        or  UOTGHS->UOTGHS_CTRL &= ~UOTGHS_CTRL_VBUSPO
+//      6.) Added ADC value change reporting with gain control
+//      7.) Added table commands that support changings table time values based on analog voltage change
+//      8.) Added support for analog change to trigger table
+//  1.169, Feb 22, 2020
+//      1.) Added the A command for set aux voltage to the multipass compression table. A,channel,voltage
+//          and a for negative voltages
+//      2.) Updated the frequency setting to properly deal with ARBs with different PPP values
+//      3.) Added commands for the ARB reverse direction application of a unique guard voltage
+//  1.170, Feb 28, 2020
+//      1.) Updated TWITALK to resolve an issue seen only on some systems. The signon message was long and
+//          I think overrunning an internal buffer.
+//  1.171, Mar 5, 2020
+//      1.) Added support for ARB sync and compress line remapping, requires ARB2 rev 2.5
+//  1.172, Mar 11, 2020
+//      1.) Added limited backspace proceessing
+//  1.173, Mar 14, 2020
+//      1.) Added the following host commands
+//          - Read an input pin, DREAD, returns HIGH or LOW
+//          - Set an output pin, DWRITE, HIGH || LOW || PULSE (1uS) || SPLUSE (1mS)
+//          - Set pin mode, DSET
+//          - Add TWI1TALK for second I2C port
+//  1.174, Mar 24, 2020
+//      1.) Added updates to the DCB list capability
+//          - Updated the LDAC capture after abort from a segment play
+//          - Added report current 
+//          - Added force trigger command
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
 //
-//  Next version to dos / topics to think about:
+//  To dos / topics to think about:
 //      1.) Update the display code to make it interrupt safe when ISR uses SPI, done but turned off for compressor
 //      2.) Fix the DIO to allow command processing in table mode, this will require a pending update flag for
 //          the DIO, only update if no pending update
@@ -929,7 +976,7 @@ uint32_t BrightTime=0;
    #define RFdriver2vf ""
 #endif
 
-const char Version[] PROGMEM = "Version 1.162" FAIMSFBvf FAIMSvf HOFAIMSvf TABLE2vf RFdriver2vf ", Nov 4, 2019";
+const char Version[] PROGMEM = "Version 1.174" FAIMSFBvf FAIMSvf HOFAIMSvf TABLE2vf RFdriver2vf ", Mar 24, 2020";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -1595,7 +1642,6 @@ void test(void)
 
 void setup()
 {
-
   pinMode(73, OUTPUT);  // TXL
   pinMode(72, OUTPUT);  // RXL
   digitalWrite(73, HIGH);  // TXL
@@ -1973,6 +2019,7 @@ void ProcessSerial(void)
   }
   SerialUSB.flush();     // Added 9/2/2017
   DIOopsReport();
+  ReportADCchange();
 }
 
 // Main processing loop

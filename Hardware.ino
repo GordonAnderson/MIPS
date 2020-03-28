@@ -470,24 +470,6 @@ void RebootStatus(void)
    TraceReport();
 }
 
-// This function reads analog input on A8 and returns the value. A8 is connected to Vin through
-// a voltage divider, 10K in series with 1K. This is used to determine in MIPS power is applied
-// or if the USB is powering up the DUE.
-// This function returns the Vin voltage as a float. The ADC input is left in its default 10 bit mode.
-// A8 input is D62
-//
-// Updated on 2/4/2015 to read return average of 100 readings.
-float ReadVin(void)
-{
-  int ADCvalue;
-  int i;
-
-  ADCvalue = 0;
-  for (i = 0; i < 100; i++) ADCvalue += analogRead(62);
-  ADCvalue = ADCvalue / 100;
-  return ((((float)ADCvalue * 3.3) / 4096.0) * 11.0);
-}
-
 // This function will set the three address lines used for the SPI device selection. It is assumed
 // the bit directions have already been set.
 void SetAddress(int8_t addr)
@@ -935,6 +917,7 @@ int AD7998(int8_t adr, int8_t chan)
     val = (TWI_READ(LOW) << 8) & 0xFF00;
     val |= (TWI_READ(HIGH)) & 0xFF;
     TWI_STOP();
+    if(((val & 0x7000) >> 12) != chan) { iStat = -1; break; }
     val &= 0xFFF;
     val <<= 4;
     iStat = 0;
@@ -942,6 +925,7 @@ int AD7998(int8_t adr, int8_t chan)
   }
   Wire.begin();  // Release control of clock and data lines
   ReleaseTWI();
+  if(iStat > 0) return(-1);
   return (val);
 }
 

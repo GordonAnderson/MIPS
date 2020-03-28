@@ -82,6 +82,7 @@ void DisplayWindow(Window *wn);
 void MenuDisplay(Menu *m);
 void DisplayMessage(char *message);
 void DismissMessage(void);
+void DisplayMessage(char *message, int DisplayTime);
 void DisplayMessageButtonDismiss(char *message);
 void DismissMessageIfButton(void);
 
