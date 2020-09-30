@@ -2788,3 +2788,103 @@ void SetARBcompLine(int module, int line)
    else BADARG;
    SendACK;
 }
+
+// The following function enable the use of the level detection module to change the alternate
+// waveform delay and duration times. These times are in mS. The level detection module is used
+// and its lookup table option is used to read the delay time and then update the value in the
+// selected ARB modules. The ARB modules are selelcted usning the bit mask to select the modules
+// you wish to update. The LSB of the mask is ARB module 1.
+uint8_t ARBdelayMask;
+uint8_t ARBdurationMask;
+float   ARBdelayAdjust;
+float   ARBdurationAdjust;
+
+void ARBsendDelayTime(void)
+{
+  for(int i=0;i<6;i++)
+  {
+    if(((ARBdelayMask & (1<<i) != 0)) && (ARBarray[i] != NULL))
+    {
+      ARBarray[i]->TriggerDly = ARBdelayAdjust;
+      TWIsetFloat(ARBarray[i]->ARBadr, i, TWI_SET_TRGDELAY, ARBarray[i]->TriggerDly);
+    }
+  }
+}
+
+void ARBsendDurationTime(void)
+{
+  for(int i=0;i<6;i++)
+  {
+    if(((ARBdelayMask & (1<<i) != 0)) && (ARBarray[i] != NULL))
+    {
+      ARBarray[i]->TriggerDly = ARBdurationAdjust;
+      TWIsetFloat(ARBarray[i]->ARBadr, i, TWI_SET_PLYTIME, ARBarray[i]->TriggerDly);
+    }
+  }
+}
+
+void ARBchangeDelayISR(void)
+{
+  byte *b;
+  int  i=0;
+
+  // Read the lookup value from the change detector
+  b = (byte *)&ARBdelayAdjust;
+  Wire1.beginTransmission(LevelDetAdd);
+  Wire1.write(TWI_LEVDET_LOOKUP);
+  Wire1.endTransmission();
+  Wire1.requestFrom((uint8_t)LevelDetAdd, (uint8_t)4);
+  while (Wire1.available()) b[i++] = Wire1.read();
+  // Send the TWI commands to all selected ARB modules
+  if(AcquireTWI()) ARBsendDelayTime(); else TWIqueue(ARBsendDelayTime);
+}
+
+void ARBchangeDurationISR(void)
+{
+  byte *b;
+  int  i=0;
+
+  // Read the lookup value from the change detector
+  b = (byte *)&ARBdurationAdjust;
+  Wire1.beginTransmission(LevelDetAdd);
+  Wire1.write(TWI_LEVDET_LOOKUP);
+  Wire1.endTransmission();
+  Wire1.requestFrom((uint8_t)LevelDetAdd, (uint8_t)4);
+  while (Wire1.available()) b[i++] = Wire1.read();
+  // Send the TWI commands to all selected ARB modules
+  if(AcquireTWI()) ARBsendDurationTime(); else TWIqueue(ARBsendDurationTime);
+}
+
+// TWIadd is the hex TWI address of the level detection module.
+// ARBmask select ARB module to update
+void ARBdelayOnChange(char *TWIadd, char *ARBmask)
+{
+  LevelDetAdd = strtol(TWIadd,NULL,16);
+  ARBdelayMask = strtol(TWIadd,NULL,16);
+  // Init the Level Detector
+  pinMode(SCL1,INPUT);
+  pinMode(SDA1,INPUT);
+  pinMode(LEVCHANGE,INPUT);
+  Wire1.begin();
+  Wire1.setClock(100000);
+  attachInterrupt(digitalPinToInterrupt(LEVCHANGE), ARBchangeDelayISR, RISING);
+  SendACK;  
+}
+
+// TWIadd is the hex TWI address of the level detection module.
+// ARBmask select ARB module to update
+void ARBdurationOnChange(char *TWIadd, char *ARBmask)
+{
+  LevelDetAdd = strtol(TWIadd,NULL,16);
+  ARBdurationMask = strtol(TWIadd,NULL,16);
+  // Init the Level Detector
+  pinMode(SCL1,INPUT);
+  pinMode(SDA1,INPUT);
+  pinMode(LEVCHANGE,INPUT);
+  Wire1.begin();
+  Wire1.setClock(100000);
+  attachInterrupt(digitalPinToInterrupt(LEVCHANGE), ARBchangeDurationISR, RISING);
+  SendACK;  
+}
+
+// End of level dectection functions

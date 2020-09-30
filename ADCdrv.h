@@ -25,4 +25,9 @@ float ReadVin(void);
 void MonitorADCchange(char *gain);
 void SetADCchangeParms(int wc, int sc);
 
+void ReportV12(void);
+void ReportV24(void);
+void ReportCur(void);
+void ReportPower(void);
+
 #endif

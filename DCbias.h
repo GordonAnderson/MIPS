@@ -123,5 +123,8 @@ void SetADCoffsetAdjust(char *brd, char *gain);
 void SetADCchannelAdjust(char *brd, char *gain);
 void SetADCgainPol(char *brd, char *dio);
 void GetADCgainPol(int board);
+void SetLevelDetOffsetAdjust(char *brd, char *TWIadd);
+void SetLevelDetChOffsetAdjust(char *brd, char *TWIadd);
+int DCbiasChan2DAC(int chan);
 
 #endif

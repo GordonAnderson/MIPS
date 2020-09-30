@@ -5,6 +5,13 @@
 extern float MaxESIvoltage;
 extern bool  ESIcurrentTest;
 
+enum ESIlevMode
+{
+  ESI_OFF  = 0,
+  ESI_IFGT = 1,
+  ESI_IFLT = 2,
+};
+
 typedef struct
 {
   bool   Enable;               // If true the output is enabled, if false its set to 0
@@ -33,6 +40,14 @@ typedef struct
   // EMCO modules and relay switching
   bool    Enable;           // Enable output
   float   VoltageSetpoint;  // Setpoint voltage
+  // Added 07/28/2020 to support using the level detector to enable and disable 
+  // the ESI channel
+  int     ESIstepsize;       // Allow user to program this level in volts per 10mS units
+  ESIlevMode LevelMode[2];   // Defines the level detection mode
+  float   LevelThreshold[2]; // Level detection system threshold levels 
+  bool    EnableGatting[2];  // Set true to enable the gating mode. The relay is used for fast on/off
+  bool    Gate[2];
+  bool    SystemGatable;     // Flag  set to  enable the gate menu options  
 } ESIdata;
 
 // Prototypes
@@ -50,5 +65,9 @@ void SetESImodulePos(int module, int value);
 void SetESImoduleNeg(int module, int value);
 
 void SaveESI2EEPROM(void);
+
+void SetESIgateEnable(char *module, char *state);
+void SetESIramp(int module, int ramp);
+void GetESIramp(int module);
 
 #endif

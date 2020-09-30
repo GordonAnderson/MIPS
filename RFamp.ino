@@ -82,9 +82,10 @@ DialogBoxEntry RFAdialogEntriesPage1[] = {
   {"Mode"               , 1, 2, D_OPENCLOSE, 0, 1, 1, 17, false, NULL, &rfad.Mode, NULL, NULL},
   {"Frequency"          , 1, 3, D_INT      , 100000, 5000000, 1000, 15, false, "%7d", &rfad.Freq, NULL, NULL},
   RFAdialogEntryDrive,
-  {"RF+ Vp-p"           , 1, 6, D_FLOAT    , 0, 0, 0, 17, true, "%5.0f", NULL, NULL, NULL},
-  {"RF- Vp-p"           , 1, 7, D_FLOAT    , 0, 0, 0, 17, true, "%5.0f", NULL, NULL, NULL},
-  {"RF power,W"         , 1, 8, D_FLOAT    , 0, 0, 0, 17, true, "%5.1f", NULL, NULL, NULL},
+  {"RF+ Vp-p"           , 1, 5, D_FLOAT    , 0, 0, 0, 17, true, "%5.0f", NULL, NULL, NULL},
+  {"RF- Vp-p"           , 1, 6, D_FLOAT    , 0, 0, 0, 17, true, "%5.0f", NULL, NULL, NULL},
+  {"RF power,W"         , 1, 7, D_FLOAT    , 0, 0, 0, 17, true, "%5.1f", NULL, NULL, NULL},
+  {"SWR"                , 1, 8, D_FLOAT    , 0, 0, 0, 17, true, "%5.1f", NULL, NULL, NULL},
   {"Next page"          , 1, 9, D_PAGE     , 0, 0, 0, 0 , false, NULL, RFAdialogEntriesPage2, NULL, NULL},
   {"Return to main menu", 1, 10,D_MENU     , 0, 0, 0, 0 , false, NULL, &MainMenu, NULL, NULL},
   {NULL},
@@ -378,7 +379,8 @@ void RestoreRFAsettings(bool NoDisplay)
      {
        // Here if the name matches so copy the data to the operating data structure
        rfa_data.EEPROMadr = RFAarray[b]->EEPROMadr;
-       memcpy(RFAarray[b], &rfa_data, sizeof(RFAdata));
+       memcpy(RFAarray[b], &rfa_data, rfa_data.Size);
+       RFAarray[b]->Size = sizeof(RFAdata);
      } 
      else Corrupted=true;
   }
@@ -392,7 +394,7 @@ void RestoreRFAsettings(bool NoDisplay)
   if(ActiveDialog == &RFAdialog) DialogBoxDisplay(&RFAdialog);
 }
 
-void SetDDSfrequency(int8_t addr, uint32_t freq)
+void SetDDSfrequency(int8_t addr, uint32_t freq, bool pwrdown = false)
 {
   float    fFREQ;
   uint32_t uFREQ;
@@ -405,18 +407,21 @@ void SetDDSfrequency(int8_t addr, uint32_t freq)
   SPI.setDataMode(SPI_CS, SPI_MODE2);
   SPI.transfer(SPI_CS, 0xF8, SPI_CONTINUE);
   SPI.transfer(SPI_CS, 0);
+  
+  if(pwrdown == false)
+  {
+     SPI.transfer(SPI_CS, 0x33, SPI_CONTINUE);
+     SPI.transfer(SPI_CS, (uFREQ >> 24) & 0xFF);
+     SPI.transfer(SPI_CS, 0x22, SPI_CONTINUE);
+     SPI.transfer(SPI_CS, (uFREQ >> 16) & 0xFF);
+     SPI.transfer(SPI_CS, 0x31, SPI_CONTINUE);
+     SPI.transfer(SPI_CS, (uFREQ >> 8) & 0xFF);
+     SPI.transfer(SPI_CS, 0x20, SPI_CONTINUE);
+     SPI.transfer(SPI_CS, uFREQ & 0xFF);
 
-  SPI.transfer(SPI_CS, 0x33, SPI_CONTINUE);
-  SPI.transfer(SPI_CS, (uFREQ >> 24) & 0xFF);
-  SPI.transfer(SPI_CS, 0x22, SPI_CONTINUE);
-  SPI.transfer(SPI_CS, (uFREQ >> 16) & 0xFF);
-  SPI.transfer(SPI_CS, 0x31, SPI_CONTINUE);
-  SPI.transfer(SPI_CS, (uFREQ >> 8) & 0xFF);
-  SPI.transfer(SPI_CS, 0x20, SPI_CONTINUE);
-  SPI.transfer(SPI_CS, uFREQ & 0xFF);
-
-  SPI.transfer(SPI_CS, 0xC0, SPI_CONTINUE);
-  SPI.transfer(SPI_CS, 0);
+     SPI.transfer(SPI_CS, 0xC0, SPI_CONTINUE);
+     SPI.transfer(SPI_CS, 0);
+  }
   SetAddress(0);
 }
 
@@ -449,6 +454,7 @@ void SetupRFAentries(void)
   de[0].Value = (void *)&RFAstates[SelectedRFAboard]->RFVPpp;
   de[1].Value = (void *)&RFAstates[SelectedRFAboard]->RFVNpp;
   de[2].Value = (void *)&RFAstates[SelectedRFAboard]->RFpowerFWD;
+  de[3].Value = (void *)&RFAstates[SelectedRFAboard]->SWR;
   de = RFAdialogEntriesPage3;
   de[0].Value = (void *)&RFAstates[SelectedRFAboard]->DCV;
   de[1].Value = (void *)&RFAstates[SelectedRFAboard]->DCI;
@@ -550,6 +556,7 @@ void RFA_loop(void)
     {
       if(RFAarray[brd]->Enabled)
       {
+        SetDDSfrequency(RFAarray[brd]->DDSspi, RFAarray[brd]->Freq,false);
         // Here if enabled so set the drive and SetPoint levels
         AD5625(RFAarray[brd]->DACadr,RFAdacDRIVE,Value2Counts(RFAarray[brd]->Drive,&RFAarray[brd]->DACchans[RFAdacDRIVE]),3);
         AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[brd]->SetPoint,&RFAarray[brd]->DACchans[RFAdacSETPOINT]),3);
@@ -563,6 +570,7 @@ void RFA_loop(void)
         AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(0,&RFAarray[brd]->DACchans[RFAdacSETPOINT]),3);
         MIPSconfigData.PowerEnable = false;
         SetPowerSource();
+        SetDDSfrequency(RFAarray[brd]->DDSspi, RFAarray[brd]->Freq,true);
       }
       RFAstates[brd]->Enabled = RFAarray[brd]->Enabled;
     }
@@ -587,15 +595,16 @@ void RFA_loop(void)
     if((RFAarray[brd]->PoleBias != RFAstates[brd]->PoleBias) || RFAupdate)
     {
       // Set the PoleBias value
-      int bd = DCbiasCH2Brd(0);
+      int bd = DCbiasCH2Brd(RFAarray[brd]->DCBchan-1);
       if(bd != -1)
       {
+        int firstch = (RFAarray[brd]->DCBchan-1) & 0x07;
         DCbDarray[bd]->DCoffset.VoltageSetpoint =  RFAarray[brd]->PoleBias;
-        DCbDarray[bd]->DCCD[0].VoltageSetpoint  =  RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
-        DCbDarray[bd]->DCCD[1].VoltageSetpoint  = -RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
-        if(GetDCbiasBoard(1) == SelectedDCBoard) dcbd.DCoffset.VoltageSetpoint = RFAarray[brd]->PoleBias;
-        if(GetDCbiasBoard(1) == SelectedDCBoard) dcbd.DCCD[0].VoltageSetpoint =  RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
-        if(GetDCbiasBoard(2) == SelectedDCBoard) dcbd.DCCD[1].VoltageSetpoint = -RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
+        DCbDarray[bd]->DCCD[firstch].VoltageSetpoint  =  RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
+        DCbDarray[bd]->DCCD[firstch+1].VoltageSetpoint  = -RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
+        if(GetDCbiasBoard(RFAarray[brd]->DCBchan) == SelectedDCBoard) dcbd.DCoffset.VoltageSetpoint = RFAarray[brd]->PoleBias;
+        if(GetDCbiasBoard(RFAarray[brd]->DCBchan) == SelectedDCBoard) dcbd.DCCD[firstch].VoltageSetpoint =  RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
+        if(GetDCbiasBoard(RFAarray[brd]->DCBchan+1) == SelectedDCBoard) dcbd.DCCD[firstch+1].VoltageSetpoint = -RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
         DelayMonitoring();
       }
       RFAstates[brd]->PoleBias = RFAarray[brd]->PoleBias;
@@ -603,13 +612,14 @@ void RFA_loop(void)
     if((RFAarray[brd]->ResolvingDC != RFAstates[brd]->ResolvingDC) || RFAupdate)
     {
       // Set the ResolvingDC value
-      int bd = DCbiasCH2Brd(0);
+      int bd = DCbiasCH2Brd(RFAarray[brd]->DCBchan-1);
       if(bd != -1)
       {
-        DCbDarray[bd]->DCCD[0].VoltageSetpoint =  RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
-        DCbDarray[bd]->DCCD[1].VoltageSetpoint = -RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
-        if(GetDCbiasBoard(1) == SelectedDCBoard) dcbd.DCCD[0].VoltageSetpoint =  RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
-        if(GetDCbiasBoard(2) == SelectedDCBoard) dcbd.DCCD[1].VoltageSetpoint = -RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
+        int firstch = (RFAarray[brd]->DCBchan-1) & 0x07;
+        DCbDarray[bd]->DCCD[firstch].VoltageSetpoint =  RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
+        DCbDarray[bd]->DCCD[firstch+1].VoltageSetpoint = -RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
+        if(GetDCbiasBoard(RFAarray[brd]->DCBchan) == SelectedDCBoard) dcbd.DCCD[firstch].VoltageSetpoint =  RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
+        if(GetDCbiasBoard(RFAarray[brd]->DCBchan+1) == SelectedDCBoard) dcbd.DCCD[firstch+1].VoltageSetpoint = -RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
         DelayMonitoring();
       }
       RFAstates[brd]->ResolvingDC = RFAarray[brd]->ResolvingDC;
@@ -626,7 +636,7 @@ void RFA_loop(void)
       // Set the loop mode, Open or Closed
       if(RFAarray[brd]->Mode)
       {
-        // Here is open loop mode is selected
+        // Here if open loop mode is selected
         RFACPLDimage[brd] &= ~(1 << RFAcpldCLOSED); // Closed LED off
         RFACPLDimage[brd] &= ~(1 << RFAcpldDRVSP_SELECT); // Select the drive DAC control
       }
@@ -742,7 +752,7 @@ void RFAsetFreq(int module, int freq)
   int b;
   
   if((b = RFAmodule2board(module)) == -1) return;
-  if((freq<500000)||(freq>5000000))
+  if((freq<100000)||(freq>5000000))
   {
      SetErrorCode(ERR_BADARG);
      SendNAK;   
@@ -1151,12 +1161,7 @@ void RFAsetK(char *Module, char *value)
   mod = token.toInt();
   if((b = RFAmodule2board(mod)) == -1) return;
   token = value;
-  if((token.toFloat() < 1.0) || (token.toFloat() > 10.0))
-  {
-     SetErrorCode(ERR_BADARG);
-     SendNAK;
-     return;
-  }
+  if((token.toFloat() < 1.0) || (token.toFloat() > 10.0)) BADARG;
   RFAarray[b]->K = token.toFloat();
   SendACK;
 }
@@ -1168,4 +1173,23 @@ void RFAgetK(int Module)
   if((b = RFAmodule2board(Module)) == -1) return;
   SendACKonly;
   if(!SerialMute) serial->println(RFAarray[b]->K,3);
+}
+
+void RFAsetDCBchan(int Module, int value)
+{
+  int    b;
+
+  if((b = RFAmodule2board(Module)) == -1) return;
+  if((value < 1) || (value > NumberOfDCChannels)) BADARG;
+  RFAarray[b]->DCBchan = value;
+  SendACK;
+}
+
+void RFAgetDCBchan(int Module)
+{
+  int    b;
+
+  if((b = RFAmodule2board(Module)) == -1) return;
+  SendACKonly;
+  if(!SerialMute) serial->println(RFAarray[b]->DCBchan);
 }

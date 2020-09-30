@@ -26,7 +26,7 @@
 //  4.) Generate a STOP condition
 void TWI_RESET(void)
 {
-  // Do resect procedure for both board addresses
+  // Do reset procedure for both board addresses
   int brd = SelectedBoard();
   for(int b=0; b<2;b++)
   {
@@ -83,10 +83,12 @@ bool TWI_WRITE(int8_t val)
   TWI_SDA_OUT;
   for (int i = 0; i < 8; i++)
   {
+    delayMicroseconds(5);
     if ((val & 0x80) != 0) TWI_SDA_HI;
     else TWI_SDA_LOW;
     val = val << 1;
     TWI_SCL_HI;
+    delayMicroseconds(5);
     TWI_SCL_LOW;
   }
   // Now read the ACK or NAK from the device
@@ -111,8 +113,10 @@ int8_t TWI_READ(bool Reply)
   {
     val = val << 1;
     TWI_SCL_HI;
+    delayMicroseconds(5);
     if (TWI_SDA_data == HIGH) val |= 1;
     TWI_SCL_LOW;
+    delayMicroseconds(5);
   }
   // Now write the ACK or NAK to the device
   TWI_SDA_OUT;
@@ -396,7 +400,7 @@ void TWIsetFloat(uint8_t add, int board, int cmd, float fval)
 {
   AcquireTWI();
   int cb=SelectedBoard();
-  SelectedBoard();
+  //SelectedBoard();
   SelectBoard(board);
   uint8_t *b = (uint8_t *)&fval;
   Wire.beginTransmission(add);

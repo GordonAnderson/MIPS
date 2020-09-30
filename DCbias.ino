@@ -490,6 +490,18 @@ int DCbiasValue2Counts(int chan, float value)
   return Value2Counts(value - DCbDarray[brd]->DCoffset.VoltageSetpoint,&DCbDarray[brd]->DCCD[chan].DCctrl);
 }
 
+// This function converts the channel number to the DAC output channel.
+// This function is used by the time table (pulse sequence generation) function.
+// The channel value range is from 0 to maxchannel-1
+int DCbiasChan2DAC(int chan)
+{
+  int brd;
+  
+  if((brd=DCbiasCH2Brd(chan)) == -1) return -1;
+  chan &= 7;
+  return DCbDarray[brd]->DCCD[chan].DCctrl.Chan;
+}
+
 // This function converts the value to DAC counts and return the count value.
 // This function is used by the time table (pulse sequence generation) function.
 // The channel value range is from 0 to maxchannel-1
@@ -563,7 +575,7 @@ void SetOffsetOffset(int brd, float fval)
 {
   if(DCbDarray[brd] == NULL) return;
   DCbDarray[brd]->OffsetOffset = fval;
-  if(SelectedDCBoard == brd) dcbd.OffsetOffset = fval;  // Sets the UI buffer if this module is seleted
+  if(SelectedDCBoard == brd) dcbd.OffsetOffset = fval;  // Sets the UI buffer if this module is selected
   if(digitalRead(PWR_ON) != 0) return;
   AcquireTWI();
   int b = SelectedBoard();
@@ -833,7 +845,7 @@ void DCbias_loop(void)
     {
       if(!ValueChange)
       {
-         if((DCbDarray[0]->OffsetReadback) && (i == 0))   // Added i==0 April 6, 2019.
+         if((DCbDarray[0] != NULL) && (DCbDarray[0]->OffsetReadback) && (i == 0))   // Added i==0 April 6, 2019.
          {
            if((DCbDarray[b]->DACadr & 0xFE) == 0x10)
            {
@@ -2075,7 +2087,7 @@ void GetDCbiasCHMK(int board)
   serial->println(DCbDarray[board]->OffsetChanMsk, HEX);  
 }
 
-// The following function allow the user to connect the ADC value change function to the DCbias
+// The following functions allow the user to connect the ADC value change function to the DCbias
 // module's offset control. This allows an external analog voltages to be read and used to adjust
 // DCbias module output voltages.
 
@@ -2177,4 +2189,79 @@ void GetADCgainPol(int board)
   if(SerialMute) return;
   if(DCbDarray[board]->PolDIO == 0) serial->println("NA");
   else serial->println(DCbDarray[board]->PolDIO); 
+}
+
+// The following functions support the Level Detection module and allow its
+// connection to the MIPS controller auxilary input. This module can be used
+// to detect a voltage change and apply the voltage to the DCbias module
+// offset.
+
+// This ISR is called when an event is detected my the level detection module.
+void LevelDetISR(void)
+{
+  float fval;
+  byte *b;
+  int  i=0;
+
+  b = (byte *)&fval;
+  Wire1.beginTransmission(LevelDetAdd);
+  Wire1.write(TWI_LEVDET_READ_ADC);
+  Wire1.endTransmission();
+  Wire1.requestFrom((uint8_t)LevelDetAdd, (uint8_t)4);
+  while (Wire1.available()) b[i++] = Wire1.read();
+  //serial->println(fval);
+  if(AcquireTWI()) 
+  {
+     for(i=0;i<MAXDCbiasMODULES;i++) if(DCbDarray[i] != NULL)
+     {  
+       if(DCbDarray[i]->ADCgainOff != 0) SetOffsetOffset(i, fval);
+       if(DCbDarray[i]->ADCgainCh != 0) if(DCbDarray[i]->OffsetChanMsk != 0) SetChannelOffset(i, fval);
+     }
+  }
+  else
+  {
+     for(i=0;i<MAXDCbiasMODULES;i++) if(DCbDarray[i] != NULL)   
+     {
+       if(DCbDarray[i]->ADCgainOff != 0) TWIqueue(SetOffsetOffset, i, fval);
+       if(DCbDarray[i]->ADCgainCh != 0) if(DCbDarray[i]->OffsetChanMsk != 0) TWIqueue(SetChannelOffset, i, fval);
+     }
+ }
+}
+
+void SetLevelDetOffsetAdjust(char *brd, char *TWIadd)
+{
+  String sToken;
+  int    board;
+
+  sToken = brd;
+  if((DCbDarray[board = sToken.toInt()] == NULL) || (board < 0) || (board >3)) BADARG;
+  LevelDetAdd = strtol(TWIadd,NULL,16);
+  DCbDarray[board]->ADCgainOff = 1;
+  // Init the Level Detector
+  pinMode(SCL1,INPUT);
+  pinMode(SDA1,INPUT);
+  pinMode(LEVCHANGE,INPUT);
+  Wire1.begin();
+  Wire1.setClock(100000);
+  attachInterrupt(digitalPinToInterrupt(LEVCHANGE), LevelDetISR, RISING);
+  SendACK;
+}
+
+void SetLevelDetChOffsetAdjust(char *brd, char *TWIadd)
+{
+  String sToken;
+  int    board;
+
+  sToken = brd;
+  if((DCbDarray[board = sToken.toInt()] == NULL) || (board < 0) || (board >3)) BADARG;
+  LevelDetAdd = strtol(TWIadd,NULL,16);
+  DCbDarray[board]->ADCgainCh = 1;
+  // Init the Level Detector
+  pinMode(SCL1,INPUT);
+  pinMode(SDA1,INPUT);
+  pinMode(LEVCHANGE,INPUT);
+  Wire1.begin();
+  Wire1.setClock(100000);
+  attachInterrupt(digitalPinToInterrupt(LEVCHANGE), LevelDetISR, RISING);
+  SendACK;
 }

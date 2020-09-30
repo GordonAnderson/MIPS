@@ -70,6 +70,8 @@ int FindPQ(long ClockOut)
     }
     if (Cerror == 0) break;
   }
+  //serial->println(P);
+  //serial->println(Q);
   P0 = P & 1;
   P = ((P - P0) / 2) - 3;
   Q = Q - 2;
@@ -131,6 +133,27 @@ int CY_Init(int8_t adr)
   return (0);
 }
 
+// If state = true then PLL2 will be enabled, else disabled.
+void SetPLL2enable(int8_t adr, bool state)
+{
+  if(state)
+  {
+     Wire.beginTransmission(adr);
+     Wire.write(0x08);
+     Wire.write(CYregs.ClkA_Div_DS0);
+     Wire.write(CYregs.ClkA_Div_DS1);
+     Wire.endTransmission();
+  }
+  else
+  {
+     Wire.beginTransmission(adr);
+     Wire.write(0x08);
+     Wire.write(0x00);
+     Wire.write(0x00);
+     Wire.endTransmission();
+  }
+}
+
 int SetPLL2freq(int8_t adr, int Freq)
 {
   int iStat;
@@ -169,6 +192,27 @@ int SetPLL2freq(int8_t adr, int Freq)
   Wire.write(CYregs.PLL2_Misc);
   Wire.endTransmission();
   return (0);
+}
+
+// If state = true then PLL2 will be enabled, else disabled.
+void SetPLL3enable(int8_t adr, bool state)
+{
+  if(state)
+  {
+     Wire.beginTransmission(adr);
+     Wire.write(0x0A);
+     Wire.write(CYregs.ClkB_Div_DS0);
+     Wire.write(CYregs.ClkB_Div_DS1);
+     Wire.endTransmission();
+  }
+  else
+  {
+     Wire.beginTransmission(adr);
+     Wire.write(0x0A);
+     Wire.write(0x00);
+     Wire.write(0x00);
+     Wire.endTransmission();
+  }
 }
 
 int SetPLL3freq(int8_t adr, int Freq)

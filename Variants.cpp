@@ -201,16 +201,23 @@ FAIMSdata  FAIMS_Rev_1 = {sizeof(FAIMSdata),"FAIMS", 1, 1000000, 25.0, false, 4,
                           };
                          
 ESIdata  ESI_Rev_1 =   { sizeof(ESIdata),"ESI", 1,
-                         false,0.0,6000,6000,0.1,  // ESI channel 0
+                         false,0.0,6000,6000,0.1,    // ESI channel 0
                              0,10.9225,0,            //   DAC voltage control
                              1,10.9225,0,            //   ADC voltage readback
                              0,13106,0,              //   ADC current readback, mA
-                         false,0.0,-6000,-6000,0.1, // ESI channel 1
+                         false,0.0,-6000,-6000,0.1,  // ESI channel 1
                              1,-10.9225,0,           //   DAC voltage control
                              3,-10.9225,0,           //   ADC voltage readback
                              2,13106,0,              //   ADC current readback, mA
-                         0x24,0x1F,0x52,
-                       };
+                         0x24,0x1F,0x52,             // TWI device addresses
+                         false, 0.0,                 // Rev 3.1 global enable and setpoint
+                         50,                         // Modules voltage change rate, volts per 10mS
+                         ESI_OFF, ESI_OFF,           // Level change modes
+                         0.0, 0.0,                   // Level change thresholds
+                         false, false,
+                         false, false,
+                         false
+                        };
 
 FilamentData FILAMENT_Rev_1 = {sizeof(FilamentData),"Filament",1,2,
                                0,5.0,false,0.1,FmodeI,10,14, 0,-3868,21206, 1,5392,13960, 0,13156,-137, 1,13050,-96, 2,2722,6421,
@@ -287,7 +294,8 @@ RFAdata RFA_Rev1 = {sizeof(RFAdata),"RFamp",1,false,1000000,0,0,true,false,3,4,0
                     6,5.26,-156.71,
                     7,3.6614,-147.14,                    
                     1,3.47,0,
-                    5.958257713248639
+                    5.958257713248639,
+                    1
                    };
                    
 #ifdef TestMode

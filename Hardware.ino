@@ -11,6 +11,8 @@
 #include "Hardware.h"
 #include "Variants.h"
 
+int  LevelDetAdd = 0x32;
+
 int AuxTrigMax = 0;
 int TrigMax    = 0;
 
@@ -734,8 +736,8 @@ int AD7998(int8_t adr, uint16_t *vals)
 
   for (i = 0; i < 8; i++)
   {
-    AD7998(adr, i);
-    v = AD7998(adr, i);
+   //AD7998(adr, i);  // Removed 9/14/2020
+   v = AD7998(adr, i);
     if(v == -1) return(-1);
     vals[i] = v;
   }
@@ -743,14 +745,22 @@ int AD7998(int8_t adr, uint16_t *vals)
 
   AcquireTWI();
   bvals = (byte *)vals;
+  TWI_START();
+  TWI_WRITE(adr << 1);
+  TWI_WRITE(0x02);
+  TWI_WRITE(0x0F);
+  TWI_WRITE(0xF0);
+  TWI_STOP();
+  delay(1);
   while (1)
   {
     TWI_START();
     if ((iStat = TWI_WRITE(adr << 1)) == false) break;
-    if ((iStat = TWI_WRITE(0x02)) == false) break;
-    if ((iStat = TWI_WRITE(0x0F)) == false) break;
-    if ((iStat = TWI_WRITE(0xF8)) == false) break;
+    //if ((iStat = TWI_WRITE(0x02)) == false) break;
+    //if ((iStat = TWI_WRITE(0x0F)) == false) break;
+    //if ((iStat = TWI_WRITE(0xF0)) == false) break;
     if ((iStat = TWI_WRITE(0x70)) == false) break;
+    //delay(1);
     TWI_START();
     if ((iStat = TWI_WRITE((adr << 1) + 1)) == false) break;
     for (i = 0; i < 8; i++)
@@ -870,6 +880,7 @@ int AD7998_b (int8_t adr, int8_t chan)
   AcquireTWI();
   AtomicBlock< Atomic_RestoreState > a_Block;
   Wire.beginTransmission(adr);
+  Wire.write(0x80 | chan << 4);  // Channel select to give mux time to stabalize, 9/14/2020
   if(Wire.endTransmission(false) !=0)
   {
     TWIerror();
@@ -912,6 +923,8 @@ int AD7998(int8_t adr, int8_t chan)
     TWI_START();
     if ((iStat = TWI_WRITE(adr << 1)) == false) break;
     if ((iStat = TWI_WRITE(0x80 | chan << 4)) == false) break;
+    if ((iStat = TWI_WRITE(0x80 | chan << 4)) == false) break;  // Adding this second write causes a 2nd conversion and
+                                                                // allows the mux to stabalize, 9/14/2020
     TWI_START();
     if ((iStat = TWI_WRITE((adr << 1) + 1)) == false) break;
     val = (TWI_READ(LOW) << 8) & 0xFF00;

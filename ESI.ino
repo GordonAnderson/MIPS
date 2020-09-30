@@ -60,7 +60,8 @@ extern bool NormalStartup;
 #define  Filter 0.1         // Weak filter coefficent
 #define  StrongFilter 0.05  // Strong filter coefficent
 
-#define ESIstepSize 50      // Changed from 10 3/12/18
+//#define ESIstepSize 50      // Changed from 10 3/12/18
+int ESIstepSize = 50;         // Changed 07/28/2020
 
 //MIPS Threads
 Thread ESIthread  = Thread();
@@ -93,12 +94,15 @@ ESIChannellData esich;   // Holds the selected channel's data, only used in Rev 
 extern DialogBoxEntry ESIentriesLimits[];
 extern DialogBoxEntry ESIentriesLimitsR3[];
 
+bool ESIgate = false;
+
 DialogBoxEntry ESIentries[] = {
   {" ESI channel"        , 0, 1, D_INT      , 1, 2, 1, 21,      false, "%2d",     &ESIchannel, NULL, SelectESIChannel},
   {" Enable"             , 0, 2, D_ONOFF    , 0, 1, 1, 21,      false, NULL,      &esich.Enable, NULL, NULL},
   {" Voltage"            , 0, 3, D_FLOAT    , 0, 6000, 10, 18,  false, "%5.0f",   &esich.VoltageSetpoint, NULL, NULL},
   {" Monitor"            , 0, 4, D_FLOAT    , 0, 1, 1, 8,       true,  "%5.0f V", &ReadbackV[0][0], NULL, NULL},
   {""                    , 0, 4, D_FLOAT    , 0, 1, 1, 16,      true,  "%5.3f mA",&ReadbackI[0][0], NULL, NULL},
+  {" Gate ena"           , 0, 5, D_OFF      , 0, 1, 1, 21,      false, NULL,      &ESIgate, NULL, ESIgateChange},
   {" Limits"             , 0, 8, D_PAGE     , 0, 0, 0, 0,       false, NULL, ESIentriesLimits, NULL, NULL},
   {" Save settings"      , 0, 9, D_FUNCTION , 0, 0, 0, 0,       false, NULL, NULL,SaveESIsettings, NULL},
   {" Restore settings"   , 0, 10,D_FUNCTION , 0, 0, 0, 0,       false, NULL, NULL,RestoreESIsettings, NULL},
@@ -106,11 +110,19 @@ DialogBoxEntry ESIentries[] = {
   {NULL},
 };
 
+char  *LevelModeList = "OFF,IF>,IF<";
+char  LevelMode[4] = "OFF";
+float Vthreshold = 0;
+
 DialogBoxEntry ESIentriesLimits[] = {
-  {" Voltage limit"      , 0, 1, D_FLOAT   , 0, 6000, 10, 18,  false, "%5.0f",   &esich.VoltageLimit, NULL, UpdateESIdialog},
-  {" Current trip, mA"   , 0, 2, D_FLOAT   , 0, 5, 0.05, 18,   false, "%5.3f",   &esich.MaxCurrent, NULL, NULL},
-  {" Calibrate"          , 0, 8, D_FUNCTION , 0, 0, 0, 0,      false, NULL, NULL, ESIcalibrate, NULL},
-  {" Return to ESI menu" , 0, 10,D_PAGE    , 0, 0, 0, 0,       false, NULL, &ESIentries, NULL, NULL},
+  {" Voltage limit"       , 0, 1, D_FLOAT   , 0, 6000, 10, 18,  false, "%5.0f",   &esich.VoltageLimit, NULL, UpdateESIdialog},
+  {" Current trip, mA"    , 0, 2, D_FLOAT   , 0, 5, 0.05, 18,   false, "%5.3f",   &esich.MaxCurrent, NULL, NULL},
+  {" ESI chg,V/0.1s"      , 0, 3, D_INT     , 5, 5000, 1, 18,   false, "%5d",     &esi.ESIstepsize, NULL, NULL},
+  {" Level mode"          , 0, 4, D_OFF     , 0, 0, 3, 20,      false, LevelModeList, LevelMode, NULL, LevelChanged},
+  {" Level threshold"     , 0, 5, D_OFF     , -200, 200, 1, 18, false, "%5.0f",   &Vthreshold, NULL, LevelChanged},
+  
+  {" Calibrate"           , 0, 8, D_FUNCTION , 0, 0, 0, 0,      false, NULL, NULL, ESIcalibrate, NULL},
+  {" Return to ESI menu"  , 0, 10,D_PAGE    , 0, 0, 0, 0,       false, NULL, &ESIentries, NULL, NULL},
   {NULL},
 };
 
@@ -148,6 +160,76 @@ DialogBox ESIdialog = {
 };
 
 MenuEntry MEESImonitor = {" ESI module", M_DIALOG,0,0,0,NULL,&ESIdialog,NULL,NULL};
+
+void ESILevelDet(void)
+{
+  float fval;
+  byte *b;
+  int  i=0,brd,ch;
+
+  // Make sure a module is looking for this signal, if not exit
+  for(brd=0;brd<2;brd++)
+  {
+    if(ESIboards[brd])
+    {
+      if(((ESIarray[brd].LevelMode[0] != ESI_OFF)&&(ESIarray[brd].ESIchan[0].Enable)) || ((ESIarray[brd].LevelMode[1] != ESI_OFF)&&(ESIarray[brd].ESIchan[1].Enable))) break;
+    }
+  }
+  if(brd==2) return;
+  // Read the voltage level from the level detector and process
+  b = (byte *)&fval;
+  for(int j=0;j<3;j++)
+  {
+    i=0;
+    Wire1.beginTransmission(LevelDetAdd);
+    Wire1.write(TWI_LEVDET_READ_ADC);
+    if(Wire1.endTransmission() != 0)
+    {
+      Wire1.begin();
+      //delayMicroseconds(10);
+      continue;
+    }
+    Wire1.requestFrom((uint8_t)LevelDetAdd, (uint8_t)4);
+    while (Wire1.available()) b[i++] = Wire1.read();
+    break;
+  }
+  for(brd=0;brd<2;brd++)
+  {
+    if(ESIboards[brd]) for(ch=0; ch<2; ch++) if(ESIarray[brd].ESIchan[ch].Enable && ESIarray[brd].EnableGatting[ch])
+    {
+      if((ESIarray[brd].LevelMode[ch] == ESI_IFGT) && (fval >= ESIarray[brd].LevelThreshold[ch])) ESIarray[brd].Gate[ch] = true;
+      else if((ESIarray[brd].LevelMode[ch] == ESI_IFGT) && (fval < ESIarray[brd].LevelThreshold[ch])) ESIarray[brd].Gate[ch] = false;
+      if((ESIarray[brd].LevelMode[ch] == ESI_IFLT) && (fval <= ESIarray[brd].LevelThreshold[ch])) ESIarray[brd].Gate[ch] = true;
+      else if((ESIarray[brd].LevelMode[ch] == ESI_IFLT) && (fval > ESIarray[brd].LevelThreshold[ch]))  ESIarray[brd].Gate[ch] = false;
+      if(ESIarray[brd].Gate[ch] == true)
+      {
+        LEDstate |=  (1 << ch);
+        int cb=SelectedBoard();
+        SelectBoard(brd);
+        AD5625(ESIarray[brd].DACadr,2+ch,65535); 
+        delayMicroseconds(1000);
+        if(cb != brd) SelectBoard(cb);
+      }
+      else
+      {
+        LEDstate &=  ~(1  << ch);
+        int cb=SelectedBoard();
+        SelectBoard(brd);
+        AD5625(ESIarray[brd].DACadr,2+ch,0);
+        delayMicroseconds(1000);
+        if(cb != brd) SelectBoard(cb);   
+      }
+    }
+    if(ESIboards[brd]) for(ch=0; ch<2; ch++) if(!ESIarray[brd].ESIchan[ch].Enable) LEDstate &=  ~(1<<ch);
+  }  
+}
+
+// Here when a change has been deteced by the Level Detection module
+void ESILevelDetISR(void)
+{
+  if(AcquireTWI()) ESILevelDet();
+  else TWIqueue(ESILevelDet);
+}
 
 // This function converts the ESI channel number to a board address, 0 or 1.
 // channel is 1 or 2 for rev 3 and 1 through 4 for rev 1, 2, and 4
@@ -309,11 +391,71 @@ void UpdateESIdialog(void)
   }
 }
 
+// Called after the user changes a level control parameter
+void LevelChanged(void)
+{
+  esi.LevelThreshold[ESIchannel-1] = Vthreshold;
+  esidata.LevelThreshold[ESIchannel-1] = Vthreshold;
+  if(strcmp(LevelMode, "OFF") == 0) esi.LevelMode[ESIchannel-1] = esidata.LevelMode[ESIchannel-1] = ESI_OFF;
+  else if(strcmp(LevelMode, "IF>") == 0) esi.LevelMode[ESIchannel-1] = esidata.LevelMode[ESIchannel-1] = ESI_IFGT;
+  else if(strcmp(LevelMode, "IF<") == 0) esi.LevelMode[ESIchannel-1] = esidata.LevelMode[ESIchannel-1] = ESI_IFLT;
+  if((esi.LevelMode[0] != ESI_OFF) || (esi.LevelMode[1] != ESI_OFF)) 
+  {
+    pinMode(SCL1,INPUT);
+    pinMode(SDA1,INPUT);
+    pinMode(LEVCHANGE,INPUT);
+    Wire1.begin();
+    Wire1.setClock(100000);
+    attachInterrupt(digitalPinToInterrupt(LEVCHANGE), ESILevelDetISR, RISING);
+  }
+}
+
+// Called after the user changes the gate parameter
+void ESIgateChange(void)
+{
+  esi.EnableGatting[ESIchannel-1] = esidata.EnableGatting[ESIchannel-1] = ESIgate;
+  if(ESIgate) 
+  {
+    LEDoverride  = true;
+    pinMode(SCL1,INPUT);
+    pinMode(SDA1,INPUT);
+    pinMode(LEVCHANGE,INPUT);
+    Wire1.begin();
+    Wire1.setClock(100000);
+    attachInterrupt(digitalPinToInterrupt(LEVCHANGE), ESILevelDetISR, RISING);
+    ESILevelDetISR();
+  }
+  else
+  {
+    // If channel is enabled that make sure relay is on
+    if(esich.Enable)
+    {
+      SelectBoard(SelectedESIboard);
+      if(ESIchannel == 1) HVPOS_ON;
+      else HVNEG_ON;
+    }
+  }
+  // If any channels are enabled then keep LED in override mode.
+  for(int brd=0;brd<1;brd++)
+  {
+    for(int ch=0;ch<2;ch++)
+    {
+      if(ESIarray[brd].EnableGatting[ch]) return;
+    }
+  }
+  LEDoverride  = false;
+}
+
 // Called after the user selects a channel
 void SelectESIChannel(void)
 {
   UpdateESIdialog();
   ESIchannelLoaded = ESIchannel;
+  Vthreshold = esi.LevelThreshold[ESIchannel-1];
+  ESIgate = esi.EnableGatting[ESIchannel-1];
+  if(esi.LevelMode[ESIchannel-1] == ESI_OFF) strcpy(LevelMode, "OFF");
+  else if(esi.LevelMode[ESIchannel-1] == ESI_IFGT) strcpy(LevelMode, "IF>");
+  else if(esi.LevelMode[ESIchannel-1] == ESI_IFLT) strcpy(LevelMode, "IF<");  
   DialogBoxDisplay(&ESIdialog);
 }
 
@@ -353,12 +495,12 @@ void SaveESIsettings(void)
   if(ESIboards[0])
   {
     SelectBoard(0);
-    if(WriteEEPROM(&ESIarray[0], ESIarray[0].EEPROMadr, 0, sizeof(ESIdata)) != 0) Success = false;
+    if(WriteEEPROM(&ESIarray[0], ESIarray[0].EEPROMadr, 0, ESIarray[0].Size = sizeof(ESIdata)) != 0) Success = false;
   } 
   if(ESIboards[1])
   {
     SelectBoard(1);
-    if(WriteEEPROM(&ESIarray[1], ESIarray[1].EEPROMadr, 0, sizeof(ESIdata)) != 0) Success = false;
+    if(WriteEEPROM(&ESIarray[1], ESIarray[1].EEPROMadr, 0, ESIarray[0].Size = sizeof(ESIdata)) != 0) Success = false;
   }
   SelectBoard(SelectedESIboard);
   if(Success)
@@ -392,8 +534,11 @@ void RestoreESIsettings(bool NoDisplay)
          esi_data.EEPROMadr = ESIarray[b].EEPROMadr;
          esi_data.ESIchan[0].Enable = false;
          esi_data.ESIchan[1].Enable = false;
+         esi_data.EnableGatting[0] = false;
+         esi_data.EnableGatting[1] = false;
          esi_data.Enable = false;
-         memcpy(&ESIarray[b], &esi_data, sizeof(ESIdata));
+         //memcpy(&ESIarray[b], &esi_data, sizeof(ESIdata));
+         memcpy(&ESIarray[b], &esi_data, esi_data.Size);
        } 
        else Corrupted=true;
     }
@@ -436,6 +581,17 @@ void ESI_init(int8_t Board, int8_t addr)
   {
     HVPOS_OFF;
     HVNEG_OFF;
+  }
+  // Check the system gatable flag, if set enable the menu options
+  if(esi.SystemGatable)
+  {
+    DialogBoxEntry *de;
+    de = GetDialogEntries(ESIentries, "Gate ena");
+    if(de != NULL) de->Type = D_ONOFF;
+    de = GetDialogEntries(ESIentriesLimits, "Level mode");
+    if(de != NULL) de->Type = D_LIST;
+    de = GetDialogEntries(ESIentriesLimits, "Level threshold");
+    if(de != NULL) de->Type = D_FLOAT;
   }
   if(NumberOfESIchannels == 0)
   {
@@ -580,6 +736,7 @@ void ESI_loop(void)
   {
     if(ESIboards[b])
     {
+      ESIstepSize = ESIarray[b].ESIstepsize;
       // If disabled drive setpoint to 0, else ramp it to value
       for(c=0;c<2;c++)
       {
@@ -596,6 +753,7 @@ void ESI_loop(void)
              else HVNEG_OFF;
           }
           Enable[b][c] = ESIarray[b].ESIchan[c].Enable;
+          ESILevelDetISR();
         }
         if(!ESIarray[b].ESIchan[c].Enable) Setpoints[b][c] = 0;
         else
@@ -1010,4 +1168,53 @@ void SaveESI2EEPROM(void)
     return;
   }
   SendACK;
+}
+
+void SetESIgateEnable(char *module, char *state)
+{
+  String token;
+
+  token = module;
+  int mod = token.toInt();
+  if((mod < 1) || (mod >2))
+  {
+    SetErrorCode(ERR_BADCMD);
+    SendNAK;
+    return;        
+  }
+  token = state;
+  if((token != "TRUE") && (token != "FALSE"))
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;        
+  }
+  if(token == "TRUE") ESIarray[mod -1].SystemGatable = true;
+  else ESIarray[mod -1].SystemGatable = false;
+  SendACK;
+}
+
+void SetESIramp(int  module, int ramp)
+{
+  if((module < 1) || (module >2))
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;        
+  }
+  ESIarray[module -1].ESIstepsize = ramp;
+  SendACK;
+}
+
+void GetESIramp(int module)
+{
+  if((module < 1) || (module >2))
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;        
+  }
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(ESIarray[module -1].ESIstepsize);
 }

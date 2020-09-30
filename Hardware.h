@@ -181,6 +181,40 @@ void spiDMAinit(void);
 void spiDmaTX(uint32_t* src, uint16_t count,void (*isr)() = NULL);
 void spiDmaWait(void);
 
+// Level detection module constants. This module can be installed in MIPS using teh aux connector
+// on the MIPS controller. There are a number of places where this module is used in the MIPS firmware.
+// The level detection module accepts an analog input and has a number of configurable modes. 
+// Examples:
+//        DCbias module to use offset or output voltage values, allows detection of changed
+//        input value and adjustment of outputs.
+//        Timing generation, changes can be used with the level detectors internal look up table
+//        to select a table number and then trigger the timing generator
+//        ARB delay adjust, changes can be used with the level detectors internal look up table
+//        to send a delay value to the selected ARB module. This delay is used in the edge detection
+//        operation.
+// TWI commands and constants
+#define TWI_LEVDET_SET_ADCMODE     0x01      // Set ADC mode, 0 thru 5, byte
+#define TWI_LEVDET_SET_LL          0x02      // Set LowerLimit, in volts, float
+#define TWI_LEVDET_SET_UL          0x03      // Set UpperLimit, in volts, float
+#define TWI_LEVDET_SET_THRES       0x04      // Set ADC threshold for detection filter, ADC counts, byte
+#define TWI_LEVDET_SET_ZP          0x05      // Set the zero point in volts, 0 to 3, float
+#define TWI_LEVDET_SET_TMODE       0x06      // Set the Table mode, 0= off, 1 = use raw ADC counts, 2 = use calibrated ADC value
+
+#define TWI_LEVDET_SERIAL          0x27      // This command enables the TWI port to process serial commands
+#define TWI_LEVDET_CMD             0x7F      // This command sends a ascii string to the serial command processor
+                                              // and returns the response through the TWI interface
+
+#define TWI_LEVDET_READ_ADCRAW     0x81      // Returns ADC raw counts, word
+#define TWI_LEVDET_READ_AVALIBLE   0x82      // Returns the number of bytes avalible in output buffer, 16 bit unsigned int
+#define TWI_LEVDET_READ_ADC        0x83      // Returns ADC voltage, in volts, float
+#define TWI_LEVDET_LOOKUP          0x84      // Use current ADC value to lookup response in the lookup table
+
+// Hardware interface signals
+#define LEVCHANGE                  13        // MIPS input pin used to detect change signal from the level module
+#define SCL1                       18        // Pin used for wire1 SCL signal
+#define SDA1                       19        // Pin used for wire1 SDA signal
+
+extern  int  LevelDetAdd;                    // Level detection module TWI address, used Wire1 interface
 
 // Prototypes
 void  GenerateBurst(int num);

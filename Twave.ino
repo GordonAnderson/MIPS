@@ -430,6 +430,7 @@ void TW_1_DIR_ISR(void)
     if (!DIdirTW[0]->activeLevel()) TDarray[0].Direction = true;
     else TDarray[0].Direction = false;        
   }
+  ValueChange = true;
   if(TDarray[TWboardAddress[0]].Rev >= 4)
   {
      if((TDarray[0].Direction) && ((TWcpld[TWboardAddress[0]] & TWMdir) != 0)) return;
@@ -464,6 +465,7 @@ void TW_2_DIR_ISR(void)
     if (!DIdirTW[TWboardAddress[1]]->activeLevel()) TDarray[TWboardAddress[1]].Direction = true;
     else TDarray[TWboardAddress[1]].Direction = false;        
   }
+  ValueChange = true;
   if(TDarray[TWboardAddress[1]].Rev >= 4)
   {
      if((TDarray[TWboardAddress[1]].Direction) && ((TWcpld[TWboardAddress[TWboardAddress[1]]] & TWMdir) != 0)) return;

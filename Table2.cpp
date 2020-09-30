@@ -39,6 +39,7 @@ TBLSTRT
 #include "Adafruit_GFX.h"
 #include "Adafruit_ILI9340.h"
 #include "SPI.h"
+#include "Wire.h"
 #include "Variants.h"    // This brings in most of the application specific include files
 
 #if TABLE2code
@@ -123,6 +124,10 @@ enum TableModes   TableMode   = LOC;
 int  TableClockFreq = VARIANT_MCK/128;
 
 bool IssueSoftwareTableStart = false;
+
+// Used for the compress and state hardware lines to the ARBs
+char Cstate;
+char Sstate;
 
 // Ramp generation variables
 #define  RAMP      0x80
@@ -280,17 +285,74 @@ bool Token2float(float *fval)
     return true;
 }
 
-// This command defines the current / active table number the system will use for all processing
+// The following two functions enable the use of the Level Detection module and its lookup table 
+// capability to trigger the table start. The value read from the lookup table is used to select 
+// the table number and then a trigger is issued. This function attached an ISR to the digital 
+// signal sent from the level module to MIPS.
+void ChangeTriggerISR(void)
+{
+  float fval;
+  byte *b;
+  int  i=0;
+
+  // Make sure we are in table mode and waiting for a trigger, if not exit
+  if((TableMode != TBL) || (TableTriggered)) return;
+  // Read the lookup value from the change detector
+  b = (byte *)&fval;
+  Wire1.beginTransmission(LevelDetAdd);
+  Wire1.write(TWI_LEVDET_LOOKUP);
+  Wire1.endTransmission();
+  Wire1.requestFrom((uint8_t)LevelDetAdd, (uint8_t)4);
+  while (Wire1.available()) b[i++] = Wire1.read();
+  DefineTableNumber((int)fval);
+  IssueSoftwareTableStart = true;
+}
+
+// TWIadd is the hex TWI address of the level detection module
+void TriggerOnChange(char *TWIadd)
+{
+  LevelDetAdd = strtol(TWIadd,NULL,16);
+  // Init the Level Detector
+  pinMode(SCL1,INPUT);
+  pinMode(SDA1,INPUT);
+  pinMode(LEVCHANGE,INPUT);
+  Wire1.begin();
+  Wire1.setClock(100000);
+  attachInterrupt(digitalPinToInterrupt(LEVCHANGE), ChangeTriggerISR, RISING);
+  SendACK;  
+}
+// End of level detection module trigger code
+
+// This command defines the current / active table number the system will use for all processing.
+// This function was updated 6/14/2020. This update allow the table number to be changed event in
+// table mode as long as the table is not triggered.
+
+// Table number = 1 thru NumTables
+int DefineTableNumber(int tblnum)  // Return -1 on error
+{
+  if((tblnum < 1) || (tblnum > NumTables)) return -1;
+  if(TableMode == TBL)
+  {
+    if((TableTriggered) || (TablesLoaded[tblnum - 1] <= 0)) return -1;
+    CT = --tblnum;
+    SetupTimer();
+    return 0;
+  }
+  CT = --tblnum;
+  return 0;
+}
+
+// Table number = 1 thru NumTables
 void SetTableNumber(int tblnum)
 {
-  if((tblnum >= 1) && (tblnum <= NumTables))
+  if(DefineTableNumber(tblnum) == -1)
   {
-    CT = --tblnum;
-    SendACK;
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
     return;
   }
-  SetErrorCode(ERR_BADARG);
-  SendNAK;
+  SendACK;
+  return;
 }
 
 // This command returns the current / active table number the system is using for all processing
@@ -922,7 +984,7 @@ int ParseEntry(int Count, char *TK)
             if(TK[0] == ';') return PEEndTables;
             return PENewTable;
         }
-        else if(((TK[0] >= 'A') && (TK[0] <= 'P')) || (TK[0] == 't') || (TK[0] == 'b') || (TK[0] == 'c') || (TK[0] == 'd') || (TK[0] == 'p'))
+        else if(((TK[0] >= 'A') && (TK[0] <= 'P')) || (TK[0] == 'r') || (TK[0] == 's') || (TK[0] == 't') || (TK[0] == 'b') || (TK[0] == 'c') || (TK[0] == 'd') || (TK[0] == 'p'))
         {
             // DIO channel number
             TE->Chan = TK[0];
@@ -932,19 +994,19 @@ int ParseEntry(int Count, char *TK)
             {
                if((TK = NextToken()) == NULL) break;
                TE->Value = TK[0];
-//             if(TK[0] == 't') Token2int(&TE->Value);  // This line makes no sense
             }
         }
         else
         {
-            // DC bias channel number or ARB commands (101 thru 108)
+            // DC bias channel number or ARB commands (101 thru 108, 'e' thru 'l')
             sscanf(TK,"%d",&i);
-            TE->Chan = i-1;
+            TE->Chan = i;
             if(!ExpectColon()) break;
             if(!Token2float(&fval)) break;
             *((float *)(&TE->Value)) = fval;  // Put the float value in the 32 bit int, for the ARB commands
             if(((i>=1)&&(i<=32)) || ((i&RAMP)!=0))
             {
+               TE->Chan = i-1;
                // Convert value to DAC counts
                TE->Value = DCbiasValue2Counts(TE->Chan & 0x1F, fval);
                if((i&(RAMP | INITIAL))==RAMP)
@@ -959,7 +1021,9 @@ int ParseEntry(int Count, char *TK)
                   uint8_t  *buf = (uint8_t *)&TE->Value;
                   int val = TE->Value;
                   buf[0] = 0;         // DAC command
-                  buf[1] = ((TE->Chan & 7) << 4) | (val >> 12);
+                  //buf[1] = ((TE->Chan & 7) << 4) | (val >> 12);
+                  buf[1] = ((DCbiasChan2DAC(TE->Chan) & 7) << 4) | (val >> 12);   // This fixes a bug in the emision production system, it has channel numbers
+                                                                                  // that have been remapped for PC board layout reasons. Sept 26, 2020
                   buf[2] = (val >> 4);
                   buf[3] = (val << 4);
               }
@@ -1007,6 +1071,22 @@ void ReportTable(int count)
 // This section of the file contains all real time processing routines.
 //
 //**************************************************************************************************
+
+// This function is called at LDAC trigger time to update the compress line that connects to the 
+// ARBs, all ARBs share the same compress line.
+void ProcessCompress(void)
+{
+  if(Cstate == '1') digitalWrite(ARBmode,HIGH);
+  else if(Cstate == '0') digitalWrite(ARBmode,LOW);
+}
+
+// This function is called at LDAC trigger time to update the sync line that connects to the 
+// ARBs, all ARBs share the same sync line.
+void ProcessSync(void)
+{
+  if(Sstate == '1') digitalWrite(ARBsync,HIGH);
+  else if(Sstate == '0') digitalWrite(ARBsync,LOW);
+}
 
 // This function will advance to the next table number that is active if the table advance
 // flag is true
@@ -1117,8 +1197,13 @@ void ProcessTables(void)
                 // Issue the table complete message
                 TableTriggered = false;
                 if((!SerialMute) && (TableResponse)) serial->println("TBLCMPLT\n");
+                if((TriggerMode == EDGE)||(TriggerMode == POS)||(TriggerMode == NEG)) 
+                {
+                  if((!SerialMute) && (TableResponse)) serial->println("TBLRDY\n");
+                  TableStopped = false;
+                }
                 // Exit the loop and setup for another trigger
-                break;
+                else break;
             }
             // Also exit this loop if the table mode is aborted.
             if(Aborted || LOCrequest)
@@ -1210,6 +1295,7 @@ void ProcessTables(void)
 // timer overflow.
 void SetupTimer(void)
 {
+    AtomicBlock< Atomic_RestoreState > a_Block;
     // Exit and do nothing if no tables are loaded
     if(TablesLoaded[CT] <= 0) return;
     // Setup / init the table pointers
@@ -1236,31 +1322,18 @@ void SetupTimer(void)
         j += 8;
       }
     }
-/*
-    if(DCbDarray[0] != NULL)
-    {
-       for(i=0;i<8;i++) if(DCbDarray[0] != NULL) Chan2Brd[i]    = (DCbDarray[0]->DACspi << 4) & 0x70;       else Chan2Brd[i]    = 0x20;
-       for(i=0;i<8;i++) if(DCbDarray[1] != NULL) Chan2Brd[i+8]  = ((DCbDarray[1]->DACspi << 4) & 0x70) | 1; else Chan2Brd[i+8]  = 0x21;
-       for(i=0;i<8;i++) if(DCbDarray[2] != NULL) Chan2Brd[i+16] = (DCbDarray[2]->DACspi << 4) & 0x70;       else Chan2Brd[i+16] = 0x00;
-       for(i=0;i<8;i++) if(DCbDarray[3] != NULL) Chan2Brd[i+24] = ((DCbDarray[3]->DACspi << 4) & 0x70) | 1; else Chan2Brd[i+24] = 0x01;
-    }
-    else if(DCbDarray[1] != NULL)
-    {
-       for(i=0;i<8;i++) Chan2Brd[i] = ((DCbDarray[1]->DACspi << 4) & 0x70) | 1;      
-    }
-*/
     // Setup counter, use MPT
     MPT.begin();  
     // Need to make sure the any pending interrupts are cleared on TRIGGER. So if we are in a hardware
     // triggered mode we will first enable the trigger to a dummy ISR and then detach and reattached to the
     // real ISR. We will wait a few microseconds for the interrupt to clear.
-    if(TriggerMode == EDGE) {DIhTrig.attached('R', CHANGE, Dummy_ISR); delayMicroseconds(10); DIhTrig.detach();}
-    if(TriggerMode == POS)  {DIhTrig.attached('R', RISING, Dummy_ISR); delayMicroseconds(10); DIhTrig.detach();}
+    if(TriggerMode == EDGE) {DIhTrig.attached('R', CHANGE, Dummy_ISR);  delayMicroseconds(10); DIhTrig.detach();}
+    if(TriggerMode == POS)  {DIhTrig.attached('R', RISING, Dummy_ISR);  delayMicroseconds(10); DIhTrig.detach();}
     if(TriggerMode == NEG)  {DIhTrig.attached('R', FALLING, Dummy_ISR); delayMicroseconds(10); DIhTrig.detach();}
     if(TriggerMode == SW)   {DIhTrig.detach(); MPT.setTrigger(TC_CMR_EEVTEDG_NONE);}
     if(TriggerMode == EDGE) {DIhTrig.attached('R', CHANGE, Trigger_ISR); MPT.setTrigger(TC_CMR_EEVTEDG_EDGE);}
     if(TriggerMode == POS)  {DIhTrig.attached('R', RISING, Trigger_ISR); MPT.setTrigger(TC_CMR_EEVTEDG_RISING);}
-    if(TriggerMode == NEG)  {DIhTrig.attached('R', FALLING, Trigger_ISR); MPT.setTrigger(TC_CMR_EEVTEDG_FALLING);}
+    if(TriggerMode == NEG)  {DIhTrig.attached('R', FALLING,Trigger_ISR); MPT.setTrigger(TC_CMR_EEVTEDG_FALLING);}
     if(ClockMode == EXT)    
     {
       MPT.setClock(TC_CMR_TCCLKS_XC2);
@@ -1311,7 +1384,7 @@ void SetupTimer(void)
       // first SetupNext call in the trigger ISR
       // Added TC_CMR_ASWTRG_TOGGLE, 5/5/18 this fixes bug when SW trigger and time 0 point.
       // Removed TC_CMR_ASWTRG_TOGGLE on 7/28/18. The toogle happen after the software trigger and after the first clock edge
-      // this caused a problem because there is no even to setup after this first clock pulse
+      // this caused a problem because there is no event to setup after this first clock pulse
       if(TEheader->Count == 0) MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE | TC_CMR_AEEVT_TOGGLE);
       else MPT.setTIOAeffect(TEheader->Count,TC_CMR_ACPA_TOGGLE | TC_CMR_ACPC_TOGGLE);
     }
@@ -1462,7 +1535,8 @@ void ClockSsetup(void)
 void ClockSstop(void)
 {
    TableStopped = true;
-   detachInterrupt(digitalPinToInterrupt(DI2));
+   //detachInterrupt(digitalPinToInterrupt(DI2));
+   detachInterrupt(digitalPinToInterrupt(SoftClockDIO));
    Counter=0;
 }
 
@@ -1565,17 +1639,17 @@ SetupNextEntryAgain2:
               SelectBoard(cb);                        // Added 9/3/17
             }
             else if((Tentry[i].Chan & RAMP)!=0) TABLEqueue(ProcessRamp,&Tentry[i]);
-            else if((Tentry[i].Chan >= 100) && (Tentry[i].Chan <= 107))
+            else if((Tentry[i].Chan >= 101) && (Tentry[i].Chan <= 108))  // 65 hex to 6C hex
             {
               // Here if ARB commands
-              if(Tentry[i].Chan == 100)      UpdateAux(0, *(float *)&Tentry[i].Value, false);     // 101, e
-              else if(Tentry[i].Chan == 101) UpdateAux(1, *(float *)&Tentry[i].Value, false);     // 102, f
-              else if(Tentry[i].Chan == 102) UpdateAux(2, *(float *)&Tentry[i].Value, false);     // 103, g
-              else if(Tentry[i].Chan == 103) UpdateAux(3, *(float *)&Tentry[i].Value, false);     // 104, h
-              else if(Tentry[i].Chan == 104) UpdateOffsetA(0, *(float *)&Tentry[i].Value, false); // 105, i
-              else if(Tentry[i].Chan == 105) UpdateOffsetB(0, *(float *)&Tentry[i].Value, false); // 106, j
-              else if(Tentry[i].Chan == 106) UpdateOffsetA(1, *(float *)&Tentry[i].Value, false); // 107, k
-              else if(Tentry[i].Chan == 107) UpdateOffsetB(1, *(float *)&Tentry[i].Value, false); // 108, l
+              if(Tentry[i].Chan == 101)      UpdateAux(0, *(float *)&Tentry[i].Value, false);     // 101, e
+              else if(Tentry[i].Chan == 102) UpdateAux(1, *(float *)&Tentry[i].Value, false);     // 102, f
+              else if(Tentry[i].Chan == 103) UpdateAux(2, *(float *)&Tentry[i].Value, false);     // 103, g
+              else if(Tentry[i].Chan == 104) UpdateAux(3, *(float *)&Tentry[i].Value, false);     // 104, h
+              else if(Tentry[i].Chan == 105) UpdateOffsetA(0, *(float *)&Tentry[i].Value, false); // 105, i
+              else if(Tentry[i].Chan == 106) UpdateOffsetB(0, *(float *)&Tentry[i].Value, false); // 106, j
+              else if(Tentry[i].Chan == 107) UpdateOffsetA(1, *(float *)&Tentry[i].Value, false); // 107, k
+              else if(Tentry[i].Chan == 108) UpdateOffsetB(1, *(float *)&Tentry[i].Value, false); // 108, l
               TABLEqueue(ProcessARB,true);
             }
             // if Chan is A through P its a DIO to process
@@ -1596,10 +1670,14 @@ SetupNextEntryAgain2:
                TimeDeltaMax += Tentry[i].Value;
                MPTtc.TC_RC = Theader->MaxCount + TimeDeltaMax;
             }
+            // if Chan is r then this triggers the ARB compress line, value defines state
+            else if(Tentry[i].Chan == 'r') {Cstate = Tentry[i].Value;                 TABLEqueue(ProcessCompress,true);}            
+            // if Chan is s then this triggers the ARB compress line, value defines state
+            else if(Tentry[i].Chan == 's') {Sstate = Tentry[i].Value;                 TABLEqueue(ProcessSync,true);}                        
             // if Chan is t then this is a trigger out pulse so queue it up for next ISR
-            else if(Tentry[i].Chan == 't') {QueueTriggerOut(Tentry[i].Value); TABLEqueue(ProcessTriggerOut,true);}
+            else if(Tentry[i].Chan == 't') {QueueTriggerOut(Tentry[i].Value);         TABLEqueue(ProcessTriggerOut,true);}
             // if Chan is b then this is a trigger burst pulse so queue it up for next ISR
-            else if(Tentry[i].Chan == 'b') {QueueBurst(Tentry[i].Value); TABLEqueue(ProcessBurst,true);}
+            else if(Tentry[i].Chan == 'b') {QueueBurst(Tentry[i].Value);              TABLEqueue(ProcessBurst,true);}
             // if Chan is c then this is a trigger for the compression table, value = A for ARB, T for Twave
             else if(Tentry[i].Chan == 'c') {QueueCompressionTrigger(Tentry[i].Value); TABLEqueue(ProcessCompressionTrigger,true);}
         }
@@ -1638,6 +1716,7 @@ void Dummy_ISR(void)
 
 void Trigger_ISR(void)
 {
+   if((TriggerMode == EDGE)||(TriggerMode == POS)||(TriggerMode == NEG)) MPT.softwareTrigger();  // Need to make sure its running!
    uint32_t csb = pio->PIO_ODSR & pin;
    if(MPT.getRAcounter() == 0)
    {
@@ -1657,7 +1736,7 @@ void Trigger_ISR(void)
    if(!MIPSconfigData.TableRetrig)
    {
      MPT.setTrigger(TC_CMR_EEVTEDG_NONE);
-     detachInterrupt(TRIGGER);
+     DIhTrig.detach();
    }
 }
 
@@ -1688,8 +1767,18 @@ inline void RCmatch_Handler(void)
    uint32_t csb = pio->PIO_ODSR & pin;  // Save board select and restore on exit
    if(StopRequest == true)
    {
+      // Here when the table has finished
+       AtomicBlock< Atomic_RestoreState > a_Block;
        StopTimer();
        StopRequest = false;
+       // If tabel is in external trigger mode then setup for a new
+       // trigger here.
+       if((TriggerMode == EDGE)||(TriggerMode == POS)||(TriggerMode == NEG)) // Not sure about this code / idea??
+       {
+          AdvanceTableNumber();
+          SetupTimer();
+          TableStopped = true;
+       }
        return;
    }
    if(RampEnabled) RampClock->softwareTrigger();
@@ -1900,7 +1989,7 @@ void DefineAdjustRange(int mint, int maxt)
   SendACK;
 }
 
-// Find the closest m/z in the list, must be at least within 10.
+// Find the closest m/z in the list, must be at least within mzerror.
 // Returns the index if fould else -1
 int FindCloseMZ(float mz)
 {

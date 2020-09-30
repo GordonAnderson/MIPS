@@ -346,6 +346,9 @@ void GetARBaltRng(int module);
 void SetARBrevAuxV(char *module, char *fval);
 void ClearARBrevAuxV(int module);
 
+void ARBdurationOnChange(char *TWIadd, char *ARBmask);
+void ARBdelayOnChange(char *TWIadd, char *ARBmask);
+
 void SetARBcompExt(char *module, char *state);
 void SetARBhwdISR(char *module, char *state);
 void SetARBsyncLine(int module, int line);

@@ -165,6 +165,9 @@ void EnableRamp(char *ena, char *freq);
 void ProcessRamp(volatile TableEntry *TE);
 void StartRampClock(void);
 void StopRampClock(void);
+void TriggerOnChange(char *TWIadd);
+
+int DefineTableNumber(int tblnum);
 #endif
 
 // Real time processing routines

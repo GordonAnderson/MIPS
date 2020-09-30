@@ -73,6 +73,8 @@ typedef struct
   ADCchan ADCchansLR[2];
   DACchan DACchansLR;      
   float   K;                 // Factor used to calculate DC from Quad Vp-p,  
+  // Resolving DC bias channel number
+  int     DCBchan;
 } RFAdata;                    
 
 // This structure saves the current state of the RFamp module
@@ -142,5 +144,7 @@ void RFAsetENA(char *Module, char *value);
 void RFAgetENA(int Module);
 void RFAsetK(char *Module, char *value);
 void RFAgetK(int Module);
+void RFAsetDCBchan(int Module, int value);
+void RFAgetDCBchan(int Module);
 
 #endif

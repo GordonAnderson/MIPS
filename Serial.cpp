@@ -71,13 +71,20 @@ bool echoMode = false;
 
 const Commands  CmdArray[] = 	{
 // General commands
+  {"NOP",  CMDfunction, 0, NULL},                        // Do nothing
   {"GVER",  CMDstr, 0, (char *)Version},                 // Report version
   {"ISPWR",  CMDstr, 0, (char *)OnMessage},              // Report power status
   {"SUPPLIES", CMDfunction, 0, (char *)ReportSupplies},  // Report main supply voltages
+  {"V12", CMDfunction, 0, (char *)ReportV12},            // Report 12 volt supply
+  {"V24", CMDfunction, 0, (char *)ReportV24},            // Report 24 volt supply
+  {"CUR", CMDfunction, 0, (char *)ReportCur},            // Report input current, in amps
+  {"PWR", CMDfunction, 0, (char *)ReportPower},          // Report input power in watts
   {"UPTIME", CMDfunction, 0, (char *)UpTime},            // Report uptime in mins
   {"GERR",  CMDint, 0, (char *)&ErrorCode},              // Report the last error code
   {"GNAME", CMDstr, 0, (char *)MIPSconfigData.Name},	   // Report MIPS system name
   {"SNAME", CMDstr, 1, (char *)MIPSconfigData.Name},     // Set MIPS system name
+  {"SSERWD",CMDint, 1, (char *)&SerialWatchDog},         // Set serial watch dog time in seconds, 0 to negative to disable
+  {"GSERWD",  CMDint, 0, (char *)&SerialWatchDog},       // Return serial watch dog time in seconds
   {"UUID", CMDfunction, 0, (char *)ReportUniqueID},      // Reports the microcontrollers unique ID, 128 bits, hex format  
   {"BIMAGE", CMDstr, 1, (char *)MIPSconfigData.BootImage}, // Set MIPS boot image
   {"ABOUT", CMDfunction, 0, (char *)About},              // Report about this MIPS system
@@ -149,6 +156,10 @@ const Commands  CmdArray[] = 	{
   {"DWRITE", CMDfunctionStr, 2, (char *)Dwrite},                  // Write an arduino pin, Set HIGH or LOW or PULSE or SPLUSE
   {"DSET", CMDfunctionStr, 2, (char *)Dset},                      // Sets an arduino pin, INPUT, PULLUP, OUTPUT  
   {"DEBUG", CMDfunction, 1, (char *)Debug},                       // Debug function, as needed
+  {"TWICMD", CMDfunctionLine, 0, (char *)&TWIscmd},               // Sends a command to the addressed TWI (Wire) address, TWICMD,brd,add,string. 
+                                                                  // add is decimal, string is \n terminated
+  {"TWI1CMD", CMDfunctionLine, 0, (char *)&TWI1scmd},             // Sends a command to the addressed TWI1 (Wire1) address, TWICMD,add,string.
+                                                                  // add is decimal, string is \n terminated
 // Clock generation functions
   {"GWIDTH",  CMDint, 0, (char *)&PulseWidth},                // Report the pulse width in microseconds
   {"SWIDTH",  CMDint, 1, (char *)&PulseWidth},                // Set the pulse width in microseconds
@@ -228,6 +239,9 @@ const Commands  CmdArray[] = 	{
   {"DCBCADCCO", CMDfunctionStr, 2, (char *)SetADCchannelAdjust},      // Connect the ADC change detector to the Channel Offset on select board
   {"SDCBCADCP", CMDfunctionStr, 2, (char *)SetADCgainPol},            // Sets the ADC gain polarity control DIO, Q thru X or NA
   {"GDCBCADCP", CMDfunction, 1, (char *)GetADCgainPol},               // Returns the ADC gain polarity control DIO
+
+  {"DCBCLDOF", CMDfunctionStr, 2, (char *)SetLevelDetOffsetAdjust},   // Connect the Level Detect module to the OffsetOffset on selected board
+  {"DCBCLDCH", CMDfunctionStr, 2, (char *)SetLevelDetChOffsetAdjust}, // Connect the Level Detect module to the Channel offset on selected board
 // DC bias module profile commands
   {"SDCBPRO", CMDfunctionLine, 0, (char *)SetDCbiasProfile},          // Sets a DC bias profile
   {"GDCBPRO", CMDfunction, 1, (char *)GetDCbiasProfile},              // Reports the select DC bias profile
@@ -316,6 +330,8 @@ const Commands  CmdArray[] = 	{
   {"RFAQUPDATE", CMDfunction, 1, (char *)RFAupdateQUAD},     // Updates the QUAD parameters
   {"SRFAGAIN", CMDfunctionStr, 2, (char *)RFAsetGain},       // Sets RF head level control gain, HIGH or LOW
   {"RRFAAMP", CMDfunction, 1, (char *)RFAreport},            // Reports RF amplifier parameters
+  {"SRFADCCH", CMDfunction, 2, (char *)RFAsetDCBchan},       // Sets the RF quad dc bias channel used for resolving DC
+  {"GRFADCCH", CMDfunction, 1, (char *)RFAgetDCBchan},       // Reports the RF quad dc bias channel used for resolving DC
 // DIO module commands
   {"SDIO", CMDfunctionStr, 2, (char *)SDIO_Serial},	        // Set DIO output bit
   {"GDIO", CMDfunctionStr, 1, (char *)GDIO_Serial},	        // Get DIO output bit
@@ -336,7 +352,16 @@ const Commands  CmdArray[] = 	{
   {"SHVPSUP", CMDfunction, 2, (char *)SetESImodulePos},     // Sets a  modules positive supply voltage
   {"SHVNSUP", CMDfunction, 2, (char *)SetESImoduleNeg},     // Sets a  modules negative supply voltage
   {"GHVITST", CMDbool, 0, (char *)&ESIcurrentTest},         // Returns TRUE is current testing is enabled, else FALSE
-  {"SHVITST", CMDbool, 1, (char *)&ESIcurrentTest},         // Set to TRUE to enable ESI current testing, FALSE to disable  
+  {"SHVITST", CMDbool, 1, (char *)&ESIcurrentTest},         // Set to TRUE to enable ESI current testing, FALSE to disable
+  {"SHVENAGT", CMDfunctionStr, 2, (char *)SetESIgateEnable},// Enables a selected module gate option. This will enable all modules
+                                                            // in the system for any enabled module. Factory setup command.
+                                                            // This should only bee enabled for firmware rev 4.0.
+                                                            // TRUE to enable FALSE to disable
+  {"SHVRAMP", CMDfunction, 2, (char *)SetESIramp},          // Set ESI voltage ramp rate, this will effect both channels on a module.
+                                                            // Units are V/0.1s
+  {"GHVRAMP", CMDfunction, 1, (char *)GetESIramp},          // Returns ESI voltage ramp rate for the selected module
+                                                            
+  
 // Table commands, tables enable pulse sequence generation
   {"STBLDAT", CMDfunction, 0, (char *)ParseTableCommand}, // Read the HVPS voltage table
   {"STBLCLK", CMDfunctionStr, 1, (char *)SetTableCLK},	  // Clock mode, EXT or INT
@@ -370,6 +395,9 @@ const Commands  CmdArray[] = 	{
   {"SADCMZCAL", CMDfunctionStr, 2, (char *)SetADCtoMZcal}, // Set ADC to m/z calibration parameters, m and b
   {"SMZTARG", CMDfunctionLine, 1, (char *)DefineMZtarget}, // Define target mz. parms index, mx, coount
   {"TRGTBLADC",CMDfunction, 0, (char *)TableTrigOnADC},    // Enables triggering on ADC change 
+  {"TRIGCHG", CMDfunctionStr, 1, (char *) TriggerOnChange},// This command enabled the change detection module and triggers
+                                                           // The table on detected change, TWIaddress in hex is passed to 
+                                                           // init the change module.
   #endif
 // Macro commands
   {"MRECORD", CMDfunctionStr, 1, (char *) MacroRecord},    // Turn on macro recording into the filename argument
@@ -606,6 +634,14 @@ const Commands  CmdArray[] = 	{
   {"GALTRENA", CMDfunction, 1, (char *)GetARBaltRngEna},             // Returns alternate waveform range enable flag for selected module
   {"SALTRNG",  CMDfunctionStr,2, (char *)SetARBaltRng},              // Sets the alternate waveform range in volts, for selected module
   {"GALTRNG",  CMDfunction,1, (char *)GetARBaltRng},                 // Returns the alternate waveform range in volts, for selected module
+
+
+  {"CARBADLY",  CMDfunctionStr,2, (char *)ARBdelayOnChange},         // Enables level detector to change delay time in mS for the selected ARB modules
+                                                                     // parameters, TWI address in hex of the level detector (hex), ARB mask that defines the
+                                                                     // ARB modules to change (hex)
+  {"CARBADUR",  CMDfunctionStr,2, (char *)ARBdurationOnChange},      // Enables level detector to change duration time in mS for the selected ARB modules
+                                                                     // parameters, TWI address in hex of the level detector (hex), ARB mask that defines the
+                                                                     // ARB modules to change (hex)
 // ARB commands for application of reverse direction aux voltage change
   {"SARBREVA", CMDfunctionStr,2, (char *)SetARBrevAuxV},             // Sets the reverse direction ARB AUX output voltage, for selected module
   {"CLRARBRV", CMDfunction,21, (char *)ClearARBrevAuxV},             // Clears the reverse direction ARB AUX output voltage application, for selected module
@@ -711,35 +747,156 @@ const Commands  CmdArray[] = 	{
 
 void Debug(int function)
 {
-   #if FAIMSFBcode
-   static int i = 0;
+  static DIhandler DI;
+  char   c;
 
-   if(i==0)
-   {
-      Wire1.begin();
-      Wire1.setClock(400000);
+  if(function == 1)
+  {
+    for(int i=0;i<MaxDIhandlers;i++) 
+    {
+      serial->println((uint)DI.handlers[i]);
+    }
+    return;
+  }
+  if(function == 2)
+  {
+    for(int i=0;i<MaxDIhandlers;i++) 
+    {
+      if(i==0)
+      {
+        serial->print("Total interrupts: ");
+        serial->println(DI.NumInterrupts);
+      }
+      if(DI.handlers[i] != NULL)
+      {
+         c = DI.handlers[i]->di;
+         if(c == 0) c = ' ';
+         serial->print(i); serial->print(",");
+         serial->print(c); serial->print(",");
+         serial->print(DI.handlers[i]->mode); serial->print(","); 
+         serial->println((uint)DI.handlers[i]->userISR);
+      }
+    }
+    return;
+  }
+  serial->println(DI.NumHandlers);
+}
 
-      setSC16IS740wire(&Wire1);
-      init_SC16IS740(0x48);
-   }
-   i = -1;
-   serial->println(writeSC16IS740char(0x48, 'g'));
-   serial->println(readSC16IS740char(0x48));
-   #endif
-   if(function == 1) digitalWrite(ARBsync, HIGH);
-   if(function == 0) digitalWrite(ARBsync, LOW);
-   if(function == 2)
-   {
-      digitalWrite(ARBsync, HIGH);
-      digitalWrite(ARBsync, LOW);
-   }
-   if(function == 3) digitalWrite(ARBmode, HIGH);
-   if(function == 4) digitalWrite(ARBmode, LOW);
-   if(function == 5)
-   {
-      digitalWrite(ARBmode, HIGH);
-      digitalWrite(ARBmode, LOW);
-   }
+void TWIscmd(void)
+{
+  
+  char        *Token;
+  char        ch;
+  uint8_t     addr;
+  uint8_t     brd;
+  String      sToken;
+
+  while(true)
+  {
+    // Get address and send TWIcmd to the device on Wire1
+    GetToken(true);
+    if ((Token = GetToken(true)) == NULL) break;
+    sToken = Token;
+    brd = sToken.toInt();
+    GetToken(true);
+    if ((Token = GetToken(true)) == NULL) break;
+    sToken = Token;
+    addr = sToken.toInt();
+    GetToken(true);
+    // Send the command to TWI device
+    SelectBoard(brd);
+    AcquireTWI();
+    Wire.beginTransmission(addr);
+    Wire.write(TWI_CMD);
+    // Send string and limit length to 32 bytes
+    for(int i=0;i<30;i++)
+    {
+      if(i==29) 
+      {
+        Wire.write('\n');
+        break;
+      }
+      ch = RB_Get(&RB);
+      if(ch == 0xFF) break;
+      Wire.write(ch);
+      if(ch == '\n') break;
+    }
+    Wire.endTransmission();
+    // Read reply and send to host
+    unsigned long tm = millis();
+    while(true)
+    {
+      int j = Wire.requestFrom((int)addr, 32);
+      for(int i=0;i<j;i++)
+      {
+        ch = Wire.read();
+        if(ch != 0xFF) serial->write(ch);
+        if(ch == '\n') 
+        {
+          ReleaseTWI();
+          return;
+        }
+      }
+      if((tm+250) < millis()) break;
+    }
+  }
+  ReleaseTWI();
+}
+
+// Called with the command string in the ring buffer
+void TWI1scmd(void)
+{
+  char        *Token;
+  char        ch;
+  uint8_t     addr;
+  String      sToken;
+  static bool inited = false;
+
+  if(!inited)
+  {
+    Wire1.begin();
+    Wire1.setClock(100000);
+    inited = true;
+  }
+  while(true)
+  {
+    // Get address and send TWIcmd to the device on Wire1
+    GetToken(true);
+    if ((Token = GetToken(true)) == NULL) break;
+    sToken = Token;
+    addr = sToken.toInt();
+    GetToken(true);
+    // Send the command to TWI device
+    Wire1.beginTransmission(addr);
+    Wire1.write(TWI_CMD);
+    // Send string and limit length to 32 bytes
+    for(int i=0;i<30;i++)
+    {
+      if(i==29) 
+      {
+        Wire1.write('\n');
+        break;
+      }
+      ch = RB_Get(&RB);
+      if(ch == 0xFF) break;
+      Wire1.write(ch);
+      if(ch == '\n') break;
+    }
+    Wire1.endTransmission();
+    // Read reply and send to host
+    unsigned long tm = millis();
+    while(true)
+    {
+      int j = Wire1.requestFrom((int)addr, 32);
+      for(int i=0;i<j;i++)
+      {
+        ch = Wire1.read();
+        if(ch != 0xFF) serial->write(ch);
+        if(ch == '\n') return;
+      }
+      if((tm+250) < millis()) break;
+    }
+  }
 }
 
 void Dread(int pin)
@@ -918,6 +1075,8 @@ void TWItalk(int brd, int TWIadd)
 
 void TWI1talk(int brd, int TWIadd)
 {
+  pinMode(18,INPUT);
+  pinMode(19,INPUT);
   twitalk(&Wire1, brd, TWIadd);
 }
 
@@ -1276,6 +1435,7 @@ void ExecuteCommand(const Commands *cmd, int arg1, int arg2, char *args1, char *
       }
       break;
     case CMDfunction:
+      if(cmd->pointers.funcVoid == NULL) break;
       if (cmd->NumArgs == 0) cmd->pointers.funcVoid();
       else if (cmd->NumArgs == 1) cmd->pointers.func1int(arg1);
       else if (cmd->NumArgs == 2) cmd->pointers.func2int(arg1, arg2);

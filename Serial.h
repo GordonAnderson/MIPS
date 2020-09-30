@@ -29,12 +29,16 @@ extern void About(void);
 extern void SetModuleRev(void);
 extern void ProcessEthernet(void);
 
+extern int SerialWatchDog;
+
 extern Adafruit_ILI9340 tft;
 
 //extern HardwareSerial *serial;
 
 // Ring buffer size
 #define RB_BUF_SIZE		4096
+
+#define TWI_CMD       0x7F
 
 extern char *SelectedACKonlyString;
 
@@ -115,6 +119,8 @@ extern Ring_Buffer  RB;
 extern const char Version[] PROGMEM;
 
 // Function prototypes
+void TWIscmd(void);
+void TWI1scmd(void);
 void Debug(int function);
 void USBpower(char *bval);
 void CheckImage(char *filename);

@@ -31,6 +31,7 @@
 
 #if RFdriver2 == false
 
+// PLL is not stable below 250,000Hz
 #define MinFreq    400000
 #define MaxFreq    5000000
 
@@ -85,6 +86,7 @@ int  TuneRFBoard;
 #define TUNE_SCAN_UP 2
 
 #define MaxNumDown 5
+#define MAXSTEP    100000
 
 DIhandler *DIh[2][2];
 void (*GateTriggerISRs[2][2])(void) = {RF_A1_ISR, RF_A2_ISR, RF_B1_ISR, RF_B2_ISR};
@@ -379,23 +381,22 @@ void RFcontrol(void)
     {
       if (Powers[board][chan] > RFDDarray[board].RFCD[chan].MaxPower) RFDDarray[board].RFCD[chan].DriveLevel -= 0.1;
       if (RFDDarray[board].RFCD[chan].DriveLevel < 0) RFDDarray[board].RFCD[chan].DriveLevel = 0;
+      // Only process if  this channel is not gated off
+      if(!DIh[board][chan]->test(RFDDarray[board].RFgateTrig[chan])) break;
       if ((SelectedRFBoard == board) && ((SelectedRFChan & 1) == chan))
       {
         RFCD.DriveLevel = RFDDarray[board].RFCD[chan].DriveLevel;
       }
       // If we are in auto mode (closed loop control) then adjust drive as needed to maintain Vpp
-      if ((RFDDarray[board].RFCD[chan].RFmode == RF_AUTO) && (DIh[board][chan]->activeLevel()))
+      if (RFDDarray[board].RFCD[chan].RFmode == RF_AUTO)
       {
         if(((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) > RFDDarray[board].RFCD[chan].Setpoint) es = ((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) / RFDDarray[board].RFCD[chan].Setpoint;
         if(((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) < RFDDarray[board].RFCD[chan].Setpoint) es = RFDDarray[board].RFCD[chan].Setpoint / ((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2);
-
         es = abs(RFDDarray[board].RFCD[chan].Setpoint - ((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2));
-        
-        g = 1;
-//      if(RFDDarray[board].Rev == 2) g = (es - 1.0) * 100;
-        if((RFDDarray[board].Rev == 2) || (RFDDarray[board].Rev == 4)) g = es * 0.05;
+        g = es * 0.05;
         if (((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) > RFDDarray[board].RFCD[chan].Setpoint) RFDDarray[board].RFCD[chan].DriveLevel -= .01 * g;
         else RFDDarray[board].RFCD[chan].DriveLevel += .01 * g;
+        RFDDarray[board].RFCD[chan].DriveLevel = (float)((int)(RFDDarray[board].RFCD[chan].DriveLevel * 100)) / 100.0;        
         if (RFDDarray[board].RFCD[chan].DriveLevel < 0) RFDDarray[board].RFCD[chan].DriveLevel = 0;
         if (RFDDarray[board].RFCD[chan].DriveLevel > RFDDarray[board].RFCD[chan].MaxDrive) RFDDarray[board].RFCD[chan].DriveLevel = RFDDarray[board].RFCD[chan].MaxDrive;
         if ((SelectedRFBoard == board) && ((SelectedRFChan & 1) == chan))
@@ -436,7 +437,7 @@ void RFdriver_tune(void)
      // Set drive to 10%
      RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].DriveLevel = 10;
      Tuning = true;
-     TuneStep = 100000;
+     TuneStep = MAXSTEP;
      Freq = 1000000;
      Last = Max = 0;
      NumDown = -MaxNumDown;
@@ -470,16 +471,16 @@ void RFdriver_tune(void)
    switch (TuneState)
    {
      case TUNE_SCAN_DOWN:
-        if(Current > Max)
-        {
-          Max = Current;
-          FreqMax = RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq;
-        }
+//        if(Current > Max)
+//        {
+//          Max = Current;
+//          FreqMax = RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq;
+//        }
         if(Current <= (Last + 1)) NumDown++;
         else 
         {
           NumDown = 0;
-          if(TuneStep == 100000) NumDown = -MaxNumDown;
+          if(TuneStep == MAXSTEP) NumDown = -MaxNumDown;
         }
         RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq -= TuneStep;
         if((NumDown >= MaxNumDown) || (RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq < MinFreq))
@@ -487,8 +488,14 @@ void RFdriver_tune(void)
           TuneState = TUNE_SCAN_UP;
           RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq = Freq;
           NumDown = 0;
-          if(TuneStep == 100000) NumDown = -MaxNumDown;
+          if(TuneStep == MAXSTEP) NumDown = -MaxNumDown;
         }
+        if(Current > Max)  // Move this code here to force tune system to not use the limit value
+        {
+          Max = Current;
+          FreqMax = RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq;
+        }
+        if(Current <= (Last + 1)) NumDown++;
         break;
      case TUNE_SCAN_UP:
         if(Current > Max)
@@ -500,7 +507,7 @@ void RFdriver_tune(void)
         else 
         {
           NumDown = 0;
-          if(TuneStep == 100000) NumDown = -MaxNumDown;
+          if(TuneStep == MAXSTEP) NumDown = -MaxNumDown;
         }
         RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq += TuneStep;
         if((NumDown >= MaxNumDown) || (RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq > MaxFreq))
@@ -526,7 +533,11 @@ void RFdriver_tune(void)
             TuneReport = false;
             return;
           }
-          else TuneStep /= 10;
+          else 
+          {
+            if(TuneStep == MAXSTEP) TuneStep = 10000;
+            else TuneStep /= 10;
+          }
           TuneState = TUNE_SCAN_DOWN;
           NumDown = 0;
         }
@@ -608,10 +619,12 @@ void RFdriver_loop(void)
       delay(2);
       if((i & 1) == 0)
       {
+        //AtomicBlock< Atomic_RestoreState > a_Block;
         for (j = 0; j < 5; j++) if (SetPLL2freq(RFDD.CLOCKadr, RFDD.RFCD[i & 1].Freq) == 0) break;        
       }
       else
       {
+        //AtomicBlock< Atomic_RestoreState > a_Block;
         for (j = 0; j < 5; j++) if (SetPLL3freq(RFDD.CLOCKadr, RFDD.RFCD[i & 1].Freq) == 0) break;                
       }
       LastFreq[SelectedRFBoard][i & 1] = RFDD.RFCD[i & 1].Freq;
@@ -634,11 +647,14 @@ void RFdriver_loop(void)
   for (i = 0; i < NumberOfRFChannels; i++)
   {
     SelectedRFBoard = BoardFromSelectedChannel(i);
-    if ((RFDD.RFgateDI[i & 1] != DIh[SelectedRFBoard][i & 1]->di) || (RFDD.RFgateTrig[SelectedRFChan & 1] != DIh[SelectedRFBoard][i]->mode))
+//    if ((RFDD.RFgateDI[i & 1] != DIh[SelectedRFBoard][i & 1]->di) || (RFDD.RFgateTrig[SelectedRFChan & 1] != DIh[SelectedRFBoard][i]->mode))
+    if ((RFDD.RFgateDI[i & 1] != DIh[SelectedRFBoard][i & 1]->di) || (RFDD.RFgateTrig[SelectedRFChan & 1] != DIh[SelectedRFBoard][i & 1]->mode))
     {
       DIh[SelectedRFBoard][i & 1]->detach();
 //      DIh[SelectedRFBoard][i & 1]->attached(RFDD.RFgateDI[i & 1], RFDD.RFgateTrig[i & 1], GateTriggerISRs[SelectedRFBoard][i & 1]);
       DIh[SelectedRFBoard][i & 1]->attached(RFDD.RFgateDI[i & 1], CHANGE, GateTriggerISRs[SelectedRFBoard][i & 1]);
+      // Call the ISR to process the change
+      GateTriggerISRs[SelectedRFBoard][i & 1]();
     }
   }
   // Read all the voltage monitors and caculate all the RF head power
@@ -654,6 +670,7 @@ void RFdriver_loop(void)
     {
       if(RFDD.Rev == 4) iStat = AD7994(RFDD.ADCadr, ADCvals);
       else iStat = AD7998(RFDD.ADCadr, ADCvals);
+      //serial->println(ADCvals[7]);
       if((iStat != 0) || (ValueChange))
       {
         i++;
@@ -686,6 +703,9 @@ void RFdriver_loop(void)
       else if(RFDD.Rev <= 1)
       {
         // This is a linear calibration using the data structure parameters
+//        serial->print(i);
+//        serial->print(", ");
+//        serial->println(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan]);
         Pv = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan], &RFDD.RFCD[i & 1].RFpADCchan);
         Nv = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan);
       }
@@ -695,8 +715,8 @@ void RFdriver_loop(void)
       // Limit test
       if (RFpVpps[SelectedRFBoard][i & 1] < 0) RFpVpps[SelectedRFBoard][i & 1] = 0;
       if (RFnVpps[SelectedRFBoard][i & 1] < 0) RFnVpps[SelectedRFBoard][i & 1] = 0;
-      if (abs(RFpVpps[SelectedRFBoard][i & 1]) > MaxRFVoltage) MaxRFVoltage = abs(RFpVpps[SelectedRFBoard][i & 1]);
-      if (abs(RFnVpps[SelectedRFBoard][i & 1]) > MaxRFVoltage) MaxRFVoltage = abs(RFnVpps[SelectedRFBoard][i & 1]);
+      //if (abs(RFpVpps[SelectedRFBoard][i & 1]) > MaxRFVoltage) MaxRFVoltage = abs(RFpVpps[SelectedRFBoard][i & 1]);
+      //if (abs(RFnVpps[SelectedRFBoard][i & 1]) > MaxRFVoltage) MaxRFVoltage = abs(RFnVpps[SelectedRFBoard][i & 1]);
       // Calculate RF head power
       V = Counts2Value(ADCvals[RFDD.RFCD[i & 1].DriveVADCchan.Chan], &RFDD.RFCD[i & 1].DriveVADCchan);
       I = Counts2Value(ADCvals[RFDD.RFCD[i & 1].DriveIADCchan.Chan], &RFDD.RFCD[i & 1].DriveIADCchan);
@@ -704,6 +724,8 @@ void RFdriver_loop(void)
       Powers[SelectedRFBoard][i & 1] = Filter * (V * I) + (1 - Filter) * Powers[SelectedRFBoard][i & 1];
       if (Powers[SelectedRFBoard][i & 1] < 0) Powers[SelectedRFBoard][i & 1] = 0;
     }
+    if (abs(RFpVpps[SelectedRFBoard][i & 1]) > MaxRFVoltage) MaxRFVoltage = abs(RFpVpps[SelectedRFBoard][i & 1]);
+    if (abs(RFnVpps[SelectedRFBoard][i & 1]) > MaxRFVoltage) MaxRFVoltage = abs(RFnVpps[SelectedRFBoard][i & 1]);
   }
   // Reselect the active channel's board
   SelectedRFBoard = BoardFromSelectedChannel(SelectedRFChan);
@@ -721,26 +743,86 @@ void RFdriver_loop(void)
   RFCD = RFDD.RFCD[SelectedRFChan & 1]; 
 }
 
+void EnablePLL2(int add, int brd, bool state)
+{
+  AcquireTWI();
+  int cb=SelectedBoard();
+  SelectBoard(brd);
+  SetPLL2enable(add,state);
+  if(cb != brd) SelectBoard(cb);
+  ReleaseTWI();  
+}
+
+void EnablePLL3(int add, int brd, bool state)
+{
+  AcquireTWI();
+  int cb=SelectedBoard();
+  SelectBoard(brd);
+  SetPLL3enable(add,state);
+  if(cb != brd) SelectBoard(cb);
+  ReleaseTWI();    
+}
+
 // Gate ISR functions
 void RF_A1_ISR(void)
 {
-  if(DIh[0][0]->test(RFDDarray[0].RFgateTrig[0])) analogWrite(RFDDarray[0].RFCD[0].PWMchan, (RFDDarray[0].RFCD[0].DriveLevel * PWMFS) / 100);
-  else analogWrite(RFDDarray[0].RFCD[0].PWMchan, 0);
+  if(DIh[0][0]->test(RFDDarray[0].RFgateTrig[0])) 
+  {
+    analogWrite(RFDDarray[0].RFCD[0].PWMchan, (RFDDarray[0].RFCD[0].DriveLevel * PWMFS) / 100);
+    if(AcquireTWI()) EnablePLL2(RFDDarray[0].CLOCKadr,0,true);
+    else TWIqueue(EnablePLL2,RFDDarray[0].CLOCKadr,0,true);
+  }
+  else 
+  {
+    analogWrite(RFDDarray[0].RFCD[0].PWMchan, 0);
+    if(AcquireTWI()) EnablePLL2(RFDDarray[0].CLOCKadr,0,false);
+    else TWIqueue(EnablePLL2,RFDDarray[0].CLOCKadr,0,false);
+  }
 }
 void RF_A2_ISR(void)
 {
-  if(DIh[0][1]->activeLevel()) analogWrite(RFDDarray[0].RFCD[1].PWMchan, (RFDDarray[0].RFCD[1].DriveLevel * PWMFS) / 100);
-  else analogWrite(RFDDarray[0].RFCD[1].PWMchan, 0);
+  if(DIh[0][1]->test(RFDDarray[0].RFgateTrig[1])) 
+  {
+    analogWrite(RFDDarray[0].RFCD[1].PWMchan, (RFDDarray[0].RFCD[1].DriveLevel * PWMFS) / 100);
+    if(AcquireTWI()) EnablePLL3(RFDDarray[0].CLOCKadr,0,true);
+    else TWIqueue(EnablePLL3,RFDDarray[0].CLOCKadr,0,true);
+  }
+  else 
+  {
+    analogWrite(RFDDarray[0].RFCD[1].PWMchan, 0);
+    if(AcquireTWI()) EnablePLL3(RFDDarray[0].CLOCKadr,0,false);
+    else TWIqueue(EnablePLL3,RFDDarray[0].CLOCKadr,0,false);
+  }
 }
 void RF_B1_ISR(void)
 {
-  if(DIh[1][0]->activeLevel()) analogWrite(RFDDarray[1].RFCD[0].PWMchan, (RFDDarray[1].RFCD[0].DriveLevel * PWMFS) / 100);
-  else analogWrite(RFDDarray[1].RFCD[0].PWMchan, 0);
+  if(DIh[1][0]->test(RFDDarray[1].RFgateTrig[0])) 
+  {
+    analogWrite(RFDDarray[1].RFCD[0].PWMchan, (RFDDarray[1].RFCD[0].DriveLevel * PWMFS) / 100);
+    if(AcquireTWI()) EnablePLL2(RFDDarray[1].CLOCKadr,1,true);
+    else TWIqueue(EnablePLL2,RFDDarray[1].CLOCKadr,1,true);
+  }
+  else 
+  {
+    analogWrite(RFDDarray[1].RFCD[0].PWMchan, 0);
+    if(AcquireTWI()) EnablePLL2(RFDDarray[1].CLOCKadr,1,false);
+    else TWIqueue(EnablePLL2,RFDDarray[1].CLOCKadr,1,false);
+  }
 }
 void RF_B2_ISR(void)
 {
-  if(DIh[1][1]->activeLevel()) analogWrite(RFDDarray[1].RFCD[1].PWMchan, (RFDDarray[1].RFCD[1].DriveLevel * PWMFS) / 100);
-  else analogWrite(RFDDarray[1].RFCD[1].PWMchan, 0);
+  if(DIh[1][1]->test(RFDDarray[1].RFgateTrig[1])) 
+  {
+    analogWrite(RFDDarray[1].RFCD[1].PWMchan, (RFDDarray[1].RFCD[1].DriveLevel * PWMFS) / 100);
+    if(AcquireTWI()) EnablePLL3(RFDDarray[1].CLOCKadr,1,true);
+    else TWIqueue(EnablePLL3,RFDDarray[1].CLOCKadr,1,true);
+  }
+  else 
+  {
+    analogWrite(RFDDarray[1].RFCD[1].PWMchan, 0);
+    if(AcquireTWI()) EnablePLL3(RFDDarray[1].CLOCKadr,1,false);
+    else TWIqueue(EnablePLL3,RFDDarray[1].CLOCKadr,1,false);
+  }
 }
 
 //

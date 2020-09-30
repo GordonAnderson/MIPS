@@ -457,3 +457,28 @@ float ReadVin(void)
   ADCvalue = ADCvalue / 100;
   return ((((float)ADCvalue * 3.3) / 4096.0) * 11.0);
 }
+
+void ReportV12(void)
+{
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(((float)analogRead(1)/4095.0) * 3.3 * 6.3);
+}
+void ReportV24(void)
+{
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(((float)analogRead(0)/4095.0) * 3.3 * 12.0);  
+}
+void ReportCur(void)
+{
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(((float)analogRead(3)/4095.0) * 3.3 / 0.2); 
+}
+void ReportPower(void)
+{
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println((((float)analogRead(0)/4095.0) * 3.3 * 12.0) * (((float)analogRead(3)/4095.0) * 3.3 / 0.2));
+}

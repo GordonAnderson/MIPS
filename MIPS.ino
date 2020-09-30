@@ -867,6 +867,67 @@
 //          - Updated the LDAC capture after abort from a segment play
 //          - Added report current 
 //          - Added force trigger command
+//  1.175, April 8, 2020
+//      1.) Added the r, and s table commands that allow control of the compress and sync hardware lines
+//          that are shared by all ARBs
+//      2.) Fixed a bug in the table that would not allow the ARB module 1 AUX command to function
+//  1.176, April 16, 2020
+//      1.) Fixed a table bug when in external trigger mode and the trigger is shared with another function the
+//          interrupts would fail after the first event.
+//      2.) Added level det offset control to DCbias modules
+//      3.) Updated the external trigger on table mode. The external trigger prep is now done as soon as the table 
+//          finishes.
+//  1.177, April 25,2020
+//      1.) Added commands for input voltage, current, and power. Requires power input module 3.2
+//      2.) Added command to allow serial watchdog to reset the serial port when there is no activity
+//      3.) Updated the supplies command to also output current and also to send ACK
+//      4.) Added no op command
+//  1.178, May 3, 2020
+//      1.) Fixed a long standing issue with the RF driver level readbacks, needed a delay in the bit banged 
+//          TWI driver used for the AD7998
+//  1.179, May 22, 2020
+//      1.) Fixed bug in RFdriver gateing, only channel 1 of board A worked properly
+//      2.) Added gatting off of the PLL clock generator when the RF channel is gated off
+//      3.) Fixed bug with the warning LED when RF driver is gated off
+//      4.) Added the TWI command functions
+//  1.180, June 2, 2020
+//      1.) Fixed a timing bug on the bit banged TWI interface, have a delay in the wrong place.
+//  1.181, June 9, 2020
+//      1.) Problem with RF driver auto tune, the algorithm finds a peak at half the resonate freq.
+//          The result has always been at the low frequency limit of 400KHz, this problem only happened
+//          after I reduced the minimum frequency to 400KHz. Changed routine to not use the lower limit value
+//  1.182, June 11, 2020
+//      1.) Improved the RF driver closed loop control. Removed the hunting issue with the RF level.
+//      2.) Fixed a gating bug that cause the system to ignore mode changes
+//  1.183, June 20, 2020
+//      1.) Updated table number selection function to function while in table mode and waiting for a trigger.
+//      2.) Added table trigger using the external level detection module and to read the lookup table to select
+//          the table number to use.
+//      3.) Added ARB command to use the level detection module to change the alternate waveform delay parameter.
+//      4.) Added ARB command to use the level detection module to change the alternate waveform duration parameter.
+//  1.184, July 29, 2020
+//      1.) Added the gatting mode that used thee level detection module to the ESI driver. This only works on the
+//          firmware rev 4.0. Its desiged to work with hardware rev 3.2 with dual ESI outputs.
+//      2.) Fixed a table bug when in external trigger mode and using multiple tables and the auto advance feature.
+//          This bug was created with the 1.176 upgrade.
+//      3.) Lowered the low freq limit to 100KHz on RFamp / QUAD
+//  1.185, August 17, 2020
+//      1.) Updated the RFamp/QUAD function to turn off the clock when the QUAD is disabled.
+//      2.) Add the SWR to the main screen for tuning
+//      3.) Need to add the ability to define the QUAD's dcbias channels
+//  1.186, September 7, 2020
+//      1.) Added ability to set the resolving DC bias channels for the RFamp module
+//      2.) Updated the AD7998 ADC read function to allow the mux to stabalize without the need to read twice,
+//          resulted in a 2x speed increase.
+//  1.187, September 23, 2020
+//      1.) Removed a bug that happened only with two RF drivers. Adjusting channel 3 would change channel 1 freq.
+//          Also adjusting channel 4 would change channel 2 freq. This was a bug in the new gatting function.
+//      2.) Added DCbias error testing hold off when pulse based Twave is reversed.
+//  1.188, September 28,2020
+//      1.) Fixed a bug in the channel mapping for the rev 3.0 and 4.0 emsion filament systems.
+//
+// We still have the problem with the AD7998 bit bang reading routine. Problem shows up on channel 2 of RF driver 
+// at board select A. Using hardware TWI interface solves the issue.
 //
 //  BUG!, Twave rev 2 board require timer 6 to be used and not the current timer 7, the code need to be made
 //        rev aware and adjust at run time. (Oct 28, 2016)
@@ -976,7 +1037,7 @@ uint32_t BrightTime=0;
    #define RFdriver2vf ""
 #endif
 
-const char Version[] PROGMEM = "Version 1.174" FAIMSFBvf FAIMSvf HOFAIMSvf TABLE2vf RFdriver2vf ", Mar 24, 2020";
+const char Version[] PROGMEM = "Version 1.188" FAIMSFBvf FAIMSvf HOFAIMSvf TABLE2vf RFdriver2vf ", Sept 28, 2020";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -999,6 +1060,8 @@ extern DialogBox ModuleConfig;
 extern DialogBox MacroOptions;
 
 #define MaxMainMenuEntries  16
+
+int SerialWatchDog=0;
 
 void SerialPortReset(void);
 void DisplayAbout(void);
@@ -1971,9 +2034,26 @@ bool SerialNavigation(char c)
   return false;
 }
 
+void SerialWD(void)
+{
+  static ulong lastcharT;
+
+  if(SerialUSB.available() > 0) 
+  {
+    lastcharT = millis();
+    return;
+  }
+  if(SerialWatchDog <= 0) return;
+  if(((millis()-lastcharT)/(ulong)1000) < SerialWatchDog) return;
+  // If here rest the comm power
+  SerialPortReset();
+  lastcharT = millis();
+}
+
 void ReadAllSerial(void)
 {
   WDT_Restart(WDT);
+  SerialWD();
   // Put serial received characters in the input ring buffer
   //if(SerialUSB.dtr()) while (SerialUSB.available() > 0)  // Mike's app does not set DTR! maybe make this an options and default to not needed
   while (SerialUSB.available() > 0)
@@ -2224,12 +2304,17 @@ void PowerControl(void)
   digitalWrite(POWER,LOW);
 }
 
-// ADC channel 0 is 24VDC supply
-// ADC channel 1 is 12VDC supply
+// ADC channel 0 is 24VDC supply, rev 3.1 power module
+// ADC channel 1 is 12VDC supply, rev 3.1 power module
+// ADC channel 3 is input current, rev 3.2 power module
 void ReportSupplies(void)
 {
+  SendACKonly;
+  if(SerialMute) return;
   serial->print("24 volt supply: ");
-  serial->println(((float)analogRead(0)/4095.0) * 3.3 *12.0);
+  serial->println(((float)analogRead(0)/4095.0) * 3.3 * 12.0);
   serial->print("12 volt supply: ");
-  serial->println(((float)analogRead(1)/4095.0) * 3.3 *6.3);
+  serial->println(((float)analogRead(1)/4095.0) * 3.3 * 6.3);
+  serial->print("Input current, Amps: ");
+  serial->println(((float)analogRead(3)/4095.0) * 3.3 / 0.2);
 }
