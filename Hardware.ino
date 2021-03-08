@@ -184,9 +184,10 @@ DialogBoxEntry CalibrationDialogEntries[] = {
   {" Set output to", 0, 4, D_INT, 0, 65535, 1, 18, false, "%d", &ZeroCalValue, NULL, NULL},
   {" Set output to", 0, 5, D_INT, 0, 65535, 1, 18, false, "%d", &MidCalValue, NULL, NULL},
   {" Exit", 0, 7, D_DIALOG, 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
-  {"", 0, 2, D_TITLE, 0, 0, 0, false, NULL, NULL, NULL, NULL},
-  {" Abort", 0, 8, D_DIALOG, 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
-  {"       Calibrating", 0, 1, D_TITLE, 0, 0, 0, false, NULL, NULL, NULL, NULL},
+  {"", 0, 2, D_TITLE, 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
+  {" Auto", 0, 8, D_DIALOG, 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
+  {"       Calibrating", 0, 1, D_TITLE, 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
+  {" Abort", 0, 9, D_DIALOG, 0, 0, 0, 0, false, NULL, NULL, NULL, NULL},
   {NULL},
 };
 
@@ -221,6 +222,7 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
   }
   CalibrationDialogEntries[2].Value = ActiveDialog;
   CalibrationDialogEntries[4].Value = ActiveDialog;
+  CalibrationDialogEntries[6].Value = ActiveDialog;
   // Display the dialog
   DialogBoxDisplay(&CalibrationDialog);
   // Do not return, this function blocks and processes the encoder events in the following loop
@@ -302,7 +304,42 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
     if (ActiveDialog != &CalibrationDialog) break; // This exit happens when user selects exit or abort options.
   }
   if (CC->DACout == NULL) if (CC->ADCreadback != NULL) ADCMidCounts = CC->ADCpointer(CC->ADCaddr, CC->ADCreadback->Chan, 100);
-  if (CalibrationDialog.Selected == 4) return;  // This is a result of abort option
+  if (CalibrationDialog.Selected == 6) return;  // This is a result of abort option
+  if (CalibrationDialog.Selected == 4)
+  {
+    // Here is auto calibration is selected. In this mode we assume the ADC calibration is correct and use it to
+    // set the DACs. This will only work if we have a ADC readback, this function will exit if no ADC is defined.
+    if (CC->ADCreadback == NULL) return;
+    DisplayMessage("Calibrating...");
+    // Set DAC to zero point then read the actual value
+    if (CC->DACout != NULL)
+    {
+      if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
+      else if ((CC->DACaddr & 0xFE) == 0x10) { AD5593writeDAC(CC->DACaddr, CC->DACout->Chan, DACZeroCounts); delay(100);}
+      else { AD5625(CC->DACaddr, CC->DACout->Chan, DACZeroCounts); delay(100);}
+    }
+    delay(2000);
+    ADCZeroCounts = CC->ADCpointer(CC->ADCaddr, CC->ADCreadback->Chan, 100);
+    float DACzero = Counts2Value(ADCZeroCounts, CC->ADCreadback);
+    // Set DAC to mid point then read the actual value
+    if (CC->DACout != NULL)
+    {
+      if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
+      else if ((CC->DACaddr & 0xFE) == 0x10) { AD5593writeDAC(CC->DACaddr, CC->DACout->Chan, DACMidCounts); delay(100);}
+      else { AD5625(CC->DACaddr, CC->DACout->Chan, DACMidCounts); delay(100);}
+    }
+    delay(2000);
+    ADCMidCounts = CC->ADCpointer(CC->ADCaddr, CC->ADCreadback->Chan, 100);
+    float DACmid = Counts2Value(ADCMidCounts, CC->ADCreadback);
+    // Calculate and apply calibration values
+    if (CC->DACout != NULL)
+    {
+      CC->DACout->m = ((float)DACZeroCounts - (float)DACMidCounts) / ((float)DACzero - (float)DACmid);
+      CC->DACout->b = (float)DACZeroCounts - CC->DACout->m * (float)DACzero;
+    }  
+    DismissMessage();  
+    return;
+  }
   // If exit is selected then calculate the calibration factors.
   if (CC->DACout != NULL)
   {
@@ -317,7 +354,7 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
 }
 
 // This function sets the board select bit based on the board value
-void SelectBoard(int8_t Board)
+inline void SelectBoard(int8_t Board)
 {
   static Pio *pio = g_APinDescription[BRDSEL].pPort;
   static uint32_t pin =g_APinDescription[BRDSEL].ulPin;
@@ -576,19 +613,19 @@ uint8_t DigitalIn(void)
   if (digitalRead(DI5) == HIGH) val |= 32;
   if (digitalRead(DI6) == HIGH) val |= 64;
   if (digitalRead(DI7) == HIGH) val |= 128;
-  return (val);
+  return (val ^ MIPSconfigData.DIinvert);
 }
 
 int ReadInput(char inputCH)
 {
-  if(inputCH == 'Q') return(digitalRead(DI0));
-  if(inputCH == 'R') return(digitalRead(DI1));
-  if(inputCH == 'S') return(digitalRead(DI2));
-  if(inputCH == 'T') return(digitalRead(DI3));
-  if(inputCH == 'U') return(digitalRead(DI4));
-  if(inputCH == 'V') return(digitalRead(DI5));
-  if(inputCH == 'W') return(digitalRead(DI6));
-  if(inputCH == 'X') return(digitalRead(DI7));
+  if(inputCH == 'Q') return(digitalRead(DI0) ^ ((MIPSconfigData.DIinvert >> 0) & 1));
+  if(inputCH == 'R') return(digitalRead(DI1) ^ ((MIPSconfigData.DIinvert >> 1) & 1));
+  if(inputCH == 'S') return(digitalRead(DI2) ^ ((MIPSconfigData.DIinvert >> 2) & 1));
+  if(inputCH == 'T') return(digitalRead(DI3) ^ ((MIPSconfigData.DIinvert >> 3) & 1));
+  if(inputCH == 'U') return(digitalRead(DI4) ^ ((MIPSconfigData.DIinvert >> 4) & 1));
+  if(inputCH == 'V') return(digitalRead(DI5) ^ ((MIPSconfigData.DIinvert >> 5) & 1));
+  if(inputCH == 'W') return(digitalRead(DI6) ^ ((MIPSconfigData.DIinvert >> 6) & 1));
+  if(inputCH == 'X') return(digitalRead(DI7) ^ ((MIPSconfigData.DIinvert >> 7) & 1));
   return(LOW);
 }
 
@@ -1114,6 +1151,19 @@ int AD5593readADCWire1(int8_t addr, int8_t chan)
    return(i & 0xFFFF);
 }
 
+int AD5593readADCWire1__(int8_t addr, int8_t chan, int8_t num)
+{
+   int j =0;
+   
+   for(int i=0;i<num;i++)
+   {
+      int k = AD5593readADCWire1(addr, chan);
+      if(k <= 0) return(-1);
+      j+= k;
+   }
+   return(j/num);
+}
+
 int AD5593readADCWire1(int8_t addr, int8_t chan, int8_t num)
 {
   int i,j,k,val=0;
@@ -1135,10 +1185,11 @@ int AD5593readADCWire1(int8_t addr, int8_t chan, int8_t num)
   Wire1.requestFrom(addr, (uint8_t)2 * num);
   for(i=0;i<num;i++)
   {
+    //Wire1.requestFrom(addr, (uint8_t)2);
     j  = Wire1.read() << 8;
     j |= Wire1.read();
     if(((j >> 12) & 0x7) != chan) return(-1);
-    k += (j << 4) & 0xFFFF;
+    k += ((j << 4) & 0xFFFF);
   }
   return(k/num);
 }
@@ -1700,4 +1751,51 @@ void CPUtemp(void)
   float treal = (( (3300 * mV)/4096 ) - 800) * 0.37736 + 25.5;
   SendACKonly;
   if(!SerialMute) serial->println(treal);
+}
+
+// Level detector monitoring and reporting functions. These function allow the user to enable the level detector
+// to monitor changes and report the results to the host.
+
+bool LevelDetChangeDetected = false;
+
+void LevelDetChangeISR(void)
+{
+  LevelDetChangeDetected = true;
+}
+
+void LevelDetChangeReport(void)
+{
+  float fval;
+  byte *b;
+  int  i=0;
+  char sbuf[50];
+
+  if(!LevelDetChangeDetected) return;
+  LevelDetChangeDetected = false;
+  // Read the adc and report
+  b = (byte *)&fval;
+  Wire1.beginTransmission(LevelDetAdd);
+  Wire1.write(TWI_LEVDET_READ_ADC);
+  Wire1.endTransmission();
+  Wire1.requestFrom((uint8_t)LevelDetAdd, (uint8_t)4);
+  while (Wire1.available()) b[i++] = Wire1.read();
+  // Report change message, value, and time stamp in mSec
+  uint32_t t = millis();
+  sprintf(sbuf,"LevelChanged,%f,%u\n",fval,t);
+  serial->print(sbuf);
+}
+
+// Called by the command processor to init the change detection module.
+// The address is in hex
+void SetLevelDetChangeReport(char *TWIadd)
+{
+  LevelDetAdd = strtol(TWIadd,NULL,16);
+  // Init the Level Detector
+  pinMode(SCL1,INPUT);
+  pinMode(SDA1,INPUT);
+  pinMode(LEVCHANGE,INPUT);
+  Wire1.begin();
+  Wire1.setClock(100000);
+  attachInterrupt(digitalPinToInterrupt(LEVCHANGE), LevelDetChangeISR, RISING);
+  SendACK;
 }

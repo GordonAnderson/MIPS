@@ -71,6 +71,7 @@ enum CmdTypes
   CMDint,			      // Sends an int
   CMDfloat,			    // Sends a float
   CMDbool,          // Sends or receives a bool, TRUE or FALSE
+  CMDbyte,          // Sends or receives a byte
   CMDfunction,		  // Calls a function with 0,1,or 2 int args
   CMDfunctionStr,		// Calls a function with pointer to str arg
   CMDfunctionLine,  // Calls a function with a full line in the ring buffer, function must get tokens
@@ -98,6 +99,7 @@ union functions
   int   *intPtr;
   float *floatPtr;
   bool  *boolPtr;
+  byte  *bytePtr;
   void  (*funcVoid)();
   void  (*func1int)(int);
   void  (*func2int)(int, int);

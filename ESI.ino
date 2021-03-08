@@ -300,7 +300,8 @@ void ESIcalibratePos(void)
   // Define this channel's name
   sprintf(Name,"     ESI Module %2d",ESIchannel);
   // Calibrate this channel
-  ChannelCalibrate(&CC, Name, 0, CC.Max/2);
+  if(esidata.Rev == 5) ChannelCalibrate(&CC, Name, CC.Max/10, CC.Max/2);
+  else ChannelCalibrate(&CC, Name, 0, CC.Max/2);
   esi = esidata;  
   ESIrelay(0);
   if(esidata.VoltageSetpoint >= 0) ESIrelay(1);
@@ -329,7 +330,8 @@ void ESIcalibrateNeg(void)
   // Define this channel's name
   sprintf(Name,"     ESI Module %2d",ESIchannel);
   // Calibrate this channel
-  ChannelCalibrate(&CC, Name, 0, CC.Max/2);
+  if(esidata.Rev == 5) ChannelCalibrate(&CC, Name, CC.Max/10, CC.Max/2);
+  else ChannelCalibrate(&CC, Name, 0, CC.Max/2);
   esi = esidata;  
   ESIrelay(0);  
   delay(10);
@@ -367,7 +369,7 @@ void UpdateESIdialog(void)
     de[0].Value = &ReadbackV[b][c];
     de[1].Value = &ReadbackI[b][c];
   }
-  if((esidata.Rev == 3) || (esidata.Rev == 3))
+  if((esidata.Rev == 3) || (esidata.Rev == 5))
   {
     de = GetDialogEntries(ESIentriesR3, "Voltage");
     b = ESIchannel2board(ESIchannel);

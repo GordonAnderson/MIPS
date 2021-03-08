@@ -6,11 +6,11 @@
 //  7 is a 0 to 10 volt differential output.
 //  This interface allows the user to define engineering units for each channel this include a channel name as well.
 //
-#include "DAC.h"
+//#include "DAC.h"
 #include "Variants.h"
-#include "Hardware.h"
-#include "Table.h"
-#include "Errors.h"
+//#include "Hardware.h"
+//#include "Table.h"
+//#include "Errors.h"
 
 //MIPS Threads
 Thread DACthread  = Thread();

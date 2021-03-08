@@ -10,7 +10,7 @@
 
 extern int mapDItoPIN[8];
 
-#define ReadDIO(a) digitalRead(mapDItoPIN[a-'Q'])
+#define ReadDIO(a) (digitalRead(mapDItoPIN[a-'Q']) ^ ((MIPSconfigData.DIinvert >> a-'Q') & 1))
 
 // Macros
 #define DOrefresh  DigitalOut(MIPSconfigData.DOmsb, MIPSconfigData.DOlsb)

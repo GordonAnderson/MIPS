@@ -282,4 +282,7 @@ void TraceCapture(uint8_t tp);
 void TraceReport(void);
 void TraceEnable(void);
 
+void LevelDetChangeReport(void);
+void SetLevelDetChangeReport(char *TWIadd);
+
 #endif

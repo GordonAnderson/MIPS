@@ -1,12 +1,55 @@
 //
 // This file contains Table code that is in development.
 //
+// In the time table the channel parameter defines what output action is taken at a time point.
+// The following list defines all the valid channel parameters:
+//   1 thru 32 are DCbias output channels (decimal 1 thru 32)
+//   'A' thru 'P' are Digital output channels
+// The following time sweep functions
+//   'd' Time delta parameter incremented
+//   'p' Time delta parameter set
+// The following parameters control ARB parameters
+//   'e' Set ARB module 1 AUXOUT voltage
+//   'f' Set ARB module 2 AUXOUT voltage
+//   'g' Set ARB module 3 AUXOUT voltage
+//   'h' Set ARB module 4 AUXOUT voltage
+//   'i' Set ARB module 1 output offset A
+//   'j' Set ARB module 1 output offset B
+//   'k' Set ARB module 2 output offset A
+//   'l' Set ARB module 2 output offset B
+// Misc operations
+//   'r' Set the ARB compress line
+//   's' Set the ARB sync line
+//   't' Generate a trigger out pulse, value defines width
+//   'b' Trigger a frequence burst generation
+//   'c' Trigger ARB compression table
+//
+// Time point ramping or changing is supported by defining the time point with a negative value.
+// The times points absolute values will be used and the current value of the TimeDelta parameter
+// will be added to this absolute value.
+//
+// DCbias value Ramp functions
+//
+// Ramping is implemended using a timer interrupt to update the DCbias outputs channels that are
+// generating ramps. The table contains flags bits in the channel number definition to indicate
+// channels that are generating ramps. Two flags are used:
+// RAMP to indicate this channel is ramping and the channel value contains the voltage step incremented
+//      at each clock cycle.
+// RAMP | INITIAL sets the initial or starting value for a ramp. This must be done before a ramp 
+//                starts and it can be done at the same time point as the RAMP command.
+// The ramp capability must first be enabled and the clock rate set before a table with ramp commands
+// is executed. Below is a series of commands that will generate a simple ramp:
+// 
+// STBLRMPENA,TRUE,1000
+// STBLDAT;0:[A:100,100:1:10:194:1:130:4,5000:1:15:130:-1.0,10000:130:0,13000:1:0,20000:];
+// SMOD,ONCE
+// TBLSTRT
+// 
 // April 2019
 //  - Added voltage ramping capaility.
 //  - Made a number of improvements to the code, performance issues.
 //  - Fixed a bug on the table startup when there are timepoint events at time 0 such as ramps and
 //    various internal trigggers like the trigger output or compressor.
-// 
 //
 /*
 STBLRMPENA,TRUE,2000
@@ -99,9 +142,8 @@ bool TblTasks = false;                // If true enables processing tasks when t
 int  ExtFreq = 0;                     // Defines enternal clock frequency used by the table, needed for the TblTasks mode.
 
 // The following variables are used to support the loop time incrementing or decermenting. This capability
-// was added October 25, 2017
-int  TimeDelta = 0;                   // This time is added to the time sent to the timer 
-int  TimeDeltaMax = 0;                // This time is added to the time sent to the timer max count 
+// was added October 25, 2017, and redesiged December 6, 2020
+int  TimeDelta = 0;                   // This time is added to all flaged time points 
 
 uint8_t  Chan2Brd[32];                // Holds DCbias module SPI address and board address. Upper 4 bits hold SPI address
                                       // Used to speed the address selection process in real time code section
@@ -715,6 +757,99 @@ void SetTableEntryValue(int Count, int Chan, float fval)
     buf[2] = (val >> 4);
     buf[3] = (val << 4);
     SendACK;
+}
+
+// Table timing test time values in uS
+#define FixedSetupTime   7
+#define DCBchanTime      11
+#define DIOchanTime      19
+#define FunctionTime     50  // This number has not been validated
+
+// The function checks a table and looks for any timing violations.
+void TableCheck(void)
+{
+   int   i=0;
+   int   j,k;
+   int   setupT;    // Needed setup time in uS
+   int   lastTimePoint = -1;
+   float Period=0;
+   TableHeader      *TH;
+   TableEntryHeader *TEH;
+   TableEntry       *TE;
+
+   serial->println("Inspecting table....");
+   if(TablesLoaded[CT] == 0)
+   {
+      serial->println("No table defined!\n");
+      return;
+   }
+   // Calculate the clock period, if external clock then the ExtFreq value is used, if
+   // ExtFreq is undefined this function quits.
+   if(ClockMode == MCK2)   Period = 2.0/(float)VARIANT_MCK;
+   if(ClockMode == MCK8)   Period = 8.0/(float)VARIANT_MCK;
+   if(ClockMode == MCK32)  Period = 32.0/(float)VARIANT_MCK;
+   if(ClockMode == MCK128) Period = 128.0/(float)VARIANT_MCK;
+   if((Period == 0) && (ExtFreq == 0))
+   {
+       serial->println("System in external clock mode and external frequency");
+       serial->println("is not defined, can't evaluate table!");
+       return;
+   }
+   if(Period == 0) Period = 1.0 / (float)ExtFreq;
+   Period *= 1000000.0;  // Period in uS
+   //serial->println(Period);
+   // Walk through the table 
+   TH = (TableHeader *) &(VoltageTable[CT][i]); i += sizeof(TableHeader);
+   while(1)
+   {
+       if(i >= MaxTable) break;
+       // Make sure there is a table header
+       if(TH->TableName == 0) break;
+       // Loop thhrough all the entries in the table and sum the times
+       for(k=0;k<TH->NumEntries;k++)
+       {
+           TEH = (TableEntryHeader *) &(VoltageTable[CT][i]); i += sizeof(TableEntryHeader);
+           TE = (TableEntry *) &(VoltageTable[CT][i]);
+           setupT = FixedSetupTime;
+           bool DIOdetected = false;
+           for(j=0;j<TEH->NumChans;j++)
+           {
+               // DC bias channel
+               if((TE[j].Chan >= 0)&&(TE[j].Chan <= 31)) setupT += DCBchanTime;
+               // if Chan is A through P its a DIO to process
+               else if((TE[j].Chan >= 'A') && (TE[j].Chan <= 'P')) DIOdetected = true;
+               else if(TE[j].Chan == ']') setupT += 2;
+               else if(TE[j].Chan == '[') setupT += 2;
+               // Everything else, assume the slowest function
+               else setupT += FunctionTime;               
+           }
+           if(DIOdetected) setupT += DIOchanTime;
+           // SetupT now has the needed time for this event to load all the parameters. The previous
+           // time point must provide this time or there is a timing violation
+           if(lastTimePoint > 0)
+           {
+              //serial->println(setupT);
+              //serial->println(((TEH->Count - lastTimePoint) * Period));
+              // Calculate the required number of clocks and check
+              if(((TEH->Count - lastTimePoint) * Period) < setupT)
+              {
+                 // Here if we have a timing violation
+                 serial->print("Timing violation at time point: ");
+                 serial->println(abs(TEH->Count));
+                 serial->print("The previous time can not exceed: ");
+                 serial->println(abs(TEH->Count) - (int)(((float)setupT / Period) + 0.5));
+                 serial->print("But it is: ");
+                 serial->println(lastTimePoint);
+              }
+           }
+           lastTimePoint = abs(TEH->Count);
+           // Advance to next Table entry
+           i += sizeof(TableEntry) * TEH->NumChans;
+       }
+       // Advance to next table
+       TH = (TableHeader *) &(VoltageTable[CT][i]); i += sizeof(TableHeader);
+   }
+   serial->println("Done!");
 }
 
 // Set a new count or time value at a time point channel point.
@@ -1397,7 +1532,6 @@ void SetupTimer(void)
     NVIC_SetPriority((IRQn_Type) ID_UOTGHS, 8UL);
     //
     TimeDelta = 0;
-    TimeDeltaMax = 0;
     SetupNextEntry();
     MPT.enableTrigger();
 }
@@ -1549,15 +1683,17 @@ inline void SetupNextEntry(void)
     DIOchange=false;
     // Set the address
 SetupNextEntryAgain:
-    // Set the next event counts. These are compare registers that will cause interrtups
+    // Set the next event counts. These are compare registers that will cause interrupts
     // and generate LDAC latch signal
-    MPTtc.TC_RA = TEheader->Count;
-    MPTtc.TC_RC = Theader->MaxCount;
-//  if(TEheader->Count == 0) MPTtc.TC_RA = 0;
-//  else MPTtc.TC_RA = TEheader->Count + TimeDelta;
-//  MPTtc.TC_RC = Theader->MaxCount + TimeDeltaMax;
+    if(TEheader->Count >= 0) MPTtc.TC_RA = TEheader->Count;
+    else MPTtc.TC_RA = -TEheader->Count + TimeDelta;
+    if(Theader->MaxCount >=0) MPTtc.TC_RC = Theader->MaxCount;
+    else MPTtc.TC_RC = -Theader->MaxCount + TimeDelta;    
+//    MPTtc.TC_RA = TEheader->Count;
+//    MPTtc.TC_RC = Theader->MaxCount;
 SetupNextEntryAgain2:
     // Process the current entry, all channels
+    int cb = SelectedBoard();
     while(1)
     {
         if(Theader->TableName == 0)
@@ -1583,7 +1719,7 @@ SetupNextEntryAgain2:
                         if(DIOchange) DOrefresh;   // Added Jan 15, 2015
                         return;
                     }
-                    TimeDelta = TimeDeltaMax = 0;
+                    // TimeDelta = 0;
                     // Setup for the first event in the next table if there is a time 0
                     // event. This table's time zero event happens at the same time as the
                     // current tables top count.
@@ -1621,22 +1757,22 @@ SetupNextEntryAgain2:
                 return;
             }
             // If Chan is 0 to 31 its a DC bias output so send to DAC
+            // It take 3.5 uS to send one channel via SPI, the dead time between channels is 6uS,
+            // The 6uS is the time around this inner channel loop
             if((Tentry[i].Chan >= 0) && (Tentry[i].Chan <= 31))
             {
               // See if the SPI address is correct, if not update
-              //if(SPIadd != ((Chan2Brd[Tentry[i].Chan] >> 4) & 7))
               if((pioA->PIO_PDSR & 7) != ((Chan2Brd[Tentry[i].Chan] >> 4) & 7))
               {
                    pioA->PIO_CODR = 7;
                    pioA->PIO_SODR = ((Chan2Brd[Tentry[i].Chan] >> 4) & 7);                
-                   //SPIadd = pio->PIO_SODR = ((Chan2Brd[Tentry[i].Chan] >> 4) & 7);                
               }              
               DCbiasUpdaated = true;
-              int cb = SelectedBoard();               // Added 9/3/17
-              SelectBoard(Chan2Brd[Tentry[i].Chan] & 1);
+              //int cb = SelectedBoard();                 // Added 9/3/17, takes 1uS, moved to top of loop, 3/4/21
+              SelectBoard(Chan2Brd[Tentry[i].Chan] & 1);  // Takes 1uS
               k=Tentry[i].Value;
               SPI.transfer(SPI_CS, (uint8_t *)&k, 4);
-              SelectBoard(cb);                        // Added 9/3/17
+              //SelectBoard(cb);                          // Added 9/3/17, takes 1uS, moved to end of loop, 3/4/21
             }
             else if((Tentry[i].Chan & RAMP)!=0) TABLEqueue(ProcessRamp,&Tentry[i]);
             else if((Tentry[i].Chan >= 101) && (Tentry[i].Chan <= 108))  // 65 hex to 6C hex
@@ -1658,21 +1794,21 @@ SetupNextEntryAgain2:
                DIOchange = true;
                SDIO_Set_Image(Tentry[i].Chan,Tentry[i].Value);
             }
-            // if Chan is d then the time count delta is adjusted and RA re-written
+            // if Chan is d then the time count delta is adjusted
             else if(Tentry[i].Chan == 'd')
             {
                TimeDelta += Tentry[i].Value;
-               MPTtc.TC_RA = TEheader->Count + TimeDelta;
+               //MPTtc.TC_RA = TEheader->Count + TimeDelta;
             }
-            // if Chan is p then the time count delta max is adjusted and RA re-written
+            // if Chan is p then the time count delta is set
             else if(Tentry[i].Chan == 'p')
             {
-               TimeDeltaMax += Tentry[i].Value;
-               MPTtc.TC_RC = Theader->MaxCount + TimeDeltaMax;
+               TimeDelta = Tentry[i].Value;
+               //MPTtc.TC_RC = Theader->MaxCount + TimeDeltaMax;
             }
             // if Chan is r then this triggers the ARB compress line, value defines state
             else if(Tentry[i].Chan == 'r') {Cstate = Tentry[i].Value;                 TABLEqueue(ProcessCompress,true);}            
-            // if Chan is s then this triggers the ARB compress line, value defines state
+            // if Chan is s then this triggers the ARB sync line, value defines state
             else if(Tentry[i].Chan == 's') {Sstate = Tentry[i].Value;                 TABLEqueue(ProcessSync,true);}                        
             // if Chan is t then this is a trigger out pulse so queue it up for next ISR
             else if(Tentry[i].Chan == 't') {QueueTriggerOut(Tentry[i].Value);         TABLEqueue(ProcessTriggerOut,true);}
@@ -1683,6 +1819,7 @@ SetupNextEntryAgain2:
         }
         break;
     }
+    SelectBoard(cb);
     // Update the DIO hardware if needed
     if(DIOchange) DOrefresh;
     TentryCount++;
@@ -1749,7 +1886,7 @@ inline void RAmatch_Handler(void)
 {
   uint32_t csb = pio->PIO_ODSR & pin;
   if(DCbiasUpdaated) { ValueChange = true; DCbiasUpdaated = false; }
-  ProcessTableQueue();
+  ProcessTableQueue();  // This call takes 3uS even if it does nothing
   if((MIPSconfigData.Rev <= 1) || (softLDAC)) // Rev 1 used software control of LDAC
   {
     LDAClow;

@@ -141,7 +141,7 @@ DialogBox DODialog = {
 
 MenuEntry MEDIOmonitor = {" DIO module", M_DIALOG, 0, 0, 0, NULL, &DIDialog, NULL, NULL};
 
-// This function is called at powerup to initiaize the RF driver.
+// This function is called at powerup to initiaize the DIO interface.
 void DIO_init(void)
 {
   // Update the Digitial output array using the image registers
@@ -166,14 +166,14 @@ void DIO_loop(void)
 
   // Read input bits and set digitial input array for the display
   for (i = 0; i < 8; i++) DigitialInputs[i] = 0;
-  if (digitalRead(DI0) == HIGH) DigitialInputs[0] = 1;
-  if (digitalRead(DI1) == HIGH) DigitialInputs[1] = 1;
-  if (digitalRead(DI2) == HIGH) DigitialInputs[2] = 1;
-  if (digitalRead(DI3) == HIGH) DigitialInputs[3] = 1;
-  if (digitalRead(DI4) == HIGH) DigitialInputs[4] = 1;
-  if (digitalRead(DI5) == HIGH) DigitialInputs[5] = 1;
-  if (digitalRead(DI6) == HIGH) DigitialInputs[6] = 1;
-  if (digitalRead(DI7) == HIGH) DigitialInputs[7] = 1;
+  if (digitalRead(DI0) == HIGH) DigitialInputs[0] = 1 ^ (MIPSconfigData.DIinvert & 1);
+  if (digitalRead(DI1) == HIGH) DigitialInputs[1] = 1 ^ ((MIPSconfigData.DIinvert >> 1) & 1);
+  if (digitalRead(DI2) == HIGH) DigitialInputs[2] = 1 ^ ((MIPSconfigData.DIinvert >> 2) & 1);
+  if (digitalRead(DI3) == HIGH) DigitialInputs[3] = 1 ^ ((MIPSconfigData.DIinvert >> 3) & 1);
+  if (digitalRead(DI4) == HIGH) DigitialInputs[4] = 1 ^ ((MIPSconfigData.DIinvert >> 4) & 1);
+  if (digitalRead(DI5) == HIGH) DigitialInputs[5] = 1 ^ ((MIPSconfigData.DIinvert >> 5) & 1);
+  if (digitalRead(DI6) == HIGH) DigitialInputs[6] = 1 ^ ((MIPSconfigData.DIinvert >> 6) & 1);
+  if (digitalRead(DI7) == HIGH) DigitialInputs[7] = 1 ^ ((MIPSconfigData.DIinvert >> 7) & 1);
   // If the digitial input dialog is displayed then update the data
   // For performance reasons update 2 lines on each call to this function
   if (ActiveDialog == &DIDialog)  RefreshAllDialogEntries(&DIDialog);

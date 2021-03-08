@@ -26,10 +26,10 @@
 //
 // Gordon Anderson
 //
-#include "Variants.h"
-#include <DIhandler.h>
-
 #if RFdriver2 == false
+
+#include "Variants.h"
+//#include <DIhandler.h>
 
 // PLL is not stable below 250,000Hz
 #define MinFreq    400000
@@ -235,9 +235,10 @@ void RestoreRFdriverSettings(bool NoDisplay)
     if (strcmp(rfdd.Name, RFDD.Name) == 0)
     {
       // Here if the name matches so copy the data to the operating data structure
-      if(rfdd.Size != sizeof(RFdriverData)) rfdd.Size = sizeof(RFdriverData);
+      //if(rfdd.Size != sizeof(RFdriverData)) rfdd.Size = sizeof(RFdriverData);
       rfdd.EEPROMadr = RFDD.EEPROMadr;
       memcpy(&RFDD, &rfdd, rfdd.Size);
+      RFDD.Size = sizeof(RFdriverData);
       RFCD = RFDD.RFCD[SelectedRFChan & 1];
       if (!NoDisplay) DisplayMessage("Parameters Restored!", 2000);
       SelectChannel();
@@ -287,6 +288,8 @@ void SelectChannel(void)
   else strcpy(RFmode, "AUTO");
   RFmodeChange();
   RFgateChange();
+  // Set the power limit
+  RFdriverDialogEntriesPage2[1].Max = RFDD.PowerLimit;
   // If rev 2 then do not display the RF- channel
   if((RFDD.Rev == 2) || (RFDD.Rev == 4))
   {
@@ -1116,6 +1119,30 @@ void RFheadPower(int channel)
   SendACKonly;
   i = BoardFromSelectedChannel(channel - 1);
   if (!SerialMute) serial->println(Powers[i][(channel - 1) & 1]);
+}
+
+void GetRFpwrLimit(int channel)
+{
+  int i;
+
+  // If channel is invalid send NAK and exit
+  if (!IsChannelValid(channel)) return;
+  SendACKonly;
+  i = BoardFromSelectedChannel(channel - 1);
+  if (!SerialMute) serial->println(RFDDarray[i].PowerLimit);
+}
+
+void SetRFpwrLimit(int channel, int Power)
+{
+  int i;
+
+  // If channel is invalid send NAK and exit
+  if (!IsChannelValid(channel)) return;
+  if((Power < 1) || (Power > 100)) BADARG;
+  SendACK;
+  i = BoardFromSelectedChannel(channel - 1);
+  RFDDarray[i].PowerLimit = Power;
+  if(i == SelectedRFBoard) RFDD.PowerLimit = Power;
 }
 
 // Reports the frequency and Vpp for + and - channels for each RF channel in system.

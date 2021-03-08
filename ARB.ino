@@ -75,7 +75,7 @@ MIPStimer *ARBclock;
 
 #define ARB ARBarray[SelectedARBboard]
 
-float ARBversion=0;
+float ARBversion[2] ={0,0};
 
 ARBdata  *ARBarray[MAXARBMODULES]  = {NULL,NULL,NULL,NULL,NULL,NULL};
 ARBstate *ARBstates[MAXARBMODULES] = {NULL,NULL,NULL,NULL,NULL,NULL};
@@ -538,6 +538,7 @@ bool ReadFloat(int board,int cmd, float *value)
   if(Wire.endTransmission() !=0) {ReleaseTWI(); return false;}
   Wire.requestFrom((uint8_t)ARBarray[board]->ARBadr, (uint8_t)4);
   while (Wire.available()) b[i++] = Wire.read();
+  //for(i=0;i<4;i++) b[i] = Wire.read();
   ReleaseTWI();
   if(fpclassify(*value) != FP_NORMAL)
   {
@@ -955,7 +956,6 @@ void ARB_init(int8_t Board, int8_t addr)
      digitalWrite(14,HIGH);
      delay(100);
      ARBaltTrig = new DIhandler;
-     
   }
   // If there are already two or more channels add 2 to the board number
   if(NumberOfARBchannels >= 16) Board += 2;
@@ -989,6 +989,9 @@ void ARB_init(int8_t Board, int8_t addr)
   digitalWrite(ARBmode,LOW);
   pinMode(ARBsync,OUTPUT);
   digitalWrite(ARBsync,LOW);
+  ARBsyncISR();
+  ARBsyncISR();
+  ARBsyncISR();
   // Read the points per waveform for this ARB channel
   int i;
   if(Read8bitUnsigned(Board,TWI_ARB_READ_PPP,&i))
@@ -1028,14 +1031,14 @@ void ARB_init(int8_t Board, int8_t addr)
   if(ARBarray[Board]->UseCommonClock) SetBool(Board, TWI_ARB_SET_EXT_CLOCK, true);
   // Read the arb version and set the global variable, we assume all ARBs are the
   // same version
-  if(!ReadFloat(Board,TWI_ARB_READ_VERSION,&ARBversion)) ARBversion = 0;
-  if(ARBversion > 1.13)
+  if(!ReadFloat(Board,TWI_ARB_READ_VERSION,&ARBversion[Board])) ARBversion[Board] = 0;
+  if(ARBversion[Board] > 1.13)
   {
     DialogBoxEntry *de = GetDialogEntries(ARBentriesPage2, "Sweep");
     de->Type = D_PAGE;
 //    ARBsweepTrigDI[Board] = new DIhandler;
   }
-  if(ARBversion > 1.16)
+  if(ARBversion[Board] > 1.16)
   {
     DialogBoxEntry *de = GetDialogEntries(ARBentriesPage2, "Ramp rate");
     de->Type = D_FLOAT;
@@ -1252,7 +1255,7 @@ void ARB_loop(void)
 //        }
 //      }
       // Process sweep parameters only for version 1.14 and greater
-      if(ARBversion > 1.13)
+      if(ARBversion[b] > 1.13)
       {
         if((ARBstates[b]->StartFreq != ARBarray[b]->StartFreq) || ARBstates[b]->update)
         {
@@ -1280,7 +1283,7 @@ void ARB_loop(void)
            ARBstates[b]->SweepTime = ARBarray[b]->SweepTime;
         }
         // process the sweep trigger options
-        if(ARBversion > 1.13)
+        if(ARBversion[b] > 1.13)
         {
            if((ARBarray[b]->ARBsweepTrig == 0) && (ARBsweepTrigDI[b] != NULL))
            {
@@ -1313,7 +1316,7 @@ void ARB_loop(void)
     ARBstates[b]->update = false;
     if(ARBstates[b]->updateALT)
     {
-      if(ARBversion >= 2.1) UpdateALTparms(b);
+      if(ARBversion[b] >= 2.1) UpdateALTparms(b);
       ARBstates[b]->updateALT = false;
     }
   }
@@ -2354,10 +2357,10 @@ void SetARBppp(int module, int PPP)
    Wire.write(TWI_ARB_SAVE);
    Wire.endTransmission();
    // Delay and warn
-   serial->println("The MIPS system will reboot soon...");
-   delay(1000);
+   serial->println("You should reboot MIPS when finished changing PPP values.");
+//   delay(1000);
    // Reboot MIPS
-   Software_Reset();
+//   Software_Reset();
 }
 
 // Set the external clock source, MIPS or EXT

@@ -1,4 +1,7 @@
-#if RFdriver2
+#if RFdriver2 == true
+
+#include "Variants.h"
+//#include <DIhandler.h>
 
 #define MinFreq    400000
 #define MaxFreq    5000000
@@ -769,6 +772,30 @@ void RFcalN(char *channel, char *Vpp)
   SendACK;
   TWIsetByte(RFDDarray[brd]->EEPROMadr | 0x20, brd, TWI_RF_SET_CHAN, ((ch-1) & 1) +1);
   TWIsetFloat(RFDDarray[brd]->EEPROMadr | 0x20, brd, TWI_RF_CALN, vpp);
+}
+
+void GetRFpwrLimit(int channel)
+{
+  int i;
+
+  // If channel is invalid send NAK and exit
+  if (!IsChannelValid(channel)) return;
+  SendACKonly;
+  i = BoardFromSelectedChannel(channel - 1);
+  if (!SerialMute) serial->println(RFDDarray[i]->PowerLimit);
+}
+
+void SetRFpwrLimit(int channel, int Power)
+{
+  int i;
+
+  // If channel is invalid send NAK and exit
+  if (!IsChannelValid(channel)) return;
+  if((Power < 1) || (Power > 100)) BADARG;
+  SendACK;
+  i = BoardFromSelectedChannel(channel - 1);
+  RFDDarray[i]->PowerLimit = Power;
+  if(i == SelectedRFBoard) RFDD->PowerLimit = Power;
 }
 
 #endif

@@ -47,7 +47,7 @@ enum TableModes
 //  -- Entry
 // Table is packed:
 //  Table header
-//  Entry header, one for each entry
+//  Entry header, one for each time point
 //  Entry, one for each entry
 #if TABLE2code
 #pragma pack(1)
@@ -95,6 +95,7 @@ extern bool TableResponse;
 extern bool TblTasks;
 extern int  ExtFreq;
 extern unsigned int Counter;
+extern int  TimeDelta;
 
 #if TABLE2code
 // Funtion queue enum and structures to support queuing functions that need
@@ -168,6 +169,7 @@ void StopRampClock(void);
 void TriggerOnChange(char *TWIadd);
 
 int DefineTableNumber(int tblnum);
+void TableCheck(void);
 #endif
 
 // Real time processing routines

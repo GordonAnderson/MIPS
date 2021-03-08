@@ -44,6 +44,7 @@ typedef struct  // 147 bytes
   #if RFdriver2
   int    Signature;         // Must be 0xAA55A5A5 for valid data
   #endif
+  float  PowerLimit;
 } RFdriverData;
 
 // Prototypes
@@ -70,6 +71,8 @@ void RFautoRetune(int channel);
 void RFcalParms(void);
 void RFcalP(char *, char *);
 void RFcalN(char *, char *);
+void GetRFpwrLimit(int channel);
+void SetRFpwrLimit(int channel, int Power);
 
 void RFmodeReport(int);
 void RFmodeSet(char *, char *);

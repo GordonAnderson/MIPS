@@ -93,6 +93,7 @@ void  DCbiasOffsetReadback(char *state);
 void  SetDCbiasADCtwiADD(int module, int add);
 void  SetDCbiasDACtwiADD(int module, int add);
 void  SetDCbiasRange(int board, int range);
+void  SetDCbiasLimit(int board, int range);
 void  SetDCbiasExtended(int board);
 void  ReportDCbiasSuppplies(int module);
 

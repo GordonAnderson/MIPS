@@ -172,6 +172,7 @@ typedef struct  // 260 byte
 
 extern ReadBacks rb;
 extern float     Power;
+extern int       NumSamples;
 
 // Prototypes
    

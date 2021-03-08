@@ -127,6 +127,7 @@ void RFAsetRes(char *Module, char *value);
 void RFAgetRes(int Module);
 void RFAupdateQUAD(int Module);
 void RFAsetGain(char *Module, char *value);
+void RFAreturnGain(int Module);
 
 void RFAsetFreq(int module, int freq);
 void RFAgetFreq(int module);

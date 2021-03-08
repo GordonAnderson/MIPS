@@ -109,6 +109,8 @@ typedef struct
   char     InterlockOut;      // Interlock digital output
   char     reserved[2];
   bool     UseBRDSEL;         // True if board select line is used, this is the default case
+  int8_t   DIinvert;          // This 8 bit mask is xored with the digital inputs. This allows inverting
+                              // selected bits.
 } MIPSconfigStruct;
 
 void   DisplayIntensity(void);

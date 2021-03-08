@@ -36,6 +36,7 @@
 #include "Variants.h"
 #include "Table.h"
 #include "SC16IS740.h"
+#include "AtomicBlock.h"
 
 extern ThreadController control;
 
@@ -160,6 +161,11 @@ const Commands  CmdArray[] = 	{
                                                                   // add is decimal, string is \n terminated
   {"TWI1CMD", CMDfunctionLine, 0, (char *)&TWI1scmd},             // Sends a command to the addressed TWI1 (Wire1) address, TWICMD,add,string.
                                                                   // add is decimal, string is \n terminated
+  {"STRPLVL", CMDfloat, 1, (char *)&MIPSconfigData.VerrorThreshold},// Set the DCbias power supply readback error trip point in percentage of FS
+  {"GTRPLVL", CMDfloat, 0, (char *)&MIPSconfigData.VerrorThreshold},// Returns the DCbias power supply readback error trip point in percentage of FS
+// Level detection module change enable
+  {"ENALDET", CMDfunctionStr, 1, (char *)SetLevelDetChangeReport},  // Enables the level detection module to report a detected change to the host.
+                                                                    // This function requires the module address in hex.
 // Clock generation functions
   {"GWIDTH",  CMDint, 0, (char *)&PulseWidth},                // Report the pulse width in microseconds
   {"SWIDTH",  CMDint, 1, (char *)&PulseWidth},                // Set the pulse width in microseconds
@@ -221,6 +227,7 @@ const Commands  CmdArray[] = 	{
   {"SDCBDACADD", CMDfunction, 2, (char *)SetDCbiasDACtwiADD},         // Set a modules DAC TWI address, radix 10
   {"SDCBARST", CMDbool, 1, (char *)&AutoReset},                       // Set to TRUE to enable power supply auto reset
   {"SDCBRNG", CMDfunction, 2, (char *)&SetDCbiasRange},               // Set the range for the DC bias board
+  {"SDCBLMT", CMDfunction, 2, (char *)&SetDCbiasLimit},               // Set the limit for the DC bias board
   {"SDCBEXT", CMDfunction, 1, (char *)&SetDCbiasExtended},            // Set the DCbias board for extended addressing, factory command
   {"RDCBSPLY", CMDfunction, 1, (char *)&ReportDCbiasSuppplies},       // Report the DCbias board supply voltages. Requires AD5593 for this
                                                                       // function to work.
@@ -299,6 +306,8 @@ const Commands  CmdArray[] = 	{
   {"SRFCAL", CMDfunctionLine, 1, (char *)RFcalParms},    // Sets the RF calibration parameters, channel,slope,intercept  
   {"RFCALP", CMDfunctionStr, 2, (char *)RFcalP},         // Adjust the calibration for a RF+ channel, channel,actual level in Vp-p, enter negative to set defaults
   {"RFCALN", CMDfunctionStr, 2, (char *)RFcalN},         // Adjust the calibration for a RF- channel, channel,actual level in Vp-p, enter negative to set defaults
+  {"SRFPL", CMDfunction, 2, (char *)SetRFpwrLimit},      // Sets the RF power limit for the given channel, in watts
+  {"GRFPL", CMDfunction, 1, (char *)GetRFpwrLimit},      // Retruns the RF power limit for the given channel, in watts
 // RF amplifier / QUAD commands
   {"SRFAENA", CMDfunctionStr, 2, (char *)RFAsetENA},         // Sets the RF system enable mode, ON or OFF
   {"GRFAENA", CMDfunction, 1, (char *)RFAgetENA},            // Returns the RF system enable mode, ON or OFF
@@ -329,6 +338,7 @@ const Commands  CmdArray[] = 	{
   {"GRFARES", CMDfunction, 1, (char *)RFAgetRes},            // Returns the resolution in AMU
   {"RFAQUPDATE", CMDfunction, 1, (char *)RFAupdateQUAD},     // Updates the QUAD parameters
   {"SRFAGAIN", CMDfunctionStr, 2, (char *)RFAsetGain},       // Sets RF head level control gain, HIGH or LOW
+  {"GRFAGAIN", CMDfunction, 1, (char *)RFAreturnGain},       // Returns RF head level control gain, HIGH or LOW
   {"RRFAAMP", CMDfunction, 1, (char *)RFAreport},            // Reports RF amplifier parameters
   {"SRFADCCH", CMDfunction, 2, (char *)RFAsetDCBchan},       // Sets the RF quad dc bias channel used for resolving DC
   {"GRFADCCH", CMDfunction, 1, (char *)RFAgetDCBchan},       // Reports the RF quad dc bias channel used for resolving DC
@@ -339,6 +349,8 @@ const Commands  CmdArray[] = 	{
   {"MIRROR", CMDfunctionStr, 2, (char *)DIOmirror},         // Mirror an input to an output
   {"MDIO", CMDfunctionStr, 2, (char *)DIOmonitor},          // Monitors a digital input for a state change
   {"RDIO", CMDfunctionStr, 1, (char *)DIOchangeReport},     // Returns true if a state change was detected, else return false
+  {"SDIINV", CMDbyte, 1, (char *)&MIPSconfigData.DIinvert}, // Sets digital input inversion mask, radix 10
+  {"GDIINV", CMDbyte, 0, (char *)&MIPSconfigData.DIinvert}, // Returns digital input inversion mask, radix 10
 // ESI module commands
   {"SHV", CMDfunctionStr, 2, (char *)SetESIchannel},        // Set channel high voltage
   {"GHV", CMDfunction, 1, (char *)GetESIchannel},           // Returns the high voltage setpoint
@@ -355,7 +367,7 @@ const Commands  CmdArray[] = 	{
   {"SHVITST", CMDbool, 1, (char *)&ESIcurrentTest},         // Set to TRUE to enable ESI current testing, FALSE to disable
   {"SHVENAGT", CMDfunctionStr, 2, (char *)SetESIgateEnable},// Enables a selected module gate option. This will enable all modules
                                                             // in the system for any enabled module. Factory setup command.
-                                                            // This should only bee enabled for firmware rev 4.0.
+                                                            // This should only be enabled for firmware rev 4.0.
                                                             // TRUE to enable FALSE to disable
   {"SHVRAMP", CMDfunction, 2, (char *)SetESIramp},          // Set ESI voltage ramp rate, this will effect both channels on a module.
                                                             // Units are V/0.1s
@@ -388,6 +400,7 @@ const Commands  CmdArray[] = 	{
   {"SEXTFREQ",CMDint, 1, (char *)&ExtFreq},                // Sets the external frequency used for the table clock, needed for TblTasks capability, 0 by default
   {"GEXTFREQ",CMDint, 0, (char *)&ExtFreq},                // Returns the ExtFreq value, in Hz
   #if TABLE2code
+  {"TBLCHK",CMDfunction, 0, (char *)TableCheck},           // The function tests a tbale for timing violations and prints the results
   {"STBLRMPENA", CMDfunctionStr, 2, (char *)EnableRamp},   // Enable the table ramp mode and set ramp ISR frequency
   // ADC change triggering of table
   {"STPADJ",CMDfunction,2, (char *)SelectTPforAdjust},     // Select table time point for adjustment on ADC change detection
@@ -398,6 +411,8 @@ const Commands  CmdArray[] = 	{
   {"TRIGCHG", CMDfunctionStr, 1, (char *) TriggerOnChange},// This command enabled the change detection module and triggers
                                                            // The table on detected change, TWIaddress in hex is passed to 
                                                            // init the change module.
+  {"STBLDLT",CMDint, 1, (char *)&TimeDelta},               // Sets the TimeDelta values that is added to all flaged time point counts
+  {"GTBLDLT",CMDint, 0, (char *)&TimeDelta},               // Returns the TimeDelta values that is added to all flaged time point counts
   #endif
 // Macro commands
   {"MRECORD", CMDfunctionStr, 1, (char *) MacroRecord},    // Turn on macro recording into the filename argument
@@ -472,6 +487,9 @@ const Commands  CmdArray[] = 	{
   {"GFMLOCK", CMDbool, 0, (char *)&Lock},                       // Returns FAIMS output level lock mode
   {"SFMSP", CMDfunctionStr, 1, (char *)FAIMSsetLockSP},         // Sets FAIMS output level lock setpoint
   {"GFMSP", CMDfloat, 0, (char *)&LockSetpoint},                // Returns FAIMS output level lock setpoint
+  {"SFMTUNE", CMDfunction, 0, (char *)FAIMSrequestAutoTune},    // Set auto tune request flag
+  {"SFMTABRT", CMDfunction, 0, (char *)FAIMSautoTuneAbort},     // Set auto tune abort flag
+  {"GFMTSTAT", CMDstr, 0, (char *)TuneState},                   // Returns the auto tune state string
 // FAIMS DC CV and Bias commands
   {"SFMCV", CMDfunctionStr, 1, (char *)FAIMSsetCV},                // Sets FAIMS DC CV voltage setpoint
   {"GFMCV", CMDfloat, 0, (char *)&faims.DCcv.VoltageSetpoint},     // Returns FAIMS DC CV voltage setpoint
@@ -726,6 +744,8 @@ const Commands  CmdArray[] = 	{
   {"GFBNUMSTP",  CMDfunction, 1, (char *)ReturnFAIMSfbSteps},        // returns the scan number of steps for the seletced module 
   {"FBSCNSTRT",  CMDfunction, 1, (char *)InitFAIMSfbScan},           // Start the scan for the seletced module 
   {"FBSCNSTP",  CMDfunction, 1, (char *)StopFAIMSfbScan},            // Stop a scn that is in process for the seletced module 
+  {"SFBADCSMP",  CMDint, 1, (char *)&NumSamples},                    // Set the number of adc sample to average, 1 to 16 
+  {"GFBADCSMP",  CMDint, 0, (char *)&NumSamples},                    // Returns the number of adc sample to average, 1 to 16 
   // Electrometer commands
   {"SELTMTRENA",  CMDfunctionStr, 1, (char *)SetEMRTenable},         // Set the electrometer enabled flag, TRUE or FALSE 
   {"GELTMTRENA",  CMDfunction, 0, (char *)ReturnEMRTenable},         // Return the electrometer enable flag
@@ -1288,14 +1308,19 @@ void _EEFC_ReadUniqueID( unsigned int * pdwUniqueID )
 
 void ReportUniqueID(void)
 {
-   unsigned int adwUniqueID[5]; 
+   unsigned int adwUniqueID[4]; 
 
-   _EEFC_ReadUniqueID( adwUniqueID );
+   {
+      AtomicBlock< Atomic_RestoreState > a_Block;
+      _EEFC_ReadUniqueID( adwUniqueID );
+   }
    SendACKonly;
    serial->print("ID: ");
    for (byte b = 0 ; b < 4 ; b++)
+   {
       serial->print ((unsigned int) adwUniqueID[b], HEX);
-   serial->println ();
+   }
+   serial->println ("");
 }
 
 void SerialInit(void)
@@ -1421,6 +1446,19 @@ void ExecuteCommand(const Commands *cmd, int arg1, int arg2, char *args1, char *
           SendACK;
           break;
       }
+    case CMDbyte:
+      if (cmd->NumArgs == 0)   // If true then write the value
+      {
+         SendACKonly;
+         if (!SerialMute) serial->println(*(cmd->pointers.bytePtr));
+         break;
+      }
+      if (cmd->NumArgs == 1) 
+      {
+          *(cmd->pointers.bytePtr) = arg1;
+          SendACK;
+          break;
+      }
     case CMDfloat:
       if (cmd->NumArgs == 0)   // If true then write the value
       {
@@ -1515,6 +1553,7 @@ int ProcessCommand(void)
     {
       delimiter=0;
       serial->print(EchoString);
+      serial->flush();  // Added 11/16/2020, caused system to crash on UUID command without it!
       EchoString = "";
     }
     else EchoString += ',';

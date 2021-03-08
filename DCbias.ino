@@ -57,11 +57,12 @@ extern DialogBox DCbiasDialog;
 extern bool NormalStartup;
 
 // DC bias profiles
-#define NumProfiles 10
-float   *DCbiasProfiles[NumProfiles];
-bool    DCbiasProfileApplied = false;
-int     Profile1,Profile2,CurrentProfile;
-int     ProfileDwell;
+#define   NumProfiles 10
+float     *DCbiasProfiles[NumProfiles];
+bool      DCbiasProfileApplied = false;
+int       Profile1,Profile2,CurrentProfile;
+int       ProfileDwell;
+DIhandler *ProfileTrig=NULL;
 
 // Filter time constant is:
 // TC in seconds = 1/(sample rate is samples per sec * filter value) * 2 * pi
@@ -497,7 +498,7 @@ int DCbiasChan2DAC(int chan)
 {
   int brd;
   
-  if((brd=DCbiasCH2Brd(chan)) == -1) return -1;
+  if((brd=DCbiasCH2Brd(chan & 31)) == -1) return -1;
   chan &= 7;
   return DCbDarray[brd]->DCCD[chan].DCctrl.Chan;
 }
@@ -873,7 +874,7 @@ void DCbias_loop(void)
     }
     // Determine the largest error between the output setpoint and the actual value, scan all channels
     // only do this test if the power supply is on and its a 250 volt or higher board
-    if(IsPowerON() && (DCbDarray[b]->MaxVoltage >= 250)) for(i=0;i<DCbDarray[b]->NumChannels;i++)
+    if(IsPowerON() && (DCbDarray[b]->MaxVoltage >= 200)) for(i=0;i<DCbDarray[b]->NumChannels;i++)
     {
       if((TableMode == LOC) && (DCbiasTestEnable))
       {
@@ -1328,6 +1329,24 @@ void SetDCbiasRange(int board, int range)
   SendNAK;
 }
 
+// Sets the DCbias board voltage range limit. This is a setup command used only in the factory.
+// This command only limits the board's voltage range and does not adjust calibration parameters.
+void SetDCbiasLimit(int board, int range)
+{
+  if((board >= 0) && (board <= 3))
+  {
+    if(DCbDarray[board] != NULL)
+    {
+      DCbDarray[board]->MaxVoltage = abs(range);
+      DCbDarray[board]->MinVoltage = -abs(range);
+      SendACK;
+      return;
+    }
+  }
+  SetErrorCode(ERR_BADARG);
+  SendNAK;
+}
+
 // This command sets the TWI addresses for the DAC and ADC and the SPI address for the octal DAC
 // for extended operation. The addressed set are:
 // SPI = 0
@@ -1703,6 +1722,12 @@ void ProfileISR(void)
   else ApplyDCbiasProfile(Profile1);
 }
 
+void ProfileTrigISR(void)
+{
+  if(digitalRead(DI1) == 0) ApplyDCbiasProfile(Profile1);
+  else ApplyDCbiasProfile(Profile2);
+}
+
 void SetDCbiasProfileToggle(void)
 {
    DCbiasData *DCbData;
@@ -1731,7 +1756,6 @@ void SetDCbiasProfileToggle(void)
      // Test the range of the parameters passed
      if((Profile1 < 1) || (Profile1 > NumProfiles)) break;
      if((Profile2 < 1) || (Profile2 > NumProfiles)) break;
-     if(ProfileDwell < 0) break;
      // Make sure the profiles are allocated
      if((DCbiasProfiles[Profile1-1] == NULL) || (DCbiasProfiles[Profile2-1] == NULL))
      {
@@ -1739,8 +1763,19 @@ void SetDCbiasProfileToggle(void)
        SendNAK;
        return;
      }
+     if(sToken == "R")
+     {
+       // Here if the user selected the R input to control the toggle
+       if(ProfileTrig == NULL) ProfileTrig = new DIhandler;
+       ProfileTrig->detach();
+       ProfileTrig->attached('R', CHANGE, ProfileTrigISR);
+       ProfileTrigISR();
+       SendACK;
+       return;
+     }
      // Apply the first profile and setup the timer and ISR for
      // profile toggling
+     if(ProfileDwell < 0) break;
      ApplyDCbiasProfile(Profile1);
      TMR_Profiles.attachInterrupt(ProfileISR);
      TMR_Profiles.start(ProfileDwell*1000);
@@ -1755,6 +1790,7 @@ void SetDCbiasProfileToggle(void)
 
 void StopProfileToggle(void)
 {
+  if(ProfileTrig != NULL) ProfileTrig->detach();
   TMR_Profiles.stop();
   SendACK;
 }

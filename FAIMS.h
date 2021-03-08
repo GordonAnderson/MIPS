@@ -113,12 +113,40 @@ typedef struct
 
 extern FAIMSdata  faims;
 
+// FAIMS Auto tune parameters
+
+// Auto tune data types
+enum FAIMSdir
+{
+  FAIMSup,
+  FAIMSdown,
+  FAIMSdone
+};
+
+enum FAIMSautoTuneStates
+{
+  FAIMSidle,
+  FAIMSexit,
+  FAIMSabort,
+  FAIMSenable,
+  FAIMSfindFreq,
+  FAIMSfindFreqFine,
+  FAIMSfindPcap,
+  FAIMSfindHcap,
+  FAIMSsetPhase,
+  FAIMStunePhase,
+  FAIMSsetHarmonic
+};
+
+extern char TuneState[];
+
 // Prototypes
 void SaveFAIMSSettings(void);
 void RestoreFAIMSSettings(void);
 void CalibrateDCbias(void);
 void CalibrateDCcv(void);
 void CalibrateDCoffset(void);
+bool FAIMSstartAutoTune(void);
 
 // Serial command prototypes
 void FAIMSnumberOfChannels(void);
@@ -140,5 +168,8 @@ void FAIMSsetSteps(char *count);
 
 void FAIMSsetLock(char *state);
 void FAIMSsetLockSP(char *KV);
+
+void FAIMSrequestAutoTune(void);
+void FAIMSautoTuneAbort(void);
 
 #endif

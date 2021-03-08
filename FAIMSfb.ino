@@ -38,6 +38,7 @@ int NumberOfFAIMSFBchannels    =  0;
 int SelectedFAIMSFBboard       =  0;    // Active board, 0 or 1 = A or B
 int FAIMSFBmodule              =  1;
 int CurrentFAIMSFBmodule       = -1;
+int NumSamples                 = 4;
 
 extern DialogBoxEntry FAIMSFBentries[];
 extern DialogBoxEntry FAIMSFBsettings[];
@@ -349,8 +350,8 @@ void FAIMSFBscanISR(void)
   // Read the electrometer here if its enabled
   if(FAIMSFBarray[b]->ElectrometerEnable)
   {
-     msd->PosCurrent = Counts2Value(AD5593readADCWire1(FAIMSFBarray[b]->ElectAdd, FAIMSFBarray[b]->ElectPosCtrl.Chan,4), &FAIMSFBarray[b]->ElectPosCtrl);
-     msd->NegCurrent = Counts2Value(AD5593readADCWire1(FAIMSFBarray[b]->ElectAdd, FAIMSFBarray[b]->ElectNegCtrl.Chan,4), &FAIMSFBarray[b]->ElectNegCtrl);
+     msd->PosCurrent = Counts2Value(AD5593readADCWire1(FAIMSFBarray[b]->ElectAdd, FAIMSFBarray[b]->ElectPosCtrl.Chan,NumSamples), &FAIMSFBarray[b]->ElectPosCtrl);
+     msd->NegCurrent = Counts2Value(AD5593readADCWire1(FAIMSFBarray[b]->ElectAdd, FAIMSFBarray[b]->ElectNegCtrl.Chan,NumSamples), &FAIMSFBarray[b]->ElectNegCtrl);
   }
   // Advance to next scan point
   digitalWrite(MIPSscanAdv,HIGH);
@@ -755,7 +756,7 @@ void InitFAIMSfbScan(int module)
 {
    InitFBScan(module);
    SendACK;
-   delay(10);
+   //delay(10);
    ReportFBScan();
 }
 
