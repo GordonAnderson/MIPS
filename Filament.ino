@@ -1403,3 +1403,125 @@ void SaveFIL2EEPROM(void)
   }
   SendACK;
 }
+
+// Serial interface calibration functions. This is desiged to calibrate a software rev 4.0 
+// filament system.
+
+void CalFilSupplyV(void)
+{
+  ChannelCal CC;
+  char *Name = "Filament Supply Voltage";
+
+  SelectBoard(0);
+  // Set up the calibration data structure
+  if(FD.Rev == 4) CC.ADCpointer = &AD5593readADC;
+  else CC.ADCpointer = &AD7998;
+  CC.Min = 0;
+  CC.Max = 5;
+  CC.DACaddr = FD.DACadr;
+  CC.ADCaddr = FD.ADCadr;
+  CC.DACout = &FCD.DCfsuply;
+  CC.ADCreadback = &FCD.DCfsuplyMon;
+  // Calibrate this channel
+  ChannelCalibrateSerial(&CC, Name);
+  FD.FCD[Channel2Index(0)] = FCD;
+}
+
+void CalFilV(void)
+{
+  ChannelCal CC;
+  char *Name = "Filament Voltage";
+
+  SelectBoard(0);
+  // Set up the calibration data structure
+  if(FD.Rev == 4) CC.ADCpointer = &AD5593readADC;
+  else CC.ADCpointer = &AD7998;
+  CC.Min = 0;
+  CC.Max = 5;
+  CC.DACaddr = FD.DACadr;
+  CC.ADCaddr = FD.ADCadr;
+  CC.DACout = &FCD.DCfsuply;
+  CC.ADCreadback = &FCD.Fvoltage;
+  // Calibrate this channel
+  ChannelCalibrateSerial(&CC, Name);
+  FD.FCD[Channel2Index(0)] = FCD;
+}
+
+void CalFilI(float p1, float p2)
+{
+  ChannelCal CC;
+  char *Name = "Filament Current";
+
+  SelectBoard(0);
+  // Set up the calibration data structure
+  if(FD.Rev == 4) CC.ADCpointer = &AD5593readADC;
+  else CC.ADCpointer = &AD7998;
+  CC.DACaddr = FD.DACadr;
+  CC.ADCaddr = FD.ADCadr;
+  CC.DACout = &FCD.Fcurrent;
+  CC.ADCreadback = &FCD.FcurrentMon;
+  // Calibrate this channel
+  ChannelCalibrateSerial(&CC, Name, p1, p2);
+  FD.FCD[Channel2Index(0)] = FCD;
+}
+
+void CalibrateFilament(void)
+{
+  if(FDarray[0].Rev !=4)
+  {
+    serial->println("Can't proceed, wrong hardware rev!");
+    return;
+  }
+  serial->println("Filament module calibration procedure.");
+  serial->println("Configuring system...");
+  FDarray[0].FCD[0].Mode = FmodeI;
+  Filament_loop();
+  FDarray[0].FCD[0].FilamentPwr = true;
+  FDarray[0].FCD[0].CurrentSetpoint = 0.0;
+  FDarray[0].FCD[0].FilamentVoltage = 0.0;
+  for(int i=0;i<100;i++) Filament_loop();
+  // Calibrate filament voltage
+  serial->println("Measure voltage from TP_FIL_GND to TP_FIL-");
+  CalFilV();
+  // Calibrate filament supply voltage
+  serial->println("Measure voltage from TP_FIL_GND to TP_FIL+");
+  CalFilSupplyV();
+  FDarray[0].FCD[0].FilamentVoltage = 3.0;
+  for(int i=0;i<100;i++) Filament_loop();
+  // Calibrate filament current
+  serial->println("Measure filament current, use 10A range");
+  CalFilI(.1,5);
+  CalFilI(.05,5);
+  CalFilI(.05,5);
+  // Reset all the filament channel parameters.
+  FDarray[0].FCD[0].Mode = FmodeIV;
+  Filament_loop();
+  FDarray[0].FCD[0].FilamentPwr = false;
+  for(int i=0;i<100;i++) Filament_loop();
+  // calibrate the emision current
+  // Set the filament bias channel to 0 volts
+  // then read the emision ADC channel, this is 0 uA
+  serial->println("Calibrate the emsion current.");
+  serial->println("Install 100k 0.1% resistor from filament out to ground.");
+  UserInput("Press enter when ready...");
+  serial->println("\n");
+  int b = DCbiasCH2Brd(7);
+  DCbDarray[DCbiasCH2Brd(7)]->DCCD[7].VoltageSetpoint = 0;
+  AD5668(DCbDarray[b]->DACspi,DCbDarray[b]->DCCD[7].DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCCD[7].DCctrl),3);
+  delay(250);
+  int ZeroCounts = AD5593readADC(FDarray[0].ADCadr, FDarray[0].Ecurrent.Chan,100);
+  // Set the filament bias channel to 10 volts
+  // then read the emision ADC channel, this is 100 uA becasue
+  // we are using a 100K 0.1% resistor to ground from the filament
+  // channel 
+  AD5668(DCbDarray[b]->DACspi,DCbDarray[b]->DCCD[7].DCctrl.Chan,Value2Counts(10,&DCbDarray[b]->DCCD[7].DCctrl),3);
+  delay(250);
+  int FSCounts = AD5593readADC(FDarray[0].ADCadr, FDarray[0].Ecurrent.Chan,100);
+  // Calclate the calibration parameters
+  FDarray[0].Ecurrent.m = ((float)FSCounts - (float)ZeroCounts) / 100;
+  FDarray[0].Ecurrent.b = (float)ZeroCounts;
+  AD5668(DCbDarray[b]->DACspi,DCbDarray[b]->DCCD[7].DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCCD[7].DCctrl),3);
+  // Finished
+  SaveFilamentSettings();
+  serial->println("Filament calibration finished!");
+}

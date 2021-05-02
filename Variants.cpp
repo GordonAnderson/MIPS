@@ -17,6 +17,9 @@
 uint32_t TWIfails = 0;
 bool     Serial1Echo = false;
 
+//RTCDue rtc(XTAL);
+RTCDue rtc(RC);
+
 MIPSconfigStruct MIPSconfigData = {sizeof(MIPSconfigStruct),"MIPS",2,0,0,10,false,true,1.0,"",false,false,"",5,false,0xA55AE99E,false,false,false,false,0,0,0,0,true,0};
 
 TwaveData Twave_Rev1 = {sizeof(TwaveData),"Twave",1,1000000,03,0x10,0x20,0x27,0x69,

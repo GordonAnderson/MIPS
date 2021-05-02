@@ -66,6 +66,7 @@ void DialogButtonPress(DialogBox *d)
           if (d->Entry[d->Selected].Value != NULL)
           {
             DialogBoxDisplay((DialogBox *)d->Entry[d->Selected].Value);
+            if (d->Entry[d->Selected].PostFunction != NULL) d->Entry[d->Selected].PostFunction();
             return;
           }
           break;

@@ -163,6 +163,15 @@ const Commands  CmdArray[] = 	{
                                                                   // add is decimal, string is \n terminated
   {"STRPLVL", CMDfloat, 1, (char *)&MIPSconfigData.VerrorThreshold},// Set the DCbias power supply readback error trip point in percentage of FS
   {"GTRPLVL", CMDfloat, 0, (char *)&MIPSconfigData.VerrorThreshold},// Returns the DCbias power supply readback error trip point in percentage of FS
+// Log commands
+  {"SLOGENA", CMDbool, 1, (char *)&logdata.enabled},                // Enables logging is TRUE, disable if FALSE
+  {"GLOGENA", CMDbool, 0, (char *)&logdata.enabled},                // Returns the log enable status
+  {"LOGREP", CMDfunction, 0, (char *)ReportLogEntry},               // Reports the current log entries
+// Real time clock functions. Note, no battery backup so the clock reset every time the hardware boots.
+  {"STIME", CMDfunctionLine, 0, (char *)&SetTime},                  // Sets the current time, 00:00:00 format
+  {"GTIME", CMDfunction, 0, (char *)&GetTime},                      // Returns the current time, 00:00:00 format
+  {"SDATE", CMDfunctionLine, 0, (char *)&SetDate},                  // Sets the current date, dd/mm/yyyy format
+  {"GDATE", CMDfunction, 0, (char *)&GetDate},                      // Returns the current date, dd/mm/yyyy format
 // Level detection module change enable
   {"ENALDET", CMDfunctionStr, 1, (char *)SetLevelDetChangeReport},  // Enables the level detection module to report a detected change to the host.
                                                                     // This function requires the module address in hex.
@@ -288,6 +297,10 @@ const Commands  CmdArray[] = 	{
   {"GDCBPT", CMDfunction, 0, (char *)GetDCbiasPtrigger},              // Get DC bias pulse trigger source, Q-X or t
   {"SDCBPENA", CMDfunctionStr, 1, (char *)SetDCbiasPena},             // Set DC bias pulse enable, TRUE or FALSE
   {"GDCBPENA", CMDbool, 0, (char *)&DCbiasPena},                      // Get DC bias pulse enable, TRUE or FALSE
+// DCbias serial calibration functions
+  {"CDCBCH", CMDfunction, 1, (char *)CalDCbiasChannel},               // Calibrate the requested DC bias channel
+  {"CDCBCHS", CMDfunction, 0, (char *)CalDCbiasChannels},             // Calibrate all DC bias channel in order
+  {"CDCBOFF", CMDfunction, 1, (char *)CalDCbiasOffset},               // Calibrate all DC bias offset for channel number
 // RF generator module commands
   {"SRFFRQ", CMDfunction, 2, (char *)RFfreq},		 // Set RF frequency
   {"SRFVLT", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&RFvoltage))},	 // Set RF output voltage
@@ -307,7 +320,7 @@ const Commands  CmdArray[] = 	{
   {"RFCALP", CMDfunctionStr, 2, (char *)RFcalP},         // Adjust the calibration for a RF+ channel, channel,actual level in Vp-p, enter negative to set defaults
   {"RFCALN", CMDfunctionStr, 2, (char *)RFcalN},         // Adjust the calibration for a RF- channel, channel,actual level in Vp-p, enter negative to set defaults
   {"SRFPL", CMDfunction, 2, (char *)SetRFpwrLimit},      // Sets the RF power limit for the given channel, in watts
-  {"GRFPL", CMDfunction, 1, (char *)GetRFpwrLimit},      // Retruns the RF power limit for the given channel, in watts
+  {"GRFPL", CMDfunction, 1, (char *)GetRFpwrLimit},      // Returns the RF power limit for the given channel, in watts
 // RF amplifier / QUAD commands
   {"SRFAENA", CMDfunctionStr, 2, (char *)RFAsetENA},         // Sets the RF system enable mode, ON or OFF
   {"GRFAENA", CMDfunction, 1, (char *)RFAgetENA},            // Returns the RF system enable mode, ON or OFF
@@ -490,6 +503,10 @@ const Commands  CmdArray[] = 	{
   {"SFMTUNE", CMDfunction, 0, (char *)FAIMSrequestAutoTune},    // Set auto tune request flag
   {"SFMTABRT", CMDfunction, 0, (char *)FAIMSautoTuneAbort},     // Set auto tune abort flag
   {"GFMTSTAT", CMDstr, 0, (char *)TuneState},                   // Returns the auto tune state string
+  {"SFMTPOS",CMDbool, 1, (char *)&TunePos},                     // Set the positive tune mode if TRUE, if FALSE tune for neg peak
+  {"GFMTPOS",CMDbool, 0, (char *)&TunePos},                     // Return positive peak mode
+  {"SFMTDRV",CMDint, 1, (char *)&TuneDrive},                    // Set the tune mode drive level
+  {"GFMTDRV",CMDint, 0, (char *)&TuneDrive},                    // Return the tune mode drive level
 // FAIMS DC CV and Bias commands
   {"SFMCV", CMDfunctionStr, 1, (char *)FAIMSsetCV},                // Sets FAIMS DC CV voltage setpoint
   {"GFMCV", CMDfloat, 0, (char *)&faims.DCcv.VoltageSetpoint},     // Returns FAIMS DC CV voltage setpoint
@@ -517,10 +534,17 @@ const Commands  CmdArray[] = 	{
   {"GFMSTEPS", CMDint, 0, (char *)&faims.Steps},                   // Returns FAIMS DC CV step scan number of steps
   {"SFMSTRTSTP", CMDbool, 1, (char *)&FAIMSstepScan},              // Sets FAIMS DC CV step scan flag
   {"GFMSTRTSTP", CMDbool, 0, (char *)&FAIMSstepScan},              // Returns FAIMS DC CV step scan flag
-// FAIMS confuguration / calibration commands
-  {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},     // Set FAIMS RF harmonic positive peak readback calibration
-  {"SRFHNCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharNcal},     // Set FAIMS RF harmonic negative peak readback calibration
-  {"SARCDIS",CMDbool, 1, (char *)&DiableArcDetect},               // TRUE or FALSE, set to TRUE disable arc detection
+// FAIMS configuration / calibration commands
+  {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},      // Set FAIMS RF harmonic positive peak readback calibration
+  {"SRFHNCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharNcal},      // Set FAIMS RF harmonic negative peak readback calibration
+  {"SARCDIS",CMDbool, 1, (char *)&DiableArcDetect},                // TRUE or FALSE, set to TRUE disable arc detection
+  {"FMISCUR",CMDbool, 0, (char *)&CurtianFound},                   // Returns TRUE is Curtian supply was detected
+  {"SFMCCUR",CMDbool, 1, (char *)&CurtianCtrl},                    // If TRUE allows enable faims to enable curtian supply
+  {"GFMCCUR",CMDbool, 0, (char *)&CurtianCtrl},                    // Returns curtian control flag
+  {"SFMMDIS",CMDbool, 1, (char *)&ArcMessAutoDismiss},             // Set the message auto dismiss is TRUE
+  {"GFMMDIS",CMDbool, 0, (char *)&ArcMessAutoDismiss},             // Return the message auto dismiss flag 
+  {"SFARCR",CMDint, 1, (char *)&FMnumTries},                       // Set the number of arc retry attempts
+  {"SFARCR",CMDint, 0, (char *)&FMnumTries},                       // Return the number of arc retry attempts 
 #endif
 // Filament commands
   {"GFLENA", CMDfunction, 1, (char *)GetFilamentEnable},             // Get filament ON/OFF status
@@ -550,6 +574,7 @@ const Commands  CmdArray[] = 	{
   {"SFLSRES", CMDint, 1, (char *)&FDarray[0].iSense},                // Sets the bias current sense resistor value
   {"GFLECUR", CMDfunction, 0, (char *)ReportBiasCurrent},            // Returns the filament emission current 
   {"SFLSWD",  CMDbool, 1, (char *)&FLserialWD},                      // Set serial watch dog timer mode
+  {"CALFIL", CMDfunction, 0, (char *)CalibrateFilament},             // Calibration procedure for rev 4 filament module 
 // WiFi commands
   {"GHOST",  CMDstr, 0, (char *)wifidata.Host},                      // Report this MIPS box host name
   {"GSSID",  CMDstr, 0, (char *)wifidata.ssid},                      // Report the WiFi SSID to connect to
@@ -767,41 +792,99 @@ const Commands  CmdArray[] = 	{
 
 void Debug(int function)
 {
-  static DIhandler DI;
-  char   c;
 
-  if(function == 1)
-  {
-    for(int i=0;i<MaxDIhandlers;i++) 
-    {
-      serial->println((uint)DI.handlers[i]);
-    }
-    return;
-  }
-  if(function == 2)
-  {
-    for(int i=0;i<MaxDIhandlers;i++) 
-    {
-      if(i==0)
-      {
-        serial->print("Total interrupts: ");
-        serial->println(DI.NumInterrupts);
-      }
-      if(DI.handlers[i] != NULL)
-      {
-         c = DI.handlers[i]->di;
-         if(c == 0) c = ' ';
-         serial->print(i); serial->print(",");
-         serial->print(c); serial->print(",");
-         serial->print(DI.handlers[i]->mode); serial->print(","); 
-         serial->println((uint)DI.handlers[i]->userISR);
-      }
-    }
-    return;
-  }
-  serial->println(DI.NumHandlers);
 }
 
+// Real time clock functions
+void GetTime(void)
+{
+  char buf[3];
+
+  SendACKonly;
+  if(SerialMute) return; 
+  sprintf(buf,"%.2d:", rtc.getHours());
+  serial->print(buf);
+  sprintf(buf,"%.2d:", rtc.getMinutes());
+  serial->print(buf);
+  sprintf(buf,"%.2d", rtc.getSeconds());
+  serial->println(buf);
+}
+
+void SetTime(void)
+{
+  char     *tkn;
+  String   arg;
+  uint8_t  h,m,s;
+
+  while(true)
+  {
+     if((tkn = TokenFromCommandLine(',')) == NULL) break;
+     arg = tkn;
+     h = arg.toInt();
+     if(h >= 24) break;
+     if((tkn = TokenFromCommandLine(':')) == NULL) break;
+     arg = tkn;
+     m = arg.toInt();
+     if(m >= 60) break;
+     if((tkn = TokenFromCommandLine(':')) == NULL) break;
+     arg = tkn;
+     s = arg.toInt();
+     if(s >= 60) break;
+     rtc.setTime(h, m, s);
+     SendACK;
+     return;
+  }
+  BADARG;
+}
+
+void GetDate(void)
+{
+  char buf[5];
+
+  SendACKonly;
+  if(SerialMute) return; 
+  sprintf(buf,"%.2d/", rtc.getDay());
+  serial->print(buf);
+  sprintf(buf,"%.2d/", rtc.getMonth());
+  serial->print(buf);
+  sprintf(buf,"%.4d", rtc.getYear());
+  serial->println(buf);  
+}
+
+void SetDate(void)
+{
+  char     *tkn;
+  String   arg;
+  uint8_t  d,m;
+  uint16_t y;
+
+  while(true)
+  {
+     if((tkn = TokenFromCommandLine(',')) == NULL) break;
+     arg = tkn;
+     d = arg.toInt();
+     if(d > 31) break;
+     if((tkn = TokenFromCommandLine('/')) == NULL) break;
+     arg = tkn;
+     m = arg.toInt();
+     if((m==0) || (m>12)) break;
+     if((tkn = TokenFromCommandLine('/')) == NULL) break;
+     arg = tkn;
+     y = arg.toInt();
+     if(y<1970) break;
+     rtc.setDate(d, m, y);
+     SendACK;
+     return;
+  }
+  BADARG;
+}
+
+// end real time clock functions
+
+// This function will set a command to the TWI primary port. This function then looks
+// for a response for up to 250mS. After a \n is received this function will exit. The
+// the received characters and sent to the selected host port.
+// On call it is assumed the full command line is in the input buffer.
 void TWIscmd(void)
 {
   
@@ -863,7 +946,10 @@ void TWIscmd(void)
   ReleaseTWI();
 }
 
-// Called with the command string in the ring buffer
+// This function will set a command to the TWI port 1, the secondary port. This function then looks
+// for a response for up to 250mS. After a \n is received this function will exit. The
+// the received characters and sent to the selected host port.
+// On call it is assumed the full command line is in the input buffer.
 void TWI1scmd(void)
 {
   char        *Token;
@@ -919,6 +1005,7 @@ void TWI1scmd(void)
   }
 }
 
+// This function will read a DUE pin
 void Dread(int pin)
 {
   SendACKonly;
@@ -1363,7 +1450,7 @@ char *GetToken(bool ReturnComma)
     ch = RB_Next(&RB);
     if (ch == 0xFF) return NULL;
     if (Tptr >= MaxToken) Tptr = MaxToken - 1;
-    if ((ch == '\n') || (ch == ';') || (ch == ':') || (ch == ',') || (ch == ']') || (ch == '['))
+    if ((ch == '\n') || (ch == ';') || (ch == ':') || (ch == ',') || (ch == ']') || (ch == '[') || (ch == '/'))
     {
       if (Tptr != 0) ch = 0;
       else
@@ -1388,6 +1475,59 @@ char *GetToken(bool ReturnComma)
 char *LastToken(void)
 {
   return Token;
+}
+
+char *TokenFromCommandLine(char expectedDel)
+{
+  char *tkn;
+  
+  tkn = GetToken(true);
+  if(tkn == NULL) return NULL;
+  if(tkn[0] != expectedDel)
+  {
+    // Flush to end of line and return NULL
+    return NULL;
+  }
+  return GetToken(true);
+}
+
+char  *UserInput(char *message)
+{
+  char *tkn;
+  
+  // Flush the input ring buffer
+  RB.Head=RB.Tail=RB.Count=RB.Commands=0;
+  serial->print(message);
+  // Wait for a line to be detected in the ring buffer
+  while(RB.Commands == 0) ReadAllSerial();
+  // Read the token
+  tkn = GetToken(true);
+  if(tkn != NULL) if(tkn[0] == '\n') tkn = NULL;
+  return tkn;
+}
+
+int   UserInputInt(char *message)
+{
+  char   *tkn;
+  String arg;
+
+  tkn = UserInput(message);
+  // Flush the input ring buffer
+  RB.Head=RB.Tail=RB.Count=RB.Commands=0;
+  arg = tkn;
+  return arg.toInt();
+}
+
+float UserInputFloat(char *message)
+{
+  char   *tkn;
+  String arg;
+
+  tkn = UserInput(message);
+  // Flush the input ring buffer
+  RB.Head=RB.Tail=RB.Count=RB.Commands=0;
+  arg = tkn;
+  return arg.toFloat();
 }
 
 void ExecuteCommand(const Commands *cmd, int arg1, int arg2, char *args1, char *args2, float farg1)

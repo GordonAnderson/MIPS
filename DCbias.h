@@ -128,4 +128,8 @@ void SetLevelDetOffsetAdjust(char *brd, char *TWIadd);
 void SetLevelDetChOffsetAdjust(char *brd, char *TWIadd);
 int DCbiasChan2DAC(int chan);
 
+bool CalDCbiasChannel(int channel);
+void CalDCbiasChannels(void);
+bool CalDCbiasOffset(int channel);
+
 #endif

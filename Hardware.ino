@@ -353,6 +353,84 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
   }
 }
 
+// This is a generic calibration function that uses the host interface to perform the calibration.
+// Entering an empty string will cause the calibration function to abort
+bool ChannelCalibrateSerial(ChannelCal *CC, char *Message)
+{
+  float ZeroPoint;
+  float MidPoint;
+  
+  ZeroPoint = CC->Min + (CC->Max - CC->Min) / 2;
+  MidPoint = ZeroPoint + (CC->Max - ZeroPoint) / 2;
+  return ChannelCalibrateSerial(CC, Message, ZeroPoint, MidPoint);  
+}
+
+bool ChannelCalibrateSerial(ChannelCal *CC, char *Message, float ZeroPoint, float MidPoint)
+{
+  char   *tkn;
+  String arg;
+  
+  // Print the calibration message
+  serial->println(Message);
+  if (CC->DACout != NULL)
+  {
+    DACZeroCounts = Value2Counts((float)ZeroPoint, CC->DACout);
+    DACMidCounts = Value2Counts((float)MidPoint, CC->DACout);
+  }
+  // Does not return, this function blocks
+  while (1)
+  {
+    LDAClow;
+    // Set the DAC to point one and then ask the user to enter the measured value
+    if (CC->DACout != NULL)
+    {
+      if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
+      else if ((CC->DACaddr & 0xFE) == 0x10) { AD5593writeDAC(CC->DACaddr, CC->DACout->Chan, DACZeroCounts); delay(100);}
+      else { AD5625(CC->DACaddr, CC->DACout->Chan, DACZeroCounts); delay(100);}
+    }
+    delay(250);
+    if (CC->ADCreadback != NULL) ADCZeroCounts = CC->ADCpointer(CC->ADCaddr, CC->ADCreadback->Chan, 100);
+    tkn = UserInput("\nEnter the measured value: ");
+    if(tkn == NULL) break;
+    arg = tkn;
+    ZeroPoint = arg.toFloat();
+    // Set the DAC to point two and then ask the user to enter the measured value
+    if (CC->DACout != NULL)
+    {
+      if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
+      else if ((CC->DACaddr & 0xFE) == 0x10) { AD5593writeDAC(CC->DACaddr, CC->DACout->Chan, DACMidCounts); delay(100);}
+      else { AD5625(CC->DACaddr, CC->DACout->Chan, DACMidCounts); delay(100);}
+    }
+    delay(250);
+    if (CC->ADCreadback != NULL) ADCMidCounts = CC->ADCpointer(CC->ADCaddr, CC->ADCreadback->Chan, 100);
+    tkn = UserInput("\nEnter the measured value: ");
+    if(tkn == NULL) break;
+    arg = tkn;
+    MidPoint = arg.toFloat();
+    // Calculate the DAC and ADC calibration
+    if (CC->DACout != NULL)
+    {
+      CC->DACout->m = ((float)DACZeroCounts - (float)DACMidCounts) / ((float)ZeroPoint - (float)MidPoint);
+      CC->DACout->b = (float)DACZeroCounts - CC->DACout->m * (float)ZeroPoint;
+    }
+    if (CC->ADCreadback != NULL)
+    {
+      CC->ADCreadback->m = ((float)ADCZeroCounts - (float)ADCMidCounts) / ((float)ZeroPoint - (float)MidPoint);
+      CC->ADCreadback->b = (float)ADCZeroCounts - CC->ADCreadback->m * (float)ZeroPoint;
+    }
+    if (CC->DACout != NULL)
+    {
+      if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, CC->DACout->b);
+      else if ((CC->DACaddr & 0xFE) == 0x10) { AD5593writeDAC(CC->DACaddr, CC->DACout->Chan, CC->DACout->b); delay(100);}
+      else { AD5625(CC->DACaddr, CC->DACout->Chan, CC->DACout->b); delay(100);}
+    }    
+    serial->println("\nDone!");
+    return true;
+  }  
+  serial->println("\nAborted!");
+  return false;
+}
+
 // This function sets the board select bit based on the board value
 inline void SelectBoard(int8_t Board)
 {
@@ -995,6 +1073,28 @@ int AD7994(int8_t adr, int8_t chan, int8_t num)
 
   for (i = 0; i < num; i++) val += AD7994(adr, chan);
   return (val / num);
+}
+
+// AD5629R IO routines. This is a 8 channel DAC module with a TWI
+// interface. Two functions are provided, a generic 24 bit write
+// function and a DAC channel write function.
+// Turn on the internal reference: data = 0x00800001
+// Override LDAC: data = 0x006000FF
+// Write a channel: data = 0x002yvvvv
+//    y = channel
+//    vvvv = value
+int AD5629write(uint8_t addr, uint32_t val)
+{
+  int iStat;
+
+  AcquireTWI();
+  Wire.beginTransmission(addr);
+  Wire.write((val>>16) & 0xFF);
+  Wire.write((val>>8) & 0xFF);
+  Wire.write(val & 0xFF);
+  iStat = Wire.endTransmission();
+  ReleaseTWI();
+  return (iStat);
 }
 
 // AD5593 IO routines. This is a analog and digitial IO chip with

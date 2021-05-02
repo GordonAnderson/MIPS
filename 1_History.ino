@@ -895,6 +895,20 @@
 //      4.) Table timing test function.
 //      5.) Improved the table timing.
 //      6.) Increased the maximum m/z limit to 400000 in the host interface to the RF amp quad function
+//  1.201, April 24, 2021
+//      1.) Added real time clock function and commands to get and set time and date.
+//      2.) Added DCbias module serial interface calibration function
+//      3.) Added Fimament module rev 4 serial calibration function
+//      4.) Added logging capability
+//      5.) FAIMS updates:
+//          - Added drive level control for tune mode, default 20%
+//          - Added option to turn off enable disable control of curtian supply
+//          - Added option to not auto dismiss arc detect message
+//          - Added tune mode negative peak mode
+//          - Fixed bug in curtian control that limited to +- 1000
+//          - Ramp up drive level from external input
+//          - Auto reset mode on arc detect
+//          - Arc detect hold off on value change, decrease (this code is in place and looks ok so I raised the min level from .1KV to .5KV)
 //
 // We still have the problem with the AD7998 bit bang reading routine. Problem shows up on channel 2 of RF driver 
 // at board select A. Using hardware TWI interface solves the issue.

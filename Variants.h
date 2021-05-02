@@ -41,7 +41,8 @@
 #include "Table.h"
 #include "DCbiasList.h"
 #include "FILEIO.h"
-
+#include "RTCDue.h"
+#include "Log.h"
 
 // Test mode flags, uncomment to enable selected test mode
 //#define TestMode
@@ -55,6 +56,8 @@ extern uint32_t BrightTime;
 extern uint32_t TWIfails;
 
 extern bool     Serial1Echo;
+
+extern RTCDue rtc;
 
 #define EnableSerial
 #define SerialBAUD    9600

@@ -9,7 +9,6 @@
 
 #include <Arduino.h>
 
-
 #if defined(__SAM3X8E__)
 #undef __FlashStringHelper::F(string_literal)
 #define F(string_literal) string_literal
@@ -162,6 +161,14 @@ void UpTime(void);
 void Dread(int pin);
 void Dwrite(char *pin, char *state);
 void Dset(char *pin, char *mode);
+void GetTime(void);
+void SetTime(void);
+void GetDate(void);
+void SetDate(void);
+char *TokenFromCommandLine(char expectedDel);
+char  *UserInput(char *message);
+int   UserInputInt(char *message);
+float UserInputFloat(char *message);
 
 // Prototypes for external functions called
 void SAVEparms(void);

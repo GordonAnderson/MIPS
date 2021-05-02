@@ -253,6 +253,8 @@ void SelectBoard(int8_t Board);
 int  SelectedBoard(void);
 void ChannelCalibrate(ChannelCal *CC, char *Name);
 void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint);
+bool ChannelCalibrateSerial(ChannelCal *CC, char *Message);
+bool ChannelCalibrateSerial(ChannelCal *CC, char *Message, float ZeroPoint, float MidPoint);
 float Counts2Value(int Counts, DACchan *DC);
 float Counts2Value(int Counts, ADCchan *AC);
 int Value2Counts(float Value, DACchan *DC);
@@ -261,6 +263,7 @@ int AD5593write(uint8_t addr, uint8_t pb, uint16_t val);
 int AD5593readADC(int8_t addr, int8_t chan);
 int AD5593readADC(int8_t addr, int8_t chan, int8_t num);
 int AD5593writeDAC(int8_t addr, int8_t chan, int val);
+int AD5629write(uint8_t addr, uint32_t val);
 
 void SetDelayTrigInput(char *input, char *level);
 void SetDelayTrigEnable(char *sena);

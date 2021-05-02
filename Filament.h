@@ -101,4 +101,6 @@ void ReportBiasCurrent(void);
 
 void SaveFIL2EEPROM(void);
 
+void CalibrateFilament(void);
+
 #endif

@@ -1737,13 +1737,13 @@ void SetDCbiasProfileToggle(void)
    while(1)
    {
      // Read the first profile number
-     GetToken(true);
-     if((Token = GetToken(true)) == NULL) break;
+     GetToken(true);  // This is because the command string is followed by a comma, this gets the comma
+     if((Token = GetToken(true)) == NULL) break;  // Gets the string
      sToken = Token;
      Profile1 = sToken.toInt();
      // Read the second profile number
-     GetToken(true);
-     if((Token = GetToken(true)) == NULL) break;
+     GetToken(true);  // Gets the comma
+     if((Token = GetToken(true)) == NULL) break;  // Gets the string
      sToken = Token;
      Profile2 = sToken.toInt();
      // Read the dwell time 
@@ -2300,4 +2300,80 @@ void SetLevelDetChOffsetAdjust(char *brd, char *TWIadd)
   Wire1.setClock(100000);
   attachInterrupt(digitalPinToInterrupt(LEVCHANGE), LevelDetISR, RISING);
   SendACK;
+}
+
+// Host interface based calibration functions.
+// This function allows calibration of the seleted channel
+bool CalDCbiasChannel(int channel)
+{
+  ChannelCal CC;
+  char       Name[20];
+  int        b=0;
+  bool       stat;
+  
+  if((b=DCbiasCH2Brd(channel-1)) == -1) return false;
+  SelectBoard(b);
+  // Set up the calibration data structure
+  CC.ADCpointer = &AD7998;
+  CC.Min=DCbDarray[b]->MinVoltage;
+  CC.Max=DCbDarray[b]->MaxVoltage;
+  CC.DACaddr=DCbDarray[b]->DACspi;  
+  CC.ADCaddr=DCbDarray[b]->ADCadr;
+  CC.DACout=&DCbDarray[b]->DCCD[(channel-1) & 7].DCctrl;
+  CC.ADCreadback=&DCbDarray[b]->DCCD[(channel-1) & 7].DCmon;
+  // Define this channels name
+  sprintf(Name,"Channel %2d",channel);
+  // Calibrate this channel
+  stat = ChannelCalibrateSerial(&CC, Name);
+  dcbd = *DCbD;
+  DCbiasUpdate = true;
+  return stat;
+}
+
+void CalDCbiasChannels(void)
+{
+  serial->println("Calibrate all DCbias channels.");
+  for(int i=1;i<=NumberOfDCChannels;i++)
+  {
+    if(!CalDCbiasChannel(i)) return;
+  }
+  serial->println("All channels processed!");
+  SaveDCbiasSettings();
+}
+
+bool CalDCbiasOffset(int channel)
+{
+  ChannelCal CC;
+  char       Name[30];
+  int        b=0;
+  bool       stat;
+  
+  if((b=DCbiasCH2Brd(channel-1)) == -1) return false;
+  SelectBoard(b);
+  // Set up the calibration data structure
+  CC.ADCpointer = &AD7998;
+  CC.Min=DCbDarray[b]->MinVoltage;
+  CC.Max=DCbDarray[b]->MaxVoltage;
+  CC.DACaddr=DCbDarray[b]->DACadr;  
+  CC.ADCaddr=DCbDarray[b]->ADCadr;
+  CC.DACout=&DCbDarray[b]->DCoffset.DCctrl;
+  CC.ADCreadback=NULL;
+  if((NumberOfDCChannels > 8) && (DCbDarray[0]->OffsetReadback) && (b == 1)) CC.ADCreadback=&DCbDarray[b]->DCCD[7].DCmon;
+  if((NumberOfDCChannels < 8) && (DCbDarray[0]->OffsetReadback) && (b == 0)) CC.ADCreadback=&DCbDarray[b]->DCCD[7].DCmon;
+  // If the DACadr is 0x10 or 0x11 then setup for the AD5593 chip
+  if((DCbDarray[b]->DACadr & 0xFE) == 0x10)
+  {
+    // Here if using the AD5593
+    CC.ADCpointer = &AD5593readADC;
+    CC.ADCaddr=DCbDarray[b]->DACadr;
+    CC.ADCreadback=&DCbDarray[b]->DCoffset.DCmon;;
+  }
+  // Define this channels name
+  if(channel <= 8) sprintf(Name,"Offset for channel 1-8");
+  else sprintf(Name,"Offset for channel 9-16");
+  // Calibrate this channel
+  stat = ChannelCalibrateSerial(&CC, Name);
+  dcbd = *DCbD; 
+  DCbiasUpdate = true;    
+  return stat; 
 }

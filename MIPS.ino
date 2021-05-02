@@ -169,7 +169,7 @@ uint32_t BrightTime=0;
    #define RFdriver2vf ""
 #endif
 
-const char Version[] PROGMEM = "Version 1.200" FAIMSFBvf FAIMSvf HOFAIMSvf TABLE2vf RFdriver2vf ", Feb 28, 2021";
+const char Version[] PROGMEM = "Version 1.201" FAIMSFBvf FAIMSvf HOFAIMSvf TABLE2vf RFdriver2vf ", Apr 24, 2021";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -233,11 +233,13 @@ DialogBoxEntry MIPSconfigEntries[] = {
 
 DialogBoxEntry MIPSconfigEntriesP2[] = {
   {" Macro options"     , 0, 1,  D_DIALOG,   0, 0, 0, 0, false, NULL, &MacroOptions, SetupMacroOptions, NULL},
-  {" Interlock input"   , 0, 2,  D_DI      , 0, 0, 2, 21, false, DIlist, &MIPSconfigData.InterlockIn, NULL, NULL},
-  {" Interlock Output"  , 0, 3,  D_DO      , 0, 0, 2, 21, false, DOlist, &MIPSconfigData.InterlockOut, NULL, NULL},
+  {" Interlock input"   , 0, 2,  D_DI      , 0, 0, 2, 21,false, DIlist, &MIPSconfigData.InterlockIn, NULL, NULL},
+  {" Interlock Output"  , 0, 3,  D_DO      , 0, 0, 2, 21,false, DOlist, &MIPSconfigData.InterlockOut, NULL, NULL},
+  {" Enable log"        , 0, 4,  D_ONOFF   , 0, 1, 1, 20, false, NULL, &logdata.enabled, NULL, NULL},
+  {" Show log"          , 0, 5,  D_DIALOG  , 0, 0, 0, 0, false, NULL, &MIPSlog, NULL, DisplayLog},
   {" Save settings"     , 0, 9,  D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SaveMIPSSettings, NULL},
   {" Restore settings"  , 0, 10, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RestoreMIPSSettings, NULL},
-  {" First page"        , 0, 11, D_PAGE, 0, 0, 0, 0, false, NULL, MIPSconfigEntries, NULL, NULL},
+  {" First page"        , 0, 11, D_PAGE    , 0, 0, 0, 0, false, NULL, MIPSconfigEntries, NULL, NULL},
   {NULL},
 };
 
@@ -314,13 +316,14 @@ void SetBackLight(void)
 extern uint32_t _usbInitialized;
 void SerialPortReset(void)
 {
+  LogMessage("USB port reset.");
   SerialUSB.flush();
   SerialUSB.end();
 // Reset the serial USB port
   otg_disable();             // Disable the hardware
   otg_disable_pad();
   otg_freeze_clock();
-  pmc_disable_upll_clock();  // This is a critical step, the USB clock gets loked up by noise and the USB port freezes
+  pmc_disable_upll_clock();  // This is a critical step, the USB clock gets locked up by noise and the USB port freezes
   delay(10);
   pmc_enable_upll_clock();
   otg_unfreeze_clock();
@@ -851,6 +854,11 @@ void setup()
 //i >>= 8;
 //i &= 7;   
 //if(i==2) Software_Reset();
+  // Start the real time clock and set default date and time, 1/1/2020 12:00:00
+  rtc.begin();
+  rtc.setTime(12, 0, 0);
+  rtc.setDate(1, 1, 2020);
+  //
   analogReadResolution(12);
   Reset_IOpins();
   ClearDOshiftRegs();
@@ -960,6 +968,7 @@ void setup()
   }
   Ethernet_init();
   watchdogEnable();
+  LogMessage("System starting up!");
 }
 
 // This task is called every 10 milliseconds and handels a number of tasks.

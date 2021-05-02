@@ -13,7 +13,7 @@
 // output voltage level is selected. The main menu will turn green in this mode. The drive is adjusted to
 // hold the output with in +- 20 volts. This only adjusts for slow drifts in output voltage.
 //
-// If the presure sensor is found using TWI wrire1 channel then the Envionrment menu is enabled.
+// If the presure sensor is found using TWI wire1 channel then the Envionrment menu is enabled.
 // This menu allows you to define adjustment limits and coefficents for presure and temp. 
 //      Here is how this works:
 //        - When the RF is enabled the base pressure and temp are recorded
@@ -36,7 +36,7 @@
 //  -- DC bias rise and fall times = 15mS
 //
 // To Dos:
-//  1.) Add all the serial commands to support FAIMS.List of commands to add:
+//  1.) Added serial commands to support FAIMS.
 //      - Add FAIMS count to indicate its present in system. Count or 0 or 1
 //      - Enable, ON OFF
 //      - Frequency
@@ -102,6 +102,8 @@ float  EnvCorrection=0;      // Drive level correct in %
 int   NumberOfFAIMS = 0;      // Number of FAIMS modules
 
 float  DrvChange = 0;         // Global drive change that is applied to all drive channels
+float  FMdrvStep = 100;       // Set size limit for drive level change, reset to 100 after value is set.
+                              // Set in remote level set function from host.
 float  KVoutP = 0;            // Positive peak output voltage in KV
 float  KVoutN = 0;            // Negative peak output voltage in KV
 
@@ -109,6 +111,9 @@ float  TotalPower = 0;        // Total power into the RF deck
 float  Drv1Power = 0;
 float  Drv2Power = 0;
 float  Drv3Power = 0;
+
+bool   CurtianFound = false;
+bool   CurtianCtrl = true;
 
 // FAIMS scan mode variables
 bool   FAIMSstepScanEnable = false;
@@ -120,10 +125,13 @@ bool   FieldDriven = false;    // This flag is set if this is a field driven FAI
 float  ScanTime = 0;           // This is how long the system has been scanning
 float  ScanCV;
 int    Loops = 1;
+
 // Auto tune parameters
 FAIMSautoTuneStates FAIMStuneState=FAIMSidle;
 bool FAIMStuneRequest = false;
 bool FAIMStuning = false;
+int  TuneDrive = 20;
+bool TunePos = true;
 char TuneState[25] = "Idle";
 
 // Output level control variables
@@ -140,6 +148,14 @@ int     FAIMSclockChange;
 
 int    DiableArcDetectTimer = 0;  // If this value is non zero then the arc detected is disabled until it reaches 0.
                                   // it is decremented in the main loop.
+bool   ArcMessAutoDismiss = true;
+int    FMnumTries   = 0;          // If greater then 0 then the system will auto restart after an arc is deteced.
+                                  // This count defines how many time the system will try to restart.
+int    FMrestartDelay = 2000;     // Number of mS the system will wait after a arc shutdown before an auto restart
+                                  // is attempted. 
+int    FMcurrentTry = 0;          // This cound is the current retry number. If the system remains enable for 10 times
+                                  // FMrestartDelay then this value will be cleared
+
 // DC output readback values
 float  DCoffsetRB = 0;
 float  DCbiasRB   = 0;
@@ -635,7 +651,11 @@ void FAIMS_init(int8_t Board)
     DialogBoxEntry *de = GetDialogEntries(FAIMSentriesDCMenu, " Curtain V");
     if(de != NULL)
     {
+      CurtianFound = true;
       de->Type = D_FLOAT;
+      // Set the range, pull from ESI module
+      de->Min = -ESIarray[1].ESIchan[0].VoltageLimit;
+      de->Max = ESIarray[1].ESIchan[0].VoltageLimit;
     }
   }
   // Setup the PWM outputs and set levels
@@ -987,19 +1007,24 @@ void FAIMS_loop(void)
   float MaxDrv;
   uint16_t ADCvals[8];
   float V, Vp, Vn, I, SP;
-  static int  LastFreq     = -1;
-  static int  LastGPIO     = -1;
-  static int  LastDelay    = -1;
-  static int  LastFunDelay = -1;
-  static int  LastDrv      = -1;
-  static bool LastEnable   = false;
+  static int   LastFreq     = -1;
+  static int   LastGPIO     = -1;
+  static int   LastDelay    = -1;
+  static int   LastFunDelay = -1;
+  static float LastDrv      = -1;  // Changed to float, Apr 24 2021
+  static bool  LastEnable   = false;
   static float LastCV      = -1;
   static float LastBias    = -1;
   static float LastOffset  = -1;
   static DialogBoxEntry *TMde = GetDialogEntries(FAIMSentriesTuneMenu, " Frequency");
   static DialogBoxEntry *PCde = GetDialogEntries(FAIMSentriesTuneMenu, " Pri capacitance");
   static DialogBoxEntry *HCde = GetDialogEntries(FAIMSentriesTuneMenu, " Har capacitance");
+  static uint32_t FMarcTime=0;
+  static bool FMarced = false;
+  static bool FMrestart = false;
 
+  if(FMnumTries < 0) FMnumTries = 0;
+  if(FMnumTries > 10) FMnumTries = 10;
   if(DiableArcDetectTimer > 0) DiableArcDetectTimer--;
   // If the active dialog is the tune menu or the drive menu and there has been an entry
   // change then disable the arc detector for a bit.
@@ -1021,7 +1046,7 @@ void FAIMS_loop(void)
   if (faims.Enable) TMde->NoEdit = true;
   else TMde->NoEdit = false;
   // If drive is enabled and over 30% then disable the capacitance adjustment.
-  if ((faims.Enable) && (faims.Drv > 30))
+  if((faims.Enable) && (faims.Drv > 30))
   {
     PCde->NoEdit = true;
     HCde->NoEdit = true;
@@ -1030,6 +1055,10 @@ void FAIMS_loop(void)
   {
     PCde->NoEdit = false;
     HCde->NoEdit = false;
+  }
+  if((faims.Enable) && (FMcurrentTry > 0))
+  {
+    if((millis() - OnMillis) > (10 * FMrestartDelay)) FMcurrentTry = 0;
   }
   // If the global enable has just changed state to on, then check the clock to
   // make sure its running and correct. If not do not enable and issue a warning.
@@ -1042,6 +1071,7 @@ void FAIMS_loop(void)
     }
     else
     {
+      LogMessage("FAIMS enabled.");
       // If here the system was justed enabled so save the millisecond timer value
       OnMillis = millis();
       // Record the base pressure and temp for compensation
@@ -1055,7 +1085,7 @@ void FAIMS_loop(void)
       // Raise digital output A to flag we are on!
       SetOutput('A', HIGH);
       // Enable the curtian supply if present in system
-      if((NumberOfESIchannels >= 1) && (ESIarray[1].Rev >= 3)) ESIarray[1].Enable =true;
+      if(CurtianCtrl) if((NumberOfESIchannels >= 1) && (ESIarray[1].Rev >= 3)) ESIarray[1].Enable =true;
     }
   }
   if ((LastEnable) && (!faims.Enable))
@@ -1063,7 +1093,7 @@ void FAIMS_loop(void)
     // Here if the system was just disabled.
     ClearOutput('A', HIGH);    
     // Turn off the esi board, used for curtian supply
-    if((NumberOfESIchannels >= 1) && (ESIarray[1].Rev >= 3)) ESIarray[0].Enable = ESIarray[1].Enable =false;
+    if(CurtianCtrl) if((NumberOfESIchannels >= 1) && (ESIarray[1].Rev >= 3)) ESIarray[0].Enable = ESIarray[1].Enable =false;
   }
   LastEnable = faims.Enable;
   // Turn on RF on led in faims RF deck if any drive is enabled and global enable
@@ -1086,6 +1116,7 @@ void FAIMS_loop(void)
   // If OnTime is over the limit, in hours, then disable the drives
   if ((faims.MaxOnTime * 3600) < OnTime)
   {
+    LogMessage("FAIMS timed shutdown.");
     faims.Enable = false;
     OnTime = 0;
     if (ActiveDialog == &FAIMSMainMenu) DisplayAllDialogEntries(&FAIMSMainMenu);
@@ -1103,24 +1134,40 @@ void FAIMS_loop(void)
     LastFreq = faims.Freq;
   }
   // Process the global drive level changes and set PWM output level
-  if (LastDrv != faims.Drv)
-  {
-    MaxDrv = faims.Drv1.Drv;
-    if (faims.Drv2.Drv > MaxDrv) MaxDrv = faims.Drv2.Drv;
-    if (faims.Drv3.Drv > MaxDrv) MaxDrv = faims.Drv3.Drv;
-    DrvChange = faims.Drv - MaxDrv;
-    if(faims.Drv > LastDrv) DiableArcDetectTimer = 0;
-    else DelayArcDetect();
-    LastDrv = faims.Drv;
-  }
   if(faims.Enable == false)
   {
     analogWrite(faims.Drv1.PWMchan, 0);
     analogWrite(faims.Drv2.PWMchan, 0);
     analogWrite(faims.Drv3.PWMchan, 0);
+    if(FMrestart && ((millis() - FMarcTime) > FMrestartDelay))
+    {
+      // if here we will try and restart the system and ramp the drive level back up
+      FMcurrentTry++;
+      FMdrvStep = 3.0;
+      faims.Enable=true;
+      FMrestart = false;
+    }
   }
   else
   {
+    if (LastDrv != faims.Drv)
+    {
+      float newDrv;
+     
+      if((faims.Drv - LastDrv) > FMdrvStep) newDrv = LastDrv + FMdrvStep;
+      else 
+      {
+        newDrv = faims.Drv;
+        FMdrvStep = 100;  // Reset step control after ramped up!
+      }
+      MaxDrv = faims.Drv1.Drv;
+      if (faims.Drv2.Drv > MaxDrv) MaxDrv = faims.Drv2.Drv;
+      if (faims.Drv3.Drv > MaxDrv) MaxDrv = faims.Drv3.Drv;
+      DrvChange = newDrv - MaxDrv;
+      if(newDrv > LastDrv) DiableArcDetectTimer = 0;
+      else DelayArcDetect();
+      LastDrv = newDrv;
+    }
     analogWrite(faims.Drv1.PWMchan, ((faims.Drv1.Drv + DrvChange) * PWMFS) / 100);
     analogWrite(faims.Drv2.PWMchan, ((faims.Drv2.Drv + DrvChange) * PWMFS) / 100);
     analogWrite(faims.Drv3.PWMchan, ((faims.Drv3.Drv + DrvChange) * PWMFS) / 100);
@@ -1194,11 +1241,10 @@ void FAIMS_loop(void)
     if (KVoutN * 1000 > MaxFAIMSVoltage) MaxFAIMSVoltage = KVoutN * 1000;
     // Arc detection
     // Compare the unfiltered value to the filtered value and if there is a sudden drop it
-    // could indicate an arc so turn off the system. (add this code! here)
+    // could indicate an arc so turn off the system.
 //    if((DiableArcDetectTimer == 0) && !DiableArcDetect) if (faims.Enable) if (((KVoutP + KVoutN) - (Vp + Vn)) > (KVoutP + KVoutN) / 3)
-    if((DiableArcDetectTimer == 0) && !DiableArcDetect) if (faims.Enable) if((KVoutP > 0.1) || (KVoutN > 0.1))
+    if((DiableArcDetectTimer == 0) && !DiableArcDetect) if (faims.Enable) if((KVoutP > 0.5) || (KVoutN > 0.5))
     {
-//      if((KVoutP + KVoutN) > (100 - faims.ArcSens)/100)
       if (((KVoutP + KVoutN) - (Vp + Vn)) > ((KVoutP + KVoutN) * (100 - faims.ArcSens))/ 100)
       {
         // Arc detected! Shutdown
@@ -1206,8 +1252,19 @@ void FAIMS_loop(void)
         faims.Enable = false;
         // Lower the drive level
         faims.Drv = 5;
+        // Set arc detected flag and set arc detect time
+        FMarced = true;
+        FMrestart = true;
+        FMarcTime = millis();
+        LogMessage("FAIMS arc detected.");
         if (ActiveDialog != NULL) ActiveDialog->State = M_SCROLLING;
-        DisplayMessage(" Arc detected! ", 2000);
+        if(FMcurrentTry >= FMnumTries)
+        {
+           FMrestart = false;
+           if(ArcMessAutoDismiss) DisplayMessage(" Arc detected! ", 2000);
+           else DisplayMessageButtonDismiss(" Arc detected! ");     
+        }
+        else DisplayMessage(" Arc detected! ", 2000);
       }
     }
     // If the voltages changed then seed the filters
@@ -1315,9 +1372,10 @@ void FAIMSsetDrive(char *drv)
 
   res = drv;
   v = res.toFloat();
-  if(RangeTest(FAIMSentriesPowerMenu,"Max drive level",v))
+  if(RangeTest(FAIMSentriesMainMenu,"Drive",v))
   {
      faims.Drv = v;
+     FMdrvStep = 2.0;
      SendACK;    
   }
 }
@@ -1632,23 +1690,26 @@ bool FAIMSfindPhase(int *phase, bool reset)
 {
   static float maxV;
   static int p, maxP;
+  float *KVout;
 
+  if(TunePos) KVout = &KVoutP;
+  else KVout = &KVoutN;
   if(reset) 
   {
     maxP = *phase = p = 0;
-    maxV = KVoutP = 0;
+    maxV = *KVout = 0;
     return false;
   }
   while(p < 256)
   {
-    if(KVoutP >= maxV)
+    if(*KVout >= maxV)
     {
       maxP = p;
-      maxV = KVoutP;
+      maxV = *KVout;
     }
     p += 1;
     *phase = p;
-    KVoutP = 0;
+    *KVout = 0;
     return false;
   }
   *phase = maxP;
@@ -1858,7 +1919,9 @@ void FAIMS_AutoTune(void)
     DiableArcDetect = true;
     // Set all initial conditions
     faims.Enable = false;
-    faims.Drv = 20;
+    faims.Drv = TuneDrive;
+    if(faims.Drv < 5) faims.Drv = 5;
+    if(faims.Drv > 35) faims.Drv = 35;
     faims.Drv1.Drv = 25;
     faims.Drv2.Drv = 25;
     faims.Drv3.Drv = 25;

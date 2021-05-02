@@ -49,6 +49,15 @@ extern bool   Lock;
 extern float  LockSetpoint;
 extern int    Loops;
 
+extern bool   CurtianFound;
+extern bool   CurtianCtrl;
+
+extern int    TuneDrive;
+extern bool   TunePos;
+
+extern bool   ArcMessAutoDismiss;
+
+extern int    FMnumTries;
 
 // Drive data structure
 typedef struct
