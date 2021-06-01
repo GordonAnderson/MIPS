@@ -169,7 +169,7 @@ uint32_t BrightTime=0;
    #define RFdriver2vf ""
 #endif
 
-const char Version[] PROGMEM = "Version 1.201" FAIMSFBvf FAIMSvf HOFAIMSvf TABLE2vf RFdriver2vf ", Apr 24, 2021";
+const char Version[] PROGMEM = "Version 1.203" FAIMSFBvf FAIMSvf HOFAIMSvf TABLE2vf RFdriver2vf ", May 20, 2021";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();

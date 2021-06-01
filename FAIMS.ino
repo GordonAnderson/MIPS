@@ -1074,6 +1074,9 @@ void FAIMS_loop(void)
       LogMessage("FAIMS enabled.");
       // If here the system was justed enabled so save the millisecond timer value
       OnMillis = millis();
+      // Ramp the dribe level back up
+      FMdrvStep = 2.0;
+      LastDrv = 5.0;
       // Record the base pressure and temp for compensation
       // Read the base pressure and temp (barometric pressure is measure in hPa) 
       if(bmpSensor)
@@ -1144,6 +1147,7 @@ void FAIMS_loop(void)
       // if here we will try and restart the system and ramp the drive level back up
       FMcurrentTry++;
       FMdrvStep = 3.0;
+      LastDrv = 5.0;
       faims.Enable=true;
       FMrestart = false;
     }
@@ -1167,6 +1171,15 @@ void FAIMS_loop(void)
       if(newDrv > LastDrv) DiableArcDetectTimer = 0;
       else DelayArcDetect();
       LastDrv = newDrv;
+    }
+    else
+    {
+      // Recalculate the drive parameters, this is done in case both LastDrv ad faims.Drv are reset
+      // to the same value.
+      MaxDrv = faims.Drv1.Drv;
+      if (faims.Drv2.Drv > MaxDrv) MaxDrv = faims.Drv2.Drv;
+      if (faims.Drv3.Drv > MaxDrv) MaxDrv = faims.Drv3.Drv;
+      DrvChange = faims.Drv - MaxDrv;     
     }
     analogWrite(faims.Drv1.PWMchan, ((faims.Drv1.Drv + DrvChange) * PWMFS) / 100);
     analogWrite(faims.Drv2.PWMchan, ((faims.Drv2.Drv + DrvChange) * PWMFS) / 100);

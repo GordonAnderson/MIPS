@@ -909,6 +909,13 @@
 //          - Ramp up drive level from external input
 //          - Auto reset mode on arc detect
 //          - Arc detect hold off on value change, decrease (this code is in place and looks ok so I raised the min level from .1KV to .5KV)
+//  1.202, May 10, 2021
+//      1.) Fixed a FAIMS restart bug that did not allow ranp up
+//  1.203, May 20, 2021
+//      1.) Fixed bug in the compression table that did not allow the m command to work properly. Bug has been there
+//          for a while!
+//      2.) Added Table status command
+//      3.) Added Trigger table N times command, overloaded SMOD so now SMOD,10 allows 10 triggers.
 //
 // We still have the problem with the AD7998 bit bang reading routine. Problem shows up on channel 2 of RF driver 
 // at board select A. Using hardware TWI interface solves the issue.

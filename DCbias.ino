@@ -1881,8 +1881,8 @@ void DCbiasPulseHigh(void)
 // Setup the timer to generate the pulse.
 void DCbiasPulse_ISR(void)
 {
-  if(DCbiasPdelay < 0) DCbiasPdelay = 0;
-  if(DCbiasPwidth < 0) DCbiasPwidth = 0;
+  if(DCbiasPdelay <= 0) DCbiasPdelay = 1;
+  if(DCbiasPwidth <= 0) DCbiasPwidth = 5;
   // Set RC count to delay time plus width
   DCbiasPulseTMR->setRC(((DCbiasPdelay + DCbiasPwidth) * 105)/10);
   // Set RA count to delay time
@@ -2302,6 +2302,23 @@ void SetLevelDetChOffsetAdjust(char *brd, char *TWIadd)
   SendACK;
 }
 
+// This function returns true only if all the DCbias channels and offsets are
+// set to zero.
+bool DCbiasAllZeroCheck(void)
+{
+  DCbiasData *DCbData;
+  int i;
+
+  // Check all the channels
+  for(int i=1;i<=NumberOfDCChannels;i++)
+  {
+     if((DCbData = GetDCbiasDataPtr(i,false)) == NULL) return false;
+     if(DCbData->DCCD[(i-1) & 0x07].VoltageSetpoint != 0.0) return false;
+     if(DCbData->DCoffset.VoltageSetpoint != 0.0) return false;
+  }
+  return true;
+}
+
 // Host interface based calibration functions.
 // This function allows calibration of the seleted channel
 bool CalDCbiasChannel(int channel)
@@ -2332,6 +2349,11 @@ bool CalDCbiasChannel(int channel)
 
 void CalDCbiasChannels(void)
 {
+  if(DCbiasAllZeroCheck() == false)
+  {
+    serial->println("All DCbias channels must be 0!");
+    return;
+  }
   serial->println("Calibrate all DCbias channels.");
   for(int i=1;i<=NumberOfDCChannels;i++)
   {
@@ -2349,6 +2371,11 @@ bool CalDCbiasOffset(int channel)
   bool       stat;
   
   if((b=DCbiasCH2Brd(channel-1)) == -1) return false;
+  if(DCbiasAllZeroCheck() == false)
+  {
+    serial->println("All DCbias channels must be 0!");
+    return false;
+  }
   SelectBoard(b);
   // Set up the calibration data structure
   CC.ADCpointer = &AD7998;

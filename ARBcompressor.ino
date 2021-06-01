@@ -312,6 +312,7 @@ char ARBgetNextOperationFromTable(bool init)
       if(TwaveCompressorTable[tblindex] == 0) return(0);
       OP = TwaveCompressorTable[tblindex++];
       count = 1;  // Default to count of 1
+      valfound = false;
       if(isDigit(TwaveCompressorTable[tblindex]))
       {
         // If here then get the value, number can be a float but has to start with a number, 0.1 is ok, .1 is not ok
@@ -325,6 +326,7 @@ char ARBgetNextOperationFromTable(bool init)
           for(float d = 10; isDigit(TwaveCompressorTable[tblindex]); d *= 10) fval += (float)(TwaveCompressorTable[tblindex++] - '0') / d;
         }
         fval += count;
+        valfound = true;
       }
       break;
     }

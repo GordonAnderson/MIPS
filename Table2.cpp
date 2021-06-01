@@ -133,7 +133,9 @@ volatile bool StopCommanded;          // Flag set by the serial command TBLSTOP,
 volatile bool TableAdv = false;       // If this flag is true then the table number will be advanced to the next table
                                       // after every trigger
 volatile bool SWtriggered = false;
-volatile bool TableOnce = false;      // If true the table will play one time then the mode will return to local
+volatile int  TableN = 0;             // This variable will allow the table to run N times if greater then 0
+
+char *TableStatus = "IDLE";           // Table status
 
 volatile bool softLDAC = false;       // If true forces the use of software LDAC
 bool TableResponse = true;            // This flag is true to enable table status response
@@ -438,6 +440,9 @@ void SetTableAdvance(char *cmd)
 // and hardware.
 void SetTableMode(char *cmd)
 {
+    String token;
+
+    token = cmd;
     if(strcmp(cmd,"LOC") == 0)
     {
         if(TableMode == LOC)
@@ -464,11 +469,17 @@ void SetTableMode(char *cmd)
             SendNAK;
             return;
         }
-        if(strcmp(cmd,"TBL") == 0) TableOnce = false;
-        else TableOnce = true;
+        if(strcmp(cmd,"TBL") == 0) TableN = 0;
+        else TableN = 1;
         SendACK;
         ProcessTables();
         return;
+    }
+    else if((TableN = token.toInt()) > 0)
+    {
+        SendACK;
+        ProcessTables();
+        return;      
     }
     else
     {
@@ -850,6 +861,12 @@ void TableCheck(void)
        TH = (TableHeader *) &(VoltageTable[CT][i]); i += sizeof(TableHeader);
    }
    serial->println("Done!");
+}
+
+void GetTableStatus(void)
+{
+  SendACKonly;
+  if(!SerialMute) serial->println(TableStatus);
 }
 
 // Set a new count or time value at a time point channel point.
@@ -1291,6 +1308,7 @@ void ProcessTables(void)
         LOCrequest = false;
         Aborted = false;
         if((!SerialMute) && (TableResponse)) serial->println("TBLRDY\n");
+        TableStatus = "READY";
         TableReady = true;
         StopRequest=false;
         TableStopped = false;
@@ -1319,6 +1337,7 @@ void ProcessTables(void)
               TableTriggered = true;
               SWtriggered    = false;
               // Here when triggered
+              TableStatus = "TRIGGERED";
               if((!SerialMute) && (TableResponse)) serial->println("TBLTRIG\n");
 //            if(StopRequest == true) break;     // removed 5/5/18
             }
@@ -1334,6 +1353,7 @@ void ProcessTables(void)
                 if((!SerialMute) && (TableResponse)) serial->println("TBLCMPLT\n");
                 if((TriggerMode == EDGE)||(TriggerMode == POS)||(TriggerMode == NEG)) 
                 {
+                  TableStatus = "READY";
                   if((!SerialMute) && (TableResponse)) serial->println("TBLRDY\n");
                   TableStopped = false;
                 }
@@ -1381,9 +1401,11 @@ void ProcessTables(void)
               delay(InterTableDelay);
             }
         }
+        TableStatus = "IDLE";
         if(Aborted)
         {
             // Issue an aborted message.
+            TableStatus = "ABORTED";
             if((!SerialMute) && (TableResponse)) serial->write("ABORTED\n");
         }
         if(Aborted || LOCrequest)
@@ -1396,7 +1418,7 @@ void ProcessTables(void)
            if(ReadVin() < 10.0) break;
            ReleaseADC();           
         }
-        if(TableOnce) break;
+        if(TableN > 0) if(--TableN == 0) break;
         StopTimer();  // not sure about this, testing
         // Advance to next table if advance mode is enabled
         AdvanceTableNumber();

@@ -371,7 +371,7 @@ const Commands  CmdArray[] = 	{
   {"GHVI", CMDfunction, 1, (char *)GetESIchannelI},         // Returns the output current in mA
   {"GHVMAX", CMDfunction, 1, (char *)GetESIchannelMax},     // Returns the maximum high voltage outut value
   {"GHVMIN", CMDfunction, 1, (char *)GetESIchannelMin},     // Returns the minimum high voltage outut value
-  {"SHVENA", CMDfunction, 1, (char *)SetESIchannelEnable},  // Enables a selected channel
+  {"SHVEGHNA", CMDfunction, 1, (char *)SetESIchannelEnable},  // Enables a selected channel
   {"SHVDIS", CMDfunction, 1, (char *)SetESIchannelDisable}, // Disables a selected channel
   {"GHVSTATUS", CMDfunction, 1, (char *)GetESIstatus},      // Returns the selected channel's status, ON or OFF
   {"SHVPSUP", CMDfunction, 2, (char *)SetESImodulePos},     // Sets a  modules positive supply voltage
@@ -426,6 +426,7 @@ const Commands  CmdArray[] = 	{
                                                            // init the change module.
   {"STBLDLT",CMDint, 1, (char *)&TimeDelta},               // Sets the TimeDelta values that is added to all flaged time point counts
   {"GTBLDLT",CMDint, 0, (char *)&TimeDelta},               // Returns the TimeDelta values that is added to all flaged time point counts
+  {"GTBLSTA",CMDfunction, 0, (char *)&GetTableStatus},     // Returns the table status
   #endif
 // Macro commands
   {"MRECORD", CMDfunctionStr, 1, (char *) MacroRecord},    // Turn on macro recording into the filename argument
@@ -544,7 +545,7 @@ const Commands  CmdArray[] = 	{
   {"SFMMDIS",CMDbool, 1, (char *)&ArcMessAutoDismiss},             // Set the message auto dismiss is TRUE
   {"GFMMDIS",CMDbool, 0, (char *)&ArcMessAutoDismiss},             // Return the message auto dismiss flag 
   {"SFARCR",CMDint, 1, (char *)&FMnumTries},                       // Set the number of arc retry attempts
-  {"SFARCR",CMDint, 0, (char *)&FMnumTries},                       // Return the number of arc retry attempts 
+  {"GFARCR",CMDint, 0, (char *)&FMnumTries},                       // Return the number of arc retry attempts 
 #endif
 // Filament commands
   {"GFLENA", CMDfunction, 1, (char *)GetFilamentEnable},             // Get filament ON/OFF status
@@ -792,7 +793,7 @@ const Commands  CmdArray[] = 	{
 
 void Debug(int function)
 {
-
+   serial->println(TableStatus);
 }
 
 // Real time clock functions

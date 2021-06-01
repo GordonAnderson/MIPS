@@ -96,6 +96,7 @@ extern bool TblTasks;
 extern int  ExtFreq;
 extern unsigned int Counter;
 extern int  TimeDelta;
+extern char *TableStatus;
 
 #if TABLE2code
 // Funtion queue enum and structures to support queuing functions that need
@@ -170,6 +171,7 @@ void TriggerOnChange(char *TWIadd);
 
 int DefineTableNumber(int tblnum);
 void TableCheck(void);
+void GetTableStatus(void);
 #endif
 
 // Real time processing routines
