@@ -116,6 +116,12 @@ typedef struct
   union     functions  pointers;
 } Commands;
 
+typedef struct
+{
+  Commands *cmds;
+  void *next;
+} CommandList;
+
 extern Ring_Buffer  RB;
 extern const char Version[] PROGMEM;
 
@@ -166,9 +172,11 @@ void SetTime(void);
 void GetDate(void);
 void SetDate(void);
 char *TokenFromCommandLine(char expectedDel);
-char  *UserInput(char *message);
-int   UserInputInt(char *message);
-float UserInputFloat(char *message);
+char  *UserInput(char *message, void (*function)(void) = NULL);
+int   UserInputInt(char *message, void (*function)(void) = NULL);
+float UserInputFloat(char *message, void (*function)(void) = NULL);
+
+void AddToCommandList(CommandList *ncl);
 
 // Prototypes for external functions called
 void SAVEparms(void);

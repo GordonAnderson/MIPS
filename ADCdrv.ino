@@ -52,6 +52,14 @@ float ADCchangeGain = 1.0;
 float ADCvalue;
 bool  ADCchanged=false;
 
+// These values are used for the ADC averaging mode. In this mode the ADC is read and sumed
+// the number of times defined by ADCnumsamples. The change detection mode must be enabled
+// for this function to operate. The value saved in ADCcount is the result and its the ADC
+// value sumed ADCnumsamples times. The reporting function will perform the division.
+uint32_t   ADCcount;
+uint32_t   ADCsum=0;
+uint32_t   ADCsampleNum = 0;
+
 bool AcquireADC(void)
 {
   if(ADCinuse) return false;
@@ -83,7 +91,20 @@ void ADC_Handler(void)
 
   if(!ADCacquire) 
   {
-    if ((f & ADC_IER_DRDY) == ADC_IER_DRDY) val=adc_get_latest_value(ADC);
+    if ((f & ADC_IER_DRDY) == ADC_IER_DRDY) 
+    {
+      val=adc_get_latest_value(ADC); 
+      if(ADCnumsamples <= 1) ADCcount = val;
+      else
+      {
+        ADCsum+=val;
+        if(++ADCsampleNum > ADCnumsamples)
+        {
+          ADCcount = ADCsum;
+          ADCsampleNum = ADCsum = 0;
+        }
+      }
+    }
     if ((f & ADC_IER_COMPE) == ADC_IER_COMPE)
     {
       if(++count >= WindowCount)
@@ -409,7 +430,7 @@ void MonitorADCchange(char *gain)
 void ADCread(int chan)
 {
    int i;
-  
+
    if((chan >= 0) && (chan <=3))
    {
      SendACKonly;
@@ -419,6 +440,14 @@ void ADCread(int chan)
    }
    SetErrorCode(ERR_BADARG);
    SendNAK;
+}
+
+// This function reports the average ADC value that is recored by the change detection
+// function. The ADCnumsamples value defines the number of samples.
+void ADCreportAverage(void)
+{
+  SendACKonly;
+  if(!SerialMute) serial->println(ADCcount/ADCnumsamples);
 }
 
 // Set ADC channel gain, valid gains are 1,2, or 4.

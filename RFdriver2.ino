@@ -83,8 +83,8 @@ void RFat(void)
   // When tuniing is finished we need to read the frequency from the RF driver module.
   Tuning = true;
   TuningChannel = SelectedRFChan;
-  TWIsetByte(RFDDarray[SelectedRFBoard]->EEPROMadr | 0x20, SelectedRFBoard, TWI_RF_SET_CHAN, (SelectedRFChan & 1) +1);
-  TWIcmd(RFDDarray[SelectedRFBoard]->EEPROMadr | 0x20, SelectedRFBoard, TWI_RF_SET_ATUNE);
+  TWIsetByte(RFdrvCMDadd(RFDDarray[SelectedRFBoard]->EEPROMadr), SelectedRFBoard, TWI_RF_SET_CHAN, (SelectedRFChan & 1) +1);
+  TWIcmd(RFdrvCMDadd(RFDDarray[SelectedRFBoard]->EEPROMadr), SelectedRFBoard, TWI_RF_SET_ATUNE);
   DisplayMessage("Tune in process");
 }
 
@@ -97,8 +97,8 @@ void RFart(void)
   // When tuniing is finished we need to read the frequency from the RF driver module.
   Tuning = true;
   TuningChannel = SelectedRFChan;
-  TWIsetByte(RFDDarray[SelectedRFBoard]->EEPROMadr | 0x20, SelectedRFBoard, TWI_RF_SET_CHAN, (SelectedRFChan & 1) +1);
-  TWIcmd(RFDDarray[SelectedRFBoard]->EEPROMadr | 0x20, SelectedRFBoard, TWI_RF_SET_RTUNE);
+  TWIsetByte(RFdrvCMDadd(RFDDarray[SelectedRFBoard]->EEPROMadr), SelectedRFBoard, TWI_RF_SET_CHAN, (SelectedRFChan & 1) +1);
+  TWIcmd(RFdrvCMDadd(RFDDarray[SelectedRFBoard]->EEPROMadr), SelectedRFBoard, TWI_RF_SET_RTUNE);
   DisplayMessage("Retune in process");
 }
 
@@ -129,6 +129,12 @@ void RFmodeChange(void)
 
 void RFgateChange(void)
 {
+}
+
+uint8_t RFdrvCMDadd(uint8_t addr)
+{
+  if((addr & 0x20) == 0) return(addr | 0x20);
+  return(addr | 0x18);
 }
 
 // Write the current board parameters to the EEPROM on the RFdriver board.
@@ -284,11 +290,11 @@ void RFdriver_loop(void)
     {
       SelectBoard(b);
 
-      TWIsetByte(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_CHAN, C+1);  // Select this channel on the selected board
+      TWIsetByte(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_CHAN, C+1);  // Select this channel on the selected board
       // Update the readback structure
       if(RFrb[b] != NULL)
       {
-        TWIreadBlock(RFDDarray[b]->EEPROMadr | 0x20, b,TWI_RF_READ_READBACKS, (void *)RFrb[b][C], sizeof(RFreadBacks));
+        TWIreadBlock(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b,TWI_RF_READ_READBACKS, (void *)RFrb[b][C], sizeof(RFreadBacks));
         if(RFrb[b][C]->RFP > MaxRFVoltage) MaxRFVoltage = RFrb[b][C]->RFP;
         if(RFrb[b][C]->RFN > MaxRFVoltage) MaxRFVoltage = RFrb[b][C]->RFN;
         if(c == SelectedRFChan)
@@ -302,7 +308,7 @@ void RFdriver_loop(void)
       if(Tuning & (TuningChannel == c))
       {
         // Get tuning status and if finished then clear flag and dismiss message
-        if(TWIread8bitUnsigned(RFDDarray[b]->EEPROMadr | 0x20, b,TWI_RF_READ_TUNE, &ival))
+        if(TWIread8bitUnsigned(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b,TWI_RF_READ_TUNE, &ival))
         {
           if(!ival)
           {
@@ -311,20 +317,20 @@ void RFdriver_loop(void)
           }
         }
       }
-      if(RFstate[b][C]->update || (RFstate[b][C]->DriveLevel != RFDDarray[b]->RFCD[C].DriveLevel)) TWIsetFloat(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_DRIVE,  RFstate[b][C]->DriveLevel = RFDDarray[b]->RFCD[C].DriveLevel);
-      if(RFstate[b][C]->update || (RFstate[b][C]->Freq       != RFDDarray[b]->RFCD[C].Freq))       TWIsetInt  (RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_FREQ,   RFstate[b][C]->Freq =       RFDDarray[b]->RFCD[C].Freq);
-      if(RFstate[b][C]->update || (RFstate[b][C]->Setpoint   != RFDDarray[b]->RFCD[C].Setpoint))   TWIsetFloat(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_VRF,    RFstate[b][C]->Setpoint =   RFDDarray[b]->RFCD[C].Setpoint);
-      if(RFstate[b][C]->update || (RFstate[b][C]->MaxDrive   != RFDDarray[b]->RFCD[C].MaxDrive))   TWIsetFloat(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_MAXDRV, RFstate[b][C]->MaxDrive =   RFDDarray[b]->RFCD[C].MaxDrive);
-      if(RFstate[b][C]->update || (RFstate[b][C]->MaxPower   != RFDDarray[b]->RFCD[C].MaxPower))   TWIsetFloat(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_MAXPWR, RFstate[b][C]->MaxPower =   RFDDarray[b]->RFCD[C].MaxPower);
+      if(RFstate[b][C]->update || (RFstate[b][C]->DriveLevel != RFDDarray[b]->RFCD[C].DriveLevel)) TWIsetFloat(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_DRIVE,  RFstate[b][C]->DriveLevel = RFDDarray[b]->RFCD[C].DriveLevel);
+      if(RFstate[b][C]->update || (RFstate[b][C]->Freq       != RFDDarray[b]->RFCD[C].Freq))       TWIsetInt  (RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_FREQ,   RFstate[b][C]->Freq =       RFDDarray[b]->RFCD[C].Freq);
+      if(RFstate[b][C]->update || (RFstate[b][C]->Setpoint   != RFDDarray[b]->RFCD[C].Setpoint))   TWIsetFloat(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_VRF,    RFstate[b][C]->Setpoint =   RFDDarray[b]->RFCD[C].Setpoint);
+      if(RFstate[b][C]->update || (RFstate[b][C]->MaxDrive   != RFDDarray[b]->RFCD[C].MaxDrive))   TWIsetFloat(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_MAXDRV, RFstate[b][C]->MaxDrive =   RFDDarray[b]->RFCD[C].MaxDrive);
+      if(RFstate[b][C]->update || (RFstate[b][C]->MaxPower   != RFDDarray[b]->RFCD[C].MaxPower))   TWIsetFloat(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_MAXPWR, RFstate[b][C]->MaxPower =   RFDDarray[b]->RFCD[C].MaxPower);
       if(RFstate[b][C]->update || (RFstate[b][C]->RFmode     != RFDDarray[b]->RFCD[C].RFmode))
       {
-        if(RFDDarray[b]->RFCD[C].RFmode == RF_AUTO) TWIsetBool(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_MODE, true);
-        else TWIsetBool(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_MODE, false);
+        if(RFDDarray[b]->RFCD[C].RFmode == RF_AUTO) TWIsetBool(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_MODE, true);
+        else TWIsetBool(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_MODE, false);
         RFstate[b][C]->RFmode = RFDDarray[b]->RFCD[C].RFmode;
       }
       // Readback Drive and Frequency in case the module changed the values
-      if(TWIreadFloat(RFDDarray[b]->EEPROMadr | 0x20, b,TWI_RF_READ_DRIVE, &fval)) RFstate[b][C]->DriveLevel = RFDDarray[b]->RFCD[C].DriveLevel = fval;
-      if(TWIread32bitInt(RFDDarray[b]->EEPROMadr | 0x20, b,TWI_RF_READ_FREQ, &ival)) RFstate[b][C]->Freq = RFDDarray[b]->RFCD[C].Freq = ival;
+      if(TWIreadFloat(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b,TWI_RF_READ_DRIVE, &fval)) RFstate[b][C]->DriveLevel = RFDDarray[b]->RFCD[C].DriveLevel = fval;
+      if(TWIread32bitInt(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b,TWI_RF_READ_FREQ, &ival)) RFstate[b][C]->Freq = RFDDarray[b]->RFCD[C].Freq = ival;
       RFstate[b][C]->update = false;      
     }
   }
@@ -536,8 +542,8 @@ void RFautoTune(int channel)
   Tuning = true;
   TuningChannel = channel-1;
   b = BoardFromSelectedChannel(channel);
-  TWIsetByte(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_CHAN, (TuningChannel & 1) +1);
-  TWIcmd(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_ATUNE);
+  TWIsetByte(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_CHAN, (TuningChannel & 1) +1);
+  TWIcmd(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_ATUNE);
   DisplayMessage("Tune in process");
 }
 
@@ -570,8 +576,8 @@ void RFautoRetune(int channel)
   Tuning = true;
   TuningChannel = channel-1;
   b = BoardFromSelectedChannel(channel);
-  TWIsetByte(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_CHAN, (TuningChannel & 1) +1);
-  TWIcmd(RFDDarray[b]->EEPROMadr | 0x20, b, TWI_RF_SET_RTUNE);
+  TWIsetByte(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_CHAN, (TuningChannel & 1) +1);
+  TWIcmd(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_RTUNE);
   DisplayMessage("Retune in process");
 }
 
@@ -747,8 +753,8 @@ void RFcalP(char *channel, char *Vpp)
     return;
   }
   SendACK;
-  TWIsetByte(RFDDarray[brd]->EEPROMadr | 0x20, brd, TWI_RF_SET_CHAN, ((ch-1) & 1) +1);
-  TWIsetFloat(RFDDarray[brd]->EEPROMadr | 0x20, brd, TWI_RF_CALP, vpp);
+  TWIsetByte(RFdrvCMDadd(RFDDarray[brd]->EEPROMadr), brd, TWI_RF_SET_CHAN, ((ch-1) & 1) +1);
+  TWIsetFloat(RFdrvCMDadd(RFDDarray[brd]->EEPROMadr), brd, TWI_RF_CALP, vpp);
 }
 
 void RFcalN(char *channel, char *Vpp)
@@ -770,8 +776,8 @@ void RFcalN(char *channel, char *Vpp)
     return;
   }
   SendACK;
-  TWIsetByte(RFDDarray[brd]->EEPROMadr | 0x20, brd, TWI_RF_SET_CHAN, ((ch-1) & 1) +1);
-  TWIsetFloat(RFDDarray[brd]->EEPROMadr | 0x20, brd, TWI_RF_CALN, vpp);
+  TWIsetByte(RFdrvCMDadd(RFDDarray[brd]->EEPROMadr), brd, TWI_RF_SET_CHAN, ((ch-1) & 1) +1);
+  TWIsetFloat(RFdrvCMDadd(RFDDarray[brd]->EEPROMadr), brd, TWI_RF_CALN, vpp);
 }
 
 void GetRFpwrLimit(int channel)
@@ -796,6 +802,99 @@ void SetRFpwrLimit(int channel, int Power)
   i = BoardFromSelectedChannel(channel - 1);
   RFDDarray[i]->PowerLimit = Power;
   if(i == SelectedRFBoard) RFDD->PowerLimit = Power;
+}
+
+//
+// The following functions support the piece wise linear calibration model.
+//
+
+// These functions will generate the calibration table. The user will adjust the 
+// drive to set a desired voltage and then enter the value. Up to ten points
+// be definded. Enter an empty string to terminate data entry. It is assumed 
+// that the channel has been tuned and is properly connected.
+// channel is 1 through number of channels
+// phase is RF+ or RF-
+uint8_t PWLch;
+
+void RFdriveAllowADJ(void)
+{
+  int   brd;
+  float Drive;
+  
+  // Call the task system to allow all system processing
+  control.run();
+  // Process any encoder event
+  if (ButtonRotated)
+  {
+    ButtonRotated = false;
+    Drive = ((float)encValue)/10.0;
+    encValue = 0;
+    // Get the RFdiver structure and adjust the drive level 
+    if (!IsChannelValid(PWLch,false)) return;
+    brd = BoardFromSelectedChannel(PWLch - 1);
+    // If Drive value is invalid exit
+    Drive += RFDDarray[brd]->RFCD[(PWLch - 1) & 1].DriveLevel;
+    if ((Drive < 0) || (Drive > RFDDarray[brd]->RFCD[(PWLch - 1) & 1].MaxDrive)) return;
+    RFDDarray[brd]->RFCD[(PWLch - 1) & 1].DriveLevel = Drive;
+    if (PWLch - 1 == SelectedRFChan) RFCD.DriveLevel = Drive;
+  }
+}
+
+void genPWLcalTable(char *channel, char *phase)
+{
+  String sToken;
+  char   *res;
+  int    brd,ph,i;
+  float  Drive;
+  
+  sToken = channel;
+  PWLch = sToken.toInt();
+  if (!IsChannelValid(PWLch,false)) return;
+  brd = BoardFromSelectedChannel(PWLch - 1);
+  sToken = phase;
+  if((sToken != "RF+") && (sToken != "RF-")) BADARG;
+  if(sToken == "RF+") ph = 0;
+  else ph = 1;
+  // Send the user instructions.
+  serial->println("This function will generate a piecewise linear");
+  serial->println("calibration table. Set the drive level to reach");
+  serial->println("desired calibration points and then enter the");
+  serial->println("measured value to the nearest volt. Press enter");
+  serial->println("When finished. Voltage must be increasing!");
+  // Loop to allow user to adjust drive and enter measured voltage
+  RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].num = 0;
+  i=0;
+  Drive = RFDDarray[brd]->RFCD[(PWLch - 1) & 1].DriveLevel;
+  while(true)
+  {
+     serial->print("\nPoint ");
+     serial->println(i+1);
+     res = UserInput("Enter measured voltage: ", RFdriveAllowADJ);
+     if( res == NULL) break;
+     sToken = res;
+     RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].Value[i] = sToken.toInt();
+     // Read the ADC raw counts
+     SelectBoard(BoardFromSelectedChannel(PWLch - 1));
+     if(ph == 0) RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].ADCvalue[i] = AD7998(RFDDarray[brd]->ADCadr, RFDDarray[brd]->RFCD[(PWLch - 1) & 1].RFpADCchan.Chan, 100);
+     else RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].ADCvalue[i] = AD7998(RFDDarray[brd]->ADCadr, RFDDarray[brd]->RFCD[(PWLch - 1) & 1].RFpADCchan.Chan, 100);
+     i++;
+     RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].num = i;
+     if(i>=MAXPWL) break;
+  }
+  serial->println("");
+  // Report the table
+  serial->print("Number of table entries: ");
+  serial->println(RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].num);
+  for(i=0;i<RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].num;i++)
+  {
+    serial->print(RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].Value[i]);
+    serial->print(",");
+    serial->println(RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].ADCvalue[i]);
+  }
+  // Done!
+  serial->println("\nData entry complete!");
+  RFDDarray[brd]->RFCD[(PWLch - 1) & 1].DriveLevel = Drive;
+  if (PWLch - 1 == SelectedRFChan) RFCD.DriveLevel = Drive;
 }
 
 #endif

@@ -180,6 +180,7 @@ void ReleaseTWI(void)
         if(TWIq[i].Type == VoidVoid) TWIq[i].pointers.funcVoidVoid();
         else if(TWIq[i].Type == VoidIntIntFloat) TWIq[i].pointers.funcIntIntFloat(TWIq[i].Int1,TWIq[i].Int2,TWIq[i].Float1);
         else if(TWIq[i].Type == VoidIntFloat) TWIq[i].pointers.funcIntFloat(TWIq[i].Int1,TWIq[i].Float1);
+        else if(TWIq[i].Type == VoidIntInt) TWIq[i].pointers.funcIntInt(TWIq[i].Int1,TWIq[i].Int2);
         else if(TWIq[i].Type == VoidIntIntBool) TWIq[i].pointers.funcIntIntFloat(TWIq[i].Int1,TWIq[i].Int2,TWIq[i].Bool1);
         else if(TWIq[i].Type == VoidIntIntWord) TWIq[i].pointers.funcIntIntFloat(TWIq[i].Int1,TWIq[i].Int2,TWIq[i].Word1);
         else if(TWIq[i].Type == VoidIntIntByte) TWIq[i].pointers.funcIntIntFloat(TWIq[i].Int1,TWIq[i].Int2,(byte)TWIq[i].Word1);
@@ -211,6 +212,18 @@ void TWIqueue(void (*TWIfunction)(int,float),int arg1,float arg2)
      TWIq[i].Type   = VoidIntFloat;
      TWIq[i].Int1   = arg1;
      TWIq[i].Float1 = arg2;
+     break;
+  }  
+}
+
+void TWIqueue(void (*TWIfunction)(int,int),int arg1,int arg2)
+{
+  for(int i=0;i<MaxQueued;i++) if(TWIq[i].pointers.funcIntInt == NULL)
+  {
+     TWIq[i].pointers.funcIntInt = TWIfunction;
+     TWIq[i].Type   = VoidIntInt;
+     TWIq[i].Int1   = arg1;
+     TWIq[i].Int2   = arg2;
      break;
   }  
 }

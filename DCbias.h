@@ -18,6 +18,26 @@ extern float DCbiasPvoltage;
 extern int   DCbiasPdelay;
 extern int   DCbiasPwidth;
 
+// Waveform generation data structures.
+
+typedef struct _Waveform
+{
+  int   ch;
+  float max;
+  float min;
+  float freq;
+  float step;
+  float val;
+  struct _Waveform *wf;
+} Waveform;
+
+typedef struct
+{
+  float sps;
+  Waveform *wf;
+} Waveforms;
+
+// DCbias module data structures
 
 typedef struct
 {
@@ -131,5 +151,12 @@ int DCbiasChan2DAC(int chan);
 bool CalDCbiasChannel(int channel);
 void CalDCbiasChannels(void);
 bool CalDCbiasOffset(int channel);
+
+// Waveform generation command processor prototypes
+void WFMinit(int sps);
+void WFMaddWF(void);
+void WFMenable(void);
+void WFMdisable(void);
+void WFMreport(int ch,int parm);
 
 #endif

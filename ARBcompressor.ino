@@ -273,8 +273,8 @@ bool ARBgetValueFromTable(int *index, int *value)
 //
 // Added Jan 18, 2019
 //
-// m      Mode, channel, N or C
-// J      Compression order, channel order
+// m      Mode, module, N or C
+// J      Compression order, module, order
 //
 // Added Feb 22, 2020
 //

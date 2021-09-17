@@ -910,12 +910,58 @@
 //          - Auto reset mode on arc detect
 //          - Arc detect hold off on value change, decrease (this code is in place and looks ok so I raised the min level from .1KV to .5KV)
 //  1.202, May 10, 2021
-//      1.) Fixed a FAIMS restart bug that did not allow ranp up
+//      1.) Fixed a FAIMS restart bug that did not allow ramp up
 //  1.203, May 20, 2021
 //      1.) Fixed bug in the compression table that did not allow the m command to work properly. Bug has been there
 //          for a while!
 //      2.) Added Table status command
 //      3.) Added Trigger table N times command, overloaded SMOD so now SMOD,10 allows 10 triggers.
+//  1.204, June 3, 2021
+//      1.) Added FAIMSfb Dual electrometer M4 support.
+//      2.) Added the RF driver piecewise linear calibration option.
+//            - Added 4 total structures per module, RF+, RF- for each channel
+//            - Max of 10 points, int ADC value, int voltage
+//            - Number of points
+//            - 41 bytes per structure, 4 structures = 164 bytes
+//            - Calibration logic. Enter loop, ask for channel, ask for RF phase, ask for voltage, null string exits
+//  1.205, June 9, 2021
+//      1.) Updated the command processor so that the commands are now in a linked list of command sets. Each
+//          module can now define its own commands and add them to the current commands. This allows moving the
+//          commands to the module's source code. I did find a significant bug in the command prossor that could
+//          have caused issues. I was using a non static variable as if it was static.
+//      2.) Updated the DCbias supply report function of the rev 4.0 750 boards.
+//      3.) Implemented the HVPS module driver.
+//      4.) Moved the host commands into the module code for, FAIMS,FAIMSfb, and HOFAIMS. May do this more more
+//          modules.
+//  1.206, July 12, 2021
+//      1.) Added the triangle waveform generation to the DCbias module.
+//          The waveform generation feature allows generation of triangle waveforms
+//          on DCBias output channels. Multiple waveforms can be defined. All waveforms
+//          share the same output update rate (sample rate). The waveforms are generated
+//          in an interrupt service routine. A timer is used to generate interrupts at
+//          the user defined sample rate.
+//      2.) Lowered mz limit to 10 from 100 on the QUAD driver
+//      3.) Fixed a couple bugs in the HV module driver.
+//      4.) Updated the ESI module to support software rev 6, this supports hardware rev 2.1
+//          using ESI HV module board with +/- 10KV modules and relays
+//  1.207, Aug 1, 2021
+//      1.) Updated the FAIMSfb driver. Fixed bug in the scanning fuction that required module 1
+//          to be used to init a variable, else the system would crash.
+//      2.) Added frgmentor interface pass through commands.
+//      3.) Updated the GCHAN command to include the modules, RFamp, FAIMSfb, HV. Also updated to 
+//          properly report up to 6 ARBs
+//      4.) Added processing of host data to the BMP image loading.
+//  1.208, Aug 14, 2021
+//      1.) Added the ADC averaging function. The capbility requires the change detection system to be enabled 
+//          and the SADCSAMPS command defines the number of samples in the average. The command ADCAVG will return
+//          last collected average. The ADC conversion rate is ~45KHz
+//
+//      to do:
+//          1.) Add auto tune to QUAD function
+//          2.) Add scanning function to QUAD function, intergrate with electrometer
+//          3.) Update high/low range issues, QUAD
+//          4.) Update calibration function, QUAD
+//          5.) Update QUAD documentation
 //
 // We still have the problem with the AD7998 bit bang reading routine. Problem shows up on channel 2 of RF driver 
 // at board select A. Using hardware TWI interface solves the issue.

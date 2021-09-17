@@ -100,6 +100,10 @@ uint8_t   TrippedTimes=0;        // Number of times the supply tripped
 uint32_t  TrippedTime=0;         // Tripped time
 uint32_t  ResetTime=0;           // Time to reset power supply if not 0
 
+// Waveform generation variables
+
+MIPStimer WFMtimer(4);
+Waveforms *wfs = NULL;
 
 DialogBoxEntry DCDialogEntriesPage1[] = {
   {" Ch 1, V",  0, 1, D_FLOAT, dcbd.MinVoltage+dcbd.DCoffset.VoltageSetpoint, dcbd.MaxVoltage+dcbd.DCoffset.VoltageSetpoint, 1, 11, false, NULL, &dcbd.DCCD[0].VoltageSetpoint, NULL, NULL},
@@ -1539,7 +1543,7 @@ void ReportDCbiasSuppplies(int board)
      i = AD5593readADC(DCbDarray[board]->DACadr, 3, 10);
      serial->print("Negative supply = "); serial->print((-3.3 + (2.5 * i / 65536)) * 31.3); serial->println(" volts"); 
   }
-  else
+  else if(DCbDarray[board]->MaxVoltage < 300)
   {
      int i = AD5593readADC(DCbDarray[board]->DACadr, 4, 10);
      serial->print("Logic supply = "); serial->print((2.5 * i / 65536) * 2.0); serial->println(" volts"); 
@@ -1547,6 +1551,15 @@ void ReportDCbiasSuppplies(int board)
      serial->print("Positive supply = "); serial->print((2.5 * i / 65536) * 201); serial->println(" volts"); 
      i = AD5593readADC(DCbDarray[board]->DACadr, 2, 10);
      serial->print("Negative supply = "); serial->print((-3.3 + (2.5 * i / 65536)) * 201); serial->println(" volts");
+  } 
+  else
+  {
+     int i = AD5593readADC(DCbDarray[board]->DACadr, 4, 10);
+     serial->print("Logic supply = "); serial->print((2.5 * i / 65536) * 2.0); serial->println(" volts"); 
+     i = AD5593readADC(DCbDarray[board]->DACadr, 3, 10);
+     serial->print("Positive supply = "); serial->print((2.5 * i / 65536) * 402); serial->println(" volts"); 
+     i = AD5593readADC(DCbDarray[board]->DACadr, 2, 10);
+     serial->print("Negative supply = "); serial->print((-3.3 + (2.5 * i / 65536)) * 402); serial->println(" volts");
   } 
   SelectBoard(brd);
 }
@@ -2320,7 +2333,8 @@ bool DCbiasAllZeroCheck(void)
 }
 
 // Host interface based calibration functions.
-// This function allows calibration of the seleted channel
+
+// This function allows calibration of the selected channel
 bool CalDCbiasChannel(int channel)
 {
   ChannelCal CC;
@@ -2347,6 +2361,7 @@ bool CalDCbiasChannel(int channel)
   return stat;
 }
 
+// This function allows calibration of all DCbias channels in the system
 void CalDCbiasChannels(void)
 {
   if(DCbiasAllZeroCheck() == false)
@@ -2403,4 +2418,185 @@ bool CalDCbiasOffset(int channel)
   dcbd = *DCbD; 
   DCbiasUpdate = true;    
   return stat; 
+}
+
+// The waveform generation feature allows generation of triangle waveforms
+// on DCBias output channels. Multiple waveforms can be defined. All waveforms
+// share the same output update rate (sample rate). The waveforms are generated
+// in an interrupt service routine. A timer is used to generate interrupts at
+// the user defined sample rate.
+
+// Waveform generation functions
+
+// This ISR will process all waveforms in the linked list and update
+// the output values. If the board select is not correct then TWI acquire
+// if needed to change the board select output. 
+void WaveformISR(void)
+{
+   Waveform *w;
+   
+   if(wfs == NULL) return;
+   w = wfs->wf;
+   while(w != NULL)
+   {
+      // Process this waveform
+      w->val = w->val + w->step;
+      if(w->val > w->max) { w->val = 2 * w->max - w->val; w->step *= -1; }
+      if(w->val < w->min) { w->val = 2 * w->min - w->val; w->step *= -1; }
+      int cnts = DCbiasValue2Counts(w->ch, w->val);
+      if((DCbiasCH2Brd(w->ch)&1) == SelectedBoard()) DCbiasDACupdate(w->ch,cnts);
+      else
+      {
+         // If here we will need to change the board select value so we need
+         // to allocate TWI to make sure its not in the middle of a cycle,
+         // if we can't acquire then queue up the operation
+         if(AcquireTWI()) { DCbiasDACupdate(w->ch,cnts); ReleaseTWI(); }
+         else TWIqueue(DCbiasDACupdate,w->ch,cnts);     
+      }
+      // Advance to next waveform
+      w = w->wf;
+   }
+}
+
+// Waveform generation command processing functions. These functions are called
+// from the serial command processor
+
+// This function will initialize the waveform generation capability. Any existing
+// waveforms will be deleted. The variable sps is the desired waveform generation
+// update rate in samples per second. sps is an integer.
+// The waveform generation uses timer 4 to generate an interrupt at the defined 
+// sample rate. 
+void WFMinit(int sps)
+{
+   Waveform *w;
+
+   if(wfs != NULL) 
+   {
+      WFMtimer.stop();
+      // Delete all the current waveforms
+      while(wfs->wf != NULL)
+      {
+         w = wfs->wf;
+         while(w != NULL) w = w->wf;
+         delete w;
+         w = NULL; 
+      }
+   }
+   else wfs = new Waveforms;
+   wfs->wf = NULL;
+   wfs->sps = sps;
+  // Start the real time interrupt
+  WFMtimer.attachInterrupt(WaveformISR);
+  WFMtimer.setFrequency((double)sps);
+}
+
+// This function defines a waveform and adds it to the Waveforms structure's
+// linked list of waveforms. This function is called from the command processor
+// with the following arguments in the ring buffer:
+// Channel, DCbias channel number
+// Frequency, in Hz
+// Min, minimum voltage
+// Max, maximum voltage
+// Note: if the waveform has already been defined for the given channel then
+// it will be updated.
+void WFMaddWF(void)
+{
+   char     *tkn;
+   String   arg;
+   DCbiasData *DCbData;
+   Waveform *w,**new_w;
+   
+  w = new Waveform;
+  while(true)
+  {
+     if(wfs == NULL) break;
+     // Read and validate the parameters
+     if((tkn = TokenFromCommandLine(',')) == NULL) break;
+     arg = tkn;
+     w->ch = arg.toInt() - 1;
+     if(!CheckChannel(w->ch+1,false)) break;
+     if((DCbData = GetDCbiasDataPtr(w->ch+1,false)) == NULL) break;
+     if((tkn = TokenFromCommandLine(',')) == NULL) break;
+     arg = tkn;
+     w->freq = arg.toFloat();
+     if((tkn = TokenFromCommandLine(',')) == NULL) break;
+     arg = tkn;
+     w->min = arg.toFloat();
+     if(!CheckValue(DCbData, w->min,false)) break;
+     if((tkn = TokenFromCommandLine(',')) == NULL) break;
+     arg = tkn;
+     w->max = arg.toFloat();
+     if(!CheckValue(DCbData, w->max,false)) break;
+     // Calculate the step size and set initial value
+     w->wf = NULL;
+     w->val = (w->max - w->min)/2.0;
+     w->step = 2 * (w->max - w->min) * w->freq / wfs->sps;
+     // Insert in the linked list
+     new_w = &wfs->wf;
+     while(*new_w != NULL) 
+     {
+       if((*new_w)->ch == w->ch)
+       {
+          // If here do an update and exit with ACK
+          **new_w = *w;
+          delete w;
+          SendACK;
+          return;
+       }
+       new_w = &((*new_w)->wf);
+     }
+     *new_w = w;
+     // Exit
+     SendACK;
+     return;
+  }
+  // Error exit
+  delete w;
+  BADARG;
+}
+
+// Enable the waveform generation
+void WFMenable(void)
+{
+   if(wfs == NULL) BADARG;
+   WFMtimer.start(-1, 0, false);
+   DCbiasTestEnable = false;
+   SendACK;
+}
+
+// Disable the waveform generation
+void WFMdisable(void)
+{
+   if(wfs == NULL) BADARG;
+   WFMtimer.stop();
+   DCbiasUpdate = true;
+   DCbiasTestEnable = true;
+   SendACK;
+}
+
+// Report a channel's waveform parameter. valid parameters are:
+// 0 = freq
+// 1 = min
+// 2 = max
+void WFMreport(int ch,int parm)
+{
+   Waveform *w;
+
+   if((wfs == NULL) || (parm < 0) || (parm > 2)) BADARG;
+   // Find the requested channel and report the requested parameter
+   w = wfs->wf;
+   while(w != NULL) 
+   {
+      if(w->ch == ch-1)
+      {
+         SendACKonly;
+         if(SerialMute) return;
+         if(parm == 0) serial->println(w->freq);
+         else if(parm == 1) serial->println(w->min);
+         else serial->println(w->max);
+         return;
+      }
+      w = w->wf;
+   }
+   BADARG;
 }

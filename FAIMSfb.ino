@@ -108,6 +108,82 @@ DialogBox FAIMSFBdialog = {
 
 MenuEntry MEFAIMSFBmodule = {" FAIMEFB module", M_DIALOG, 0, 0, 0, NULL, &FAIMSFBdialog, NULL, NULL};
 
+const Commands  FAIMSfbCmdArray[] = {
+  {"SFBENA",  CMDfunctionStr, 2, (char *)SetFAIMSfbEnable},          // Set module number to TRUE to enable FAIMS
+  {"GFBENA",  CMDfunction, 1, (char *)ReturnFAIMSfbEnable},          // Returns enable status for selected module
+  {"SFBMODE", CMDfunctionStr, 2, (char *)SetFAIMSfbMode},            // Set module number to TRUE to enable closed loop control of Vrf
+  {"GFBMODE", CMDfunction, 1, (char *)ReturnFAIMSfbMode},            // Returns mode control for selected module
+  {"SFBFREQ", CMDfunction, 2, (char *)SetFAIMSfbFreq},               // Set FAIMS frequency, in Hz for seletced module
+  {"GFBFREQ", CMDfunction, 1, (char *)ReturnFAIMSfbFreq},            // Returns frequency for the selected module
+  {"SFBDUTY", CMDfunction, 2, (char *)SetFAIMSfbDuty},               // Set FAIMS duty cycle in percent for seletced module
+  {"GFBDUTY", CMDfunction, 1, (char *)ReturnFAIMSfbDuty},            // Returns duty cycle for selected module
+  {"SFBDRV", CMDfunctionStr,2, (char *)SetFAIMSfbDrive},             // Set FAIMS drive level in percent for the selected module
+  {"GFBDRV", CMDfunction,1, (char *)ReturnFAIMSfbDrive},             // Returns drive level for the selected module
+  {"GDRVV", CMDfunction,  1, (char *)ReturnFAIMSfbDriveV},           // Returns voltage level into drive FET, V for the selected module
+  {"GDRVI", CMDfunction,  1, (char *)ReturnFAIMSfbDriveI},           // Returns current into drive FET, mA for the selected module
+  {"SVRF", CMDfunctionStr, 2, (char *)SetFAIMSfbVrf},                // Sets the drive level setpoint to achieve the desired voltage for the selected module
+  {"GVRF", CMDfunction,  1, (char *)ReturnFAIMSfbVrf},               // Returns the Vrf peak voltage for the selected module
+  {"GVRFV", CMDfunction,  1, (char *)ReturnFAIMSfbVrfV},             // Returns the Vrf peak voltage readback for the selected module
+  {"GPWR", CMDfunction,  1, (char *)ReturnFAIMSfbPWR},               // Returns the power in watts for the selected module
+  {"SVRFN", CMDfunctionStr, 2, (char *)SetFAIMSfbVrfNow},            // Sets the drive level setpoint achieve the desired voltage for the selected module
+                                                                     // and adjusts the drive level to reach the setpoint
+  {"SVRFT", CMDfunctionStr, 2, (char *)SetFAIMSfbVrfTable},          // Sets the drive level setpoint achieve the desired voltage for the selected module
+                                                                     // and adjusts the drive level to reach the setpoint using the drive level table
+  {"GENVRFTBL", CMDfunction, 1, (char *)GenerateVrfTable},           // This function will generate 
+  // FAIMSFB Limits
+  {"SFBMAXDRV",CMDfunctionStr,2, (char *)SetFAIMSfbMaxDrive},        // Set the maximum drive level allowed for the selected module
+  {"GFBMAXDRV",CMDfunction, 1,(char *)ReturnFAIMSfbMaxDrive},        // Returns the maximum drive level for the selected module
+  {"SFBMAXPWR",CMDfunctionStr,2, (char *)SetFAIMSfbMaxPower},        // Set the maximum power allowed for the selected module
+  {"GFBMAXPWR",CMDfunction,1,(char *)ReturnFAIMSfbMaxPower},         // Returns the maximum power limit for the selected module
+  // FAIMSFB DC bias commands
+  {"SCV", CMDfunctionStr,  2, (char *)SetFAIMSfbCV},                 // Set the current CV for the seletced module
+  {"GCV", CMDfunction,  1, (char *)ReturnFAIMSfbCV},                 // Return the current CV for the seletced module
+  {"GCVV", CMDfunction, 1, (char *)ReturnFAIMSfbCVrb},               // Return the CV readback value for the seletced module
+  {"SBIAS", CMDfunctionStr,  2, (char *)SetFAIMSfbBIAS},             // Set the current BIAS for the seletced module
+  {"GBIAS", CMDfunction,  1, (char *)ReturnFAIMSfbBIAS},             // Return the current BIAS for the seletced module
+  {"GBIASV", CMDfunction,  1, (char *)ReturnFAIMSfbBIASrb},          // Set the current BIAS for the seletced module 
+  // FAIMSFB scanning commands
+  {"SFBCVSTRT",  CMDfunctionStr, 2, (char *)SetFAIMSfbCVstart},      // set the CV scan start voltage for the seletced module 
+  {"GFBCVSTRT",  CMDfunction, 1, (char *)ReturnFAIMSfbCVstart},      // returns the CV scan start voltage for the seletced module 
+  {"SFBCVEND",   CMDfunctionStr, 2, (char *)SetFAIMSfbCVend},        // set the CV scan end voltage for the seletced module 
+  {"GFBCVEND",   CMDfunction, 1, (char *)ReturnFAIMSfbCVend},        // returns the CV scan end voltage for the seletced module 
+  {"SFBVRFSTRT", CMDfunctionStr, 2, (char *)SetFAIMSfbVRFstart},     // set the Vrf scan start voltage for the seletced module 
+  {"GFBVRFSTRT", CMDfunction, 1, (char *)ReturnFAIMSfbVRFstart},     // returns the Vrf scan start voltage for the seletced module 
+  {"SFBVRFEND",  CMDfunctionStr, 2, (char *)SetFAIMSfbVRFend},       // set the Vrf scan end voltage for the seletced module 
+  {"GFBVRFEND",  CMDfunction, 1, (char *)ReturnFAIMSfbVRFend},       // returns the Vrf scan end voltage for the seletced module 
+  {"SFBSTEPDUR", CMDfunction, 2, (char *)SetFAIMSfbStepDuration},    // set the scan step duration in mS for the seletced module 
+  {"GFBSTEPDUR", CMDfunction, 1, (char *)ReturnFAIMSfbStepDuration}, // returns the scan step duration in mS for the seletced module 
+  {"SFBNUMSTP",  CMDfunction, 2, (char *)SetFAIMSfbSteps},           // set the scan number of steps for the seletced module 
+  {"GFBNUMSTP",  CMDfunction, 1, (char *)ReturnFAIMSfbSteps},        // returns the scan number of steps for the seletced module 
+  {"FBSCNSTRT",  CMDfunction, 1, (char *)InitFAIMSfbScan},           // Start the scan for the seletced module 
+  {"FBSCNSTP",  CMDfunction, 1, (char *)StopFAIMSfbScan},            // Stop a scn that is in process for the seletced module 
+  {"SFBADCSMP",  CMDint, 1, (char *)&NumSamples},                    // Set the number of adc sample to average, 1 to 16 
+  {"GFBADCSMP",  CMDint, 0, (char *)&NumSamples},                    // Returns the number of adc sample to average, 1 to 16 
+  // Electrometer commands
+  {"SELTMTRENA",  CMDfunctionStr, 1, (char *)SetEMRTenable},         // Set the electrometer enabled flag, TRUE or FALSE 
+  {"GELTMTRENA",  CMDfunction, 0, (char *)ReturnEMRTenable},         // Return the electrometer enable flag
+  {"SELTMTRM4",  CMDfunctionStr, 1, (char *)SetEMRTM4enable},        // Set the M4 electrometer enabled flag, TRUE or FALSE 
+  {"GELTMTRM4",  CMDfunction, 0, (char *)ReturnEMRTM4enable},        // Return the M4 electrometer enable flag
+  {"GELTMTRPOS",  CMDfunction, 0, (char *)ReturnEMRTpos},            // Return the electrometer positive channel
+  {"GELTMTRNEG",  CMDfunction, 0, (char *)ReturnEMRTneg},            // Return the electrometer negative channel
+  {"SELTMTRPOSOFF",  CMDfunctionStr, 1, (char *)SetEMRTposOff},      // Set the electrometer positive channel offset
+  {"GELTMTRPOSOFF",  CMDfunction, 0, (char *)ReturnEMRTposOff},      // Returns the electrometer positive channel offset
+  {"SELTMTRNEGOFF",  CMDfunctionStr, 1, (char *)SetEMRTnegOff},      // Set the electrometer negative channel offset
+  {"GELTMTRNEGOFF",  CMDfunction, 0, (char *)ReturnEMRTnegOff},      // Returns the electrometer negative channel offset
+  {"SELTMTRPOSZERO",  CMDfunctionStr, 1, (char *)SetEMRTposZero},    // Set the electrometer positive channel zero
+  {"GELTMTRPOSZERO",  CMDfunction, 0, (char *)ReturnEMRTposZero},    // Returns the electrometer positive channel zero
+  {"SELTMTRNEGZERO",  CMDfunctionStr, 1, (char *)SetEMRTnegZero},    // Set the electrometer negative channel zero
+  {"GELTMTRNEGZERO",  CMDfunction, 0, (char *)ReturnEMRTnegZero},    // Returns the electrometer negative channel zero
+  {"ELTMTRZERO",  CMDfunction, 0, (char *)SetEMRTzero},              // Execute the electrometer zero procedure
+  // Fragmentor interface commands. This interface is a TWI to RS232 interface. These commands sends fragmentor commands 
+  // through the interface
+  {"SFRAG", CMDfunctionLine, 0, (char *)SendFrag},                    // Send command through fragmentor interface
+  {"PFRAG",  CMDfunction, 0, (char *)PollFrag},                        // Poll frgmentor interface, results to host interface 
+  {0},
+};
+
+CommandList FAIMSfbCmdList = { (Commands *)FAIMSfbCmdArray, NULL };
+
 // Update the dialog box and display
 void SelectFAIMSFBmodule(bool paint = true)
 {
@@ -149,6 +225,7 @@ void RestorFAIMSFBsettings(bool NoDisplay)
       // Here if the name matches so copy the data to the operating data structure
       if (fd.Size > sizeof(FAIMSFBdata)) fd.Size = sizeof(FAIMSFBdata);
       fd.TWIadd = FAIMSFB->TWIadd;
+      FAIMSFB->ElectM4ena = false;
       memcpy(FAIMSFB, &fd, fd.Size);
       faimsfb = *FAIMSFB;
       if (!NoDisplay) DisplayMessage("Parameters Restored!", 2000);
@@ -195,6 +272,8 @@ void FAIMSfb_init(int8_t Board, int8_t addr)
   if (NumberOfFAIMSFBchannels == 0)
   {
     // Here if this is the first FAIMSfb module
+    // Add the commands to the command processor
+    AddToCommandList(&FAIMSfbCmdList);
     // If the Electrometer is enabled then setup the menus
     // and init the electrometer module
     if(FAIMSFBarray[Board]->ElectrometerEnable)
@@ -350,8 +429,18 @@ void FAIMSFBscanISR(void)
   // Read the electrometer here if its enabled
   if(FAIMSFBarray[b]->ElectrometerEnable)
   {
-     msd->PosCurrent = Counts2Value(AD5593readADCWire1(FAIMSFBarray[b]->ElectAdd, FAIMSFBarray[b]->ElectPosCtrl.Chan,NumSamples), &FAIMSFBarray[b]->ElectPosCtrl);
-     msd->NegCurrent = Counts2Value(AD5593readADCWire1(FAIMSFBarray[b]->ElectAdd, FAIMSFBarray[b]->ElectNegCtrl.Chan,NumSamples), &FAIMSFBarray[b]->ElectNegCtrl);
+     if(FAIMSFBarray[b]->ElectM4ena)
+     {
+        uint16_t buf[2];
+        ReadDualElectrometer(FAIMSFBarray[b]->ElectM4Add, buf);
+        msd->PosCurrent = Counts2Value(buf[0], &FAIMSFBarray[b]->ElectPosCtrlM4);
+        msd->NegCurrent = Counts2Value(buf[1], &FAIMSFBarray[b]->ElectNegCtrlM4);
+     }
+     else
+     {
+        msd->PosCurrent = Counts2Value(AD5593readADCWire1(FAIMSFBarray[b]->ElectAdd, FAIMSFBarray[b]->ElectPosCtrl.Chan,NumSamples), &FAIMSFBarray[b]->ElectPosCtrl);
+        msd->NegCurrent = Counts2Value(AD5593readADCWire1(FAIMSFBarray[b]->ElectAdd, FAIMSFBarray[b]->ElectNegCtrl.Chan,NumSamples), &FAIMSFBarray[b]->ElectNegCtrl);      
+     }
   }
   // Advance to next scan point
   digitalWrite(MIPSscanAdv,HIGH);
@@ -382,9 +471,10 @@ void InitFBScan(int module)
   digitalWrite(MIPSscanAdv,LOW);
   for(int i=1;i<=2;i++)
   {
+    msd->brd1 = FAIMSfbModule2Brd(1, false);
     if((brd=FAIMSfbModule2Brd(module & i, false)) != -1)
     {
-      if(i==1) msd->brd1 = brd;
+      // if(i==1) msd->brd1 = brd;
       if(FAIMSFBarray[brd]->Steps > msd->steps) msd->steps = FAIMSFBarray[brd]->Steps;
       // Setup FAIMS for external scan trigger
       TWIsetBool(FAIMSFBarray[brd]->TWIadd | 0x20, brd, TWI_FB_SET_EXTSTEP, true);
@@ -445,6 +535,12 @@ void StopFBScan(int module)
 //
 // Host FAIMSfb commands
 //
+void FAIMSfbNumberOfChannels(void)
+{
+  SendACKonly;
+  if (!SerialMute) serial->println(NumberOfFAIMSFBchannels);  
+}
+
 // This function converts the module number into a board index, this board index
 // is also the index into the modules data structure. There are two overloaded versions
 // to accept the module as a string or an int
@@ -908,6 +1004,31 @@ void ReturnEMRTenable(void)
   if(FAIMSFBarray[brd]->ElectrometerEnable) serial->println("TRUE");
   else serial->println("FALSE");
 }
+void SetEMRTM4enable(char *ena)
+{
+  int brd;
+
+  // Get module 1's data structure and set flag
+  if((brd=FAIMSfbModule2Brd(1)) == -1) return;
+  if(strcmp(ena,"TRUE") == 0) 
+  {
+    FAIMSFBarray[brd]->ElectM4ena = true;
+  }
+  else if(strcmp(ena,"FALSE") == 0) FAIMSFBarray[brd]->ElectM4ena = false;
+  else { SetErrorCode(ERR_BADARG); SendNAK; return;}
+  faimsfb.ElectM4ena = FAIMSFBarray[brd]->ElectM4ena;
+  SendACK;
+}
+void ReturnEMRTM4enable(void)
+{
+  int brd;
+
+  if((brd=FAIMSfbModule2Brd(1)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  if(FAIMSFBarray[brd]->ElectM4ena) serial->println("TRUE");
+  else serial->println("FALSE");
+}
+
 void ReturnEMRTpos(void)
 {
   int brd;
@@ -991,4 +1112,42 @@ void SetEMRTzero(void)
   ZeroElectrometer();
 }
 
+void SendFrag(void)
+{
+  static bool setup = false;
+  char ch;
+
+  if(!setup)
+  {
+    pinMode(18,INPUT);
+    pinMode(19,INPUT);
+    Wire1.begin();
+    Wire1.setClock(100000);
+    setSC16IS740wire(&Wire1);
+    init_SC16IS740(0x48); 
+  }
+  GetToken(true);  // removes the comma
+  while(true)
+  {
+    ch = RB_Get(&RB);
+    if(ch == 0xFF) break;
+    writeSC16IS740char(0x48 , ch);
+    if(ch == '\n') break;
+  }
+  delay(1);
+  PollFrag();
+}
+
+void PollFrag(void)
+{
+  int i;
+
+  while(true)
+  {
+    i = readSC16IS740char(0x48);
+    if(i==-1) break;
+    serial->print((char)i);
+  }
+}
+ 
 #endif

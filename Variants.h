@@ -19,6 +19,7 @@
 #define HOFAIMcode  false    // appends h to version
 #define TABLE2code  true     // appends t to version
 #define RFdriver2   false    // appends r to version
+#define HVPScode    false    // appends v to version
 
 #include "errors.h"
 #include "DIO.h"
@@ -43,11 +44,20 @@
 #include "FILEIO.h"
 #include "RTCDue.h"
 #include "Log.h"
+#include "HVPS.h"
 
 // Test mode flags, uncomment to enable selected test mode
 //#define TestMode
 //#define TestFilament
 //#define TestTwave
+
+#if RFdriver2
+#define NumModAdd  5
+#else
+#define NumModAdd  4
+#endif
+
+extern const uint8_t ModuleAddresses[];
 
 extern bool     Suspend;
 extern bool     EnableSerialNavigation;

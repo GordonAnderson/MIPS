@@ -326,6 +326,69 @@ DialogBoxEntry FAIMSentriesDCMenuFD[] = {
   {NULL},
 };
 
+const Commands  FAIMSCmdArray[] = {
+// FAIMS  General FAIMS commands
+  {"SFMENA", CMDbool, 1, (char *)&faims.Enable},                // Set the FAIMS enable flag, TRUE enables waveform generation
+  {"GFMENA", CMDbool, 0, (char *)&faims.Enable},                // Returns the FAIMS enable flag
+  {"SFMDRV", CMDfunctionStr, 1, (char *)FAIMSsetDrive},         // Sets FAIMS drive level in percent
+  {"GFMDRV", CMDfloat, 0, (char *)&faims.Drv},                  // Returns FAIMS drive level in percent
+  {"GFMPWR", CMDfloat, 0, (char *)&TotalPower},                 // Returns FAIMS total power in watts
+  {"GFMPV", CMDfloat, 0, (char *)&KVoutP},                      // Returns FAIMS positive peak output voltage
+  {"GFMNV", CMDfloat, 0, (char *)&KVoutN},                      // Returns FAIMS negative peak output voltage
+  {"SFMLOCK", CMDfunctionStr, 1, (char *)FAIMSsetLock},         // Sets FAIMS output level lock mode
+  {"GFMLOCK", CMDbool, 0, (char *)&Lock},                       // Returns FAIMS output level lock mode
+  {"SFMSP", CMDfunctionStr, 1, (char *)FAIMSsetLockSP},         // Sets FAIMS output level lock setpoint
+  {"GFMSP", CMDfloat, 0, (char *)&LockSetpoint},                // Returns FAIMS output level lock setpoint
+  {"SFMTUNE", CMDfunction, 0, (char *)FAIMSrequestAutoTune},    // Set auto tune request flag
+  {"SFMTABRT", CMDfunction, 0, (char *)FAIMSautoTuneAbort},     // Set auto tune abort flag
+  {"GFMTSTAT", CMDstr, 0, (char *)TuneState},                   // Returns the auto tune state string
+  {"SFMTPOS",CMDbool, 1, (char *)&TunePos},                     // Set the positive tune mode if TRUE, if FALSE tune for neg peak
+  {"GFMTPOS",CMDbool, 0, (char *)&TunePos},                     // Return positive peak mode
+  {"SFMTDRV",CMDint, 1, (char *)&TuneDrive},                    // Set the tune mode drive level
+  {"GFMTDRV",CMDint, 0, (char *)&TuneDrive},                    // Return the tune mode drive level
+// FAIMS DC CV and Bias commands
+  {"SFMCV", CMDfunctionStr, 1, (char *)FAIMSsetCV},                // Sets FAIMS DC CV voltage setpoint
+  {"GFMCV", CMDfloat, 0, (char *)&faims.DCcv.VoltageSetpoint},     // Returns FAIMS DC CV voltage setpoint
+  {"GFMCVA", CMDfloat, 0, (char *)&DCcvRB},                        // Returns FAIMS DC CV voltage actual
+  {"SFMBIAS", CMDfunctionStr, 1, (char *)FAIMSsetBIAS},            // Sets FAIMS DC Bias voltage setpoint
+  {"GFMBIAS", CMDfloat, 0, (char *)&faims.DCbias.VoltageSetpoint}, // Returns FAIMS DC Bias voltage setpoint
+  {"GFMBIASA", CMDfloat, 0, (char *)&DCbiasRB},                    // Returns FAIMS DC Bias voltage actual
+  {"SFMOFF", CMDfunctionStr, 1, (char *)FAIMSsetOffset},           // Sets FAIMS DC offset voltage setpoint
+  {"GFMOFF", CMDfloat, 0, (char *)&faims.DCoffset.VoltageSetpoint},// Returns FAIMS DC offset voltage setpoint
+  {"GFMOFFA", CMDfloat, 0, (char *)&DCoffsetRB},                   // Returns FAIMS DC offset voltage actual
+// FAIMS CV Scan commands
+  {"SFMCVSTART", CMDfunctionStr, 1, (char *)FAIMSsetCVstart},      // Sets FAIMS DC CV scan start voltage
+  {"GFMCVSTART", CMDfloat, 0, (char *)&faims.CVstart},             // Returns FAIMS DC CV scan start voltage
+  {"SFMCVEND", CMDfunctionStr, 1, (char *)FAIMSsetCVend},          // Sets FAIMS DC CV scan end voltage
+  {"GFMCVEND", CMDfloat, 0, (char *)&faims.CVend},                 // Returns FAIMS DC CV scan end voltage
+  {"SFMDUR", CMDfunctionStr, 1, (char *)FAIMSsetDuration},         // Sets FAIMS DC CV scan duration in seconds
+  {"GFMDUR", CMDfloat, 0, (char *)&faims.Duration},                // Returns FAIMS DC CV scan duration in seconds
+  {"SFMLOOPS", CMDfunctionStr, 1, (char *)FAIMSsetLoops},          // Sets FAIMS DC CV scan loops
+  {"GFMLOOPS", CMDint, 0, (char *)&Loops},                         // Returns FAIMS DC CV scan loops
+  {"SFMSTRTLIN", CMDbool, 1, (char *)&FAIMSscan},                  // Sets FAIMS DC CV linear scan flag
+  {"GFMSTRTLIN", CMDbool, 0, (char *)&FAIMSscan},                  // Returns FAIMS DC CV linear scan flag
+  {"SFMSTPTM", CMDfunctionStr, 1, (char *)FAIMSsetStepTime},       // Sets FAIMS DC CV scan step duration
+  {"GFMSTPTM", CMDint, 0, (char *)&faims.StepDuration},            // Returns FAIMS DC CV scan step duration
+  {"SFMSTEPS", CMDfunctionStr, 1, (char *)FAIMSsetSteps},          // Sets FAIMS DC CV step scan number of steps
+  {"GFMSTEPS", CMDint, 0, (char *)&faims.Steps},                   // Returns FAIMS DC CV step scan number of steps
+  {"SFMSTRTSTP", CMDbool, 1, (char *)&FAIMSstepScan},              // Sets FAIMS DC CV step scan flag
+  {"GFMSTRTSTP", CMDbool, 0, (char *)&FAIMSstepScan},              // Returns FAIMS DC CV step scan flag
+// FAIMS configuration / calibration commands
+  {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},      // Set FAIMS RF harmonic positive peak readback calibration
+  {"SRFHNCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharNcal},      // Set FAIMS RF harmonic negative peak readback calibration
+  {"SARCDIS",CMDbool, 1, (char *)&DiableArcDetect},                // TRUE or FALSE, set to TRUE disable arc detection
+  {"FMISCUR",CMDbool, 0, (char *)&CurtianFound},                   // Returns TRUE is Curtian supply was detected
+  {"SFMCCUR",CMDbool, 1, (char *)&CurtianCtrl},                    // If TRUE allows enable faims to enable curtian supply
+  {"GFMCCUR",CMDbool, 0, (char *)&CurtianCtrl},                    // Returns curtian control flag
+  {"SFMMDIS",CMDbool, 1, (char *)&ArcMessAutoDismiss},             // Set the message auto dismiss is TRUE
+  {"GFMMDIS",CMDbool, 0, (char *)&ArcMessAutoDismiss},             // Return the message auto dismiss flag 
+  {"SFARCR",CMDint, 1, (char *)&FMnumTries},                       // Set the number of arc retry attempts
+  {"GFARCR",CMDint, 0, (char *)&FMnumTries},                       // Return the number of arc retry attempts 
+  {0},
+};
+
+CommandList FAIMSCmdList = { (Commands *)FAIMSCmdArray, NULL };
+
 bool FAIMSstartAutoTune(void)
 {
   if(FAIMStuning) return false;
@@ -614,6 +677,8 @@ void FAIMS_init(int8_t Board)
   // Flag the board as present
   FAIMSpresent = true;
   NumberOfFAIMS = 1;
+  // Add the commands to the command processor
+  AddToCommandList(&FAIMSCmdList);
   // Set active board to board being inited
   FAIMSBoardAddress = Board;
   SelectBoard(Board);

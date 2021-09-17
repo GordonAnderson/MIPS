@@ -22,7 +22,7 @@
 //
 // This sketch controls the MIPS system. This MIPS firmware uses the thread controller developed by
 // Seidel Gomes, for details, go to https://github.com/ivanseidel/ArduinoThread. This is a round robin
-// tasking system. Basically every module in MIPS is its own task. The modules are discoved on power up
+// tasking system. Basically every module in MIPS is its own task. The modules are discovered on power up
 // and there init functions are called. The modules then insert there menu option into the main system
 // menu. There are a couple of additional threads defined in this main loop, one for the LED light
 // flashing and a system thread that monitors power. All module tasks run at 10 herts, serial commands
@@ -31,7 +31,7 @@
 // The code in the modules do not block unless it is desired to stop all other tasks. Very little is
 // done in ISRs with the exception of the table execution for pulse sequence generation.
 //
-// MIPS used ADCs and DACs with TWI and SPI interfaces. The TFT display is also SPI as is the SD card
+// MIPS used ADCs and DACs with TWI and SPI interfaces. The TFT display is also SPI as does the SD card
 // interface.
 //
 // Host computer communications is supported through both the native USB and serial ports. On power up
@@ -49,7 +49,7 @@
 // name, and rev. These structures are saved on the module hardware in serial EPROM. When the system starts
 // it scans all posible locations for EEPROMS looking for modules. These modules are identified by the name
 // string. The MIPS system has a board select line and modules all have a A/B jumper to select there board
-// address. Modules address are 50,52,54,56 (hex) and with board selet this allows 8 modules maximumin one
+// address. Modules address are 50,52,54,56 (hex) and with board selet this allows 8 modules maximum in one
 // MIPS system.
 //
 // The rev parameter in the module data structure will effect the module behavior and is used to signal 
@@ -152,7 +152,7 @@ uint32_t BrightTime=0;
 #endif
 #if HOFAIMcode 
    #pragma message "HOFAIMS module enabled."
-   #define HOFAIMSvf "f"
+   #define HOFAIMSvf "h"
 #else
    #define HOFAIMSvf ""
 #endif
@@ -168,8 +168,14 @@ uint32_t BrightTime=0;
 #else
    #define RFdriver2vf ""
 #endif
+#if HVPScode 
+   #pragma message "HVPS module enabled."
+   #define HVPSv "v"
+#else
+   #define HVPSv ""
+#endif
 
-const char Version[] PROGMEM = "Version 1.203" FAIMSFBvf FAIMSvf HOFAIMSvf TABLE2vf RFdriver2vf ", May 20, 2021";
+const char Version[] PROGMEM = "Version 1.208" FAIMSFBvf FAIMSvf HOFAIMSvf TABLE2vf RFdriver2vf HVPSv ", Aug 14, 2021";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -249,7 +255,7 @@ DialogBox MIPSconfig = {
 };
 
 DialogBoxEntry MIPSaboutEntries[] = {
-  {"   Return to main menu  ", 0, 11, D_MENU, 0, 0, 0, 0, false, NULL, &MainMenu, NULL, NULL},
+  {"Return to main menu/Next", 0, 11, D_MENU, 0, 0, 0, 0, false, NULL, &MainMenu, NULL, NULL},
   {NULL},
 };
 
@@ -364,8 +370,9 @@ void About(void)
   // Report all the modules and revisions
   serial->println("System modules:");
   serial->println("  Board,Address,Name,Rev");
-  for (addr = 0x50; addr <= 0x56; addr  += 2)
+  for(int i=0; i<NumModAdd; i++)
   {
+    addr = ModuleAddresses[i];
     // Set board select to A
     ENA_BRD_A;
     {
@@ -405,22 +412,38 @@ void About(void)
 
 // This function is called after the About dialog box is created. This function
 // needs to display all the about data.
+// If they are more lines than will fit on the display then this function will
+// return with the menu system set to display the remaining items the next time
+// this function is called.
 void DisplayAbout(void)
 {
+  static int8_t i = 0;
   uint8_t addr;
   char    signature[100], buf[25];
   int y = 0;
 
-  PrintDialog(&MIPSabout, 1, y++, "MIPS Version:");
-  PrintDialog(&MIPSabout, 2, y++, (char *)&Version[8]);
-  PrintDialog(&MIPSabout, 1, y, "MIPS Name:");
-  PrintDialog(&MIPSabout, 11, y++, MIPSconfigData.Name);
-  if (MIPSconfigData.UseWiFi) PrintDialog(&MIPSabout, 1, y++, "WiFi module enabled");
-  if (EthernetPresent) PrintDialog(&MIPSabout, 1, y++, "Ethernet module enabled");
-  PrintDialog(&MIPSabout, 1, y++, "System modules:");
-  PrintDialog(&MIPSabout, 1, y++, "  Board,Addr,Name,Rev");
-  for (addr = 0x50; addr <= 0x56; addr  += 2)
+  if(i==0)
   {
+    PrintDialog(&MIPSabout, 1, y++, "MIPS Version:");
+    PrintDialog(&MIPSabout, 2, y++, (char *)&Version[8]);
+    PrintDialog(&MIPSabout, 1, y, "MIPS Name:");
+    PrintDialog(&MIPSabout, 11, y++, MIPSconfigData.Name);
+    if (MIPSconfigData.UseWiFi) PrintDialog(&MIPSabout, 1, y++, "WiFi module enabled");
+    if (EthernetPresent) PrintDialog(&MIPSabout, 1, y++, "Ethernet module enabled");
+    PrintDialog(&MIPSabout, 1, y++, "System modules:");
+    PrintDialog(&MIPSabout, 1, y++, "  Board,Addr,Name,Rev");
+  }
+  for(i; i<NumModAdd; i++)
+  {
+    if(y > 9)
+    {
+      // Set dialog exit to call this function again
+      MIPSaboutEntries[0].Type = D_DIALOG;
+      MIPSaboutEntries[0].Value = &MIPSabout;
+      MIPSaboutEntries[0].PostFunction = DisplayAbout;
+      return;
+    }
+    addr = ModuleAddresses[i];
     // Set board select to A
     ENA_BRD_A;
     if (ReadEEPROM(signature, addr, 0, 100) == 0)
@@ -437,6 +460,11 @@ void DisplayAbout(void)
       PrintDialog(&MIPSabout, 1, y++, buf);
     }
   }
+  i = 0;
+  // Set dialog exit to return to main menu
+  MIPSaboutEntries[0].Type = D_MENU;
+  MIPSaboutEntries[0].Value = &MainMenu;
+  MIPSaboutEntries[0].PostFunction = NULL;
 }
 
 // This function is called by the serial command processor. This function will set a modules rev level to the value
@@ -466,7 +494,7 @@ void SetModuleRev(void)
     rev = sToken.toInt();
     // Validate the parameters
     if ((brd != 'A') && (brd != 'B')) break;
-    if ((addr != 0x50) && (addr != 0x52) && (addr != 0x54) && (addr != 0x56)) break;
+    if ((addr != 0x50) && (addr != 0x52) && (addr != 0x54) && (addr != 0x56) && (addr != 0x60)) break;
     // Write the rev number to EEPROM
     if (brd == 'A') ENA_BRD_A;
     else ENA_BRD_B;
@@ -987,6 +1015,9 @@ void MIPSsystemLoop(void)
   if (MaxTwaveVoltage > MaxVoltage) MaxVoltage = MaxTwaveVoltage;
   if (MaxFAIMSVoltage > MaxVoltage) MaxVoltage = MaxFAIMSVoltage;
   if (MaxESIvoltage > MaxVoltage) MaxVoltage = MaxESIvoltage;
+  #if HVPScode
+  if (MaxHVvoltage > MaxVoltage) MaxVoltage = MaxHVvoltage;
+  #endif
   // Test output voltages and update the button LEDs to provide warning to user
   // Blue LED on if voltgaes are enabled and above 0
   if (MaxVoltage == 0) {
@@ -1075,8 +1106,9 @@ void ScanHardware(void)
   Twave_init(1, 0x52);
 #endif
   // Loop through all the addresses looking for signatures
-  for (addr = 0x50; addr <= 0x56; addr  += 2)
+  for(int i=0; i<NumModAdd; i++)
   {
+    addr = ModuleAddresses[i];
     // Set board select to A
     ENA_BRD_A;
     if (ReadEEPROM(signature, addr, 0, 100) == 0)
@@ -1095,6 +1127,9 @@ void ScanHardware(void)
       if (strcmp(&signature[2], "RFamp") == 0) RFA_init(0, addr);
       #if FAIMSFBcode
       if (strcmp(&signature[2], "FAIMSfb") == 0) FAIMSfb_init(0, addr);
+      #endif
+      #if HVPScode
+      if (strcmp(&signature[2], "HVPS") == 0) HVPS_init(0, addr);
       #endif
     }
     if(!MIPSconfigData.UseBRDSEL) continue;
@@ -1116,6 +1151,9 @@ void ScanHardware(void)
       if (strcmp(&signature[2], "RFamp") == 0) RFA_init(1, addr);
       #if FAIMSFBcode
       if (strcmp(&signature[2], "FAIMSfb") == 0) FAIMSfb_init(1, addr);
+      #endif
+      #if HVPScode
+      if (strcmp(&signature[2], "HVPS") == 0) HVPS_init(1, addr);
       #endif
     }
   }

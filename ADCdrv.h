@@ -19,6 +19,7 @@ void ADCprep(void);
 void ADCsoftTrigger(void);
 void ADCabort(void);
 void ADCread(int chan);
+void ADCreportAverage(void);
 void ADRsetGain(int chan, int gain);
 void ADCchangeDet(int chan, int thres);
 float ReadVin(void);

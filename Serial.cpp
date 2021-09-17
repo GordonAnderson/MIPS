@@ -198,6 +198,8 @@ const Commands  CmdArray[] = 	{
   {"GDTRIGENA", CMDbool, 0, (char *)&DtrigEnable},             // Returns the trigger delay enable status
 // ADC functions
   {"ADC", CMDfunction, 1, (char *)ADCread},                    // Read and report ADC channel. Valid range 0 through 3
+  {"ADCAVG", CMDfunction, 0, (char *)ADCreportAverage},        // Report the average ADC value read by the change detection function. This
+                                                               // uses the SADCSAMPS value to set the number of samples in the average
   {"ADCGAIN", CMDfunction, 2, (char *)ADRsetGain},             // Set ADC channel gain. Channel range 0 to 3, gains are 1,2, or 4
   {"ADCCHG", CMDfunction, 2, (char *)ADCchangeDet},            // Enable ADC change detection. Channel range 0 to 3, threshold 0 to 100
   {"ADCCPRM", CMDfunction, 2, (char *)SetADCchangeParms},      // Set ADC change filter parameters
@@ -301,6 +303,13 @@ const Commands  CmdArray[] = 	{
   {"CDCBCH", CMDfunction, 1, (char *)CalDCbiasChannel},               // Calibrate the requested DC bias channel
   {"CDCBCHS", CMDfunction, 0, (char *)CalDCbiasChannels},             // Calibrate all DC bias channel in order
   {"CDCBOFF", CMDfunction, 1, (char *)CalDCbiasOffset},               // Calibrate all DC bias offset for channel number
+// DCbias waveform generation commands
+  {"WFMINIT", CMDfunction, 1, (char *)WFMinit},                       // Initalize the waveform generation and define samples per second
+  {"WFMADDWF", CMDfunctionLine, 0, (char *)WFMaddWF},                 // Define a waveform, arguments: channel,freq, min, max
+  {"WFMENA", CMDfunction, 0, (char *)WFMenable},                      // Enable the waveform generation
+  {"WFMDIS", CMDfunction, 0, (char *)WFMdisable},                     // Disable the waveform generation
+  {"WFMRPR", CMDfunction, 2, (char *)WFMreport},                      // Report the selected channel's parameter, arguments: channel, parm
+                                                                      // parm 0=freq,1=min,2=max
 // RF generator module commands
   {"SRFFRQ", CMDfunction, 2, (char *)RFfreq},		 // Set RF frequency
   {"SRFVLT", CMDfunctionStr, 2, (char *)(static_cast<void (*)(char *, char *)>(&RFvoltage))},	 // Set RF output voltage
@@ -321,6 +330,8 @@ const Commands  CmdArray[] = 	{
   {"RFCALN", CMDfunctionStr, 2, (char *)RFcalN},         // Adjust the calibration for a RF- channel, channel,actual level in Vp-p, enter negative to set defaults
   {"SRFPL", CMDfunction, 2, (char *)SetRFpwrLimit},      // Sets the RF power limit for the given channel, in watts
   {"GRFPL", CMDfunction, 1, (char *)GetRFpwrLimit},      // Returns the RF power limit for the given channel, in watts
+  {"RFPWLC", CMDfunctionStr, 2, (char *)genPWLcalTable}, // Generate piecewise linear calibration table for selected channel and phase
+                                                         // Phase is RF+ or RF-
 // RF amplifier / QUAD commands
   {"SRFAENA", CMDfunctionStr, 2, (char *)RFAsetENA},         // Sets the RF system enable mode, ON or OFF
   {"GRFAENA", CMDfunction, 1, (char *)RFAgetENA},            // Returns the RF system enable mode, ON or OFF
@@ -371,7 +382,7 @@ const Commands  CmdArray[] = 	{
   {"GHVI", CMDfunction, 1, (char *)GetESIchannelI},         // Returns the output current in mA
   {"GHVMAX", CMDfunction, 1, (char *)GetESIchannelMax},     // Returns the maximum high voltage outut value
   {"GHVMIN", CMDfunction, 1, (char *)GetESIchannelMin},     // Returns the minimum high voltage outut value
-  {"SHVEGHNA", CMDfunction, 1, (char *)SetESIchannelEnable},  // Enables a selected channel
+  {"SHVENA", CMDfunction, 1, (char *)SetESIchannelEnable},  // Enables a selected channel
   {"SHVDIS", CMDfunction, 1, (char *)SetESIchannelDisable}, // Disables a selected channel
   {"GHVSTATUS", CMDfunction, 1, (char *)GetESIstatus},      // Returns the selected channel's status, ON or OFF
   {"SHVPSUP", CMDfunction, 2, (char *)SetESImodulePos},     // Sets a  modules positive supply voltage
@@ -488,65 +499,6 @@ const Commands  CmdArray[] = 	{
 // Twave configuration commands  
   {"STWCCLK", CMDbool, 1, (char *)&TDarray[0].UseCommonClock},   // Flag to indicate common clock mode for two Twave modules.
   {"STWCMP", CMDbool, 1, (char *)&TDarray[0].CompressorEnabled}, // Flag to indicate Twave compressor mode is enabled.
-#if FAIMScode
-// FAIMS  General FAIMS commands
-  {"SFMENA", CMDbool, 1, (char *)&faims.Enable},                // Set the FAIMS enable flag, TRUE enables waveform generation
-  {"GFMENA", CMDbool, 0, (char *)&faims.Enable},                // Returns the FAIMS enable flag
-  {"SFMDRV", CMDfunctionStr, 1, (char *)FAIMSsetDrive},         // Sets FAIMS drive level in percent
-  {"GFMDRV", CMDfloat, 0, (char *)&faims.Drv},                  // Returns FAIMS drive level in percent
-  {"GFMPWR", CMDfloat, 0, (char *)&TotalPower},                 // Returns FAIMS total power in watts
-  {"GFMPV", CMDfloat, 0, (char *)&KVoutP},                      // Returns FAIMS positive peak output voltage
-  {"GFMNV", CMDfloat, 0, (char *)&KVoutN},                      // Returns FAIMS negative peak output voltage
-  {"SFMLOCK", CMDfunctionStr, 1, (char *)FAIMSsetLock},         // Sets FAIMS output level lock mode
-  {"GFMLOCK", CMDbool, 0, (char *)&Lock},                       // Returns FAIMS output level lock mode
-  {"SFMSP", CMDfunctionStr, 1, (char *)FAIMSsetLockSP},         // Sets FAIMS output level lock setpoint
-  {"GFMSP", CMDfloat, 0, (char *)&LockSetpoint},                // Returns FAIMS output level lock setpoint
-  {"SFMTUNE", CMDfunction, 0, (char *)FAIMSrequestAutoTune},    // Set auto tune request flag
-  {"SFMTABRT", CMDfunction, 0, (char *)FAIMSautoTuneAbort},     // Set auto tune abort flag
-  {"GFMTSTAT", CMDstr, 0, (char *)TuneState},                   // Returns the auto tune state string
-  {"SFMTPOS",CMDbool, 1, (char *)&TunePos},                     // Set the positive tune mode if TRUE, if FALSE tune for neg peak
-  {"GFMTPOS",CMDbool, 0, (char *)&TunePos},                     // Return positive peak mode
-  {"SFMTDRV",CMDint, 1, (char *)&TuneDrive},                    // Set the tune mode drive level
-  {"GFMTDRV",CMDint, 0, (char *)&TuneDrive},                    // Return the tune mode drive level
-// FAIMS DC CV and Bias commands
-  {"SFMCV", CMDfunctionStr, 1, (char *)FAIMSsetCV},                // Sets FAIMS DC CV voltage setpoint
-  {"GFMCV", CMDfloat, 0, (char *)&faims.DCcv.VoltageSetpoint},     // Returns FAIMS DC CV voltage setpoint
-  {"GFMCVA", CMDfloat, 0, (char *)&DCcvRB},                        // Returns FAIMS DC CV voltage actual
-  {"SFMBIAS", CMDfunctionStr, 1, (char *)FAIMSsetBIAS},            // Sets FAIMS DC Bias voltage setpoint
-  {"GFMBIAS", CMDfloat, 0, (char *)&faims.DCbias.VoltageSetpoint}, // Returns FAIMS DC Bias voltage setpoint
-  {"GFMBIASA", CMDfloat, 0, (char *)&DCbiasRB},                    // Returns FAIMS DC Bias voltage actual
-  {"SFMOFF", CMDfunctionStr, 1, (char *)FAIMSsetOffset},           // Sets FAIMS DC offset voltage setpoint
-  {"GFMOFF", CMDfloat, 0, (char *)&faims.DCoffset.VoltageSetpoint},// Returns FAIMS DC offset voltage setpoint
-  {"GFMOFFA", CMDfloat, 0, (char *)&DCoffsetRB},                   // Returns FAIMS DC offset voltage actual
-// FAIMS CV Scan commands
-  {"SFMCVSTART", CMDfunctionStr, 1, (char *)FAIMSsetCVstart},      // Sets FAIMS DC CV scan start voltage
-  {"GFMCVSTART", CMDfloat, 0, (char *)&faims.CVstart},             // Returns FAIMS DC CV scan start voltage
-  {"SFMCVEND", CMDfunctionStr, 1, (char *)FAIMSsetCVend},          // Sets FAIMS DC CV scan end voltage
-  {"GFMCVEND", CMDfloat, 0, (char *)&faims.CVend},                 // Returns FAIMS DC CV scan end voltage
-  {"SFMDUR", CMDfunctionStr, 1, (char *)FAIMSsetDuration},         // Sets FAIMS DC CV scan duration in seconds
-  {"GFMDUR", CMDfloat, 0, (char *)&faims.Duration},                // Returns FAIMS DC CV scan duration in seconds
-  {"SFMLOOPS", CMDfunctionStr, 1, (char *)FAIMSsetLoops},          // Sets FAIMS DC CV scan loops
-  {"GFMLOOPS", CMDint, 0, (char *)&Loops},                         // Returns FAIMS DC CV scan loops
-  {"SFMSTRTLIN", CMDbool, 1, (char *)&FAIMSscan},                  // Sets FAIMS DC CV linear scan flag
-  {"GFMSTRTLIN", CMDbool, 0, (char *)&FAIMSscan},                  // Returns FAIMS DC CV linear scan flag
-  {"SFMSTPTM", CMDfunctionStr, 1, (char *)FAIMSsetStepTime},       // Sets FAIMS DC CV scan step duration
-  {"GFMSTPTM", CMDint, 0, (char *)&faims.StepDuration},            // Returns FAIMS DC CV scan step duration
-  {"SFMSTEPS", CMDfunctionStr, 1, (char *)FAIMSsetSteps},          // Sets FAIMS DC CV step scan number of steps
-  {"GFMSTEPS", CMDint, 0, (char *)&faims.Steps},                   // Returns FAIMS DC CV step scan number of steps
-  {"SFMSTRTSTP", CMDbool, 1, (char *)&FAIMSstepScan},              // Sets FAIMS DC CV step scan flag
-  {"GFMSTRTSTP", CMDbool, 0, (char *)&FAIMSstepScan},              // Returns FAIMS DC CV step scan flag
-// FAIMS configuration / calibration commands
-  {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},      // Set FAIMS RF harmonic positive peak readback calibration
-  {"SRFHNCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharNcal},      // Set FAIMS RF harmonic negative peak readback calibration
-  {"SARCDIS",CMDbool, 1, (char *)&DiableArcDetect},                // TRUE or FALSE, set to TRUE disable arc detection
-  {"FMISCUR",CMDbool, 0, (char *)&CurtianFound},                   // Returns TRUE is Curtian supply was detected
-  {"SFMCCUR",CMDbool, 1, (char *)&CurtianCtrl},                    // If TRUE allows enable faims to enable curtian supply
-  {"GFMCCUR",CMDbool, 0, (char *)&CurtianCtrl},                    // Returns curtian control flag
-  {"SFMMDIS",CMDbool, 1, (char *)&ArcMessAutoDismiss},             // Set the message auto dismiss is TRUE
-  {"GFMMDIS",CMDbool, 0, (char *)&ArcMessAutoDismiss},             // Return the message auto dismiss flag 
-  {"SFARCR",CMDint, 1, (char *)&FMnumTries},                       // Set the number of arc retry attempts
-  {"GFARCR",CMDint, 0, (char *)&FMnumTries},                       // Return the number of arc retry attempts 
-#endif
 // Filament commands
   {"GFLENA", CMDfunction, 1, (char *)GetFilamentEnable},             // Get filament ON/OFF status
   {"SFLENA", CMDfunctionStr, 2, (char *)SetFilamentEnable},          // Set filament ON/OFF status
@@ -688,7 +640,7 @@ const Commands  CmdArray[] = 	{
                                                                      // ARB modules to change (hex)
 // ARB commands for application of reverse direction aux voltage change
   {"SARBREVA", CMDfunctionStr,2, (char *)SetARBrevAuxV},             // Sets the reverse direction ARB AUX output voltage, for selected module
-  {"CLRARBRV", CMDfunction,21, (char *)ClearARBrevAuxV},             // Clears the reverse direction ARB AUX output voltage application, for selected module
+  {"CLRARBRV", CMDfunction,1, (char *)ClearARBrevAuxV},              // Clears the reverse direction ARB AUX output voltage application, for selected module
 // ARB sweep commands, ARB module based
   {"SARBSGO",CMDfunction, 1, (char *)ARBstartSweep},                 // Start the sweep
   {"SARBSHLT",CMDfunction, 1, (char *)ARBstopSweep},                 // Stop the sweep
@@ -720,80 +672,48 @@ const Commands  CmdArray[] = 	{
   {"GDACUN", CMDfunctionStr, 1, (char *)GetDACUnits},                // Returns the named DAC channel's units  
   {"SDACNM", CMDfun2int1str, 3, (char *)SetDACName},                 // Sets the DAC channel name defined by module and channel number 
   {"GDACMN", CMDfunction, 2, (char *)GetDACName},                    // Returns the DAC channel name defined by module and channel number 
-#if FAIMSFBcode
-// FAIMSFB commands
-  {"SFBENA",  CMDfunctionStr, 2, (char *)SetFAIMSfbEnable},          // Set module number to TRUE to enable FAIMS
-  {"GFBENA",  CMDfunction, 1, (char *)ReturnFAIMSfbEnable},          // Returns enable status for selected module
-  {"SFBMODE", CMDfunctionStr, 2, (char *)SetFAIMSfbMode},            // Set module number to TRUE to enable closed loop control of Vrf
-  {"GFBMODE", CMDfunction, 1, (char *)ReturnFAIMSfbMode},            // Returns mode control for selected module
-  {"SFBFREQ", CMDfunction, 2, (char *)SetFAIMSfbFreq},               // Set FAIMS frequency, in Hz for seletced module
-  {"GFBFREQ", CMDfunction, 1, (char *)ReturnFAIMSfbFreq},            // Returns frequency for the selected module
-  {"SFBDUTY", CMDfunction, 2, (char *)SetFAIMSfbDuty},               // Set FAIMS duty cycle in percent for seletced module
-  {"GFBDUTY", CMDfunction, 1, (char *)ReturnFAIMSfbDuty},            // Returns duty cycle for selected module
-  {"SFBDRV", CMDfunctionStr,2, (char *)SetFAIMSfbDrive},             // Set FAIMS drive level in percent for the selected module
-  {"GFBDRV", CMDfunction,1, (char *)ReturnFAIMSfbDrive},             // Returns drive level for the selected module
-  {"GDRVV", CMDfunction,  1, (char *)ReturnFAIMSfbDriveV},           // Returns voltage level into drive FET, V for the selected module
-  {"GDRVI", CMDfunction,  1, (char *)ReturnFAIMSfbDriveI},           // Returns current into drive FET, mA for the selected module
-  {"SVRF", CMDfunctionStr, 2, (char *)SetFAIMSfbVrf},                // Sets the drive level setpoint to achieve the desired voltage for the selected module
-  {"GVRF", CMDfunction,  1, (char *)ReturnFAIMSfbVrf},               // Returns the Vrf peak voltage for the selected module
-  {"GVRFV", CMDfunction,  1, (char *)ReturnFAIMSfbVrfV},             // Returns the Vrf peak voltage readback for the selected module
-  {"GPWR", CMDfunction,  1, (char *)ReturnFAIMSfbPWR},               // Returns the power in watts for the selected module
-  {"SVRFN", CMDfunctionStr, 2, (char *)SetFAIMSfbVrfNow},            // Sets the drive level setpoint achieve the desired voltage for the selected module
-                                                                     // and adjusts the drive level to reach the setpoint
-  {"SVRFT", CMDfunctionStr, 2, (char *)SetFAIMSfbVrfTable},          // Sets the drive level setpoint achieve the desired voltage for the selected module
-                                                                     // and adjusts the drive level to reach the setpoint using the drive level table
-  {"GENVRFTBL", CMDfunction, 1, (char *)GenerateVrfTable},           // This function will generate 
-  // FAIMSFB Limits
-  {"SFBMAXDRV",CMDfunctionStr,2, (char *)SetFAIMSfbMaxDrive},        // Set the maximum drive level allowed for the selected module
-  {"GFBMAXDRV",CMDfunction, 1,(char *)ReturnFAIMSfbMaxDrive},        // Returns the maximum drive level for the selected module
-  {"SFBMAXPWR",CMDfunctionStr,2, (char *)SetFAIMSfbMaxPower},        // Set the maximum power allowed for the selected module
-  {"GFBMAXPWR",CMDfunction,1,(char *)ReturnFAIMSfbMaxPower},         // Returns the maximum power limit for the selected module
-  // FAIMSFB DC bias commands
-  {"SCV", CMDfunctionStr,  2, (char *)SetFAIMSfbCV},                 // Set the current CV for the seletced module
-  {"GCV", CMDfunction,  1, (char *)ReturnFAIMSfbCV},                 // Return the current CV for the seletced module
-  {"GCVV", CMDfunction, 1, (char *)ReturnFAIMSfbCVrb},               // Return the CV readback value for the seletced module
-  {"SBIAS", CMDfunctionStr,  2, (char *)SetFAIMSfbBIAS},             // Set the current BIAS for the seletced module
-  {"GBIAS", CMDfunction,  1, (char *)ReturnFAIMSfbBIAS},             // Return the current BIAS for the seletced module
-  {"GBIASV", CMDfunction,  1, (char *)ReturnFAIMSfbBIASrb},          // Set the current BIAS for the seletced module 
-  // FAIMSFB scanning commands
-  {"SFBCVSTRT",  CMDfunctionStr, 2, (char *)SetFAIMSfbCVstart},      // set the CV scan start voltage for the seletced module 
-  {"GFBCVSTRT",  CMDfunction, 1, (char *)ReturnFAIMSfbCVstart},      // returns the CV scan start voltage for the seletced module 
-  {"SFBCVEND",   CMDfunctionStr, 2, (char *)SetFAIMSfbCVend},        // set the CV scan end voltage for the seletced module 
-  {"GFBCVEND",   CMDfunction, 1, (char *)ReturnFAIMSfbCVend},        // returns the CV scan end voltage for the seletced module 
-  {"SFBVRFSTRT", CMDfunctionStr, 2, (char *)SetFAIMSfbVRFstart},     // set the Vrf scan start voltage for the seletced module 
-  {"GFBVRFSTRT", CMDfunction, 1, (char *)ReturnFAIMSfbVRFstart},     // returns the Vrf scan start voltage for the seletced module 
-  {"SFBVRFEND",  CMDfunctionStr, 2, (char *)SetFAIMSfbVRFend},       // set the Vrf scan end voltage for the seletced module 
-  {"GFBVRFEND",  CMDfunction, 1, (char *)ReturnFAIMSfbVRFend},       // returns the Vrf scan end voltage for the seletced module 
-  {"SFBSTEPDUR", CMDfunction, 2, (char *)SetFAIMSfbStepDuration},    // set the scan step duration in mS for the seletced module 
-  {"GFBSTEPDUR", CMDfunction, 1, (char *)ReturnFAIMSfbStepDuration}, // returns the scan step duration in mS for the seletced module 
-  {"SFBNUMSTP",  CMDfunction, 2, (char *)SetFAIMSfbSteps},           // set the scan number of steps for the seletced module 
-  {"GFBNUMSTP",  CMDfunction, 1, (char *)ReturnFAIMSfbSteps},        // returns the scan number of steps for the seletced module 
-  {"FBSCNSTRT",  CMDfunction, 1, (char *)InitFAIMSfbScan},           // Start the scan for the seletced module 
-  {"FBSCNSTP",  CMDfunction, 1, (char *)StopFAIMSfbScan},            // Stop a scn that is in process for the seletced module 
-  {"SFBADCSMP",  CMDint, 1, (char *)&NumSamples},                    // Set the number of adc sample to average, 1 to 16 
-  {"GFBADCSMP",  CMDint, 0, (char *)&NumSamples},                    // Returns the number of adc sample to average, 1 to 16 
-  // Electrometer commands
-  {"SELTMTRENA",  CMDfunctionStr, 1, (char *)SetEMRTenable},         // Set the electrometer enabled flag, TRUE or FALSE 
-  {"GELTMTRENA",  CMDfunction, 0, (char *)ReturnEMRTenable},         // Return the electrometer enable flag
-  {"GELTMTRPOS",  CMDfunction, 0, (char *)ReturnEMRTpos},            // Return the electrometer positive channel
-  {"GELTMTRNEG",  CMDfunction, 0, (char *)ReturnEMRTneg},            // Return the electrometer negative channel
-  {"SELTMTRPOSOFF",  CMDfunctionStr, 1, (char *)SetEMRTposOff},      // Set the electrometer positive channel offset
-  {"GELTMTRPOSOFF",  CMDfunction, 0, (char *)ReturnEMRTposOff},      // Returns the electrometer positive channel offset
-  {"SELTMTRNEGOFF",  CMDfunctionStr, 1, (char *)SetEMRTnegOff},      // Set the electrometer negative channel offset
-  {"GELTMTRNEGOFF",  CMDfunction, 0, (char *)ReturnEMRTnegOff},      // Returns the electrometer negative channel offset
-  {"SELTMTRPOSZERO",  CMDfunctionStr, 1, (char *)SetEMRTposZero},    // Set the electrometer positive channel zero
-  {"GELTMTRPOSZERO",  CMDfunction, 0, (char *)ReturnEMRTposZero},    // Returns the electrometer positive channel zero
-  {"SELTMTRNEGZERO",  CMDfunctionStr, 1, (char *)SetEMRTnegZero},    // Set the electrometer negative channel zero
-  {"GELTMTRNEGZERO",  CMDfunction, 0, (char *)ReturnEMRTnegZero},    // Returns the electrometer negative channel zero
-  {"ELTMTRZERO",  CMDfunction, 0, (char *)SetEMRTzero},              // Execute the electrometer zero procedure
-#endif
 // End of table marker
   {0},
 };
 
+// This is a linked list of commands. A module can add its command list to this linked 
+// list when initalizing. 
+CommandList CmdList = { (Commands *)CmdArray, NULL };
+
+void AddToCommandList(CommandList *ncl)
+{
+  CommandList *start = &CmdList;
+  
+  // Find the end of the linked list and insert
+  while(true)
+  {
+    if(start->next == NULL) break;
+    start = (CommandList *)start->next;
+  }
+  start->next = (void *)ncl;
+}
+
+Commands *FindCommand(char *Cmd2Find)
+{
+  CommandList *start = &CmdList;
+
+  while(true)
+  {
+    int i = 0;
+    while(true)
+    {
+      if(start->cmds[i].Cmd == 0) break;
+      if(strcmp(Cmd2Find, start->cmds[i].Cmd) == 0) return &start->cmds[i];
+      i++;
+    }
+    if(start->next == NULL) break;
+    start = (CommandList *)start->next;
+  }
+  return NULL;
+}
+
 void Debug(int function)
 {
-   serial->println(TableStatus);
 }
 
 // Real time clock functions
@@ -884,7 +804,7 @@ void SetDate(void)
 
 // This function will set a command to the TWI primary port. This function then looks
 // for a response for up to 250mS. After a \n is received this function will exit. The
-// the received characters and sent to the selected host port.
+// the received characters are sent to the selected host port.
 // On call it is assumed the full command line is in the input buffer.
 void TWIscmd(void)
 {
@@ -949,7 +869,7 @@ void TWIscmd(void)
 
 // This function will set a command to the TWI port 1, the secondary port. This function then looks
 // for a response for up to 250mS. After a \n is received this function will exit. The
-// the received characters and sent to the selected host port.
+// the received characters are sent to the selected host port.
 // On call it is assumed the full command line is in the input buffer.
 void TWI1scmd(void)
 {
@@ -961,6 +881,8 @@ void TWI1scmd(void)
 
   if(!inited)
   {
+    pinMode(18,INPUT);
+    pinMode(19,INPUT);
     Wire1.begin();
     Wire1.setClock(100000);
     inited = true;
@@ -1201,14 +1123,15 @@ void LoadImage(char *filename)
   DD = DisableDisplay;
   DisableDisplay = false;
   tft.disableDisplay(DisableDisplay);
+  SendACK;
   if(bmpDraw(filename, 0, 0))
   {
-    SendACK;
+    //SendACK;
   }
   else
   {
-    SetErrorCode(ERR_BMPERROR);
-    SendNAK;
+    //SetErrorCode(ERR_BMPERROR);
+    //SendNAK;
   }
   DisableDisplay = DD;
   tft.disableDisplay(DisableDisplay);
@@ -1262,14 +1185,22 @@ void SetThreadEnable(char *name, char *state)
 // Sends a list of all commands
 void GetCommands(void)
 {
-  int  i;
+  CommandList *start = &CmdList;
 
-  SendACKonly;
   // Loop through the commands array and send all the command tokens
-  for (i = 0; CmdArray[i].Cmd != 0; i++)
+  while(true)
   {
-    serial->println((char *)CmdArray[i].Cmd);
+    int i = 0;
+    while(true)
+    {
+      if(start->cmds[i].Cmd == 0) break;
+      serial->println((char *)start->cmds[i].Cmd);
+      i++;
+    }
+    if(start->next == NULL) break;
+    start = (CommandList *)start->next;
   }
+  return;
 }
 
 // Delay command, delay is in millisecs
@@ -1320,9 +1251,12 @@ void SaveModule(char *Module)
 
 // Generic get number of channels function, calls the proper routine based on parameter entered.
 // RF = Number of RF channels
+// RFamp = Number of RF channels
 // DCB = number of DC bias channels
+// HV = number of HV power supply channels
 // ESI = number of HV ESI supplies
 // FAIMS = Number of FAIMS drivers
+// FAIMSfb = Number of FAIMSfb drivers
 // TWAVE = Number of TWAVE drivers
 // FIL = Number of filiment channels
 // ARB = Number of ARB channels
@@ -1332,11 +1266,18 @@ void SaveModule(char *Module)
 void GetNumChans(char *cmd)
 {
   if (strcmp(cmd, "RF") == 0) RFnumber();
+  else if (strcmp(cmd, "RFamp") == 0) RFampNumber();
   else if (strcmp(cmd, "DCB") == 0) DCbiasNumber();
   else if (strcmp(cmd, "ESI") == 0) ESInumberOfChannels();
   else if (strcmp(cmd, "TWAVE") == 0) TWAVEnumberOfChannels();
   #if FAIMScode
   else if (strcmp(cmd, "FAIMS") == 0) FAIMSnumberOfChannels();
+  #endif
+  #if FAIMSFBcode
+  else if (strcmp(cmd, "FAIMSfb") == 0) FAIMSfbNumberOfChannels();
+  #endif
+  #if HVPScode
+  else if (strcmp(cmd, "HV") == 0) HVPSNumberOfChannels();
   #endif
   else if (strcmp(cmd, "FIL") == 0) FilamentChannels();
   else if (strcmp(cmd, "ARB") == 0) ReportARBchannels();
@@ -1492,7 +1433,7 @@ char *TokenFromCommandLine(char expectedDel)
   return GetToken(true);
 }
 
-char  *UserInput(char *message)
+char  *UserInput(char *message, void (*function)(void))
 {
   char *tkn;
   
@@ -1500,31 +1441,35 @@ char  *UserInput(char *message)
   RB.Head=RB.Tail=RB.Count=RB.Commands=0;
   serial->print(message);
   // Wait for a line to be detected in the ring buffer
-  while(RB.Commands == 0) ReadAllSerial();
+  while(RB.Commands == 0) 
+  {
+    ReadAllSerial();
+    if(function != NULL) function();
+  }
   // Read the token
   tkn = GetToken(true);
   if(tkn != NULL) if(tkn[0] == '\n') tkn = NULL;
   return tkn;
 }
 
-int   UserInputInt(char *message)
+int   UserInputInt(char *message, void (*function)(void))
 {
   char   *tkn;
   String arg;
 
-  tkn = UserInput(message);
+  tkn = UserInput(message,function);
   // Flush the input ring buffer
   RB.Head=RB.Tail=RB.Count=RB.Commands=0;
   arg = tkn;
   return arg.toInt();
 }
 
-float UserInputFloat(char *message)
+float UserInputFloat(char *message, void (*function)(void))
 {
   char   *tkn;
   String arg;
 
-  tkn = UserInput(message);
+  tkn = UserInput(message,function);
   // Flush the input ring buffer
   RB.Head=RB.Tail=RB.Count=RB.Commands=0;
   arg = tkn;
@@ -1640,25 +1585,24 @@ void ExecuteCommand(const Commands *cmd, int arg1, int arg2, char *args1, char *
 // This function does not block and returns -1 if there was nothing to do.
 int ProcessCommand(void)
 {
-  char          *Token,ch;
-  int           i;
-  static int    arg1, arg2;
-  static float  farg1;
-  static enum   PCstates state;
-  static int    CmdNum;
-  static char   delimiter=0;
-  static String EchoString = "";
+  char            *Token,ch;
+  static int      arg1, arg2;
+  static float    farg1;
+  static enum     PCstates state;
+  static Commands *CurCmd = NULL;
+  static char     delimiter=0;
+  static String   EchoString = "";
   // The following variables are used for the long string reading mode
-  static char   *lstrptr = NULL;
-  static int    lstrindex;
-  static bool   lstrmode = false;
-  static int    lstrmax;
+  static char     *lstrptr = NULL;
+  static int      lstrindex;
+  static bool     lstrmode = false;
+  static int      lstrmax;
 
   // Wait for line in ringbuffer
   if(state == PCargLine)
   {
     if(RB.Commands <= 0) return -1;
-    CmdArray[CmdNum].pointers.funcVoid();
+    if(CurCmd != NULL) CurCmd->pointers.funcVoid();
     state = PCcmd;
     return(0);
   }
@@ -1671,7 +1615,7 @@ int ProcessCommand(void)
     if(ch == '\n')
     {
       lstrptr[lstrindex++] = 0;
-    if(lstrindex >= lstrmax) lstrindex = lstrmax - 1;
+      if(lstrindex >= lstrmax) lstrindex = lstrmax - 1;
       lstrmode = false;
       SendACK;
       return(-1);                 // Changed from 0 on 12/6/18, signals nothing to do
@@ -1704,14 +1648,8 @@ int ProcessCommand(void)
     case PCcmd:
       if (strcmp(Token, ";") == 0) break;
       if (strcmp(Token, "\n") == 0) break;
-      CmdNum = -1;
-      // Look for command in command table
-      for (i = 0; CmdArray[i].Cmd != 0; i++) if (strcmp(Token, CmdArray[i].Cmd) == 0) 
-      {
-        CmdNum = i;
-        break;
-      }
-      if (CmdNum == -1)
+      // Look for command
+      if((CurCmd = FindCommand(Token)) == NULL)
       {
         SetErrorCode(ERR_BADCMD);
         SendNAK;
@@ -1719,22 +1657,22 @@ int ProcessCommand(void)
       }
       // If the type CMDfunctionLine then we will wait for a full line in the ring buffer
       // before we call the function. Function has not args and must pull tokens from ring buffer.
-      if (CmdArray[i].Type == CMDfunctionLine)
+      if (CurCmd->Type == CMDfunctionLine)
       {
         state = PCargLine;
         break;
       }
       // If this is a long string read command type then init the vaiable to support saving the
       // string directly to the provided pointer and exit. This function must not block
-      if (CmdArray[i].Type == CMDlongStr)
+      if (CurCmd->Type == CMDlongStr)
       {
-        lstrptr = (char *)CmdArray[i].pointers.charPtr;
+        lstrptr = (char *)CurCmd->pointers.charPtr;
         lstrindex = 0;
-        lstrmax = CmdArray[i].NumArgs;
+        lstrmax = CurCmd->NumArgs;
         lstrmode = true;
         break;
       }
-      if (CmdArray[i].NumArgs > 0) state = PCarg1;
+      if (CurCmd->NumArgs > 0) state = PCarg1;
       else state = PCend;
       break;
     case PCarg1:
@@ -1742,14 +1680,14 @@ int ProcessCommand(void)
       sscanf(Token, "%d", &arg1);
       sscanf(Token, "%s", Sarg1);
       sscanf(Token, "%f", &farg1);
-      if (CmdArray[CmdNum].NumArgs > 1) state = PCarg2;
+      if (CurCmd->NumArgs > 1) state = PCarg2;
       else state = PCend;
       break;
     case PCarg2:
       Sarg2[0]=0;
       sscanf(Token, "%d", &arg2);
       sscanf(Token, "%s", Sarg2);
-      if (CmdArray[CmdNum].NumArgs > 2) state = PCarg3;
+      if (CurCmd->NumArgs > 2) state = PCarg3;
       else state = PCend;
       break;
     case PCarg3:
@@ -1764,10 +1702,9 @@ int ProcessCommand(void)
         SendNAK;
         break;
       }
-      i = CmdNum;
-      CmdNum = -1;
       state = PCcmd;
-      ExecuteCommand(&CmdArray[i], arg1, arg2, Sarg1, Sarg2, farg1);
+      ExecuteCommand(CurCmd, arg1, arg2, Sarg1, Sarg2, farg1);
+      CurCmd = NULL;
       break;
     default:
       state = PCcmd;

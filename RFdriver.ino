@@ -23,6 +23,7 @@
 //  Rev 3 = Convert to engineering units for the Linear tech level sensors, 5th order correction.
 //  Rev 4 = Used for the RFcoilDriver board. This board has only one channel and used a AD7994 ADC.
 //          Used for the eiceman project. Suports only one board.
+//  Rev 5 = Used piecewise linear lookup table calibration
 //
 // Gordon Anderson
 //
@@ -554,6 +555,7 @@ void RFdriver_tune(void)
 float RFdriverCounts2Volts(int Rev, int ADCcounts, ADCchan *adcchan)
 {
    float Pv;
+   int   brd;
    
    if(Rev == 3)
    {
@@ -576,6 +578,16 @@ float RFdriverCounts2Volts(int Rev, int ADCcounts, ADCchan *adcchan)
      // This is a linear calibration using the data structure parameters
      Pv = Counts2Value(ADCcounts, adcchan);
    }  
+   else if(Rev == 5)
+   {
+     // Find the RF channel number and phase, then return the lookup value
+     for(int i=0; i<NumberOfRFChannels; i++)
+     {
+       brd = BoardFromSelectedChannel(i);
+       if(&RFDDarray[brd].RFCD[i & 1].RFpADCchan == adcchan) return PWLlookup(i+1,0,ADCcounts);
+       if(&RFDDarray[brd].RFCD[i & 1].RFnADCchan == adcchan) return PWLlookup(i+1,1,ADCcounts);
+     }
+   }
    return Pv; 
 }
 
@@ -711,6 +723,11 @@ void RFdriver_loop(void)
 //        serial->println(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan]);
         Pv = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan], &RFDD.RFCD[i & 1].RFpADCchan);
         Nv = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan);
+      }
+      else if(RFDD.Rev == 5)
+      {
+        Pv = PWLlookup(i+1,0,ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan]);
+        Nv = PWLlookup(i+1,1,ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan]);
       }
       // Filter with 1st order difference equation
       RFpVpps[SelectedRFBoard][i & 1] = Filter * Pv + (1 - Filter) * RFpVpps[SelectedRFBoard][i & 1];
@@ -1306,6 +1323,123 @@ void RFcalN(char *channel, char *Vpp)
     WDT_Restart(WDT);
   }
   SendACK;
+}
+
+//
+// The following functions support the piece wise linear calibration model.
+//
+
+// These functions will generate the calibration table. The user will adjust the 
+// drive to set a desired voltage and then enter the value. Up to ten points
+// be definded. Enter an empty string to terminate data entry. It is assumed 
+// that the channel has been tuned and is properly connected.
+// channel is 1 through number of channels
+// phase is RF+ or RF-
+uint8_t PWLch;
+
+void RFdriveAllowADJ(void)
+{
+  int   brd;
+  float Drive;
+  
+  // Call the task system to allow all system processing
+  control.run();
+  // Process any encoder event
+  if (ButtonRotated)
+  {
+    ButtonRotated = false;
+    Drive = ((float)encValue)/10.0;
+    encValue = 0;
+    // Get the RFdiver structure and adjust the drive level 
+    if (!IsChannelValid(PWLch,false)) return;
+    brd = BoardFromSelectedChannel(PWLch - 1);
+    // If Drive value is invalid exit
+    Drive += RFDDarray[brd].RFCD[(PWLch - 1) & 1].DriveLevel;
+    if ((Drive < 0) || (Drive > RFDDarray[brd].RFCD[(PWLch - 1) & 1].MaxDrive)) return;
+    RFDDarray[brd].RFCD[(PWLch - 1) & 1].DriveLevel = Drive;
+    if (PWLch - 1 == SelectedRFChan) RFCD.DriveLevel = Drive;
+  }
+}
+
+void genPWLcalTable(char *channel, char *phase)
+{
+  String sToken;
+  char   *res;
+  int    brd,ph,i;
+  float  Drive;
+  
+  sToken = channel;
+  PWLch = sToken.toInt();
+  if (!IsChannelValid(PWLch,false)) return;
+  brd = BoardFromSelectedChannel(PWLch - 1);
+  sToken = phase;
+  if((sToken != "RF+") && (sToken != "RF-")) BADARG;
+  if(sToken == "RF+") ph = 0;
+  else ph = 1;
+  // Send the user instructions.
+  serial->println("This function will generate a piecewise linear");
+  serial->println("calibration table. Set the drive level to reach");
+  serial->println("desired calibration points and then enter the");
+  serial->println("measured value to the nearest volt. Press enter");
+  serial->println("When finished. Voltage must be increasing!");
+  // Loop to allow user to adjust drive and enter measured voltage
+  RFDDarray[brd].PWLcal[(PWLch - 1) & 1][ph].num = 0;
+  i=0;
+  Drive = RFDDarray[brd].RFCD[(PWLch - 1) & 1].DriveLevel;
+  while(true)
+  {
+     serial->print("\nPoint ");
+     serial->println(i+1);
+     res = UserInput("Enter measured voltage: ", RFdriveAllowADJ);
+     if( res == NULL) break;
+     sToken = res;
+     RFDDarray[brd].PWLcal[(PWLch - 1) & 1][ph].Value[i] = sToken.toInt();
+     // Read the ADC raw counts
+     SelectBoard(BoardFromSelectedChannel(PWLch - 1));
+     if(ph == 0) RFDDarray[brd].PWLcal[(PWLch - 1) & 1][ph].ADCvalue[i] = AD7998(RFDDarray[brd].ADCadr, RFDDarray[brd].RFCD[(PWLch - 1) & 1].RFpADCchan.Chan, 100);
+     else RFDDarray[brd].PWLcal[(PWLch - 1) & 1][ph].ADCvalue[i] = AD7998(RFDDarray[brd].ADCadr, RFDDarray[brd].RFCD[(PWLch - 1) & 1].RFpADCchan.Chan, 100);
+     i++;
+     RFDDarray[brd].PWLcal[(PWLch - 1) & 1][ph].num = i;
+     if(i>=MAXPWL) break;
+  }
+  serial->println("");
+  // Report the table
+  serial->print("Number of table entries: ");
+  serial->println(RFDDarray[brd].PWLcal[(PWLch - 1) & 1][ph].num);
+  for(i=0;i<RFDDarray[brd].PWLcal[(PWLch - 1) & 1][ph].num;i++)
+  {
+    serial->print(RFDDarray[brd].PWLcal[(PWLch - 1) & 1][ph].Value[i]);
+    serial->print(",");
+    serial->println(RFDDarray[brd].PWLcal[(PWLch - 1) & 1][ph].ADCvalue[i]);
+  }
+  // Done!
+  serial->println("\nData entry complete!");
+  RFDDarray[brd].RFCD[(PWLch - 1) & 1].DriveLevel = Drive;
+  if (PWLch - 1 == SelectedRFChan) RFCD.DriveLevel = Drive;
+}
+
+// This function will use the selected piecewise linear table to convert the 
+// adcval to output voltage.
+// ch = Rf channel 1 through maximum RF channels
+// ph = phase, 0 = RF+, 1 = RF-
+float PWLlookup(int ch, int ph, int adcval)
+{
+  int            brd,i;
+  PWLcalibration *pwl;
+  
+  if (!IsChannelValid(ch,false)) return 0;
+  brd = BoardFromSelectedChannel(ch - 1);
+  pwl = &RFDDarray[brd].PWLcal[(ch - 1) & 1][ph];
+  if(pwl->num < 2) return 0;
+  for(i=0;i<pwl->num-1;i++)
+  {
+    if(adcval < pwl->ADCvalue[i]) break;
+    if((adcval >= pwl->ADCvalue[i]) && (adcval <= pwl->ADCvalue[i+1])) break;
+  }
+  if(i == pwl->num-1) i--;
+  // The points at i and i+1 will be used to calculate the output voltage
+  // y = y1 + (x-x1) * (y2-y1)/(x2-x1)
+  return (float)pwl->Value[i] + ((float)adcval - (float)pwl->ADCvalue[i]) * ((float)pwl->Value[i+1]-(float)pwl->Value[i])/((float)pwl->ADCvalue[i+1] -(float)pwl->ADCvalue[i]);
 }
 
 #endif

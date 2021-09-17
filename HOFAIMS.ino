@@ -2,7 +2,7 @@
 // File: HOFAIMS
 //
 // This file provides the function to control the high order FAIMS system, HOFAIMS. The HOFAIMS system
-// add two additional harmonics (4th and 5th) to produce a more square FAIMS waveform. The HOFAIMS 
+// adds two additional harmonics (4th and 5th) to produce a more square FAIMS waveform. The HOFAIMS 
 // controller holds two of these modules and is linked to a FAIMS system. A rev 3 FAIMS controller
 // is required in the FAIMS system and it provides the clocks used by these modules.
 //

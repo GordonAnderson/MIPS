@@ -42,7 +42,8 @@ typedef struct
   int8_t   ADCaddr;           // ADC device address
   DACchan  *DACout;           // DAC output channel to calibrate
   ADCchan  *ADCreadback;      // ADC readback to calibrate, NULL if not used
-  int(*ADCpointer)(int8_t, int8_t, int8_t);
+  int(*ADCpointer)(int8_t, int8_t, int8_t) = NULL;
+  void(*DACpointer)(uint8_t, uint8_t, uint16_t) = NULL;
 } ChannelCal;
 
 // The following are used for the Push Button LED control.
@@ -264,6 +265,8 @@ int AD5593readADC(int8_t addr, int8_t chan);
 int AD5593readADC(int8_t addr, int8_t chan, int8_t num);
 int AD5593writeDAC(int8_t addr, int8_t chan, int val);
 int AD5629write(uint8_t addr, uint32_t val);
+
+bool ReadDualElectrometer(uint8_t addr, uint16_t *buf);
 
 void SetDelayTrigInput(char *input, char *level);
 void SetDelayTrigEnable(char *sena);

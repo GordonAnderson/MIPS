@@ -4,6 +4,16 @@
 extern float MaxRFVoltage;
 extern int  NumberOfRFChannels;
 
+#define  MAXPWL 10
+// This data structure is used for the piece wise linear calibration
+// function.
+typedef struct
+{
+  uint8_t   num;
+  uint16_t  ADCvalue[MAXPWL];
+  uint16_t  Value[MAXPWL];
+} PWLcalibration;
+
 enum RFdriverMode
 {
   RF_MANUAL,
@@ -45,6 +55,9 @@ typedef struct  // 147 bytes
   int    Signature;         // Must be 0xAA55A5A5 for valid data
   #endif
   float  PowerLimit;
+  // Piece wise linear calibration data structures
+  PWLcalibration PWLcal[2][2];   // Piece wise linear data structures, first index is RF channel, second
+                                 // is phase, 0 for RF+ and 1 of RF-
 } RFdriverData;
 
 // Prototypes
@@ -73,6 +86,8 @@ void RFcalP(char *, char *);
 void RFcalN(char *, char *);
 void GetRFpwrLimit(int channel);
 void SetRFpwrLimit(int channel, int Power);
+void genPWLcalTable(char *channel, char *phase);
+float PWLlookup(int ch, int ph, int adcval);
 
 void RFmodeReport(int);
 void RFmodeSet(char *, char *);
@@ -97,6 +112,14 @@ void SaveRF2EEPROM(void);
                                             // If the setpoint is negative then the calibration is set to default, float
 #define TWI_RF_CALN               0x0E      // The command will adjust the negative channel gain to set the Vpp to the setpoint.
                                             // If the setpoint is negative then the calibration is set to default, float
+#define TWI_RF_SET_GATENA         0x0F      // Enable the gate input of the DIO channel passed, when the DIO line is high the RF output 
+                                            // is gated off, int
+#define TWI_RF_SET_GATEDIS        0x10      // Disable the gate interrupt
+#define TWI_RF_SET_GATE           0x11      // Gates the RF off if true, on if false. 
+#define TWI_RF_SET_PWL            0x12      // Sets a table entry in the piecewise linear look up table.
+                                            // channel (byte), phase (byte), index (byte), voltage (word) 
+#define TWI_RF_SET_PWL_N          0x13      // Sets the number of piecewise linear look up table entries.
+                                            // channel (byte), phase (byte), entries (byte) 
 
 #define TWI_RF_SERIAL             0x27      // This command enables the TWI port to process serial commands
 
@@ -107,6 +130,10 @@ void SaveRF2EEPROM(void);
 #define TWI_RF_READ_TUNE          0x85      // Returns the auto tune flag, bool
 #define TWI_RF_READ_CALP          0x86      // Returns the calibration parameters for VRFP, m and b. two floats
 #define TWI_RF_READ_CALN          0x87      // Returns the calibration parameters for VRFN, m and b. two floats
+#define TWI_RF_READ_PWL           0x88      // Returns the value and ADCvalue (words) for the requested PWL table entry
+                                            // channel (byte), phase (byte), entry number (byte)
+#define TWI_RF_READ_PWL_N         0x89      // Returns the the number of PWL table entries
+                                            // channel (byte), phase (byte)
 
 // Current status structure, used to determine if any values have changed. One
 // for each channel in module.

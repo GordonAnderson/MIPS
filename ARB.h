@@ -7,8 +7,9 @@
 #define MAXARBRATE 1280000
 
 // Digital IO pins used by the ARB system
-#define ARBsync 9
+#define ARBsync 9                     // This line connects to the ARB CPU pin 22
 #define ARBmode 48                    // Signals ARB module to enter compress mode
+                                      // This line connects to the ARB CPU pin AD6
 
 #define CompressBoard 1               // Defines the board address used for the compressor 
 

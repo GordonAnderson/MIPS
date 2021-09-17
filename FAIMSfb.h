@@ -168,6 +168,12 @@ typedef struct  // 260 byte
   float         ElectNegOffset;
   //
   int           Signature;              // Must be 0xAA55A5A5 for valid data
+  // The following variabels were added June 3, 2021. These support the new
+  // electrometer with the on board M4 processor
+  bool          ElectM4ena;             // The flag is true if the M4 processor is enabled for reading
+  int8_t        ElectM4Add;             // TWI address for the electrometer M4 processor, used Wire1, 0x20
+  ADCchan       ElectPosCtrlM4;         // ADC channel 0, Positive input
+  ADCchan       ElectNegCtrlM4;         // ADC channel 1, Negative input
 } FAIMSFBdata;
 
 extern ReadBacks rb;
@@ -224,10 +230,12 @@ void StopFAIMSfbScan(int module);
 void SetFAIMSfbVrfNow(char *module, char *Vrf);
 void SetFAIMSfbVrfTable(char *module, char *Vrf);
 void GenerateVrfTable(int module);
-
+void FAIMSfbNumberOfChannels(void);
 
 void SetEMRTenable(char *ena);
 void ReturnEMRTenable(void);
+void SetEMRTM4enable(char *ena);
+void ReturnEMRTM4enable(void);
 void ReturnEMRTpos(void);
 void ReturnEMRTneg(void);
 void SetEMRTposOff(char *val);

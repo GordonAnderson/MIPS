@@ -13,16 +13,17 @@ reset signal.
 Address selection on FragInterface PCB
 
 JP1-1    JP1-2     Address, hex
-  -        -         0x90 (default)
-  -        X         0x92
-  X        -         0x98
-  X        X         0x9A
+  -        -         0x48 (default)
+  -        X         0x49
+  X        -         0x4C
+  X        X         0x4D
 
 -  = no jumper
 X = jumper installed
 
 */
 #include "SC16IS740.h"
+#include "Wire.h"
 
 #if FAIMSFBcode
 
@@ -69,7 +70,6 @@ int  readSC16IS740char(uint8_t addr)
    int i;
    
    if ((i = TWIread(addr, LSR)) == -1) return(-1);
-   serial->println(i);
    if (i & 0x01)
    {
       i = TWIread (addr, RHR);

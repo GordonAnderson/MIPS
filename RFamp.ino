@@ -107,7 +107,7 @@ DialogBoxEntry RFAdialogEntriesQUAD[] = {
   {"ResolvingDC, V"     , 1, 3, D_FLOAT    , -400, 400, 0.1, 17, false, "%5.1f", &rfad.ResolvingDC, NULL, NULL},
   {"Pole Bias, V"       , 1, 4, D_FLOAT    , -400, 400, 1, 17, false, "%5.0f", &rfad.PoleBias, NULL, NULL},
   {"Resolution, AMU"    , 1, 5, D_FLOAT    , 0, 100, 1, 19, false, "%3.0f", &rfad.Res, NULL, NULL},
-  {"m/z"                , 1, 6, D_FLOAT    , 100, 40000, 1, 17, false, "%5.0f", &rfad.mz, NULL, NULL},
+  {"m/z"                , 1, 6, D_FLOAT    , 10, 40000, 1, 17, false, "%5.0f", &rfad.mz, NULL, NULL},
   {"Update"             , 1, 7, D_FUNCTION , 0, 0, 0, 0, false, NULL, NULL, SetUpdateFlag, NULL},
   {"Previous page"      , 1,10, D_PAGE     , 0, 0, 0, 0, false, NULL, RFAdialogEntriesPage2, NULL, NULL},
   {NULL},
@@ -784,6 +784,12 @@ void RFA_loop(void)
 // Host serial commands
 // 
 
+void RFampNumber(void)
+{
+  SendACKonly;
+  if (!SerialMute) serial->println(NumberOfRFAchannels);  
+}
+
 int RFAmodule2board(int Module)
 {
   int b=-1;
@@ -1064,7 +1070,7 @@ void RFAsetMZ(char *Module, char *value)
   if((b = RFAmodule2board(mod)) == -1) return;
   token = value;
   v = token.toFloat();
-  if((v < 100) || (v > 400000))
+  if((v < 10) || (v > 400000))
   {
      SetErrorCode(ERR_BADARG);
      SendNAK;   

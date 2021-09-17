@@ -8,6 +8,7 @@ enum TWIcbType
   Empty,
   VoidVoid,
   VoidIntIntByte,
+  VoidIntInt,
   VoidIntFloat,
   VoidIntIntFloat,
   VoidIntIntBool,
@@ -19,6 +20,7 @@ union TWIfunctions
   void  (*funcVoidVoid)(void);
   void  (*funcIntIntByte)(int, int, byte);
   void  (*funcIntFloat)(int, float);
+  void  (*funcIntInt)(int, int);
   void  (*funcIntIntFloat)(int, int, float);
   void  (*funcIntIntBool)(int, int, bool);
   void  (*funcIntIntWord)(int, int, uint16_t);
@@ -57,7 +59,8 @@ void TWI_RESET(void);
 bool AcquireTWI(void);
 void ReleaseTWI(void);
 void TWIqueue(void (*TWIfunction)());
-void TWIqueue(void (*TWIfunction)(int,int,float),int arg1,float arg3);
+void TWIqueue(void (*TWIfunction)(int,float),int arg1,float arg3);
+void TWIqueue(void (*TWIfunction)(int,int),int arg1,int arg2);
 void TWIqueue(void (*TWIfunction)(int,int,float),int arg1,int arg2,float arg3);
 void TWIqueue(void (*TWIfunction)(int,int,bool),int arg1,int arg2,bool arg3);
 void TWIqueue(void (*TWIfunction)(int,int,byte),int arg1,int arg2,byte arg3);

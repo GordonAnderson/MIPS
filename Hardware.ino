@@ -235,7 +235,8 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
     {
       if (CC->DACout != NULL)
       {
-        if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
+        if (CC->DACpointer != NULL) CC->DACpointer(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
+        else if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
         else if ((CC->DACaddr & 0xFE) == 0x10) { AD5593writeDAC(CC->DACaddr, CC->DACout->Chan, DACZeroCounts); delay(100);}
         else { AD5625(CC->DACaddr, CC->DACout->Chan, DACZeroCounts); delay(100);}
       }
@@ -245,7 +246,8 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
     {
       if (CC->DACout != NULL)
       {
-        if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
+        if (CC->DACpointer != NULL) CC->DACpointer(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
+        else if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
         else if ((CC->DACaddr & 0xFE) == 0x10) { AD5593writeDAC(CC->DACaddr, CC->DACout->Chan, DACMidCounts); delay(100);}
         else { AD5625(CC->DACaddr, CC->DACout->Chan, DACMidCounts); delay(100);}
       }
@@ -265,7 +267,8 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
           if (DACZeroCounts > 65535) DACZeroCounts = 65535;
           if (CC->DACout != NULL)
           {
-            if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
+            if (CC->DACpointer != NULL) CC->DACpointer(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
+            else if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
             else if ((CC->DACaddr & 0xFE) == 0x10) { AD5593writeDAC(CC->DACaddr, CC->DACout->Chan, DACZeroCounts); delay(100);}
             else { AD5625(CC->DACaddr, CC->DACout->Chan, DACZeroCounts); delay(100);}
           }
@@ -279,7 +282,8 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
           if (DACMidCounts > 65535) DACMidCounts = 65535;
           if (CC->DACout != NULL)
           {
-            if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
+            if (CC->DACpointer != NULL) CC->DACpointer(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
+            else if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
             else if ((CC->DACaddr & 0xFE) == 0x10) { AD5593writeDAC(CC->DACaddr, CC->DACout->Chan, DACMidCounts); delay(100);}
             else { AD5625(CC->DACaddr, CC->DACout->Chan, DACMidCounts); delay(100);}
           }
@@ -314,7 +318,8 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
     // Set DAC to zero point then read the actual value
     if (CC->DACout != NULL)
     {
-      if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
+      if (CC->DACpointer != NULL) CC->DACpointer(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
+      else if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACZeroCounts);
       else if ((CC->DACaddr & 0xFE) == 0x10) { AD5593writeDAC(CC->DACaddr, CC->DACout->Chan, DACZeroCounts); delay(100);}
       else { AD5625(CC->DACaddr, CC->DACout->Chan, DACZeroCounts); delay(100);}
     }
@@ -324,7 +329,8 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
     // Set DAC to mid point then read the actual value
     if (CC->DACout != NULL)
     {
-      if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
+      if (CC->DACpointer != NULL) CC->DACpointer(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
+      else if (CC->DACaddr < 8) AD5668(CC->DACaddr, CC->DACout->Chan, DACMidCounts);
       else if ((CC->DACaddr & 0xFE) == 0x10) { AD5593writeDAC(CC->DACaddr, CC->DACout->Chan, DACMidCounts); delay(100);}
       else { AD5625(CC->DACaddr, CC->DACout->Chan, DACMidCounts); delay(100);}
     }
@@ -1898,4 +1904,20 @@ void SetLevelDetChangeReport(char *TWIadd)
   Wire1.setClock(100000);
   attachInterrupt(digitalPinToInterrupt(LEVCHANGE), LevelDetChangeISR, RISING);
   SendACK;
+}
+
+// This function will read two ADC values from the DualElectrometer's Itysbitys controller
+bool ReadDualElectrometer(uint8_t addr, uint16_t *buf)
+{
+  byte *b;
+  int  i=0;
+  
+  b = (byte *)buf;
+  Wire1.beginTransmission(addr);
+  Wire1.write(0x81);
+  Wire1.endTransmission();
+  //delay(10);
+  Wire1.requestFrom(addr, (uint8_t)4);
+  while (Wire1.available()) b[i++] = Wire1.read();
+  return true;
 }

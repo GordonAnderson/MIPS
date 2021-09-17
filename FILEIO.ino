@@ -78,7 +78,10 @@ bool bmpDraw(char *filename, uint8_t x, uint8_t y)
 
         for (row=0; row<h; row++) 
         { // For each scanline...
-
+          // Image loading can take a long time so to prevent
+          // communications timeouts call the serial processor 
+          // every 10 scan lines.
+          if(row > 1) if((row % 10) == 0) ProcessSerial();
           // Seek to start of scan line.  It might seem labor-
           // intensive to be doing this on every line, but this
           // method covers a lot of gritty details like cropping
@@ -709,8 +712,9 @@ void SaveAlltoSD(void)
   int     err;
 
   // Loop through all the addresses looking for signatures
-  for (addr = 0x50; addr <= 0x56; addr  += 2)
+  for(int i=0; i<NumModAdd; i++)
   {
+    addr = ModuleAddresses[i];
     // Set board select to A
     ENA_BRD_A;
     if (ReadEEPROM(signature, addr, 0, 20) == 0)
