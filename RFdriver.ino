@@ -1,3 +1,5 @@
+#if RFdriver2 == false
+#include "Variants.h"
 //
 // RFdriver
 //
@@ -24,17 +26,12 @@
 //  Rev 4 = Used for the RFcoilDriver board. This board has only one channel and used a AD7994 ADC.
 //          Used for the eiceman project. Suports only one board.
 //  Rev 5 = Used piecewise linear lookup table calibration
-//
-// Gordon Anderson
-//
-#if RFdriver2 == false
-
-#include "Variants.h"
-//#include <DIhandler.h>
+//  Rev 6 = Same as rev 4 except displays both RF+ and RF- channels. This is used for the fragmentor
+//          with phase and anti-phase outputs.
 
 // PLL is not stable below 250,000Hz
 #define MinFreq    400000
-#define MaxFreq    5000000
+#define MaxFreq    5100000
 
 extern bool NormalStartup;
 
@@ -63,6 +60,7 @@ int  SelectedRFChan = 0;     // Active channel
 int  SelectedRFBoard = 0;    // Active board, 0 or 1 = A or B
 float MaxRFVoltage = 0;      // This value is set to the highest RF output voltage
 RFchannelData RFCD;          // Holds the selected channel's data
+ADCcontrolRF *adcRFcontrol[2] = {NULL,NULL};
 
 // These arrays hold the monitor values, array indexes are board,channel. These are scanned
 // in the loop and filtered. These values are both displayed and also used for control
@@ -80,6 +78,7 @@ bool TuneRequest   = false;
 bool RetuneRequest = false;
 bool Tuning        = false;
 bool TuneReport    = false;
+bool TuneAbort     = false;
 int  TuneRFChan;
 int  TuneRFBoard;
 // Tune states
@@ -89,8 +88,15 @@ int  TuneRFBoard;
 #define MaxNumDown 5
 #define MAXSTEP    100000
 
+// Arc detection parameters
+int   RFarcCH = 0;
+float RFarcDrv = 0;
+float RFarcV = 0;
+
+bool  RFgatingOff = false;
 DIhandler *DIh[2][2];
 void (*GateTriggerISRs[2][2])(void) = {RF_A1_ISR, RF_A2_ISR, RF_B1_ISR, RF_B2_ISR};
+float gatedDrive[4] = {0,0,0,0};
 
 DialogBoxEntry RFdriverDialogEntriesPage1[] = {
   {" RF channel", 0, 1, D_INT, 1, 2, 1, 21, false, "%2d", &Channel, NULL, SelectChannel},
@@ -291,7 +297,7 @@ void SelectChannel(void)
   RFgateChange();
   // Set the power limit
   RFdriverDialogEntriesPage2[1].Max = RFDD.PowerLimit;
-  // If rev 2 then do not display the RF- channel
+  // If rev 2 or 4 then do not display the RF- channel
   if((RFDD.Rev == 2) || (RFDD.Rev == 4))
   {
     RFdriverDialogEntriesPage1[5].Type = D_OFF;
@@ -303,6 +309,31 @@ void SelectChannel(void)
   // Update the display
   if (ActiveDialog == &RFdriverDialog) DialogBoxDisplay(&RFdriverDialog);
 }
+
+// The following two functions support setting the RF drive or level fron the pulse
+// sequence generator. UpdateRFdrive saves the requesed setting and ProcessRFdrive 
+// applies the requested value.
+float RFqueuedValues[4] = {-1,-1,-1,-1};
+void UpdateRFdrive(int chan, float value)
+{
+  if((chan >=0) && (chan <= 3)) RFqueuedValues[chan] = value;
+}
+void ProcessRFdrive(void)
+{
+  for(int chan=0; chan<4; chan++)
+  {
+     if(RFqueuedValues[chan] < 0) continue;
+     int b = BoardFromSelectedChannel(chan);
+     if(RFDDarray[b].RFCD[chan & 1].RFmode == RF_AUTO) RFDDarray[b].RFCD[chan & 1].Setpoint = RFqueuedValues[chan];
+     {
+        if(RFqueuedValues[chan] > RFDDarray[b].RFCD[chan & 1].MaxDrive) RFqueuedValues[chan] = RFDDarray[b].RFCD[chan & 1].MaxDrive;
+        RFDDarray[b].RFCD[chan & 1].DriveLevel = RFqueuedValues[chan];
+        analogWrite(RFDDarray[b].RFCD[chan & 1].PWMchan, (RFDDarray[b].RFCD[chan & 1].DriveLevel * PWMFS) / 100);
+     }
+     RFqueuedValues[chan] = -1;
+  }
+}
+
 
 // This function is called at powerup to initiaize the RF driver.
 // The board parameter (0 or 1) defines the board select parameter where this card was found.
@@ -335,9 +366,9 @@ void RFdriver_init(int8_t Board, int8_t addr)
   }
   // Init the clock generator and set the frequencies
   SetRef(20000000);
-  CY_Init(RFDD.CLOCKadr);
-  SetPLL2freq(RFDD.CLOCKadr, RFDD.RFCD[0].Freq);
-  SetPLL3freq(RFDD.CLOCKadr, RFDD.RFCD[1].Freq);
+  CY_Init(RFDD.CLOCKadr,Board);
+  SetPLL2freq(RFDD.CLOCKadr, RFDD.RFCD[0].Freq,Board);
+  SetPLL3freq(RFDD.CLOCKadr, RFDD.RFCD[1].Freq,Board);
   // Setup the PWM outputs and set levels
   analogWriteResolution(12);
   SelectedRFBoard = Board;
@@ -361,7 +392,7 @@ void RFdriver_init(int8_t Board, int8_t addr)
     // Add threads to the controller
     control.add(&RFdriverThread);
   }
-  if(RFDDarray[Board].Rev == 4) 
+  if((RFDDarray[Board].Rev == 4) || (RFDDarray[Board].Rev == 6))
   {
     RFDD.RFCD[0].RFpADCchan.Chan = 2;
     RFDD.RFCD[0].RFnADCchan.Chan = 3;
@@ -398,8 +429,8 @@ void RFcontrol(void)
         if(((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) < RFDDarray[board].RFCD[chan].Setpoint) es = RFDDarray[board].RFCD[chan].Setpoint / ((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2);
         es = abs(RFDDarray[board].RFCD[chan].Setpoint - ((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2));
         g = es * 0.05;
-        if (((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) > RFDDarray[board].RFCD[chan].Setpoint) RFDDarray[board].RFCD[chan].DriveLevel -= .01 * g;
-        else RFDDarray[board].RFCD[chan].DriveLevel += .01 * g;
+        if (((RFpVpps[board][chan] + RFnVpps[board][chan]) / 2) > RFDDarray[board].RFCD[chan].Setpoint) RFDDarray[board].RFCD[chan].DriveLevel -= 0.08 * g;
+        else RFDDarray[board].RFCD[chan].DriveLevel += 0.08 * g;
         RFDDarray[board].RFCD[chan].DriveLevel = (float)((int)(RFDDarray[board].RFCD[chan].DriveLevel * 100)) / 100.0;        
         if (RFDDarray[board].RFCD[chan].DriveLevel < 0) RFDDarray[board].RFCD[chan].DriveLevel = 0;
         if (RFDDarray[board].RFCD[chan].DriveLevel > RFDDarray[board].RFCD[chan].MaxDrive) RFDDarray[board].RFCD[chan].DriveLevel = RFDDarray[board].RFCD[chan].MaxDrive;
@@ -435,6 +466,8 @@ void RFdriver_tune(void)
 
    if(TuneRequest)
    {
+     TuneAbort = false;
+     ButtonPressed = false;
      TuneRFBoard = BoardFromSelectedChannel(TuneRFChan); 
      // Set freq to 1MHz
      RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq = 1000000;
@@ -453,6 +486,8 @@ void RFdriver_tune(void)
    }
    if(RetuneRequest)
    {
+     TuneAbort = false;
+     ButtonPressed = false;
      TuneRFBoard = BoardFromSelectedChannel(TuneRFChan); 
      // Set freq to current
      Freq = RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq;
@@ -467,9 +502,23 @@ void RFdriver_tune(void)
      return;
    }
    if(!Tuning) return;
+   // Here if the system is tuning
+   if((TuneAbort) || (ButtonPressed))
+   {
+      TuneAbort = false;
+      ButtonPressed = false;
+      Tuning = false;
+      DismissMessage();
+      if(TuneReport && !SerialMute)
+      {
+        serial->print("Auto tune aborted, channel = ");
+        serial->println(TuneRFChan + 1);
+      }
+      TuneReport = false;
+      return;    
+   }
    if(--Nth > 0) return;
    Nth = 20;
-   // Here if the system is tuning
    Current = RFpVpps[TuneRFBoard][TuneRFChan & 1] + RFnVpps[TuneRFBoard][TuneRFChan & 1];
    TuneRFBoard = BoardFromSelectedChannel(TuneRFChan);
    switch (TuneState)
@@ -507,12 +556,13 @@ void RFdriver_tune(void)
           Max = Current;
           FreqMax = RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq;
         }
-        if(Current <= (Last +1)) NumDown++;
+        if(Current <= (Last + 1)) NumDown++;
         else 
         {
           NumDown = 0;
           if(TuneStep == MAXSTEP) NumDown = -MaxNumDown;
         }
+        if((Current == 0) && (Last == 0)) NumDown--;
         RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq += TuneStep;
         if((NumDown >= MaxNumDown) || (RFDDarray[TuneRFBoard].RFCD[TuneRFChan & 1].Freq > MaxFreq))
         {
@@ -564,7 +614,7 @@ float RFdriverCounts2Volts(int Rev, int ADCcounts, ADCchan *adcchan)
       Pv = Counts2Value(ADCcounts, adcchan);
       Pv = 3.255975e-10 * pow(Pv,5) - 3.873611e-7 * pow(Pv,4) + 0.000161919 * pow(Pv,3) - 0.025363 * pow(Pv,2) + 2.06452 * Pv - 62.27195;
    }
-   else if((Rev == 2) || (Rev == 4))
+   else if((Rev == 2) || (Rev == 4) || (Rev == 6))
    {
      // This rev supports linear operation for high voltage, up to 4000Vp-p, this is equations is for the RF level detector circuit.
      // Rev 2 also displays only the RF+ output. Used on the Eiceman project
@@ -600,7 +650,6 @@ void RFdriver_loop(void)
   static int LastFreq[2][2] = { -1, -1, -1, -1};
   static  int disIndex = 0;
 
-  TRACE(2);
   MaxRFVoltage = 0;
   SelectedRFBoard = BoardFromSelectedChannel(SelectedRFChan);
   SelectBoard(SelectedRFBoard);
@@ -616,6 +665,26 @@ void RFdriver_loop(void)
     }
   }
   RFdriver_tune();
+  // Process ADC control settings
+  for(i=0;i<2;i++)
+  {
+    if(adcRFcontrol[i] != NULL)
+    {
+      if(adcRFcontrol[i]->enable)
+      {
+        int b = BoardFromSelectedChannel(i);
+        if(RFDDarray[b].RFCD[i].RFmode == RF_MANUAL)
+        {
+          RFDDarray[b].RFCD[i].DriveLevel = 10.0 * adcRFcontrol[i]->gain * analogRead(i);
+          if(RFDDarray[b].RFCD[i].DriveLevel > RFDDarray[b].RFCD[i].MaxDrive) RFDDarray[b].RFCD[i].DriveLevel = RFDDarray[b].RFCD[i].MaxDrive;
+        }
+        else
+        {
+          RFDDarray[b].RFCD[i].Setpoint = 100.0 * adcRFcontrol[i]->gain * analogRead(i);
+        }
+      }
+    }
+  }
   // Update the clock generator and set the frequencies for
   // all boards that are present in system. Only update if the freq
   // has actually changed.
@@ -629,22 +698,30 @@ void RFdriver_loop(void)
     SelectBoard(SelectedRFBoard);
     if (LastFreq[SelectedRFBoard][i & 1] != RFDD.RFCD[i & 1].Freq)
     {
-      // Lower drive level to 0 then delay
-      analogWrite(RFDD.RFCD[i & 1].PWMchan, 0);
-      delay(2);
-      if((i & 1) == 0)
+      // Only apply the new frequency if we are not gated off or bypassed
+      if ((DIh[SelectedRFBoard][i & 1]->test(RFDDarray[SelectedRFBoard].RFgateTrig[i & 1])) || RFgatingOff)
       {
-        //AtomicBlock< Atomic_RestoreState > a_Block;
-        for (j = 0; j < 5; j++) if (SetPLL2freq(RFDD.CLOCKadr, RFDD.RFCD[i & 1].Freq) == 0) break;        
+        // Lower drive level to 0 then delay
+        analogWrite(RFDD.RFCD[i & 1].PWMchan, 0);
+        //delay(2);
+        if((i & 1) == 0)
+        {
+          //AtomicBlock< Atomic_RestoreState > a_Block;
+          AcquireTWI();
+          for (j = 0; j < 5; j++) if (SetPLL2freq(RFDD.CLOCKadr, RFDD.RFCD[i & 1].Freq, SelectedRFBoard) == 0) break;      
+          ReleaseTWI();  
+        }
+        else
+        {
+          //AtomicBlock< Atomic_RestoreState > a_Block;
+          AcquireTWI();
+          for (j = 0; j < 5; j++) if (SetPLL3freq(RFDD.CLOCKadr, RFDD.RFCD[i & 1].Freq, SelectedRFBoard) == 0) break;   
+          ReleaseTWI();               
+        }
+        LastFreq[SelectedRFBoard][i & 1] = RFDD.RFCD[i & 1].Freq;
+        // Reset drive level
+        analogWrite(RFDD.RFCD[i & 1].PWMchan, (RFDD.RFCD[i & 1].DriveLevel * PWMFS) / 100);
       }
-      else
-      {
-        //AtomicBlock< Atomic_RestoreState > a_Block;
-        for (j = 0; j < 5; j++) if (SetPLL3freq(RFDD.CLOCKadr, RFDD.RFCD[i & 1].Freq) == 0) break;                
-      }
-      LastFreq[SelectedRFBoard][i & 1] = RFDD.RFCD[i & 1].Freq;
-      // Reset drive level
-      if (DIh[SelectedRFBoard][i & 1]->activeLevel()) analogWrite(RFDD.RFCD[i & 1].PWMchan, (RFDD.RFCD[i & 1].DriveLevel * PWMFS) / 100);
     }    
   }
 
@@ -652,27 +729,25 @@ void RFdriver_loop(void)
   for (i = 0; i < NumberOfRFChannels; i++)
   {
     SelectedRFBoard = BoardFromSelectedChannel(i);
-    if (DIh[SelectedRFBoard][i & 1]->test(RFDDarray[SelectedRFBoard].RFgateTrig[i & 1])) 
+    if ((DIh[SelectedRFBoard][i & 1]->test(RFDDarray[SelectedRFBoard].RFgateTrig[i & 1])) || RFgatingOff)
     {
       analogWrite(RFDD.RFCD[i & 1].PWMchan, (RFDD.RFCD[i & 1].DriveLevel * PWMFS) / 100);
     }
-    else analogWrite(RFDD.RFCD[i & 1].PWMchan, 0);
+    else analogWrite(RFDD.RFCD[i & 1].PWMchan, (gatedDrive[i] * PWMFS) / 100);
   }
   // Check and update the RF gate controls
   for (i = 0; i < NumberOfRFChannels; i++)
   {
     SelectedRFBoard = BoardFromSelectedChannel(i);
-//    if ((RFDD.RFgateDI[i & 1] != DIh[SelectedRFBoard][i & 1]->di) || (RFDD.RFgateTrig[SelectedRFChan & 1] != DIh[SelectedRFBoard][i]->mode))
-    if ((RFDD.RFgateDI[i & 1] != DIh[SelectedRFBoard][i & 1]->di) || (RFDD.RFgateTrig[SelectedRFChan & 1] != DIh[SelectedRFBoard][i & 1]->mode))
+    if ((RFDD.RFgateDI[i & 1] != DIh[SelectedRFBoard][i & 1]->di) || (RFDD.RFgateTrig[i & 1] != DIh[SelectedRFBoard][i & 1]->mode))
     {
       DIh[SelectedRFBoard][i & 1]->detach();
-//      DIh[SelectedRFBoard][i & 1]->attached(RFDD.RFgateDI[i & 1], RFDD.RFgateTrig[i & 1], GateTriggerISRs[SelectedRFBoard][i & 1]);
       DIh[SelectedRFBoard][i & 1]->attached(RFDD.RFgateDI[i & 1], CHANGE, GateTriggerISRs[SelectedRFBoard][i & 1]);
       // Call the ISR to process the change
       GateTriggerISRs[SelectedRFBoard][i & 1]();
     }
   }
-  // Read all the voltage monitors and caculate all the RF head power
+  // Read all the voltage monitors and caculate all the RF head power, 7mS
   for (i = 0; i < NumberOfRFChannels; i++)
   {
     // Select board and read parameters
@@ -680,10 +755,10 @@ void RFdriver_loop(void)
     SelectBoard(SelectedRFBoard);
     // Read the ADC monitor values for the selected channels.
     ValueChange = false;
-    delay(1);
+    //delay(1);
     if ((i == 0) || (i == 2))   // Only read the board's ADC when first indexed
     {
-      if(RFDD.Rev == 4) iStat = AD7994(RFDD.ADCadr, ADCvals);
+      if((RFDD.Rev == 4) || (RFDD.Rev == 6)) iStat = AD7994(RFDD.ADCadr, ADCvals);
       else iStat = AD7998(RFDD.ADCadr, ADCvals);
       //serial->println(ADCvals[7]);
       if((iStat != 0) || (ValueChange))
@@ -693,7 +768,7 @@ void RFdriver_loop(void)
       }
     }
     if(iStat != 0) continue;
-    if (DIh[SelectedRFBoard][i & 1]->test(RFDDarray[SelectedRFBoard].RFgateTrig[i & 1]))
+    if ((DIh[SelectedRFBoard][i & 1]->test(RFDDarray[SelectedRFBoard].RFgateTrig[i & 1])) || RFgatingOff)
     {
       if(RFDD.Rev == 3)
       {
@@ -704,23 +779,22 @@ void RFdriver_loop(void)
          Nv = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan);
          Nv = 3.255975e-10 * pow(Nv,5) - 3.873611e-7 * pow(Nv,4) + 0.000161919 * pow(Nv,3) - 0.025363 * pow(Nv,2) + 2.06452 * Nv - 62.27195;
       }
-      else if((RFDD.Rev == 2) || (RFDD.Rev == 4))
+      else if((RFDD.Rev == 2) || (RFDD.Rev == 4) || (RFDD.Rev == 6))
       {
-        // This rev supports linear operation for high voltage, up to 4000Vp-p, this is equations is for the RF level detector circuit.
+        // This rev supports linear operation for high voltage, up to 4000Vp-p, this equation is for the RF level detector circuit.
         // Rev 2 also displays only the RF+ output. Used on the Eiceman project
         Pv = (float)Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan], &RFDD.RFCD[i & 1].RFpADCchan);
         Nv = (float)Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan);
         // This code attempts to correct for nonlinear performance near 0
         float Zc = (float)Counts2Value(0, &RFDD.RFCD[i & 1].RFpADCchan) / 0.8;
         if(Pv <= Zc) Pv = Pv - (Zc - Pv) * 4.0;   
-        Nv = Pv;  // Make them match for the control loop
+        Zc = (float)Counts2Value(0, &RFDD.RFCD[i & 1].RFnADCchan) / 0.8;
+        if(Nv <= Zc) Nv = Nv - (Zc - Nv) * 4.0;   
+        if(RFDD.Rev != 6) Nv = Pv;  // Make them match for the control loop
       }
       else if(RFDD.Rev <= 1)
       {
         // This is a linear calibration using the data structure parameters
-//        serial->print(i);
-//        serial->print(", ");
-//        serial->println(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan]);
         Pv = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFpADCchan.Chan], &RFDD.RFCD[i & 1].RFpADCchan);
         Nv = Counts2Value(ADCvals[RFDD.RFCD[i & 1].RFnADCchan.Chan], &RFDD.RFCD[i & 1].RFnADCchan);
       }
@@ -732,6 +806,22 @@ void RFdriver_loop(void)
       // Filter with 1st order difference equation
       RFpVpps[SelectedRFBoard][i & 1] = Filter * Pv + (1 - Filter) * RFpVpps[SelectedRFBoard][i & 1];
       RFnVpps[SelectedRFBoard][i & 1] = Filter * Nv + (1 - Filter) * RFnVpps[SelectedRFBoard][i & 1];
+      // Arc detection logic. If enabled the average filtered voltage is compared to the unfiltered
+      // value. If a sudden change is detected then an error is flagged and the drive reduced to zero.
+      // This only applies to the selected RF channel. 
+      if(RFarcCH == i+1)
+      {
+         Pv = (Pv + Nv) / 2.0;   // Average unfiltered
+         Nv = (RFpVpps[SelectedRFBoard][i & 1] + RFnVpps[SelectedRFBoard][i & 1]) / 2.0;  // Average filtered
+         if((Nv > 500) && (Pv < 0.75*Nv) && (RFDDarray[SelectedRFBoard].RFCD[i & 1].DriveLevel > 0))
+         {
+           DisplayMessageButtonDismiss(" Arc detected! ");
+           LogMessage("RF arc detected.");
+           RFarcDrv = RFDDarray[SelectedRFBoard].RFCD[i & 1].DriveLevel;
+           RFarcV   = Nv;
+           RFDDarray[SelectedRFBoard].RFCD[i & 1].DriveLevel = 0;
+         }
+      }
       // Limit test
       if (RFpVpps[SelectedRFBoard][i & 1] < 0) RFpVpps[SelectedRFBoard][i & 1] = 0;
       if (RFnVpps[SelectedRFBoard][i & 1] < 0) RFnVpps[SelectedRFBoard][i & 1] = 0;
@@ -768,7 +858,7 @@ void EnablePLL2(int add, int brd, bool state)
   AcquireTWI();
   int cb=SelectedBoard();
   SelectBoard(brd);
-  SetPLL2enable(add,state);
+  SetPLL2enable(add,state,brd);
   if(cb != brd) SelectBoard(cb);
   ReleaseTWI();  
 }
@@ -778,7 +868,7 @@ void EnablePLL3(int add, int brd, bool state)
   AcquireTWI();
   int cb=SelectedBoard();
   SelectBoard(brd);
-  SetPLL3enable(add,state);
+  SetPLL3enable(add,state,brd);
   if(cb != brd) SelectBoard(cb);
   ReleaseTWI();    
 }
@@ -786,62 +876,90 @@ void EnablePLL3(int add, int brd, bool state)
 // Gate ISR functions
 void RF_A1_ISR(void)
 {
+  if(RFgatingOff) return;
   if(DIh[0][0]->test(RFDDarray[0].RFgateTrig[0])) 
   {
     analogWrite(RFDDarray[0].RFCD[0].PWMchan, (RFDDarray[0].RFCD[0].DriveLevel * PWMFS) / 100);
-    if(AcquireTWI()) EnablePLL2(RFDDarray[0].CLOCKadr,0,true);
-    else TWIqueue(EnablePLL2,RFDDarray[0].CLOCKadr,0,true);
+//    if(gatedDrive[0] == 0)
+    {
+      if(AcquireTWI()) EnablePLL2(RFDDarray[0].CLOCKadr,0,true);
+      else TWIqueue(EnablePLL2,RFDDarray[0].CLOCKadr,0,true);
+    }
   }
   else 
   {
-    analogWrite(RFDDarray[0].RFCD[0].PWMchan, 0);
-    if(AcquireTWI()) EnablePLL2(RFDDarray[0].CLOCKadr,0,false);
-    else TWIqueue(EnablePLL2,RFDDarray[0].CLOCKadr,0,false);
+    analogWrite(RFDDarray[0].RFCD[0].PWMchan, (gatedDrive[0] * PWMFS) / 100);
+    if(gatedDrive[0] == 0)
+    {
+      if(AcquireTWI()) EnablePLL2(RFDDarray[0].CLOCKadr,0,false);
+      else TWIqueue(EnablePLL2,RFDDarray[0].CLOCKadr,0,false);
+    }
   }
 }
 void RF_A2_ISR(void)
 {
+  if(RFgatingOff) return;
   if(DIh[0][1]->test(RFDDarray[0].RFgateTrig[1])) 
   {
     analogWrite(RFDDarray[0].RFCD[1].PWMchan, (RFDDarray[0].RFCD[1].DriveLevel * PWMFS) / 100);
-    if(AcquireTWI()) EnablePLL3(RFDDarray[0].CLOCKadr,0,true);
-    else TWIqueue(EnablePLL3,RFDDarray[0].CLOCKadr,0,true);
+//    if(gatedDrive[1] == 0)
+    {
+      if(AcquireTWI()) EnablePLL3(RFDDarray[0].CLOCKadr,0,true);
+      else TWIqueue(EnablePLL3,RFDDarray[0].CLOCKadr,0,true);
+    }
   }
   else 
   {
-    analogWrite(RFDDarray[0].RFCD[1].PWMchan, 0);
-    if(AcquireTWI()) EnablePLL3(RFDDarray[0].CLOCKadr,0,false);
-    else TWIqueue(EnablePLL3,RFDDarray[0].CLOCKadr,0,false);
+    analogWrite(RFDDarray[0].RFCD[1].PWMchan, (gatedDrive[1] * PWMFS) / 100);
+    if(gatedDrive[1] == 0)
+    {
+      if(AcquireTWI()) EnablePLL3(RFDDarray[0].CLOCKadr,0,false);
+      else TWIqueue(EnablePLL3,RFDDarray[0].CLOCKadr,0,false);
+    }
   }
 }
 void RF_B1_ISR(void)
 {
+  if(RFgatingOff) return;
   if(DIh[1][0]->test(RFDDarray[1].RFgateTrig[0])) 
   {
     analogWrite(RFDDarray[1].RFCD[0].PWMchan, (RFDDarray[1].RFCD[0].DriveLevel * PWMFS) / 100);
-    if(AcquireTWI()) EnablePLL2(RFDDarray[1].CLOCKadr,1,true);
-    else TWIqueue(EnablePLL2,RFDDarray[1].CLOCKadr,1,true);
+//    if(gatedDrive[2] == 0)
+    {
+      if(AcquireTWI()) EnablePLL2(RFDDarray[1].CLOCKadr,1,true);
+      else TWIqueue(EnablePLL2,RFDDarray[1].CLOCKadr,1,true);
+    }
   }
   else 
   {
-    analogWrite(RFDDarray[1].RFCD[0].PWMchan, 0);
-    if(AcquireTWI()) EnablePLL2(RFDDarray[1].CLOCKadr,1,false);
-    else TWIqueue(EnablePLL2,RFDDarray[1].CLOCKadr,1,false);
+    analogWrite(RFDDarray[1].RFCD[0].PWMchan, (gatedDrive[2] * PWMFS) / 100);
+    if(gatedDrive[2] == 0)
+    {
+      if(AcquireTWI()) EnablePLL2(RFDDarray[1].CLOCKadr,1,false);
+      else TWIqueue(EnablePLL2,RFDDarray[1].CLOCKadr,1,false);
+    }
   }
 }
 void RF_B2_ISR(void)
 {
+  if(RFgatingOff) return;
   if(DIh[1][1]->test(RFDDarray[1].RFgateTrig[1])) 
   {
     analogWrite(RFDDarray[1].RFCD[1].PWMchan, (RFDDarray[1].RFCD[1].DriveLevel * PWMFS) / 100);
-    if(AcquireTWI()) EnablePLL3(RFDDarray[1].CLOCKadr,1,true);
-    else TWIqueue(EnablePLL3,RFDDarray[1].CLOCKadr,1,true);
+//    if(gatedDrive[3] == 0)
+    {
+      if(AcquireTWI()) EnablePLL3(RFDDarray[1].CLOCKadr,1,true);
+      else TWIqueue(EnablePLL3,RFDDarray[1].CLOCKadr,1,true);
+    }
   }
   else 
   {
-    analogWrite(RFDDarray[1].RFCD[1].PWMchan, 0);
-    if(AcquireTWI()) EnablePLL3(RFDDarray[1].CLOCKadr,1,false);
-    else TWIqueue(EnablePLL3,RFDDarray[1].CLOCKadr,1,false);
+    analogWrite(RFDDarray[1].RFCD[1].PWMchan, (gatedDrive[3] * PWMFS) / 100);
+    if(gatedDrive[3] == 0)
+    {
+      if(AcquireTWI()) EnablePLL3(RFDDarray[1].CLOCKadr,1,false);
+      else TWIqueue(EnablePLL3,RFDDarray[1].CLOCKadr,1,false);
+    }
   }
 }
 
@@ -1255,6 +1373,38 @@ void SaveRF2EEPROM(void)
   SendACK;
 }
 
+// This routine processes the RFgateDisable command. If disabled the flag is set and all the 
+// RF channels are enabled
+void RFgateDisable(char *cmd)
+{
+  String sToken;
+  int    i,brd;
+
+  sToken = cmd;
+  if(sToken == "TRUE")
+  {
+    RFgatingOff = true;
+    // Enable all channels
+    for (i = 0; i < NumberOfRFChannels; i++)
+    {
+      brd = BoardFromSelectedChannel(i);
+      SelectBoard(brd);
+      if((i & 1) == 0) EnablePLL2(RFDDarray[brd].CLOCKadr,brd,true);
+      else EnablePLL3(RFDDarray[brd].CLOCKadr,brd,true);
+    }
+  }
+  else if(sToken == "FALSE") RFgatingOff = false;
+  else BADARG;
+  SendACK;
+}
+
+// This routine will set the Auto Tune abort flag
+void SetRFautoTuneAbort(void)
+{
+  TuneAbort = true;
+  SendACK;
+}
+
 // Software calibration functions to make minor adjustment to the RF level readback detectors. 
 // These routines interate to converge on the desired output. To use this feature you need
 // to set the RF level and read its level then calibrate the channel by defining the desired
@@ -1430,16 +1580,80 @@ float PWLlookup(int ch, int ph, int adcval)
   if (!IsChannelValid(ch,false)) return 0;
   brd = BoardFromSelectedChannel(ch - 1);
   pwl = &RFDDarray[brd].PWLcal[(ch - 1) & 1][ph];
-  if(pwl->num < 2) return 0;
-  for(i=0;i<pwl->num-1;i++)
-  {
-    if(adcval < pwl->ADCvalue[i]) break;
-    if((adcval >= pwl->ADCvalue[i]) && (adcval <= pwl->ADCvalue[i+1])) break;
-  }
-  if(i == pwl->num-1) i--;
-  // The points at i and i+1 will be used to calculate the output voltage
-  // y = y1 + (x-x1) * (y2-y1)/(x2-x1)
-  return (float)pwl->Value[i] + ((float)adcval - (float)pwl->ADCvalue[i]) * ((float)pwl->Value[i+1]-(float)pwl->Value[i])/((float)pwl->ADCvalue[i+1] -(float)pwl->ADCvalue[i]);
+  return PWLlookup(pwl,adcval);
+}
+
+// The following functions support analog voltage control of the RFdriver module. 
+// ADC0 controls RFdriver channel 1 and ADC1 controls RFdriver channel 1. 
+
+// This commands sets up an ADC channel and sets the ADC input gain. The gain is
+// used to convert the ADC counts to a 0 to 10V range.
+// chan is 1 or 2
+// gain is a float that is multiplied by the ADC count
+void setupADCRFcontrol(char *chan, char *gain)
+{
+  String token;
+
+  token = chan;
+  int adc = token.toInt() - 1;
+  token = gain;
+  float adcgain = token.toFloat();
+  if((adc!=0)&&(adc!=1)) BADARG;
+  if(adcRFcontrol[adc] == NULL) adcRFcontrol[adc] = new ADCcontrolRF;
+  adcRFcontrol[adc]->gain = adcgain;
+  adcRFcontrol[adc]->RFchan = adc + 1;
+  adcRFcontrol[adc]->enable = false;
+  SendACK;
+}
+void setADCRFenable(char *chan, char *value)
+{
+  String token;
+
+  token = chan;
+  int adc = token.toInt() - 1;
+  if((adc!=0)&&(adc!=1)) BADARG;
+  if(adcRFcontrol[adc] == NULL) BADARG;
+  token = value;
+  if(token == "TRUE") adcRFcontrol[adc]->enable = true;
+  else if(token == "FALSE") adcRFcontrol[adc]->enable = false;
+  else BADARG;
+  SendACK;
+}
+void getADCRFenable(char *chan)
+{
+  String token;
+
+  token = chan;
+  int adc = token.toInt() - 1;
+  if((adc!=0)&&(adc!=1)) BADARG;
+  if(adcRFcontrol[adc] == NULL) BADARG;
+  SendACKonly;
+  if(SerialMute) return;
+  if(adcRFcontrol[adc]->enable) serial->println("TRUE");
+  else serial->println("FALSE");
+} 
+
+void setRFgatedDrv(char *Chan, char *Val)
+{
+  int ch;
+  String token;
+
+  token = Chan;
+  ch = token.toInt();
+  if (!IsChannelValid(ch)) return;
+  int brd = BoardFromSelectedChannel(ch - 1);
+  token = Val;
+  gatedDrive[ch - 1] = token.toFloat();
+  if(gatedDrive[ch - 1] < 0) gatedDrive[ch - 1] = 0;
+  if(gatedDrive[ch - 1] > RFDDarray[brd].RFCD[ch & 1].MaxDrive) gatedDrive[ch - 1] = RFDDarray[brd].RFCD[ch & 1].MaxDrive;
+  SendACK;
+}
+void getRFgatedDrv(int Chan)
+{
+  if (!IsChannelValid(Chan)) return;
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(gatedDrive[Chan - 1]);
 }
 
 #endif

@@ -10,7 +10,11 @@
 
 MIPStimer CompressorTimer(TMR_TwaveCmp);
 
-char TwaveCompressorTable[100] = "C";
+SweepTable *sweeptable= NULL;
+
+char TwaveCompressorTable[131] = "C";
+
+bool CompressorDisable = false;
 
 char *CmodeList = "Normal,Compress";
 char Cmode[12]  = "Normal";
@@ -112,6 +116,27 @@ void ARBTWAVEsweepISR(void)
 {
   if(fSweep[0].State == SS_IDLE) fSweep[0].State = SS_START;
   if(fSweep[1].State == SS_IDLE) fSweep[1].State = SS_START;
+  ARBthread.setNextRunTime(millis());
+}
+
+bool SweepLookup(int TP, float *V1, float *V2, float *F)
+{
+  int i;
+  
+  if(sweeptable == NULL) return false;
+  if(sweeptable->num < 2) return false;
+  for(i=0;i<sweeptable->num-1;i++)
+  {
+    if(TP < sweeptable->timePnt[i]) break;
+    if((TP >= sweeptable->timePnt[i]) && (TP <= sweeptable->timePnt[i+1])) break;
+  }
+  if(i == sweeptable->num-1) i--;
+  // The points at i and i+1 will be used to calculate the output voltages and frequency
+  // y = y1 + (x-x1) * (y2-y1)/(x2-x1)
+  if(V1 != NULL) *V1 = (float)sweeptable->voltage1[i] + (float)(TP - sweeptable->timePnt[i]) * (float)(sweeptable->voltage1[i+1] - sweeptable->voltage1[i]) / (float)(sweeptable->timePnt[i+1] - sweeptable->timePnt[i]);
+  if(V2 != NULL) *V2 = (float)sweeptable->voltage2[i] + (float)(TP - sweeptable->timePnt[i]) * (float)(sweeptable->voltage2[i+1] - sweeptable->voltage2[i]) / (float)(sweeptable->timePnt[i+1] - sweeptable->timePnt[i]);
+  if(F != NULL)  *F = (float)sweeptable->frequency[i] + (float)(TP - sweeptable->timePnt[i]) * (float)(sweeptable->frequency[i+1] - sweeptable->frequency[i]) / (float)(sweeptable->timePnt[i+1] - sweeptable->timePnt[i]);
+  return true;
 }
 
 // This function is called in the Twave and ARB polling loops and processes frequency/voltage sweep requests. The FreqSweep
@@ -179,11 +204,14 @@ void ProcessSweep(void)
       }
       if(NumberOfARBchannels > 0)
       {
+        if(chan == 0) SweepLookup(RightNow - fSweep[chan].SweepStartTime, &rnv, NULL, &rnf);
+        if(chan == 1) SweepLookup(RightNow - fSweep[chan].SweepStartTime, NULL, &rnv, &rnf);
         ARBarray[chan]->Frequency = rnf;
-        ARBarray[chan]->Voltage = rnv;        
+        ARBarray[chan]->Voltage = rnv;   
       }
       fSweep[chan].CurrentSweepTime = RightNow;
     }
+    //ARBthread.run();
   }  
 }
 
@@ -459,3 +487,62 @@ void ProcessCompressionTrigger(void)
   if(CompressionTriggerTarget == char('A')) ARBcompressorTriggerISR();
   else if(CompressionTriggerTarget == char('T')) CompressorTriggerISR();
 }
+
+// Sweep Table command. The Sweep table supports a picewise
+// linear voltage and frequecy sweep capability for ARB modules
+// 1 and 2 only. This function will on operate on MIPS based
+// sweeps.
+// Sweep commands:
+// SSWPCLR
+// SSWPADD,time,voltage1,voltage2,frequency
+
+void ClearSweepTable(void)
+{
+   SendACK;
+   if(sweeptable == NULL) return;
+   sweeptable->num = 0;  
+}
+
+void AddSweepPoint(void)
+{
+  char     *tkn;
+  String   arg;
+  int      T,V1,V2,F;
+
+  while(true)
+  {
+     if((tkn = TokenFromCommandLine(',')) == NULL) break;
+     arg = tkn;
+     T = arg.toInt();
+     if((T<0) || (T > 10000)) break;
+     if((tkn = TokenFromCommandLine(',')) == NULL) break;
+     arg = tkn;
+     V1 = arg.toInt();
+     if((V1 < 0) || (V1 > 100)) break; 
+     if((tkn = TokenFromCommandLine(',')) == NULL) break;
+     arg = tkn;
+     V2 = arg.toInt();
+     if((V2 < 0) || (V2 > 100)) break; 
+     if((tkn = TokenFromCommandLine(',')) == NULL) break;
+     arg = tkn;
+     F = arg.toInt();
+     if((F<1000) || (F > 40000)) break; 
+     // Add point to table, create table if pointer is NULL
+     if(sweeptable == NULL)
+     {
+       sweeptable = new(SweepTable);
+       if(sweeptable == NULL) break;
+       sweeptable->num = 0;       
+     }
+     if((sweeptable->num + 1) > MAXSWEEPTABLE) break;
+     sweeptable->timePnt[sweeptable->num] = T;
+     sweeptable->voltage1[sweeptable->num] = V1;
+     sweeptable->voltage2[sweeptable->num] = V2;
+     sweeptable->frequency[sweeptable->num] = F;
+     sweeptable->num++;
+     SendACK;
+     return;
+  }
+  BADARG;
+}
+

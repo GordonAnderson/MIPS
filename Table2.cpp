@@ -4,6 +4,7 @@
 // In the time table the channel parameter defines what output action is taken at a time point.
 // The following list defines all the valid channel parameters:
 //   1 thru 32 are DCbias output channels (decimal 1 thru 32)
+//   33 thru 36 are RF driver channels 1 thru 4
 //   'A' thru 'P' are Digital output channels
 // The following time sweep functions
 //   'd' Time delta parameter incremented
@@ -51,6 +52,21 @@
 //  - Fixed a bug on the table startup when there are timepoint events at time 0 such as ramps and
 //    various internal trigggers like the trigger output or compressor.
 //
+// Feb 11, 2024
+//  Added a voltage ramping capability in a time table loop. Channels can be set to allow a change
+//  in voltage. This allows higher resolution ramps. The channel number contains flag bits to support 
+//  this feature:
+//  INITIAL Sets the output voltage and defines the starting point for the ramp.
+//  RAMP    Applies the voltage delta to the initial value and sets the new output voltage.
+//  The table below will set an initial voltage and ramp up in 0.1 volt steps to 10V
+//  STBLVDLT,TRUE
+//  STBLDAT;0:65:0:[A:100,0:129:0.1,50:];
+//  STBLDAT;0:65:0:[A:110,0:129:0.1,50:],0:,1000:[A:100,0:129:-0.1,50:];
+//  STBLDAT;0:65:0:[A:25,0:129:0.4,30:],2000:65:10:[A:25,0:129:-0.4,30:];
+//  STBLDAT;0:[C:100,0:65:0:[A:25,0:129:0.4,30:],2000:65:10:[B:25,0:129:-0.4,30:],5000:];
+//  STBLDAT;0:[A:3,0:1:10,500:1:0,1000:],0:65:0,200:[A:100,0:129:0.1,100:];
+//  STBLDAT;0:[A:3,0:1:10,500:1:0,1000:],0:,500:[A:4,0:1:10,200:1:0,400:];
+//
 /*
 STBLRMPENA,TRUE,2000
 STBLDAT;0:[A:100,100:1:10:194:1:130:4,5000:1:0:130:-1.0,10000:130:0,20000:];
@@ -67,6 +83,9 @@ STBLDAT;0:[A:4,0:1:10:194:1:130:4,5000:1:15:130:-1.0,10000:130:0,13000:1:0,20000
 SMOD,ONCE
 TBLSTRT
 
+STBLDAT;0:[A:20,0:[B:5,0:[C:3,0:A:1,656:A:0,-6562:B:1,-7218:B:0,662812:],0:d:200:],0:p:0:];
+SMOD,ONCE
+TBLSTRT
 
  */
 
@@ -93,6 +112,8 @@ TBLSTRT
 #endif
 
 //#define FAST_TABLE 1
+
+#define ifstoponRC if(((TriggerMode == EDGE) || (TriggerMode == POS) || (TriggerMode == NEG)) && (TrigEvyCycle) && (MIPSconfigData.TableRetrig))
 
 #pragma GCC optimize "-O3"
 
@@ -157,6 +178,12 @@ bool TasksEnabled = false;            // Setting this flag to true will enable a
 bool TableTriggered = false;          // This flag is set when the table is triggered and reset when its complete
 bool TimerRunning = false;
 
+bool TrigEvyCycle = false;            // If this flag is set and we are in external trigger mode and also re-trigger
+                                      // is enabled then the tabe generation stops after each sub table
+bool TBLstopedonRC = false;           // Flag set when the timing generator clock is stopped waiting for trigger
+
+bool TBLportTest = false;             // If true then the USB link will be tested for errors in the table processing loop
+
 int InterTableDelay = 3;
 
 DIhandler DIhTrig;
@@ -173,10 +200,17 @@ bool IssueSoftwareTableStart = false;
 char Cstate;
 char Sstate;
 
-// Ramp generation variables
+// Ramp generation variables, two different ramp modes are supported.
+// - Ramping where the end point are defined in a time table and a ISR
+//   adjusts the values between time points. 
+// - Ramping using the time table by setting delta voltage values in a loop
+//   in the table to cause a ramp.
+
+// Common ramp parameters
 #define  RAMP      0x80
 #define  INITIAL   0x40
 
+// End point ramping parameters
 #define  RAMP_DONE 0x80
 #define  NUM_RAMPS 3
 
@@ -187,10 +221,23 @@ typedef struct
    int      delta;
 } RampEntry;
 
-bool      RampEnabled = false;
+bool      RampEnabled = false;      // Must be set to true to enable this feature
 bool      Ramping     = false;
 MIPStimer *RampClock  = NULL;
 volatile  RampEntry RE[NUM_RAMPS];
+
+// Table based ramping parameters
+
+bool	tableBasedRamping = false;     // Must be set to true to enable this feature
+
+#define MAXTVRAMP	8
+
+typedef struct
+{
+	uint32_t	value[MAXTVRAMP];
+	uint32_t	chan[MAXTVRAMP];
+} TVrampData;
+
 // End of ramp variables
 
 //
@@ -361,7 +408,7 @@ void TriggerOnChange(char *TWIadd)
   pinMode(SDA1,INPUT);
   pinMode(LEVCHANGE,INPUT);
   Wire1.begin();
-  Wire1.setClock(100000);
+  Wire1.setClock(Wire1DefaultSpeed);
   attachInterrupt(digitalPinToInterrupt(LEVCHANGE), ChangeTriggerISR, RISING);
   SendACK;  
 }
@@ -1089,6 +1136,7 @@ int ParseEntry(int Count, char *TK)
         // Process each entry, TK has token for first channel.
         // This token could be on of the following:
         //   - A DCB channel number 1 through 32
+        //   - A RF channel number 33 through 36 = RF channel 1 through 4
         //   - A DIO channel number, A through P or t for Trigger output
         //   - A 'W', if this is true do nothing because all we do is set max count with time point
         //   - A ']', This will define the end of the table.
@@ -1136,12 +1184,12 @@ int ParseEntry(int Count, char *TK)
             if(TK[0] == ';') return PEEndTables;
             return PENewTable;
         }
-        else if(((TK[0] >= 'A') && (TK[0] <= 'P')) || (TK[0] == 'r') || (TK[0] == 's') || (TK[0] == 't') || (TK[0] == 'b') || (TK[0] == 'c') || (TK[0] == 'd') || (TK[0] == 'p'))
+        else if(((TK[0] >= 'A') && (TK[0] <= 'P')) || (TK[0] == 'r') || (TK[0] == 's') || (TK[0] == 't') || (TK[0] == 'b') || (TK[0] == 'c') || (TK[0] == 'd') || (TK[0] == 'p') || (TK[0] == 'a') || (TK[0] == '>') || (TK[0] == '<') || (TK[0] == '='))
         {
             // DIO channel number
             TE->Chan = TK[0];
             if(!ExpectColon()) break;
-            if((TE->Chan == 't') || (TE->Chan == 'b') || (TE->Chan == 'd') || (TE->Chan == 'p')) Token2int(&TE->Value);
+            if((TE->Chan == 't') || (TE->Chan == 'b') || (TE->Chan == 'd') || (TE->Chan == 'p') || (TE->Chan == '>') || (TE->Chan == '<') || (TE->Chan == '=')) Token2int(&TE->Value);
             else
             {
                if((TK = NextToken()) == NULL) break;
@@ -1150,15 +1198,15 @@ int ParseEntry(int Count, char *TK)
         }
         else
         {
-            // DC bias channel number or ARB commands (101 thru 108, 'e' thru 'l')
+            // DC bias channel number or ARB commands (101 thru 108, 'e' thru 'l') or RF channel 33 thru 36
             sscanf(TK,"%d",&i);
             TE->Chan = i;
             if(!ExpectColon()) break;
             if(!Token2float(&fval)) break;
-            *((float *)(&TE->Value)) = fval;  // Put the float value in the 32 bit int, for the ARB commands
-            if(((i>=1)&&(i<=32)) || ((i&RAMP)!=0))
+            *((float *)(&TE->Value)) = fval;  // Put the float value in the 32 bit int, for the ARB commands and RF channels
+            if(((i>=1)&&(i<=32)) || (((i&(RAMP | INITIAL))!=0)))  // Added INITIAL 2/10/24
             {
-               TE->Chan = i-1;
+              TE->Chan = i-1;
                // Convert value to DAC counts
                TE->Value = DCbiasValue2Counts(TE->Chan & 0x1F, fval);
                if((i&(RAMP | INITIAL))==RAMP)
@@ -1166,6 +1214,7 @@ int ParseEntry(int Count, char *TK)
                   TE->Value -= DCbiasValue2Counts(TE->Chan & 0x1F, 0.0);
                   TE->Value = (TE->Value << 4) & 0xFFFF0;
                }
+               else if(((i&(INITIAL))==INITIAL) && (tableBasedRamping)) TE->Value = (TE->Value << 4) & 0xFFFF0;
                else
                {
                   // Make value into bit image the DAC wants to see. This will allow fast DAC updating
@@ -1262,10 +1311,11 @@ void ProcessTasks(void)
   {
     // If we are software trigger mode its OK to call the task processor
     if(TriggerMode == SW) control.run();
-    return;
+    //return;
   }
   if((ClockMode == EXT) || (ClockMode == EXTN) || (ClockMode == EXTS)) TableClockFreq = ExtFreq;
   if(TableClockFreq == 0) return;
+  if(!TableTriggered) return;
   // If the timer is running test the avalible time
   {
     AtomicBlock< Atomic_RestoreState > a_Block;
@@ -1312,10 +1362,12 @@ void ProcessTables(void)
         TableReady = true;
         StopRequest=false;
         TableStopped = false;
+        TBLstopedonRC = false;
         // Setup the timer
         SetupTimer();
         while(1)
         {
+            if(TBLportTest) USBportTest();
             WDT_Restart(WDT);
             // Issue software trigger if requested
             PerformSoftwareStart();
@@ -1394,7 +1446,6 @@ void ProcessTables(void)
                uint32_t now = millis();
                delayMicroseconds(200);
                while((now + InterTableDelay) > millis()) control.run();
-               TRACE(8);
             }
             else
             {
@@ -1588,8 +1639,14 @@ inline bool AdvanceTablePointer(void)
 {
     // If the current table is named then its on the nesting stack so remove it if its 
     // repeat count has expired
-    if((Theader->TableName != 0) && (Theader->TableName != 0xFF))
-        if((NS.Count[NS.Ptr-1] >= NS.Table[NS.Ptr-1]->RepeatCount)  && (NS.Table[NS.Ptr-1]->RepeatCount != 0)) NS.Ptr--;
+//  if((Theader->TableName != 0) && (Theader->TableName != 0xFF))
+    if((int)NS.Ptr > 0) // This logic was changed 3/5/24 to address a bug with 3 nested loops
+    {
+        if((NS.Count[NS.Ptr-1] >= NS.Table[NS.Ptr-1]->RepeatCount)  && (NS.Table[NS.Ptr-1]->RepeatCount != 0))
+        {
+          NS.Ptr--;
+        }
+    }
     if(NS.Ptr < 0) NS.Ptr = 0;
     // All entries have been played so advance to next table
     Theader = (TableHeader *)((char *)TEheader + (sizeof(TableEntryHeader) + (sizeof(TableEntry) * TEheader->NumChans)));
@@ -1701,6 +1758,7 @@ inline void SetupNextEntry(void)
    static int   i,k,maxc;
    static bool  DIOchange;
 
+    MPT.nostopOnRC();  // 01-21-22
 //  ValueChange = true;
     DIOchange=false;
     // Set the address
@@ -1725,11 +1783,29 @@ SetupNextEntryAgain2:
         }
         for(i=0;i<TEheader->NumChans;i++)
         {
+            if(Theader->TableName == 'P')
+            {
+              if(Tentry[i].Chan == '=')
+              {
+                if(NS.Count[NS.Ptr-1] == Tentry[i].Value) continue;
+                else {i++; continue;}
+              }
+              if(Tentry[i].Chan == '>')
+              {
+                if(NS.Count[NS.Ptr-1] > Tentry[i].Value) continue;
+                else {i++; continue;}
+              }
+              if(Tentry[i].Chan == '<')
+              {
+                if(NS.Count[NS.Ptr-1] < Tentry[i].Value) continue;
+                else {i++; continue;}
+              }
+            }
             // If chan is ']' then check loop counter and repeat table if
             // its not zero. If zero advance to next table that follows
             if(Tentry[i].Chan == ']')
             {
-                // Advance the loop counter
+                 // Advance the loop counter
                 NS.Count[NS.Ptr-1]++;
                 if((NS.Count[NS.Ptr-1] >= NS.Table[NS.Ptr-1]->RepeatCount) && (NS.Table[NS.Ptr-1]->RepeatCount != 0))  // If repeat count is zero loop forever
                 {
@@ -1745,7 +1821,7 @@ SetupNextEntryAgain2:
                     // Setup for the first event in the next table if there is a time 0
                     // event. This table's time zero event happens at the same time as the
                     // current tables top count.
-                    if(TEheader->Count == 0)
+                    if((TEheader->Count == 0) && (!TBLstopedonRC))
                     {
                        // Update the DIO hardware if needed
                        if(DIOchange) DOrefresh;
@@ -1766,7 +1842,7 @@ SetupNextEntryAgain2:
                     // Setup for the first event in the next table if there is a time 0
                     // event. This table's time zero event happens at the same time as the
                     // current tables top count.
-                    if(TEheader->Count == 0)
+                    if((TEheader->Count == 0) && (!TBLstopedonRC))
                     {
                        // Update the DIO hardware if needed
                        if(DIOchange) DOrefresh;
@@ -1776,6 +1852,7 @@ SetupNextEntryAgain2:
                     }
                 }
                 if(DIOchange) DOrefresh;
+                serial->println("!");
                 return;
             }
             // If Chan is 0 to 31 its a DC bias output so send to DAC
@@ -1783,6 +1860,7 @@ SetupNextEntryAgain2:
             // The 6uS is the time around this inner channel loop
             if((Tentry[i].Chan >= 0) && (Tentry[i].Chan <= 31))
             {
+              AtomicBlock< Atomic_RestoreState > a_Block;
               // See if the SPI address is correct, if not update
               if((pioA->PIO_PDSR & 7) != ((Chan2Brd[Tentry[i].Chan] >> 4) & 7))
               {
@@ -1795,6 +1873,20 @@ SetupNextEntryAgain2:
               k=Tentry[i].Value;
               SPI.transfer(SPI_CS, (uint8_t *)&k, 4);
               //SelectBoard(cb);                          // Added 9/3/17, takes 1uS, moved to end of loop, 3/4/21
+            }
+            else if((tableBasedRamping) && (((Tentry[i].Chan & 0x1F) >= 0) && ((Tentry[i].Chan & 0x1F) <= 31)))
+            {
+              AtomicBlock< Atomic_RestoreState > a_Block;
+              // See if the SPI address is correct, if not update
+              if((pioA->PIO_PDSR & 7) != ((Chan2Brd[Tentry[i].Chan & 0x1F] >> 4) & 7))
+              {
+                   pioA->PIO_CODR = 7;
+                   pioA->PIO_SODR = ((Chan2Brd[Tentry[i].Chan & 0x1F] >> 4) & 7);                
+              }              
+              DCbiasUpdaated = true;
+              SelectBoard(Chan2Brd[Tentry[i].Chan & 0x1F] & 1);
+              k=TVramp(Tentry[i].Chan, Tentry[i].Value);
+              if(k != 0xFFFFFFFF) SPI.transfer(SPI_CS, (uint8_t *)&k, 4);
             }
             else if((Tentry[i].Chan & RAMP)!=0) TABLEqueue(ProcessRamp,&Tentry[i]);
             else if((Tentry[i].Chan >= 101) && (Tentry[i].Chan <= 108))  // 65 hex to 6C hex
@@ -1810,11 +1902,25 @@ SetupNextEntryAgain2:
               else if(Tentry[i].Chan == 108) UpdateOffsetB(1, *(float *)&Tentry[i].Value, false); // 108, l
               TABLEqueue(ProcessARB,true);
             }
+            // Process the RF channels
+            else if((Tentry[i].Chan >= 33) && (Tentry[i].Chan <= 36))
+            {
+              UpdateRFdrive(Tentry[i].Chan - 33, *(float *)&Tentry[i].Value);
+              TABLEqueue(ProcessRFdrive,true);
+            }
             // if Chan is A through P its a DIO to process
             else if((Tentry[i].Chan >= 'A') && (Tentry[i].Chan <= 'P'))
             {
                DIOchange = true;
                SDIO_Set_Image(Tentry[i].Chan,Tentry[i].Value);
+            }
+            else if(Tentry[i].Chan == 'a')
+            {
+              ifstoponRC 
+              {
+                MPT.stopOnRC();
+                TBLstopedonRC = true;
+              }
             }
             // if Chan is d then the time count delta is adjusted
             else if(Tentry[i].Chan == 'd')
@@ -1861,7 +1967,7 @@ SetupNextEntryAgain2:
           if(TEheader->Count == 0) goto SetupNextEntryAgain2;
         }
     }
-} 
+ } 
 
 //**************************************************************************************************
 //
@@ -1875,6 +1981,7 @@ void Dummy_ISR(void)
 
 void Trigger_ISR(void)
 {
+   TBLstopedonRC = false;
    if((TriggerMode == EDGE)||(TriggerMode == POS)||(TriggerMode == NEG)) MPT.softwareTrigger();  // Need to make sure its running!
    uint32_t csb = pio->PIO_ODSR & pin;
    if(MPT.getRAcounter() == 0)
@@ -1985,6 +2092,7 @@ void RampISR()
    volatile int i,sum=0,k;
    volatile uint8_t *s,*d;
 
+   AtomicBlock< Atomic_RestoreState > a_Block;
    uint32_t csb = pio->PIO_ODSR & pin;  // Save board select and restore on exit
    Ramping = false;
    for(int i=0;i<NUM_RAMPS;i++) if((RE[i].chan & RAMP_DONE) == 0)
@@ -2003,7 +2111,7 @@ void RampISR()
         s[1] = (s[1] & 0xF0) | (d[2] & 0x0F);
         s[0] = 3;
         // send to DAC output register, no LDAC
-        AtomicBlock< Atomic_RestoreState > a_Block;
+        //AtomicBlock< Atomic_RestoreState > a_Block;
         k = RE[i].initial;
         if((pioA->PIO_PDSR & 7) != ((Chan2Brd[RE[i].chan] >> 4) & 7))
         {
@@ -2012,6 +2120,7 @@ void RampISR()
         }              
         SelectBoard(Chan2Brd[RE[i].chan & ~RAMP_DONE] & 1);
         SPI.transfer(SPI_CS, (uint8_t *)&k, 4);
+        //delayMicroseconds(25);
         Ramping = true;
       }
    }  
@@ -2088,6 +2197,89 @@ void ProcessRamp(volatile TableEntry *TE)
         break;
      }
   }
+}
+
+// This function supports table based ramping. The sequence table contains flags to 
+// set a channels initial value and flags to then ramp an initial value. If this function
+// is called with the INITIAL flag bit set in the channel number then the value is saved
+// in the buffer and also returned for updating the DAC. If the RAMP flag bit is sent then
+// channel is found in the buffer and incremented by the value passed, the incremented
+// value is returned to update the DAC, 0xFFFFFFFF is returned on any error conditions.
+uint32_t TVramp(int chan, uint32_t value)
+{
+   static TVrampData *TVD=NULL;
+   uint32_t retVal;
+   uint8_t  *rb = (uint8_t *)&retVal;
+   uint8_t  *vb;
+   int8_t   indx;
+   
+   if((chan & (INITIAL | RAMP)) == 0) return value;
+   if(TVD == NULL)
+   {
+   		// Allocate and init the data struct
+      TVD = (TVrampData *)malloc(sizeof(TVrampData));
+      if(TVD == NULL) return 0xFFFFFFFF;
+      for(uint8_t i=0;i<MAXTVRAMP;i++) TVD->chan[i] = 0xFF;
+   }
+   if(TVD == NULL) return 0xFFFFFFFF;
+   // If both flags are set then clear this channel by setting it to 0xFF
+   if((chan & (INITIAL | RAMP)) == (INITIAL | RAMP))
+   {
+   		for(uint8_t i=0;i<MAXTVRAMP;i++)
+   		{
+        if((TVD->chan[i] & 0x1F) == (chan & 0x1F)) TVD->chan[i] = 0xFF;
+      }
+      value &= 0xFFFF0;
+      value |= (DCbiasChan2DAC(chan & 0x1F) & 7) << 20;
+      vb = (uint8_t *)&value;
+      rb[3] = vb[0];  // Reverse the byte order for the DMA transfer to DAC chip
+      rb[2] = vb[1];
+      rb[1] = vb[2];
+      rb[0] = vb[3];
+      return retVal;
+   }
+   // If chan INITIAL flag is set then insert this value, insert at head then
+   //	increment head and count.
+   if(chan & INITIAL)
+   {
+   		for(uint8_t i=0;i<MAXTVRAMP;i++)
+   		{
+        if((TVD->chan[i] == 0xFF) || ((TVD->chan[i] & 0x1F) == (chan & 0x1F)))
+        {
+   		    TVD->chan[i] = chan;
+          TVD->value[i] = value;
+          TVD->value[i] &= 0xFFFF0;
+          TVD->value[i] |= (DCbiasChan2DAC(chan & 0x1F) & 7) << 20;
+          vb = (uint8_t *)&TVD->value[i];
+          rb[3] = vb[0];  // Reverse the byte order for the DMA transfer to DAC chip
+          rb[2] = vb[1];
+          rb[1] = vb[2];
+          rb[0] = vb[3];
+          return retVal;          
+        }
+      }
+      return 0xFFFFFFFF;
+   }
+   else if(chan & RAMP)
+   {
+   		for(uint8_t i=0;i<MAXTVRAMP;i++)
+   		{
+        if((TVD->chan[i] & 0x1F) == (chan & 0x1F))
+        {
+   				TVD->value[i] += value;
+   				TVD->value[i] &= 0xFFFF0;
+   				TVD->value[i] |= (DCbiasChan2DAC(chan & 0x1F) & 7) << 20;
+          vb = (uint8_t *)&TVD->value[i];
+          rb[3] = vb[0];  // Reverse the byte order for the DMA transfer to DAC chip
+          rb[2] = vb[1];
+          rb[1] = vb[2];
+          rb[0] = vb[3];
+   				return retVal;
+        }
+      }
+      return 0xFFFFFFFF;
+   }
+   return 0xFFFFFFFF;
 }
 
 // The following functions support time table count parameter adjustment via ADC change value detection.

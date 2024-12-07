@@ -18,6 +18,7 @@ extern int ErrorCode;
 
 #define SetErrorCode(x) ErrorCode=x
 
+#define ERR(err)  { SetErrorCode(err); SendNAK; return;}
 #define BADARG  { SetErrorCode(ERR_BADARG); SendNAK; return;}
 
 

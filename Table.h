@@ -97,6 +97,8 @@ extern int  ExtFreq;
 extern unsigned int Counter;
 extern int  TimeDelta;
 extern char *TableStatus;
+extern bool TrigEvyCycle;
+extern bool TBLportTest;
 
 #if TABLE2code
 // Funtion queue enum and structures to support queuing functions that need
@@ -127,6 +129,9 @@ typedef struct
 void TABLEqueue(void (*function)(void), bool Unique = false);
 void TABLEqueue(void (*function)(volatile TableEntry *),volatile TableEntry *te, bool Unique = false);
 void ProcessTableQueue(void);
+
+uint32_t TVramp(int chan, uint32_t value);
+extern  bool	tableBasedRamping;
 #endif
 
 // ProcessEntry return codes
@@ -198,5 +203,7 @@ void Dummy_ISR(void);
 void Trigger_ISR(void);
 void RAmatch_Handler(void);
 void RCmatch_Handler(void);
+
+void USBportTest(void);
 
 #endif

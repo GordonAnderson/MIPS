@@ -6,9 +6,10 @@
 extern float MaxDCbiasVoltage;
 extern int   NumberOfDCChannels;
 extern bool  DCbiasUpdate;
+extern uint8_t DCBtstMask[4];
+extern uint8_t DCBchngMask[4];
 extern bool  DCbiasBoards[2];
 extern bool  DCbiasTestEnable;
-extern bool  DCbiasUpdate;
 extern bool  AutoReset;
 
 // DCbias pulse channel variables
@@ -38,7 +39,6 @@ typedef struct
 } Waveforms;
 
 // DCbias module data structures
-
 typedef struct
 {
   float    VoltageSetpoint;      // DC bias channel setpoint voltage
@@ -48,6 +48,7 @@ typedef struct
 } DCbiasChannellData;
 
 // One struct for each DC bias board
+// Total size = 320 bytes, Aug 14, 2024
 typedef struct
 {
   int16_t Size;              // This data structures size in bytes
@@ -83,7 +84,8 @@ typedef struct
   float DCbiasO;
 } DCbiasState;
 
-extern DCbiasData  *DCbDarray[4];
+extern DCbiasData   *DCbDarray[4];
+extern DCbiasState  *DCbiasStates[4];
 
 // Prototypes
 int   DCbiasValue2Counts(int chan, float value);
@@ -146,7 +148,8 @@ void SetADCgainPol(char *brd, char *dio);
 void GetADCgainPol(int board);
 void SetLevelDetOffsetAdjust(char *brd, char *TWIadd);
 void SetLevelDetChOffsetAdjust(char *brd, char *TWIadd);
-int DCbiasChan2DAC(int chan);
+int  DCbiasChan2DAC(int chan);
+int  DCbiasCH2Brd(int ch);
 
 bool CalDCbiasChannel(int channel);
 void CalDCbiasChannels(void);
@@ -158,5 +161,8 @@ void WFMaddWF(void);
 void WFMenable(void);
 void WFMdisable(void);
 void WFMreport(int ch,int parm);
+
+void setDCBchanMask(char *channel, char *value);
+void getDCBchanMask(int ch);
 
 #endif

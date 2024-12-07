@@ -143,30 +143,30 @@ void ReportAD7994(int chan)
 
 // Counts to value and value to count conversion functions.
 // Overloaded for both DACchan and ADCchan structs.
-float Counts2Value(int Counts, DACchan *DC)
+float Counts2Value(int Counts, DACchan *DC, float gc)
 {
-  return (Counts - DC->b) / DC->m;
+  return (Counts - DC->b) / (DC->m * gc);
 }
-float Counts2Value(int Counts, ADCchan *AC)
+float Counts2Value(int Counts, ADCchan *AC, float gc)
 {
-  return (Counts - AC->b) / AC->m;
+  return (Counts - AC->b) / (AC->m *gc);
 }
 
-int Value2Counts(float Value, DACchan *DC)
+int Value2Counts(float Value, DACchan *DC, float gc)
 {
   int counts;
 
-  counts = (Value * DC->m) + DC->b;
+  counts = (Value * DC->m *gc) + DC->b;
   if (counts < 0) counts = 0;
   if (counts > 65535) counts = 65535;
   return (counts);
 }
 
-int Value2Counts(float Value, ADCchan *AC)
+int Value2Counts(float Value, ADCchan *AC, float gc)
 {
   int counts;
 
-  counts = (Value * AC->m) + AC->b;
+  counts = (Value * AC->m * gc) + AC->b;
   if (counts < 0) counts = 0;
   if (counts > 65535) counts = 65535;
   return (counts);
@@ -437,6 +437,65 @@ bool ChannelCalibrateSerial(ChannelCal *CC, char *Message, float ZeroPoint, floa
   return false;
 }
 
+float PWLlookup(PWLcalibration *pwl, int adcval)
+{
+  int i;
+  
+  if(pwl->num < 2) return 0;
+  for(i=0;i<pwl->num-1;i++)
+  {
+    if(adcval < pwl->ADCvalue[i]) break;
+    if((adcval >= pwl->ADCvalue[i]) && (adcval <= pwl->ADCvalue[i+1])) break;
+  }
+  if(i == pwl->num-1) i--;
+  // The points at i and i+1 will be used to calculate the output voltage
+  // y = y1 + (x-x1) * (y2-y1)/(x2-x1)
+  return (float)pwl->Value[i] + ((float)adcval - (float)pwl->ADCvalue[i]) * ((float)pwl->Value[i+1]-(float)pwl->Value[i])/((float)pwl->ADCvalue[i+1] -(float)pwl->ADCvalue[i]);
+}
+
+void buildPWLcalTable(PWLcalibration *pwl, int (*readADCfunction)(void), void (*allowDriveAdjFunction)(void))
+{
+  String sToken;
+  char   *res;
+  int    i;
+  
+  // Send the user instructions.
+  serial->println("This function will generate a piecewise linear");
+  serial->println("calibration table. Set the drive level to reach");
+  serial->println("desired calibration points and then enter the");
+  serial->println("measured value to the nearest volt. Press enter");
+  serial->println("When finished. Voltage must be increasing!");
+  // Loop to allow user to adjust drive and enter measured voltage
+  pwl->num = 0;
+  i=0;
+  while(true)
+  {
+     serial->print("\nPoint ");
+     serial->println(i+1);
+     res = UserInput("Enter measured voltage: ", allowDriveAdjFunction);
+     if(res == NULL) break;
+     sToken = res;
+     pwl->Value[i] = sToken.toInt();
+     // Read the ADC raw counts
+     if(readADCfunction != NULL) pwl->ADCvalue[i] = readADCfunction();
+     i++;
+     pwl->num = i;
+     if(i>=MAXPWL) break;
+  }
+  serial->println("");
+  // Report the table
+  serial->print("Number of table entries: ");
+  serial->println(pwl->num);
+  for(i=0;i<pwl->num;i++)
+  {
+    serial->print(pwl->Value[i]);
+    serial->print(",");
+    serial->println(pwl->ADCvalue[i]);
+  }
+  // Done!
+  serial->println("\nData entry complete!");
+}
+
 // This function sets the board select bit based on the board value
 inline void SelectBoard(int8_t Board)
 {
@@ -545,8 +604,19 @@ void Reset_IOpins(void)
   
 }
 
+#define SYSRESETREQ    (1<<2)
+#define VECTKEY        (0x05fa0000UL)
+#define VECTKEY_MASK   (0x0000ffffUL)
+#define AIRCR          (*(uint32_t*)0xe000ed0cUL) // fixed arch-defined address
+#define REQUEST_EXTERNAL_RESET (AIRCR=(AIRCR&VECTKEY_MASK)|VECTKEY|SYSRESETREQ)
+
 void Software_Reset(void)
 {
+// This is an alternative reset function, the system acts different when this is used? 
+// not sure of the differences. 
+//  REQUEST_EXTERNAL_RESET;
+//  while(true);
+
   //============================================================================================
   //   führt ein Reset des Arduino DUE aus...
   //
@@ -590,7 +660,6 @@ void RebootStatus(void)
    serial->println(millis());
    serial->print("TWI failure / reset count: ");
    serial->println(TWIfails);
-   TraceReport();
 }
 
 // This function will set the three address lines used for the SPI device selection. It is assumed
@@ -732,7 +801,7 @@ int ReadInput(char inputCH)
 //
 // There seems to be an arduino limit of 32 on the requestFrom function
 // so the data is walked out 32 bytes at a time.
-int ReadEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count)
+int ReadEEPROM(void *src, uint16_t dadr, uint16_t address, uint16_t count)
 {
   byte  *bval;
   int   iStat, i = 0, num;
@@ -775,13 +844,71 @@ int ReadEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count)
   return (0);
 }
 
+// This function is resiged to read from emulated EEPROM in modules such as the
+// DCBswitch. The data read in 32 byte block with the initial byte defining the 
+// address. The address can be extended if the first address byte is 0x80. 0x80
+// indicate the addres is contained in the next two bytes then the data block
+// is read.
+// src points to buffer used to hold the data.
+// dard is the TWI device address.
+// address is the start address in the EEPROM.
+// count is the total number of bytes to read.
+int ReadEEPROMext(void *src, uint16_t dadr, uint16_t address, uint16_t count)
+{
+  byte  *bval;
+  int   iStat, i = 0, num;
+
+  AcquireTWI();
+  num = count;
+  bval = (byte *)src;
+  while (1)
+  {
+    Wire.beginTransmission(dadr);
+    if(address < 0x80) Wire.write(address & 0xFF);
+    else
+    {
+      Wire.write(0x80);
+      Wire.write(address);
+      Wire.write(address >> 8);
+    }
+    iStat = Wire.endTransmission(true);
+    if (iStat != 0) 
+    {
+      ReleaseTWI();
+      return (iStat);
+    }
+    if (num > 32) Wire.requestFrom(dadr, 32);
+    else Wire.requestFrom(dadr, num);
+    while (Wire.available())
+    {
+      *(bval++) = Wire.read();
+      i++;
+      if (i > count) 
+      {
+        ReleaseTWI();
+        return (-1);
+      }
+    }
+    if (num <= 32) break;
+    num -= 32;
+    address += 32;
+  }
+  if (i != count) 
+  {
+    ReleaseTWI();
+    return (-1);
+  }
+  return (0);
+}
+
+
 // src points to buffer used to hold the data.
 // dard is the TWI device address.
 // address is the start address in the EEPROM.
 // count is the total number of bytes to write.
 //
 // Returns 0 if no errors are detected.
-int WriteEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count)
+int WriteEEPROM(void *src, uint16_t dadr, uint16_t address, uint16_t count)
 {
   byte  *bval;
   int   iStat, i = 0, num;
@@ -810,7 +937,65 @@ int WriteEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count)
     // wait for it to finish writting 16 bytes or timeout
     for (int k = 0; k < 21; k++)
     {
-      Wire.beginTransmission(dadr);
+      Wire.beginTransmission(dadr); 
+      Wire.write(0);
+      if (Wire.endTransmission(true) == 0) break;
+      if (k == 20)
+      {
+        ReleaseTWI();
+        return (-1); // Timeout!
+      }
+    }
+    // Setup for the next loop
+    if (num <= 16) break;
+    num -= 16;
+    address += 16;
+  }
+  if (i != count) 
+  {
+    ReleaseTWI();
+    return (-1);
+  }
+  ReleaseTWI();
+  return (0);
+}
+
+int WriteEEPROMext(void *src, uint16_t dadr, uint16_t address, uint16_t count)
+{
+  byte  *bval;
+  int   iStat, i = 0, num;
+
+  AcquireTWI();
+  num = count;
+  bval = (byte *)src;
+  delay(10);
+  while (1)
+  {
+    Wire.beginTransmission(dadr);
+    if(address < 0x80) Wire.write(address & 0xFF);
+    else
+    {
+      Wire.write(0x80);
+      Wire.write(address);
+      Wire.write(address >> 8);
+    }
+    // Write bytes, 16 maximum
+    for (int j = 0; j < 16; j++)
+    {
+      if (j >= num) break;
+      Wire.write(*(bval++));
+      i++;
+    }
+    iStat = Wire.endTransmission(true);
+    if (iStat != 0) 
+    {
+      ReleaseTWI();
+      return (iStat);
+    }
+    // wait for it to finish writting 16 bytes or timeout
+    for (int k = 0; k < 21; k++)
+    {
+      Wire.beginTransmission(dadr); 
       Wire.write(0);
       if (Wire.endTransmission(true) == 0) break;
       if (k == 20)
@@ -850,62 +1035,54 @@ int WriteEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count)
 // The Arduino Wire driver will not work to drive this device. I used "bit banging" TWI
 // routines defined above. This device requires no stop condition between the conversion
 // write and the read of data.
+
+// This is the most effecient I could make the routine to read all 8 ADC channels
+// from the AD7998. This rountine requires about 5mS.
+int AD7998_gaa(int8_t adr, uint16_t *vals)
+{
+    for(int i=0;i<8;i++)
+    {
+      AcquireTWI();
+      Wire.beginTransmission(adr);
+      Wire.write(0x80 | (i<<4));
+      Wire.write(0x80 | (i<<4));
+      Wire.endTransmission();
+      Wire.requestFrom(adr, 2);
+      vals[i] = (Wire.read() << 8) & 0xFF00;
+      vals[i] |= (Wire.read()) & 0xFF;
+      if((vals[i] & 0x7000) != (i<<12)) 
+      {
+        ReleaseTWI();
+        return -1;
+      }
+      vals[i] &= 0xFFF;
+      vals[i] <<= 4;
+      ReleaseTWI();
+    }
+    return 0;
+}
+
 int AD7998(int8_t adr, uint16_t *vals)
 {
-  int   iStat, i,v;
-  byte  *bvals;
+  int   i,v;
 
   for (i = 0; i < 8; i++)
   {
-   //AD7998(adr, i);  // Removed 9/14/2020
-   v = AD7998(adr, i);
+    //AD7998(adr, i);  // Removed 9/14/2020, Added back 3/3/2024, needed to prevent cross talk between channels
+                       // Need to fix this, it kills the throughput
+                       // Removed again 8/16/24, added second conversion to TWI driver and its also in bit bag driver
+                       // Seems to work ok, TWI driver is faster by 60%
+    v = AD7998(adr, i);
     if(v == -1) return(-1);
     vals[i] = v;
   }
   return (0);
-
-  AcquireTWI();
-  bvals = (byte *)vals;
-  TWI_START();
-  TWI_WRITE(adr << 1);
-  TWI_WRITE(0x02);
-  TWI_WRITE(0x0F);
-  TWI_WRITE(0xF0);
-  TWI_STOP();
-  delay(1);
-  while (1)
-  {
-    TWI_START();
-    if ((iStat = TWI_WRITE(adr << 1)) == false) break;
-    //if ((iStat = TWI_WRITE(0x02)) == false) break;
-    //if ((iStat = TWI_WRITE(0x0F)) == false) break;
-    //if ((iStat = TWI_WRITE(0xF0)) == false) break;
-    if ((iStat = TWI_WRITE(0x70)) == false) break;
-    //delay(1);
-    TWI_START();
-    if ((iStat = TWI_WRITE((adr << 1) + 1)) == false) break;
-    for (i = 0; i < 8; i++)
-    {
-      bvals[i * 2 + 1] = TWI_READ(LOW);
-      if (i == 7) bvals[i * 2] = TWI_READ(HIGH);
-      else bvals[i * 2] = TWI_READ(LOW);
-    }
-    TWI_STOP();
-    for (i = 0; i < 8; i++) vals[i] &= 0xFFF;
-    for (i = 0; i < 8; i++) vals[i] <<= 4;
-    iStat = 0;
-    break;
-  }
-  Wire.begin();  // Release control of clock and data lines
-  ReleaseTWI();
-  return (iStat);
 }
 
 // 4 channel ADC
 int AD7994(int8_t adr, uint16_t *vals)
 {
-  int   iStat, i, v;
-  byte  *bvals;
+  int   i, v;
 
   for (i = 0; i < 4; i++)
   {
@@ -926,7 +1103,7 @@ int AD7994_b(int8_t adr, int8_t chan)
   chan++;
   if (chan == 3) chan = 4;
   else if (chan == 4) chan = 8;
-  AtomicBlock< Atomic_RestoreState > a_Block;
+  //AtomicBlock< Atomic_RestoreState > a_Block;
   Wire.beginTransmission(adr);
   if(Wire.endTransmission(false) !=0)
   {
@@ -935,11 +1112,7 @@ int AD7994_b(int8_t adr, int8_t chan)
     ReleaseTWI();
     return(-1);
   }
-  #ifdef IDE == 1.6.5
-  Wire.requestFrom(adr, 2, (chan) << 4, 1);
-  #else
-  Wire.requestFrom(adr, 2, (chan) << 4, 1,0);
-  #endif
+  Wire.requestFrom(adr, 2);
   while (Wire.available() < 2);
   val = (Wire.read() << 8) & 0xFF00;
   val |= (Wire.read()) & 0xFF;
@@ -958,7 +1131,7 @@ int AD7994_b(int8_t adr, int8_t chan)
 
 int AD7994(int8_t adr, int8_t chan)
 {
-  int   iStat, i;
+  int          i;
   unsigned int val;
 
   if(MIPSconfigData.TWIhardware) return(AD7994_b(adr,chan));
@@ -969,22 +1142,22 @@ int AD7994(int8_t adr, int8_t chan)
     if (chan == 3) chan = 4;
     else if (chan == 4) chan = 8;
     TWI_START();
-    if ((iStat = TWI_WRITE(adr << 1)) == false) break;
-    if ((iStat = TWI_WRITE((chan) << 4)) == false) break;
+    if (TWI_WRITE(adr << 1) == false) break;
+    if (TWI_WRITE((chan) << 4) == false) break;
     TWI_START();
-    if ((iStat = TWI_WRITE((adr << 1) + 1)) == false) break;
+    if (TWI_WRITE((adr << 1) + 1) == false) break;
     val = (TWI_READ(LOW) << 8) & 0xFF00;
     val |= (TWI_READ(HIGH)) & 0xFF;
     TWI_STOP();
     val &= 0xFFF;
     val <<= 4;
-    iStat = 0;
-    break;
+    Wire.begin();  // Release control of clock and data lines
+    ReleaseTWI();
+    return (val);
   }
   Wire.begin();  // Release control of clock and data lines
   ReleaseTWI();
-  if(iStat != 0) return(-1); 
-  return (val);
+  return(-1); 
 }
 
 // This function reads one channel from the AD7998 ADC
@@ -997,70 +1170,73 @@ int AD7994(int8_t adr, int8_t chan)
 int AD7998_b (int8_t adr, int8_t chan)
 {
   unsigned int val;
+  int          i;
   
   AcquireTWI();
-  AtomicBlock< Atomic_RestoreState > a_Block;
-  Wire.beginTransmission(adr);
-  Wire.write(0x80 | chan << 4);  // Channel select to give mux time to stabalize, 9/14/2020
-  if(Wire.endTransmission(false) !=0)
+  while(true)
   {
-    TWIerror();
-    TWIfails++;
+    Wire.beginTransmission(adr);
+    if(Wire.write(0x80 | chan << 4)!=1) break;  // Channel select to give mux time to stabalize, 9/14/2020
+    if(Wire.write(0x80 | chan << 4)!=1) break;  // This starts a second conversion
+    {
+      AtomicBlock< Atomic_RestoreState > a_Block;  // This seems to be needed at high TWI clock speeds (400000)
+                                                   // Without it i get readback errors always on the last
+                                                   // channel of a DCbias module, 8, 16...
+      if(Wire.endTransmission()!=0) break;
+      if(Wire.requestFrom(adr, 2)!=2) break;
+    }
+    val = (i=Wire.read() << 8) & 0xFF00;
+    if(i==-1) break;
+    val |= (i=Wire.read()) & 0xFF;
+    if(i==-1) break;
+    if((val & 0x7000) != (chan<<12)) break;
+    val &= 0xFFF;
+    val <<= 4;
     ReleaseTWI();
-    return(-1);
+    return(val);
   }
-  #ifdef IDE == 1.6.5
-  Wire.requestFrom(adr, 2, 0x80 | chan << 4, 1);
-  #else
-  Wire.requestFrom(adr, 2, 0x80 | chan << 4, 1, 0);
-  #endif
-  while (Wire.available() < 2);
-  val = (Wire.read() << 8) & 0xFF00;
-  val |= (Wire.read()) & 0xFF;
-  val &= 0xFFF;
-  val <<= 4;
-  if(Wire.endTransmission() !=0)
-  {
-    TWIerror();
-    TWIfails++;
-    ReleaseTWI();
-    return(-1);
-  }
+  TWIerror();
   ReleaseTWI();
-  return(val);
+  return -1;
 }
 
-// This function reads one channel from the AD7998 ADC
+// This function reads one channel from the AD7998 ADC.
+// The function uses software I2C for the AD7998 unless the TWIhardware flag is set.
+// If the I2C address is > 0x48 then its assumed the ADC is ADS7828 and its
+// driver is called.
+// Updated 8/4/24, had a logic error and could return invalid data on bus errors.
 int AD7998(int8_t adr, int8_t chan)
 {
-  int   iStat, i;
+  int          i;
   unsigned int val;
 
+  if(adr >= 0x48) return(ADS7828(adr, chan));
   if(MIPSconfigData.TWIhardware) return(AD7998_b(adr,chan));
   AcquireTWI();
   while (1)
   {
     //AtomicBlock< Atomic_RestoreState > a_Block;
     TWI_START();
-    if ((iStat = TWI_WRITE(adr << 1)) == false) break;
-    if ((iStat = TWI_WRITE(0x80 | chan << 4)) == false) break;
-    if ((iStat = TWI_WRITE(0x80 | chan << 4)) == false) break;  // Adding this second write causes a 2nd conversion and
-                                                                // allows the mux to stabalize, 9/14/2020
+    if (TWI_WRITE(adr << 1) == false) break;
+    if (TWI_WRITE(0x80 | chan << 4) == false) break;
+    if (TWI_WRITE(0x80 | chan << 4) == false) break;  // Adding this second write causes a 2nd conversion and
+                                                      // allows the mux to stabalize, 9/14/2020
     TWI_START();
-    if ((iStat = TWI_WRITE((adr << 1) + 1)) == false) break;
+    if (TWI_WRITE((adr << 1) + 1) == false) break;
     val = (TWI_READ(LOW) << 8) & 0xFF00;
     val |= (TWI_READ(HIGH)) & 0xFF;
     TWI_STOP();
-    if(((val & 0x7000) >> 12) != chan) { iStat = -1; break; }
+    if(((val & 0x7000) >> 12) != chan) break;
     val &= 0xFFF;
-    val <<= 4;
-    iStat = 0;
-    break;
+    val <<= 4;     // Left justify the result into 16 bits
+    Wire.begin();  // Release control of clock and data lines
+    ReleaseTWI();
+    return (val);
   }
-  Wire.begin();  // Release control of clock and data lines
+  //Wire.begin();  // Release control of clock and data lines
+  TWIerror();
   ReleaseTWI();
-  if(iStat > 0) return(-1);
-  return (val);
+  return(-1);
 }
 
 // This function read one ADC channel a user selected number of times and returns
@@ -1080,6 +1256,69 @@ int AD7994(int8_t adr, int8_t chan, int8_t num)
   for (i = 0; i < num; i++) val += AD7994(adr, chan);
   return (val / num);
 }
+
+// Updated aug 31, 2023. 
+//  - Added release of TWI on error exit
+//  - Removed atomic block, likely caused issues with ethernet interface missing incoming chars
+//  - Added timeout on waiting for results, prevent lockup
+int ADS7828(TwoWire *wire, int8_t adr, int8_t chan)
+{
+  int val;
+  int i;
+
+  while(true)
+  {
+    wire->beginTransmission(adr);
+    if(wire->write(0x8C | ((chan & 0x06)) << 3 | ((chan & 0x01) << 6)) !=1) break;
+    if(wire->endTransmission() !=0) break;
+    if(wire->requestFrom(adr, 2)!=2) break;
+    val = ((i=wire->read()) << 8) & 0xFF00;
+    if(i==-1) break;
+    val |= (i=wire->read()) & 0xFF;
+    if(i==-1) break;
+    val &= 0xFFF;
+    val <<= 4;
+    return(val);
+  }
+  return -1;
+}
+
+int ADS7828(int8_t adr, int8_t chan)
+{
+  int val;
+
+  AcquireTWI();
+  //AtomicBlock< Atomic_RestoreState > a_Block;
+  Wire.beginTransmission(adr);
+  Wire.write(0x8C | ((chan & 0x06)) << 3 | ((chan & 0x01) << 6));
+  if(Wire.endTransmission(false) !=0)
+  {
+    TWIerror();
+    TWIfails++;
+    ReleaseTWI();
+    return(-1);
+  }
+  Wire.requestFrom(adr, 2);
+  for(int i=0;i<100;i++)
+  {
+    if(Wire.available() >= 2)
+    {
+      val = (Wire.read() << 8) & 0xFF00;
+      val |= (Wire.read()) & 0xFF;
+      val &= 0xFFF;
+      val <<= 4;
+      ReleaseTWI();
+      return(val);
+    }
+    delayMicroseconds(1);
+  }
+  // Timeout waiting for data from device
+  TWIerror();
+  TWIfails++;
+  ReleaseTWI();
+  return(-1);
+}
+
 
 // AD5629R IO routines. This is a 8 channel DAC module with a TWI
 // interface. Two functions are provided, a generic 24 bit write
@@ -1381,6 +1620,22 @@ void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali)
   AD5668(spiAdr, DACchan, vali, 0);
 }
 
+void AD5668_EnableRef(int8_t spiAdr)
+{
+  uint8_t     buf[4];
+  
+  SetAddress(spiAdr);
+  // This command turns on the internal refference
+  // Fill buffer with data
+  buf[0] = 8;
+  buf[1] = 0;
+  buf[2] = 0;
+  buf[3] = 1;
+  // Send the data
+  SPI.transfer(SPI_CS, buf, 4);
+  SetAddress(0);
+}
+
 // Select only one mode of operation!
 //#define useSPIclass
 #define useSPIinline
@@ -1511,6 +1766,23 @@ int MCP2300(int8_t adr, uint8_t reg, uint8_t *data)
   if (Wire.available()) *data = Wire.read();
   ReleaseTWI();
   return (0);
+}
+
+// This fuction will write to the MCP4725 12 bit single channel DAC.
+// cmd = 0x40 to write to the DAC reg
+// cmd = 0x60 to write to the DAC and the startup value memory
+// value = 12 bit data left shiftted 4 bits
+// Default address is 0x62
+// Used in Twave module to set the HV ps (0 to 500) voltage
+void MCP4725(uint8_t addr, uint8_t cmd, uint16_t value)
+{
+  AcquireTWI();
+  Wire.beginTransmission(addr);
+  Wire.write(cmd);
+  Wire.write(value >> 8);
+  Wire.write(value & 0xF0);
+  Wire.endTransmission();
+  ReleaseTWI();
 }
 
 // 
@@ -1778,60 +2050,6 @@ void spiDmaWait(void)
    uint8_t b = pSpi->SPI_RDR;
 }
 
-// The following function support the trace mode used to capature the the program's state and display the last 16
-// points captured. The TracePoints and TracePointTimes buffers are located in memory not used by the application, 
-// thai has to be done to make sure this memory is never touched by the system and thus preserved during reset and
-// watchdog timer reset. This requires editing the flash.ld linker file that is located in the linker scripts dir of
-// the arduino development enviornment. Edit the following line:
-//   ram (rwx)   : ORIGIN = 0x20070000, LENGTH = 0x00017F80 /* sram, 96K , was 18000, GAA updated*/
-bool     Tracing = false;
-uint8_t  TPpointer = 0;
-// These addresses are above the stack and not touched by the system
-uint8_t  *TracePoints = (uint8_t *)0x20087F80;
-uint32_t *TracePointTimes = (uint32_t *)0x20087FA0;
-
-// This function saves a trace point in the trace FIFO
-void TraceCapture(uint8_t tp)
-{
-   TracePoints[TPpointer] = tp;
-   TracePointTimes[TPpointer] = millis();
-   TPpointer++;
-   TPpointer &= 15;
-}
-
-// This function reports the trace data
-void TraceReport(void)
-{
-  uint8_t  i,strt;
-
-  strt = 0;
-  for(i=0;i<16;i++) if(TracePointTimes[i] >= TracePointTimes[strt]) strt = i;
-  strt++;
-  serial->println("Trace report.");
-  for(i=0;i<16;i++)
-  {
-    serial->print(TracePoints[strt & 15]);
-    serial->print(" @ ");
-    serial->println(TracePointTimes[strt & 15]);
-    strt++;
-  }
-}
-
-// This function is called by the command processor to enable the trace function and clear the buffers
-void TraceEnable(void)
-{
-  uint8_t i;
-  
-  for(i=0;i<16;i++)
-  {
-    TracePoints[i] = 0;
-    TracePointTimes[i] = 0;
-  }
-  TPpointer = 0;
-  Tracing = true;
-  SendACK;
-}
-
 void CPUtemp(void) 
 {
   /* Enable ADC channel 15 and turn on temperature sensor */
@@ -1901,7 +2119,7 @@ void SetLevelDetChangeReport(char *TWIadd)
   pinMode(SDA1,INPUT);
   pinMode(LEVCHANGE,INPUT);
   Wire1.begin();
-  Wire1.setClock(100000);
+  Wire1.setClock(Wire1DefaultSpeed);
   attachInterrupt(digitalPinToInterrupt(LEVCHANGE), LevelDetChangeISR, RISING);
   SendACK;
 }
@@ -1910,14 +2128,15 @@ void SetLevelDetChangeReport(char *TWIadd)
 bool ReadDualElectrometer(uint8_t addr, uint16_t *buf)
 {
   byte *b;
-  int  i=0;
   
   b = (byte *)buf;
   Wire1.beginTransmission(addr);
   Wire1.write(0x81);
   Wire1.endTransmission();
-  //delay(10);
-  Wire1.requestFrom(addr, (uint8_t)4);
-  while (Wire1.available()) b[i++] = Wire1.read();
-  return true;
+  if(Wire1.requestFrom(addr, (uint8_t)4) == 4)
+  {
+    for(int i=0;i<4;i++) b[i] = Wire1.read();
+    return true;
+  }
+  return false;
 }

@@ -133,6 +133,7 @@ void USBpower(char *bval);
 void CheckImage(char *filename);
 void LoadImage(char *filename);
 void SetThreadEnable(char *, char *);
+void SetThreadInterval(char *name, char *interval);
 void ListThreads(void);
 void SerialInit(void);
 char *GetToken(bool ReturnComma);
@@ -160,6 +161,7 @@ void ReportUniqueID(void);
 void TWItalk(int brd, int TWIadd);
 void TWI1talk(int brd, int TWIadd);
 void SetMemAddress(char *address);
+void SetMemAddressOffset(char *address);
 void WriteMemory(char *type, char *val);
 void ReadMemory(char *type);
 void SaveModule(char *Module);
@@ -172,9 +174,28 @@ void SetTime(void);
 void GetDate(void);
 void SetDate(void);
 char *TokenFromCommandLine(char expectedDel);
-char  *UserInput(char *message, void (*function)(void) = NULL);
-int   UserInputInt(char *message, void (*function)(void) = NULL);
+bool valueFromCommandLine(int *value, int ll, int ul);
+bool valueFromCommandLine(char *c, char *options);
+char *UserInput(char *message, void (*function)(void) = NULL);
+int  UserInputInt(char *message, void (*function)(void) = NULL);
 float UserInputFloat(char *message, void (*function)(void) = NULL);
+void GetADCgain(void);
+void GetADCoffset(void);
+void AdjADCgain(bool set = false);
+void AdjADCgainSet(void);
+void AdjADCoffset(bool set = false);
+void AdjADCoffsetSet(void);
+void GetDACgain(void);
+void GetDACoffset(void);
+void AdjDACgain(bool set = false);
+void AdjDACgainSet(void);
+void AdjDACoffset(bool set = false);
+void AdjDACoffsetSet(void);
+void GetEEPROMbufferAdd(char *cmd, char *index);
+void TWIaddSet(char *module);
+void TWIscan(int board);
+void TWI1scan(void);
+void Dump(void);
 
 void AddToCommandList(CommandList *ncl);
 
@@ -192,5 +213,11 @@ void DCbiasNumber(void);
 void FormatEEPROM(void);
 void PowerControl(void);
 void ReportSupplies(void);
+
+void ReadEEPROMbyte(void);
+void WriteEEPROMbyte(void);
+
+bool checkChange(char *str, float *change);
+bool checkChange(char *str, int *change);
 
 #endif /* SERIAL_H_ */

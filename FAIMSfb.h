@@ -2,6 +2,8 @@
 #define FAIMSFB_h
 #include "Hardware.h"
 
+#if FAIMSFBcode
+
 #define SIGNATURE  0xAA55A5A5
 #define DRVPWMFREQ 50000
 
@@ -179,6 +181,7 @@ typedef struct  // 260 byte
 extern ReadBacks rb;
 extern float     Power;
 extern int       NumSamples;
+extern FAIMSFBdata  *FAIMSFBarray[2];
 
 // Prototypes
    
@@ -248,4 +251,5 @@ void SetEMRTnegZero(char *val);
 void ReturnEMRTnegZero(void);
 void SetEMRTzero(void);
 
+#endif
 #endif

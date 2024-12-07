@@ -209,7 +209,7 @@ void Ethernet_init(void)
     EthernetPresent = false;
     // init the TWI port
     Wire1.begin();
-    Wire1.setClock(1000000);
+    Wire1.setClock(Wire1DefaultSpeed);
     // See if the TWI enet interface is present
     Wire1.beginTransmission(TWI_ENET_ADD);
     Wire1.write(TWI_GET_PRESENT);
@@ -223,6 +223,8 @@ void Ethernet_init(void)
     enet_sb.begin(&Wire1,TWI_ENET_ADD);
     return;
   }
+  //pinMode(18,INPUT);
+  //pinMode(19,INPUT);
   Serial1.begin(9600);
   EthernetPresent = EloadConfig(&eConfig);
   digitalWrite(ECONFIG,HIGH);
@@ -274,6 +276,7 @@ void ProcessEthernet(void)
   {
     serial = &Serial1;
     PutCh(Serial1.read());
+    //serial->println(Serial1.read());
   }
 }
 

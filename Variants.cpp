@@ -18,7 +18,7 @@ uint32_t TWIfails = 0;
 bool     Serial1Echo = false;
 
 #if RFdriver2
-const uint8_t ModuleAddresses[NumModAdd] = {0x50,0x60,0x52,0x54,0x56};
+const uint8_t ModuleAddresses[NumModAdd] = {0x50,0x60,0x62,0x52,0x54,0x56};
 #else
 const uint8_t ModuleAddresses[NumModAdd] = {0x50,0x52,0x54,0x56};
 #endif
@@ -227,7 +227,8 @@ FAIMSdata  FAIMS_Rev_1 = {sizeof(FAIMSdata),"FAIMS", 1, 1000000, 25.0, false, 4,
                           50.0,
                           25,
                           200,
-                          'R',RISING
+                          'R',RISING,
+                          false
                           };
 #endif
                          
@@ -327,8 +328,27 @@ RFAdata RFA_Rev1 = {sizeof(RFAdata),"RFamp",1,false,1000000,0,0,true,false,3,4,0
                     7,3.6614,-147.14,                    
                     1,3.47,0,
                     5.958257713248639,
-                    1
+                    1,
+                    false,                // Auto range enable flag
+                    false,888000,-0.35    // Calibration compensation parameters
                    };
+
+FPGAmodule FPGA_Rev1 = {sizeof(FPGAmodule),"FPGA",1,0x56,
+                        {{0,2962,32753},
+                        {1,2962,32753},
+                        {2,2962,32753},
+                        {3,2962,32753},
+                        {4,2962,32753},
+                        {5,2962,32753},
+                        {6,2962,32753},
+                        {7,2962,32753}},
+                        {FPGAbaseADD,FPGAspiADD,0,0,0,
+                        {1024,1024,1024,1024,1024,1024,1024,1024},
+                        {0,0,0,0,0,0,0,0},
+                        {32767,32767,32767,32767,32767,32767,32767,32767},
+                        {0,0,0,0,0,0,0,0}},
+                        1
+};
                    
 #ifdef TestMode
 WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_AP,"MIPSnet","MIPS","MIPS1234","",0,true,1};
@@ -371,7 +391,8 @@ char *BoardVariantsNames = "RFdrvA R1,"
                            "HVPS R2,"
                            #endif
                            "DAC R1,"
-                           "RFamp R1";
+                           "RFamp R1,"
+                           "FPGA";
                            
 // List of variant board default data structure pointers with a one to one corespondence to list of board names
 void *BoardVariants[] = {
@@ -404,5 +425,6 @@ void *BoardVariants[] = {
                           (void *)&HVPS_Rev_2,
                           #endif
                           (void *)&DAC_Rev1,
-                          (void *)&RFA_Rev1
+                          (void *)&RFA_Rev1,
+                          (void *)&FPGA_Rev1
                         };

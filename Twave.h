@@ -91,6 +91,8 @@ typedef struct
   int     CompressRamp;        // Supports compression ramping, added August 5, 2017
   int     CrampOrder;          // Order ramping step size, Added sept 5, 2017
   float   GateV;               // Gate voltage
+  // Added Oct 18, 2022
+  bool    invertTW;            // If trun invert the twave
 } TwaveData;
 
 extern TwaveData TD;
@@ -130,6 +132,7 @@ void setTWAVEguard2Voltage(char *chan, char *voltage);
 void getTWAVEdir(int channe);
 void setTWAVEdir(char *chan, char *dirstr);
 void SetTWenableTest(char *flag);
+void SetinvertTW(char *module, char *state);
 
 // Compressor host command prototypes
 void SetTWCmode(char *mode);

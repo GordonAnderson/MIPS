@@ -27,6 +27,8 @@ extern MIPStimer CompressorTimer;
 
 extern char TwaveCompressorTable[];
 
+extern bool CompressorDisable;
+
 extern volatile int  C_NormAmpMode;
 
 extern char *CmodeList;
@@ -83,6 +85,18 @@ typedef struct
    SweepState     State;  
 } FreqSweep;
 
+#define MAXSWEEPTABLE 10
+
+// This structure defines a piecewise linear sweep table
+typedef struct
+{
+   int  num;
+   int  timePnt[MAXSWEEPTABLE];
+   int  voltage1[MAXSWEEPTABLE];
+   int  voltage2[MAXSWEEPTABLE];
+   int  frequency[MAXSWEEPTABLE];
+} SweepTable;
+
 // Sweep command prototypes
 void SetStartFreqTWSW(int chan, int freq);
 void GetStartFreqTWSW(int chan);
@@ -99,5 +113,8 @@ void StopSweepTWSW(int chan);
 void GetStatusTWSW(int chan);
 void QueueCompressionTrigger(int num);
 void ProcessCompressionTrigger(void);
+
+void ClearSweepTable(void);
+void AddSweepPoint(void);
 
 #endif

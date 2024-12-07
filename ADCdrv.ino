@@ -391,6 +391,11 @@ void ADCchangeDet(int chan, int thres)
    SendACK;
 }
 
+// This command allows you to adjust filter parameters to help reduce false detection of change; 
+// this can be very helpful for noisy electrical signals. The parameter wcnt defines the number 
+// of consecutive ADC reading need to fall outside the window before a change is detected. 
+// The default for this value is 4. The parameter rcnt defines the number of readings within a 
+// new window that must be recorded before the change is reported. The default for this parameter is 6.
 void SetADCchangeParms(int wc, int sc)
 {
   WindowCount = wc;

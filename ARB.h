@@ -1,5 +1,6 @@
 #ifndef ARB_H_
 #define ARB_H_
+#include <ThreadController.h>
 
 #define MAXARBMODULES 6
 
@@ -21,7 +22,7 @@
                                           // use 0x42 for channels 3 and 4. (0x40 = 64, 0x42 = 66)
                                           // use 0x44 for channels 5 and 6. 0x44 = 68
 
-#define TWI_ARB_SET_FREQ        0x01      // Set frequency, Hz, 16 bit unsigned word
+#define TWI_ARB_SET_FREQ        0x01      // Set frequency, Hz, 24 bit unsigned word
 #define TWI_ARB_SET_WAVEFORM    0x02      // Set waveform type, 8 bit unsigned type
 #define TWI_ARB_SET_REF         0x03      // Set reference defines p-p voltage, 16 bit unsigned, 0 to 4095
 #define TWI_ARB_SET_OFFSET      0x04      // Set offset, 16 bit unsigned, 0 to 4095
@@ -98,6 +99,12 @@
 #define TWI_SET_HWDISR          0x45      // Enables the use of hardware interrupts to process the Compress mode signal
 #define TWI_SET_SYNCLINE        0x46      // Allows defining the hardware line used for sync control, 1 or 2, 1 = default
 #define TWI_SET_COMPLINE        0x47      // Allows defining the hardware line used for Compress control, 1 or 2, 2 = default
+
+#define TWI_SET_FWDPS           0x48      // Allows defining the forward phase shift, float, degrees
+#define TWI_SET_REVPS           0x49      // Allows defining the reverse phase shift, float, degrees
+
+#define TWI_SET_AFRQENA         0x4A      // Enable frequency change in compress or alternate waveform mode, byte: true if enabled
+#define TWI_SET_AFRQ            0x4B      // Compress or alternate frequency, 24 bit int.
 
 #define TWI_ARB_READ_REQ_FREQ   0x81      // Returns requested frequency
 #define TWI_ARB_READ_ACT_FREQ   0x82      // Returns actual frequency
@@ -229,12 +236,19 @@ typedef struct
   bool          AlternateRngEna;
   float         AlternateRng;
   byte          AltWaveform;
+  // Added alt freq 5/11/24
+  bool          AlternateFreqEna;
+  int           AltFreq;
 } ARBdata;
+
+extern Thread ARBthread;
 
 extern ARBdata  *ARBarray[MAXARBMODULES];
 extern DialogBoxEntry ARBCompressorEntries2[];
 extern DialogBox ARBCompressorDialog;
 extern MIPStimer *ARBclock;
+extern bool ARBaltTrigUseSync;
+extern bool NoCompressInit;
 
 //Prototypes
 String GetWaveformString(WaveFormTypes wft);
@@ -343,6 +357,11 @@ void SetARBaltRngEna(char *module, char *bval);
 void GetARBaltRngEna(int module);
 void SetARBaltRng(char *module, char *fval);
 void GetARBaltRng(int module);
+
+void SetARBaltFrqEna(char *module, char *bval);
+void GetARBaltFrqEna(int module);
+void SetARBaltFrq(char *module, char *fval);
+void GetARBaltFrq(int module);
 
 void SetARBrevAuxV(char *module, char *fval);
 void ClearARBrevAuxV(int module);

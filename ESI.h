@@ -50,6 +50,10 @@ typedef struct
   bool    SystemGatable;     // Flag  set to  enable the gate menu options  
 } ESIdata;
 
+extern ESIdata  ESIarray[2];
+extern ESIdata         esi;    
+extern ESIChannellData esich;   
+
 // Prototypes
 void ESInumberOfChannels(void);
 void SetESIchannel(char *Chan, char *Value);
@@ -67,7 +71,11 @@ void SetESImoduleNeg(int module, int value);
 void SaveESI2EEPROM(void);
 
 void SetESIgateEnable(char *module, char *state);
+void SetESIgate(char *module, char *state);
+void GetESIgate(int module);
 void SetESIramp(int module, int ramp);
 void GetESIramp(int module);
+
+void calESI4P3(char *mod, char *chan);
 
 #endif

@@ -5,6 +5,7 @@
 #define Hardware_h
 
 #include <DIhandler.h>
+#include <Wire.h>
 
 extern int PulseWidth;
 extern int PulseFreq;
@@ -46,6 +47,17 @@ typedef struct
   void(*DACpointer)(uint8_t, uint8_t, uint16_t) = NULL;
 } ChannelCal;
 
+#define  MAXPWL 10
+// This data structure is used for the piece wise linear calibration
+// function.
+typedef struct
+{
+  uint8_t   num;
+  uint16_t  ADCvalue[MAXPWL];
+  uint16_t  Value[MAXPWL];
+} PWLcalibration;
+
+
 // The following are used for the Push Button LED control.
 // A task ran every helf second is used to control the
 // LEDs and supports on, flash and off.
@@ -85,9 +97,9 @@ extern PBledStates  PBledMode;
 #define _sclk 76
 #define _miso 74
 #define _mosi 75
-#define _cs 4
-#define _rst 33
-#define _dc 34
+#define _cs   4
+#define _rst  33
+#define _dc   34
 
 // microSD chip select pin
 #define _sdcs 10
@@ -116,6 +128,8 @@ extern PBledStates  PBledMode;
 #define BACKLIGHT     3     // TFT display backlight control, pwm to control level
 #define LDAC          11
 #define TRIGGER       12
+#define LT            13    // This signal drives the yellow L light on the controller,
+                            // Its also used for level detector signaling the controller.
 #define LDACctrl      A11
 #define ADDR0         25
 #define ADDR1         26
@@ -234,8 +248,10 @@ void  ClearOutput(char chan, int8_t active);
 void  DigitalOut(int8_t MSB, int8_t LSB);
 void  ClearDOshiftRegs(void);
 uint8_t DigitalIn(void);
-int  ReadEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count);
-int  WriteEEPROM(void *src, uint8_t dadr, uint16_t address, uint16_t count);
+int  ReadEEPROM(void *src, uint16_t dadr, uint16_t address, uint16_t count);
+int  ReadEEPROMext(void *src, uint16_t dadr, uint16_t address, uint16_t count);
+int  WriteEEPROM(void *src, uint16_t dadr, uint16_t address, uint16_t count);
+int  WriteEEPROMext(void *src, uint16_t dadr, uint16_t address, uint16_t count);
 int  AD7998(int8_t adr, uint16_t *vals);
 int  AD7998(int8_t adr, int8_t chan, int8_t num);
 int  AD7994(int8_t adr, int8_t chan);
@@ -246,6 +262,7 @@ int  AD5625(int8_t adr, uint8_t chan, uint16_t val, int8_t Cmd);
 int  AD5625_EnableRef(int8_t adr);
 void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali);
 void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali, int8_t Cmd);
+void AD5668_EnableRef(int8_t spiAdr);
 int  MCP2300(int8_t adr, uint8_t bits);
 int  MCP2300(int8_t adr, uint8_t reg, uint8_t bits);
 int  MCP2300(int8_t adr, uint8_t reg, uint8_t *data);
@@ -256,15 +273,20 @@ void ChannelCalibrate(ChannelCal *CC, char *Name);
 void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint);
 bool ChannelCalibrateSerial(ChannelCal *CC, char *Message);
 bool ChannelCalibrateSerial(ChannelCal *CC, char *Message, float ZeroPoint, float MidPoint);
-float Counts2Value(int Counts, DACchan *DC);
-float Counts2Value(int Counts, ADCchan *AC);
-int Value2Counts(float Value, DACchan *DC);
-int Value2Counts(float Value, ADCchan *AC);
+float PWLlookup(PWLcalibration *pwl, int adcval);
+void buildPWLcalTable(PWLcalibration *pwl, int (*readADCfunction)(void)=NULL, void (*allowDriveAdjFunction)(void)=NULL);
+float Counts2Value(int Counts, DACchan *DC, float gc = 1.0);
+float Counts2Value(int Counts, ADCchan *AC, float gc = 1.0);
+int Value2Counts(float Value, DACchan *DC, float gc = 1.0);
+int Value2Counts(float Value, ADCchan *AC, float gc = 1.0);
 int AD5593write(uint8_t addr, uint8_t pb, uint16_t val);
 int AD5593readADC(int8_t addr, int8_t chan);
 int AD5593readADC(int8_t addr, int8_t chan, int8_t num);
 int AD5593writeDAC(int8_t addr, int8_t chan, int val);
 int AD5629write(uint8_t addr, uint32_t val);
+void MCP4725(uint8_t addr, uint8_t cmd, uint16_t value);
+int ADS7828(TwoWire *wire, int8_t adr, int8_t chan);
+int ADS7828(int8_t adr, int8_t chan);
 
 bool ReadDualElectrometer(uint8_t addr, uint16_t *buf);
 
@@ -276,17 +298,6 @@ void CPUtemp(void);
 
 extern int AuxTrigMax;
 extern int TrigMax;
-
-extern bool     Tracing;
-extern uint8_t  TPpointer;
-extern uint8_t  *TracePoints;
-extern uint32_t *TracePointTimes;
-
-#define TRACE(a) {if(Tracing) TraceCapture(a);}
-
-void TraceCapture(uint8_t tp);
-void TraceReport(void);
-void TraceEnable(void);
 
 void LevelDetChangeReport(void);
 void SetLevelDetChangeReport(char *TWIadd);

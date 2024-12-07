@@ -32,11 +32,11 @@ typedef struct
 // Prototypes for function in ClockGenerator
 void SetRef(int Freq);
 int  FindPQ(long ClockOut);
-int  CY_Init(int8_t adr);
-void SetPLL2enable(int8_t adr, bool state);
-int  SetPLL2freq(int8_t adr, int Freq);
-void SetPLL3enable(int8_t adr, bool state);
-int  SetPLL3freq(int8_t adr, int Freq);
+int  CY_Init(int8_t adr, int8_t brd = 0);
+void SetPLL2enable(int8_t adr, bool state, int8_t brd = 0);
+int  SetPLL2freq(int8_t adr, int Freq, int8_t brd = 0);
+void SetPLL3enable(int8_t adr, bool state, int8_t brd = 0);
+int  SetPLL3freq(int8_t adr, int Freq, int8_t brd = 0);
 int  FAIMSclockSet(int8_t adr, int Freq);
 void FAIMSphase(int harmonic, int phase);
 

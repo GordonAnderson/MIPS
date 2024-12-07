@@ -1,4 +1,4 @@
-#include <DueFlashStorage.h>
+ #include <DueFlashStorage.h>
 #include "SD.h"
 #include "utility/Sd2card.h"
 #include "SPI.h"
@@ -39,8 +39,8 @@
 // Ethernet and WiFi interfaces are supported by connecting interfaces to a processor serial port.
 //
 // Incoming serial characters are placed in a ring buffer and processed in the main loop. All commands
-// are processed in the polling loop when there is avalible time. The serial command processor is table 
-// driven and the command table is in the serial.cpp file. 
+// are processed in the polling loop when there is avalible time. The serial command processor is table
+// driven and the command table is in the serial.cpp file.
 //
 // The Variants.h file has a number of options for building the application. See the Variants file for
 // details.
@@ -52,14 +52,14 @@
 // address. Modules address are 50,52,54,56 (hex) and with board selet this allows 8 modules maximum in one
 // MIPS system.
 //
-// The rev parameter in the module data structure will effect the module behavior and is used to signal 
+// The rev parameter in the module data structure will effect the module behavior and is used to signal
 // different things on different modules. The module code comments define what the rev value will do, there
 // is a serial command to allow you to define the rev.
 //
 // Modules such as the FAIMSFB and RFdriver2 have a M0 on module processor. This processor emulates the
-// serial EEPROM. The ARB module also has a M3 on module processor. These modules also have a USB port 
+// serial EEPROM. The ARB module also has a M3 on module processor. These modules also have a USB port
 // that will allow you to communicate with the M0 processor for setup, testing, and calibration. Communications
-// with the on module processor is also enabled through MIPS using the TWITALK capability. TWITALK 
+// with the on module processor is also enabled through MIPS using the TWITALK capability. TWITALK
 // redirects communications through the TWI port between the MIPS controller and the module. In the case
 // of the ARB you can also update the ARB firmware through this interfaces if you use the MIPS host app.
 //
@@ -86,7 +86,7 @@
 //      a cleaner way to do this.
 //  4.) Use of Push button LEDs:
 //        1.) When output voltages exceed 0 the blue LED will be on indicating output are on.
-//        2.) If any output voltgae exceeds 50 volts the red LED will be on to provide warning.
+//        2.) If any output votlages exceeds 50 volts the red LED will be on to provide warning.
 //        3.) If any output exceeds 100 volts the red LED will flash.
 //        4.) Commands are provided to allow an application to override the LED
 //
@@ -125,8 +125,12 @@ bool Suspend = false;
 // These values are defaulted to 1000 in Variant.h, The RFdriver needs this PWM
 // frequency set to 50KHz for its adjustable power supply. Not sure if this overrides
 // the values in the .h file?
-#define PWM_FREQUENCY	    50000
-#define TC_FREQUENCY      50000
+#define PWM_FREQUENCY	      50000
+#define PWM_MAX_DUTY_CYCLE	1023
+#define PWM_RESOLUTION		  10
+#define TC_FREQUENCY        50000
+#define TC_MAX_DUTY_CYCLE   1023
+#define TC_RESOLUTION		    10
 
 bool NormalStartup = true;
 bool SDcardPresent = false;
@@ -136,46 +140,70 @@ bool DisableDisplay = false;
 bool LEDoverride = false;
 int  LEDstate = 0;
 
-uint32_t BrightTime=0;
+uint32_t BrightTime = 0;
 
-#if FAIMSFBcode 
-   #pragma message "FAIMSFB module enabled."
-   #define FAIMSFBvf "b"
+#if FAIMSFBcode
+#pragma message "FAIMSFB module enabled."
+#define FAIMSFBvf "b"
 #else
-   #define FAIMSFBvf ""
+#define FAIMSFBvf ""
 #endif
-#if FAIMScode 
-   #pragma message "FAIMS module enabled."
-   #define FAIMSvf "f"
+#if FAIMScode
+#pragma message "FAIMS module enabled."
+#define FAIMSvf "f"
 #else
-   #define FAIMSvf ""
+#define FAIMSvf ""
 #endif
-#if HOFAIMcode 
-   #pragma message "HOFAIMS module enabled."
-   #define HOFAIMSvf "h"
+#if HOFAIMcode
+#pragma message "HOFAIMS module enabled."
+#define HOFAIMSvf "h"
 #else
-   #define HOFAIMSvf ""
+#define HOFAIMSvf ""
 #endif
-#if TABLE2code 
-   #pragma message "Table 2 module enabled."
-   #define TABLE2vf "t"
+#if TABLE2code
+#pragma message "Table 2 module enabled."
+#define TABLE2vf "t"
 #else
-   #define TABLE2vf ""
+#define TABLE2vf ""
 #endif
-#if RFdriver2 
-   #pragma message "RFdriver 2 module enabled."
-   #define RFdriver2vf "r"
+#if RFdriver2
+#pragma message "RFdriver 2 module enabled."
+#define RFdriver2vf "r"
 #else
-   #define RFdriver2vf ""
+#define RFdriver2vf ""
 #endif
-#if HVPScode 
-   #pragma message "HVPS module enabled."
-   #define HVPSv "v"
+#if HVPScode
+#pragma message "HVPS module enabled."
+#define HVPSv "v"
 #else
-   #define HVPSv ""
+#define HVPSv ""
+#endif
+#if DMSDMSMB
+#pragma message "DMSDMSMB module enabled."
+#define DMSDMSMBv "d"
+#else
+#define DMSDMSMBv ""
+#endif
+#if DCBanalog
+#pragma message "DCB analog module enabled."
+#define DCBanalogv "a"
+#else
+#define DCBanalogv ""
+#endif
+#if DCBcurrent
+#pragma message "DCB current monitor enabled."
+#define DCBcurrentv "c"
+#else
+#define DCBcurrentv ""
+#endif
+#if DCBswitchCode
+#pragma message "DCB switch module enabled."
+#define DCBswitchCodev "s"
+#else
+#define DCBswitchCodev ""
 #endif
 
-const char Version[] PROGMEM = "Version 1.208" FAIMSFBvf FAIMSvf HOFAIMSvf TABLE2vf RFdriver2vf HVPSv ", Aug 14, 2021";
+const char Version[] PROGMEM = "Version 1.249" DCBswitchCodev DCBanalogv DCBcurrentv FAIMSFBvf FAIMSvf HOFAIMSvf TABLE2vf RFdriver2vf HVPSv DMSDMSMBv ",Aug 28,2024";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController();
@@ -199,7 +227,7 @@ extern DialogBox MacroOptions;
 
 #define MaxMainMenuEntries  16
 
-int SerialWatchDog=0;
+int SerialWatchDog = 0;
 
 void SerialPortReset(void);
 void DisplayAbout(void);
@@ -226,7 +254,7 @@ extern DialogBoxEntry MIPSconfigEntriesP2[];
 DialogBoxEntry MIPSconfigEntries[] = {
   {" Controller rev"     , 0, 1, D_INT,    1, 10, 1, 21, false, "%2d", &MIPSconfigData.Rev, NULL, NULL},
   {" Config modules"     , 0, 2, D_DIALOG, 0, 0, 0, 0, false, NULL, &ModuleConfig, SetupModuleConfig, NULL},
-  {" Startup delay"      , 0, 3, D_INT,    1, 100, 1, 20, false, "%3d", &MIPSconfigData.StartupDelay, NULL, NULL},
+  {" Startup delay"      , 0, 3, D_INT,    0, 100, 1, 20, false, "%3d", &MIPSconfigData.StartupDelay, NULL, NULL},
   {" Startup hold"       , 0, 4, D_YESNO,  0, 1, 1, 21, false, NULL, &MIPSconfigData.StartupHold, NULL, NULL},
   {" DCbias supply"      , 0, 5, D_ONOFF,  0, 1, 1, 20, false, NULL, &MIPSconfigData.PowerEnable, NULL, NULL},
   {" DCbias trip, %%FS"  , 0, 6, D_FLOAT,  0, 100, 0.1, 18, false, "%5.1f", &MIPSconfigData.VerrorThreshold, NULL, NULL},
@@ -239,8 +267,8 @@ DialogBoxEntry MIPSconfigEntries[] = {
 
 DialogBoxEntry MIPSconfigEntriesP2[] = {
   {" Macro options"     , 0, 1,  D_DIALOG,   0, 0, 0, 0, false, NULL, &MacroOptions, SetupMacroOptions, NULL},
-  {" Interlock input"   , 0, 2,  D_DI      , 0, 0, 2, 21,false, DIlist, &MIPSconfigData.InterlockIn, NULL, NULL},
-  {" Interlock Output"  , 0, 3,  D_DO      , 0, 0, 2, 21,false, DOlist, &MIPSconfigData.InterlockOut, NULL, NULL},
+  {" Interlock input"   , 0, 2,  D_DI      , 0, 0, 2, 21, false, DIlist, &MIPSconfigData.InterlockIn, NULL, NULL},
+  {" Interlock Output"  , 0, 3,  D_DO      , 0, 0, 2, 21, false, DOlist, &MIPSconfigData.InterlockOut, NULL, NULL},
   {" Enable log"        , 0, 4,  D_ONOFF   , 0, 1, 1, 20, false, NULL, &logdata.enabled, NULL, NULL},
   {" Show log"          , 0, 5,  D_DIALOG  , 0, 0, 0, 0, false, NULL, &MIPSlog, NULL, DisplayLog},
   {" Save settings"     , 0, 9,  D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SaveMIPSSettings, NULL},
@@ -325,7 +353,7 @@ void SerialPortReset(void)
   LogMessage("USB port reset.");
   SerialUSB.flush();
   SerialUSB.end();
-// Reset the serial USB port
+  // Reset the serial USB port
   otg_disable();             // Disable the hardware
   otg_disable_pad();
   otg_freeze_clock();
@@ -337,10 +365,10 @@ void SerialPortReset(void)
   otg_enable_pad();
   UDD_Init();                // Sets up the USB clock PLL, PMC
   otg_unfreeze_clock();
-  _usbInitialized=1UL;
-  digitalWrite(72,HIGH);
+  _usbInitialized = 1UL;
+  digitalWrite(72, HIGH);
   USBDevice.attach();  // Inits the USB serial port, this is where it gets stuck
-  digitalWrite(72,HIGH);
+  digitalWrite(72, HIGH);
 
   SerialInit();
   SerialUSB.accept();
@@ -370,7 +398,7 @@ void About(void)
   // Report all the modules and revisions
   serial->println("System modules:");
   serial->println("  Board,Address,Name,Rev");
-  for(int i=0; i<NumModAdd; i++)
+  for (int i = 0; i < NumModAdd; i++)
   {
     addr = ModuleAddresses[i];
     // Set board select to A
@@ -389,7 +417,7 @@ void About(void)
       rev = signature[22];
       serial->println(rev);
     }
-    if(!MIPSconfigData.UseBRDSEL) continue;
+    if (!MIPSconfigData.UseBRDSEL) continue;
     // Set board select to B
     ENA_BRD_B;
     {
@@ -422,7 +450,7 @@ void DisplayAbout(void)
   char    signature[100], buf[25];
   int y = 0;
 
-  if(i==0)
+  if (i == 0)
   {
     PrintDialog(&MIPSabout, 1, y++, "MIPS Version:");
     PrintDialog(&MIPSabout, 2, y++, (char *)&Version[8]);
@@ -433,9 +461,9 @@ void DisplayAbout(void)
     PrintDialog(&MIPSabout, 1, y++, "System modules:");
     PrintDialog(&MIPSabout, 1, y++, "  Board,Addr,Name,Rev");
   }
-  for(i; i<NumModAdd; i++)
+  for (i; i < NumModAdd; i++)
   {
-    if(y > 9)
+    if (y > 9)
     {
       // Set dialog exit to call this function again
       MIPSaboutEntries[0].Type = D_DIALOG;
@@ -451,7 +479,7 @@ void DisplayAbout(void)
       sprintf(buf, "  a,%x,%s,%d", addr, &signature[2], signature[22]);
       PrintDialog(&MIPSabout, 1, y++, buf);
     }
-    if(!MIPSconfigData.UseBRDSEL) continue;
+    if (!MIPSconfigData.UseBRDSEL) continue;
     // Set board select to B
     ENA_BRD_B;
     if (ReadEEPROM(signature, addr, 0, 100) == 0)
@@ -527,33 +555,33 @@ void SetupModuleConfig(void)
 }
 
 // This function is called from the host command processor and the arguments are in the
-// serial input ring buffer on call. The arguments are case sesative and the same as the 
+// serial input ring buffer on call. The arguments are case sesative and the same as the
 // MIPS UI configure menu format options, example usage:
 //
 // FORMAT,A 0x50,RFdrvA R1
 void FormatEEPROM(void)
 {
-   char   *Token;
+  char   *Token;
 
-   while(1)
-   {
-     // Read the address
-     GetToken(true);
-     if((Token = GetToken(true)) == NULL) break;
-     strcpy(BoardAddress, Token);
-     // Read the board name
-     GetToken(true);
-     if((Token = GetToken(true)) == NULL) break;
-     strcpy(BoardName,Token);
-     GetToken(true);
-     SendACKonly;
-     if(BoardFormatEEPROM()) serial->println("Module formatted!");
-     else serial->println("Unable to format");
-     return;
-   }
-   // If here then we had bad arguments!
-   SetErrorCode(ERR_BADARG);
-   SendNAK;  
+  while (1)
+  {
+    // Read the address
+    GetToken(true);
+    if ((Token = GetToken(true)) == NULL) break;
+    strcpy(BoardAddress, Token);
+    // Read the board name
+    GetToken(true);
+    if ((Token = GetToken(true)) == NULL) break;
+    strcpy(BoardName, Token);
+    GetToken(true);
+    SendACKonly;
+    if (BoardFormatEEPROM()) serial->println("Module formatted!");
+    else serial->println("Unable to format");
+    return;
+  }
+  // If here then we had bad arguments!
+  SetErrorCode(ERR_BADARG);
+  SendNAK;
 }
 
 // This function is called by the UI to format a board's EEPROM.
@@ -640,9 +668,9 @@ File myFile;
 // reduced to the user setting
 void DisplayIntensity(void)
 {
-  if(MIPSconfigData.BackLight >= 50) return;
+  if (MIPSconfigData.BackLight >= 50) return;
   analogWrite(BACKLIGHT, 2047);  // Set to 50%
-  BrightTime = millis(); 
+  BrightTime = millis();
 }
 
 void encChanged(void)
@@ -670,6 +698,8 @@ void encPB(void)
     return;
   }
   ButtonPressed = true;
+  // If we are auto tuning then abort
+  TuneAbort = true;
 }
 
 // Watchdog timer setup routine, this function will enable the watchdog timer.
@@ -698,16 +728,18 @@ void WDT_Setup () {
 #endif
 
 #define WDT_KEY (0xA5)
-void watchdogSetup(void) {/*** watchdogDisable (); ***/}
+void watchdogSetup(void) {
+  /*** watchdogDisable (); ***/
+}
 
 void watchdogEnable(void)
 {
   // Enable watchdog.
   WDT->WDT_MR = WDT_MR_WDD(0xFFF)
-//              | WDT_MR_WDRPROC       // This flag will cause a processor reset only, without it all hardware is reset
+                //              | WDT_MR_WDRPROC       // This flag will cause a processor reset only, without it all hardware is reset
                 | WDT_MR_WDRSTEN
                 | WDT_MR_WDV(256 * 8); // Watchdog triggers a reset after 2 seconds if underflow
-                                       // 2 seconds equal 84000000 * 2 = 168000000 clock cycles
+  // 2 seconds equal 84000000 * 2 = 168000000 clock cycles
   /* Slow clock is running at 32.768 kHz
     watchdog frequency is therefore 32768 / 128 = 256 Hz
     WDV holds the periode in 256 th of seconds  */
@@ -756,7 +788,7 @@ void Signon(void)
   int i = 0;
   while (true)
   {
-    if (i >= MIPSconfigData.StartupDelay) break;
+    if ((i >= MIPSconfigData.StartupDelay) && (i >= 1)) break;
     if (ButtonPressed)
     {
       if (!MIPSconfigData.StartupHold) if (PBwasPressed) NormalStartup = false; // if false don't load from EEPROM on cards, use defaults!
@@ -782,6 +814,8 @@ void ProcessLED()
   static int i = 0;
 
   i ^= 1;   // Toggle i between 0 and 1
+  //if(i) digitalWrite(LT,HIGH);     // This is the ethernet config line, can't do this is ethernet interface! removed 8/29/23
+  //else digitalWrite(LT,LOW);
   if (LEDoverride)
   {
     if ((i == 1) && ((LEDstate & 8) != 0))
@@ -859,8 +893,8 @@ void testISR()
 {
   //   AtomicBlock< Atomic_RestoreState > a_Block;
   //   NVIC_SetPriority(TC1_IRQn, 15);
-  Timer1.setPriority(15);
-  for (int i = 0; i < 100; i++) delayMicroseconds(100);
+  //Timer1.setPriority(15);
+  //for (int i = 0; i < 100; i++) delayMicroseconds(100);
 }
 
 void test(void)
@@ -871,21 +905,34 @@ void test(void)
 
 void setup()
 {
+  // Set LT as output and turn off
+  pinMode(LT, OUTPUT);
+  digitalWrite(LT,LOW);
+  // Flash the LED to indicate we are starting up
+  for(int i=0;i<6;i++)
+  {
+    if(i&1) digitalWrite(LT,LOW);
+    else digitalWrite(LT,HIGH);
+    delay(125);
+  }
+  delay(250);
   pinMode(73, OUTPUT);  // TXL
   pinMode(72, OUTPUT);  // RXL
   digitalWrite(73, HIGH);  // TXL
   digitalWrite(72, HIGH);  // RXL
   // A watchdog timer reboot does not reset the USB interface for some reason, so
   // this code will detect if a watchdog timer reset happened and force a software
-  // reset. Jan 18, 2019. Fixed this issue my making sure watchdog reset did a full reset
-//uint32_t i = REG_RSTC_SR;  // Reads the boot flag
-//i >>= 8;
-//i &= 7;   
-//if(i==2) Software_Reset();
+  // reset. Jan 18, 2019. Fixed this issue by making sure watchdog reset did a full reset
+  uint32_t i = REG_RSTC_SR;  // Reads the boot flag
+  i >>= 8;
+  i &= 7;
+  if(i==2) Software_Reset();
   // Start the real time clock and set default date and time, 1/1/2020 12:00:00
+  digitalWrite(LT,HIGH);
   rtc.begin();
   rtc.setTime(12, 0, 0);
   rtc.setDate(1, 1, 2020);
+  digitalWrite(LT,LOW);
   //
   analogReadResolution(12);
   Reset_IOpins();
@@ -898,8 +945,8 @@ void setup()
   pinMode(BACKLIGHT, INPUT_PULLUP);
   SetBackLight();
   // Pin 49 defines the display type, if grounded is the HX8347_DSP else ILI9340_DSP
-  pinMode(49,INPUT_PULLUP);
-  tft.SetDisplayType(ILI9340_DSP); 
+  pinMode(49, INPUT_PULLUP);
+  tft.SetDisplayType(ILI9340_DSP);
   tft.begin();
   tft.fillScreen(ILI9340_BLACK);
   tft.setRotation(1);
@@ -919,10 +966,6 @@ void setup()
   digitalWrite(_sdcs, LOW);
   delay(100);
   digitalWrite(_sdcs, HIGH);
-//  delay(100);
-//  SPI.setDataMode(_sdcs, SPI_MODE1);
-//  SPI.transfer(_sdcs, 0, SPI_CONTINUE);  // Generate some clock pulses
-//  SPI.transfer(_sdcs, 0);
 
   delay(100);
   SD.begin(_sdcs);
@@ -969,16 +1012,20 @@ void setup()
   TWI_RESET();
 
   Wire.begin();
-  Wire.setClock(100000);
+  Wire.setClock(WireDefaultSpeed);
   //  Timer3.attachInterrupt(RealTimeISR);
   //  Timer3.start(100000); // Calls every 100ms
   // Initial splash screen
   Signon();
   ButtonPressed = false;
   ButtonRotated = false;
+  // Set ActiveDialog to not NULL, this will stop any module from displaying.
+  // This happen only when the startup delay is set to 0
+  if(MIPSconfigData.StartupDelay == 0) ActiveDialog = (DialogBox *)~NULL;
   // Init the baords
   ScanHardware();
   DIO_init();
+  if(ActiveDialog == (DialogBox *)~NULL) MenuDisplay(&MainMenu);
   // Configure Threads
   MIPSsystemThread.setName("System");
   MIPSsystemThread.onRun(MIPSsystemLoop);
@@ -1003,8 +1050,8 @@ void setup()
 void MIPSsystemLoop(void)
 {
   char cbuf[20];
-  
-  if((BrightTime + 30000) < millis()) SetBackLight();
+
+  if ((BrightTime + 30000) < millis()) SetBackLight();
   float MaxVoltage;
   // Process any serial commands
   // Not sure why this is here??
@@ -1015,9 +1062,9 @@ void MIPSsystemLoop(void)
   if (MaxTwaveVoltage > MaxVoltage) MaxVoltage = MaxTwaveVoltage;
   if (MaxFAIMSVoltage > MaxVoltage) MaxVoltage = MaxFAIMSVoltage;
   if (MaxESIvoltage > MaxVoltage) MaxVoltage = MaxESIvoltage;
-  #if HVPScode
+#if HVPScode
   if (MaxHVvoltage > MaxVoltage) MaxVoltage = MaxHVvoltage;
-  #endif
+#endif
   // Test output voltages and update the button LEDs to provide warning to user
   // Blue LED on if voltgaes are enabled and above 0
   if (MaxVoltage == 0) {
@@ -1061,20 +1108,20 @@ void MIPSsystemLoop(void)
       tft.println("Apply power to operate...");
     }
     // Dim the display, we could be like this for a long time!
-    if(MIPSconfigData.EnetUseTWI) analogWrite(BACKLIGHT, 0);
+    if (MIPSconfigData.EnetUseTWI) analogWrite(BACKLIGHT, 0);
     else analogWrite(BACKLIGHT, 400);
     //    bmpDraw(MIPSconfigData.BootImage, 0, 0);
     // Wait for power to appear and then reset the system.
-    while (ReadVin() < 10.0) 
+    while (ReadVin() < 10.0)
     {
       // Look for the POWER command to start up!
       ReadAllSerial();
-      if(RB_Commands(&RB))
+      if (RB_Commands(&RB))
       {
         // Read a line from the ring buffer
-        GetLine(&RB,cbuf,20);
-        if(strcmp(cbuf,"POWER") == 0) PowerControl();
-        if(strcmp(cbuf,"ISPWR") == 0) serial->println("I'm off!");
+        GetLine(&RB, cbuf, 20);
+        if (strcmp(cbuf, "POWER") == 0) PowerControl();
+        if (strcmp(cbuf, "ISPWR") == 0) serial->println("I'm off!");
       }
       WDT_Restart(WDT);
     }
@@ -1106,7 +1153,7 @@ void ScanHardware(void)
   Twave_init(1, 0x52);
 #endif
   // Loop through all the addresses looking for signatures
-  for(int i=0; i<NumModAdd; i++)
+  for (int i = 0; i < NumModAdd; i++)
   {
     addr = ModuleAddresses[i];
     // Set board select to A
@@ -1121,18 +1168,26 @@ void ScanHardware(void)
       if (strcmp(&signature[2], "ESI") == 0) ESI_init(0, addr);
       if (strcmp(&signature[2], "Filament") == 0) Filament_init(0, addr);
       if (strcmp(&signature[2], "ARB") == 0) ARB_init(0, addr);
-      #if HOFAIMScode
-      if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(0, addr); 
-      #endif
+      if (strcmp(&signature[2], "FPGA") == 0) FPGA_init(0, addr);
+#if DMSDMSMB
+      if (strcmp(&signature[2], "CVBIAS") == 0) CVBIAS_init(0, addr);
+      if (strcmp(&signature[2], "WAVEFORMS") == 0) WAVEFORMS_init(0, addr);
+#endif
+#if HOFAIMScode
+      if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(0, addr);
+#endif
       if (strcmp(&signature[2], "RFamp") == 0) RFA_init(0, addr);
-      #if FAIMSFBcode
+#if FAIMSFBcode
       if (strcmp(&signature[2], "FAIMSfb") == 0) FAIMSfb_init(0, addr);
-      #endif
-      #if HVPScode
+#endif
+#if HVPScode
       if (strcmp(&signature[2], "HVPS") == 0) HVPS_init(0, addr);
-      #endif
+#endif
+#if DCBswitchCode
+      if (strcmp(&signature[2], "DCBswitch") == 0) DCBswitch_init(0, addr);
+#endif
     }
-    if(!MIPSconfigData.UseBRDSEL) continue;
+    if (!MIPSconfigData.UseBRDSEL) continue;
     // Set board select to B
     ENA_BRD_B;
     if (ReadEEPROM(signature, addr, 0, 100) == 0)
@@ -1145,21 +1200,29 @@ void ScanHardware(void)
       if (strcmp(&signature[2], "ESI") == 0) ESI_init(1, addr);
       if (strcmp(&signature[2], "Filament") == 0) Filament_init(1, addr);
       if (strcmp(&signature[2], "ARB") == 0) ARB_init(1, addr);
-      #if HOFAIMScode 
-      if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(1, addr); 
-      #endif
+      if (strcmp(&signature[2], "FPGA") == 0) FPGA_init(1, addr);
+#if DMSDMSMB
+      if (strcmp(&signature[2], "CVBIAS") == 0) CVBIAS_init(0, addr);
+      if (strcmp(&signature[2], "WAVEFORMS") == 0) WAVEFORMS_init(0, addr);
+#endif
+#if HOFAIMScode
+      if (strcmp(&signature[2], "HOFAIMS") == 0) HOFAIMS_init(1, addr);
+#endif
       if (strcmp(&signature[2], "RFamp") == 0) RFA_init(1, addr);
-      #if FAIMSFBcode
+#if FAIMSFBcode
       if (strcmp(&signature[2], "FAIMSfb") == 0) FAIMSfb_init(1, addr);
-      #endif
-      #if HVPScode
+#endif
+#if HVPScode
       if (strcmp(&signature[2], "HVPS") == 0) HVPS_init(1, addr);
-      #endif
+#endif
+#if DCBswitchCode
+      if (strcmp(&signature[2], "DCBswitch") == 0) DCBswitch_init(1, addr);
+#endif
     }
   }
   // Now look for the FAIMS board. This is done last because field driven FAIMS mode is selected if
   // a DCbias module is found.
-  #if FAIMScode
+#if FAIMScode
   for (addr = 0x50; addr <= 0x56; addr  += 2)
   {
     // Set board select to A
@@ -1177,7 +1240,7 @@ void ScanHardware(void)
       if (strcmp(&signature[2], "FAIMS") == 0) FAIMS_init(1);
     }
   }
-  #endif
+#endif
   WiFi_init();
   // The last thig we do is look for the analog input option
   if (MIPSconfigData.UseAnalog) Analog_init();
@@ -1220,13 +1283,13 @@ void SerialWD(void)
 {
   static ulong lastcharT;
 
-  if(SerialUSB.available() > 0) 
+  if (SerialUSB.available() > 0)
   {
     lastcharT = millis();
     return;
   }
-  if(SerialWatchDog <= 0) return;
-  if(((millis()-lastcharT)/(ulong)1000) < SerialWatchDog) return;
+  if (SerialWatchDog <= 0) return;
+  if (((millis() - lastcharT) / (ulong)1000) < SerialWatchDog) return;
   // If here rest the comm power
   SerialPortReset();
   lastcharT = millis();
@@ -1243,10 +1306,10 @@ void ReadAllSerial(void)
     ResetFilamentSerialWD();
     serial = &SerialUSB;
     char c = SerialUSB.read();
-    if(Serial1Echo)
+    if (Serial1Echo)
     {
-       Serial1.write(c);
-       Serial1.flush();
+      Serial1.write(c);
+      Serial1.flush();
     }
     if (!SerialNavigation(c)) PutCh(c);
   }
@@ -1261,19 +1324,29 @@ void ReadAllSerial(void)
     }
   }
 #endif
+/* This code caused the ethernet interface to fail, not sure I understand why its here, commented 8/29/23
   while (WiFiSerial->available() > 0)
   {
     ResetFilamentSerialWD();
     serial = WiFiSerial;
     PutCh(WiFiSerial->read());
   }
+*/
   ProcessEthernet();
+}
+
+void (*onProcessSerial)(void) = NULL;
+
+void attachProcessSerial(void (*func)(void))
+{
+   onProcessSerial = func;
 }
 
 // This function process all the serial IO and commands
 void ProcessSerial(void)
 {
   ReadAllSerial();
+  if(onProcessSerial != NULL) onProcessSerial();
   // If there is a command in the input ring buffer, process it!
   while (RB_Commands(&RB) > 0) // Process until flag that there is nothing to do
   {
@@ -1285,35 +1358,45 @@ void ProcessSerial(void)
   LevelDetChangeReport();
 }
 
-// Main processing loop
-void loop()
+void USBportTest(void)
 {
-  static bool DisableDisplayStatus = false;
   static bool wasConnected = false;
-  static int  unusableCount=0;
+  static int  unusableCount = 0;
 
-  if(SerialUSB.dtr()) wasConnected = true;
-  if(SerialUSB.dtr()) digitalWrite(72,LOW);
-  else digitalWrite(72,HIGH);
-  if(!Is_otg_clock_usable()) unusableCount++;
-  else unusableCount=0;
-  if(!SerialUSB.dtr() && wasConnected)
+  if (SerialUSB.dtr()) wasConnected = true;
+  if (SerialUSB.dtr()) digitalWrite(72, LOW);
+  else digitalWrite(72, HIGH);
+  if (!Is_otg_clock_usable()) unusableCount++;
+  else unusableCount = 0;
+  if (!SerialUSB.dtr() && wasConnected)
   {
     wasConnected = false;
     SerialPortReset();
   }
-  if(isUSBerror() || (unusableCount > 500))
+  if (isUSBerror() || (unusableCount > 500))
   {
     clearUSBerror();
     unusableCount = 0;
     SerialPortReset();
   }
+}
+
+// Main processing loop
+void loop()
+{
+  static bool DisableDisplayStatus = false;
+  static uint32_t lastTouched = millis();
+
+  USBportTest();
   if ((!DisableDisplay) && (DisableDisplayStatus))
   {
     // Here is the display was disabled and it now going to be enabled.
     // Clear the display and reprint the current menu or dialog.
     tft.disableDisplay(DisableDisplay);
     tft.fillScreen(ILI9340_BLACK);
+    tft.setTextColor(ILI9340_WHITE, ILI9340_BLACK);
+    tft.setRotation(1);
+    tft.setTextSize(2);
     if (ActiveMenu != NULL) MenuDisplay(ActiveMenu);
     if (ActiveDialog != NULL) DialogBoxDisplay(ActiveDialog);
   }
@@ -1325,6 +1408,15 @@ void loop()
   // if it should run. If yes, he will run it;
   if (!Suspend) control.run();
   else  ProcessLED();
+  // Return to main menu if the startup delay is 0 and no button activity for
+  // 1 min
+  if(MIPSconfigData.StartupDelay == 0)
+  {
+    if((ActiveDialog != NULL) && (ActiveMenu != &MainMenu))
+    {
+      if((millis() - lastTouched) > (1000 * 60)) MenuDisplay(&MainMenu);
+    }
+  }
   // Process any encoder event
   if (ButtonRotated)
   {
@@ -1332,6 +1424,7 @@ void loop()
     if (ActiveMenu != NULL) MenuProcessChange(ActiveMenu, encValue);
     else if (ActiveDialog != NULL) DialogBoxProcessChange(ActiveDialog, encValue);
     encValue = 0;
+    lastTouched = millis();
   }
   if (ButtonPressed)
   {
@@ -1342,6 +1435,7 @@ void loop()
     if (ActiveMenu != NULL) MenuButtonPress(ActiveMenu);
     else if (ActiveDialog != NULL) DialogButtonPress(ActiveDialog);
     DismissMessageIfButton();
+    lastTouched = millis();
   }
   ProcessSerial();
   // Interlock processing.
@@ -1352,34 +1446,34 @@ void loop()
   static bool initInterlock = true;
   static int  WasPowerON = digitalRead(PWR_ON);  // LOW = on
   static bool InterlockArmed = false;
-  if((MIPSconfigData.InterlockIn >= 'Q') && (MIPSconfigData.InterlockIn <= 'X'))
+  if ((MIPSconfigData.InterlockIn >= 'Q') && (MIPSconfigData.InterlockIn <= 'X'))
   {
-    if(InterlockArmed)
+    if (InterlockArmed)
     {
-      if(ReadInput(MIPSconfigData.InterlockIn) == LOW)
+      if (ReadInput(MIPSconfigData.InterlockIn) == LOW)
       {
         // Trip power supply and disarm interlock
         MIPSconfigData.PowerEnable = false;
-        digitalWrite(PWR_ON,HIGH);
+        digitalWrite(PWR_ON, HIGH);
         DisplayMessageButtonDismiss("Interlock Trip!");
         InterlockArmed = false;
       }
     }
-    else if(ReadInput(MIPSconfigData.InterlockIn) == HIGH) InterlockArmed = true;
+    else if (ReadInput(MIPSconfigData.InterlockIn) == HIGH) InterlockArmed = true;
   }
-  if((initInterlock) || (WasPowerON != digitalRead(PWR_ON)))
+  if ((initInterlock) || (WasPowerON != digitalRead(PWR_ON)))
   {
     initInterlock = false;
-    if((MIPSconfigData.InterlockOut >= 'A') && (MIPSconfigData.InterlockOut <= 'P'))
+    if ((MIPSconfigData.InterlockOut >= 'A') && (MIPSconfigData.InterlockOut <= 'P'))
     {
-      // If power supply is on then output interlock high 
-      if(NumberOfDCChannels > 0)
+      // If power supply is on then output interlock high
+      if (NumberOfDCChannels > 0)
       {
         WasPowerON = digitalRead(PWR_ON);
-        if(digitalRead(PWR_ON) == LOW) SetOutput(MIPSconfigData.InterlockOut,HIGH);
-        else SetOutput(MIPSconfigData.InterlockOut,LOW);
+        if (digitalRead(PWR_ON) == LOW) SetOutput(MIPSconfigData.InterlockOut, HIGH);
+        else SetOutput(MIPSconfigData.InterlockOut, LOW);
       }
-      else SetOutput(MIPSconfigData.InterlockOut,HIGH);
+      else SetOutput(MIPSconfigData.InterlockOut, HIGH);
       UpdateDigitialOutputArray();
     }
   }
@@ -1396,9 +1490,9 @@ int SAVEparms(char *filename)
   MIPSconfigData.DisableDisplay = DisableDisplay;
   MIPSconfigData.signature = 0xA55AE99E;
   {
-     AtomicBlock< Atomic_RestoreState > a_Block;
-     // Save to FLASH as well in case SD card fails or is not present
-     dueFlashStorage.writeAbs((uint32_t)NonVolStorage, (byte *)&MIPSconfigData, sizeof(MIPSconfigStruct));
+    AtomicBlock< Atomic_RestoreState > a_Block;
+    // Save to FLASH as well in case SD card fails or is not present
+    dueFlashStorage.writeAbs((uint32_t)NonVolStorage, (byte *)&MIPSconfigData, sizeof(MIPSconfigStruct));
   }
   // Test SD present flag, exit and NAK if no card or it failed to init
   if (!SDcardPresent) return (ERR_NOSDCARD);
@@ -1439,7 +1533,7 @@ bool LOADparms(char *filename)
   int  i, fVal;
   byte *b;
 
-  while(1)
+  while (1)
   {
     // Test SD present flag
     if (!SDcardPresent) break;
@@ -1455,22 +1549,22 @@ bool LOADparms(char *filename)
     }
     file.close();
     // Copy to MIPS config struct
-    if(MCS.signature == 0xA55AE99E)
+    if (MCS.signature == 0xA55AE99E)
     {
-       memcpy(&MIPSconfigData, &MCS, MCS.Size);
-       DisableDisplay = MIPSconfigData.DisableDisplay;
-       return true;
+      memcpy(&MIPSconfigData, &MCS, MCS.Size);
+      DisableDisplay = MIPSconfigData.DisableDisplay;
+      return true;
     }
     break;
   }
   // If here then the SD card read failed so try loading from FLASH
   b = (byte *)&MCS;
-  for(i=0;i<sizeof(MIPSconfigStruct);i++)
+  for (i = 0; i < sizeof(MIPSconfigStruct); i++)
   {
-    b[i] = dueFlashStorage.readAbs(((uint32_t)NonVolStorage) + i);  
+    b[i] = dueFlashStorage.readAbs(((uint32_t)NonVolStorage) + i);
   }
   // Check signature, if correct then update
-  if(MCS.signature == 0xA55AE99E)
+  if (MCS.signature == 0xA55AE99E)
   {
     memcpy(&MIPSconfigData, &MCS, MCS.Size);
     DisableDisplay = MIPSconfigData.DisableDisplay;
@@ -1481,10 +1575,10 @@ bool LOADparms(char *filename)
 
 void PowerControl(void)
 {
-  pinMode(POWER,OUTPUT);
-  digitalWrite(POWER,HIGH);
+  pinMode(POWER, OUTPUT);
+  digitalWrite(POWER, HIGH);
   delay(1000);
-  digitalWrite(POWER,LOW);
+  digitalWrite(POWER, LOW);
 }
 
 // ADC channel 0 is 24VDC supply, rev 3.1 power module
@@ -1493,11 +1587,11 @@ void PowerControl(void)
 void ReportSupplies(void)
 {
   SendACKonly;
-  if(SerialMute) return;
+  if (SerialMute) return;
   serial->print("24 volt supply: ");
-  serial->println(((float)analogRead(0)/4095.0) * 3.3 * 12.0);
+  serial->println(((float)analogRead(0) / 4095.0) * 3.3 * 12.0);
   serial->print("12 volt supply: ");
-  serial->println(((float)analogRead(1)/4095.0) * 3.3 * 6.3);
+  serial->println(((float)analogRead(1) / 4095.0) * 3.3 * 6.3);
   serial->print("Input current, Amps: ");
-  serial->println(((float)analogRead(3)/4095.0) * 3.3 / 0.2);
+  serial->println(((float)analogRead(3) / 4095.0) * 3.3 / 0.2);
 }

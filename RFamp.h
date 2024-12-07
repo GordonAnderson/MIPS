@@ -13,7 +13,7 @@
 #define RFAcpldERROR          0       // Error LED, active high
 #define RFAcpldSTATUS         1       // Status LED, active high
 #define RFAcpldCLOSED         2       // Clossed LED, active high. on when in clossed loop mode
-#define RFAcpldRANGE          3       // Used to apply a hold on RF level detectors
+#define RFAcpldRANGE          3       // Used to gain range of the RF level detectors
 #define RFAcpldFSELECT        4       // DDS control line
 #define RFAcpldPSEL0          5       // DDS control line 
 #define RFAcpldPSEL1          6       // DDS control line
@@ -21,7 +21,9 @@
 #define RFAcpldINVERT         8       // Inverts the loop control
 
 // CPLD control bits
-#define RFAstrobe  49
+#define RFAstrobe  49                 // Pin 14 on EXT1 connector
+                                      // Pin 11 on EXT1 connectes to CPLD pin 30,
+                                      // called CPLD_CLEA but not used
 
 // ADC input channels
 #define RFAadcDCV             0
@@ -75,6 +77,12 @@ typedef struct
   float   K;                 // Factor used to calculate DC from Quad Vp-p,  
   // Resolving DC bias channel number
   int     DCBchan;
+  // Auto range enable
+  bool    AutoRangeEna;
+  // Gain compensation parameters
+  bool    EnableComp;
+  int     CalFrequency;
+  float   FreqComp;
 } RFAdata;                    
 
 // This structure saves the current state of the RFamp module
@@ -91,6 +99,7 @@ typedef struct
   float   PoleBias;
   bool    Mode;
   bool    Invert;
+  bool    ResolvingDCenable;
   // Misc
   uint16_t CPLDimage;
   // Measured and calculated monitor values
@@ -108,7 +117,9 @@ typedef struct
   float   RFVNpp;             // Monitored RF- Vp-p
 } RFAstate;
 
-extern int   NumberOfRFAchannels;
+extern      RFAdata  *RFAarray[2];
+extern int  NumberOfRFAchannels;
+extern bool ResolvingDCenable; 
 
 // Prototypes
 void RFA_init(int8_t Board, int8_t addr);
@@ -130,6 +141,9 @@ void RFAsetGain(char *Module, char *value);
 void RFAreturnGain(int Module);
 void RFampNumber(void);
 
+void SetRangeHigh(int brd, bool Send = true);
+void SetRangeLow(int brd, bool Send = true);
+
 void RFAsetFreq(int module, int freq);
 void RFAgetFreq(int module);
 void RFAgetPWR(int module);
@@ -148,5 +162,22 @@ void RFAsetK(char *Module, char *value);
 void RFAgetK(int Module);
 void RFAsetDCBchan(int Module, int value);
 void RFAgetDCBchan(int Module);
+void RFsetDrvZero(char *Module, char *value);
+
+int RFAmodule2board(int Module);
+
+void RFAsetAutoRange(char *Module, char *value);
+void RFAgetAutoRange(int module);
+
+void RFAsetFreqComp(char *Module, char *value);
+void RFAgetFreqComp(int Module);
+void RFAsetCalFreq(int Module, int Freq);
+void RFAgetCalFreq(int Module);
+void RFAsetCompG(char *Module, char *Comp);
+void RFAgetCompG(int Module);
+
+void quadAutoTune(int brd, bool report = true);
+void setQuadAT(int module);
+void setQuadATR(int module);
 
 #endif

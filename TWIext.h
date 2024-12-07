@@ -3,6 +3,9 @@
 
 #define MaxQueued 10
 
+extern int WireDefaultSpeed;
+extern int Wire1DefaultSpeed;
+
 enum TWIcbType
 {
   Empty,
@@ -55,6 +58,7 @@ void   TWIerror(void);
 void   TWIreset(void);
 
 // Function prototypes for TWI acquire / release and function queqing system.
+bool TWItest(int8_t adr);
 void TWI_RESET(void);
 bool AcquireTWI(void);
 void ReleaseTWI(void);
@@ -80,17 +84,25 @@ void TWIend(uint8_t add, int board);
 
 // Function prototypes for TWI data types read and write functions
 void TWIcmd(uint8_t add, int board, int cmd);
+void TWIcmd(uint8_t add, int board, int ch, int cmd);
 void TWIsetBool(uint8_t add, int board, int cmd, bool flag);
 void TWIsetByte(uint8_t add, int board, int cmd, byte bval);
 void TWIsetWord(uint8_t add, int board, int cmd, uint16_t wval);
 void TWIset16bitInt(uint8_t add, int board, int cmd, int ival);
+void TWIset24bitInt(uint8_t add, int board, int cmd, int ival);
 void TWIsetInt(uint8_t add, int board, int cmd, int ival);
+void TWIsetFloat(uint8_t add, int board,int ch, int cmd, float fval);
 void TWIsetFloat(uint8_t add, int board, int cmd, float fval);
 bool TWIreadFloat(uint8_t add, int board,int cmd, float *value);
+bool TWIreadFloat(uint8_t add, int board, int ch, int cmd, float *value);
 bool TWIread32bitInt(uint8_t add, int board,int cmd, int *value);
 bool TWIread24bitUnsigned(uint8_t add, int board,int cmd, int *value);
 bool TWIread16bitUnsigned(uint8_t add, int board,int cmd, int *value);
 bool TWIread8bitUnsigned(uint8_t add, int board,int cmd, int *value);
 bool TWIreadBlock(uint8_t add, int board,int cmd, void *ptr, int numbytes);
+bool TWIreadBlock(uint8_t add, int board,int ch, int cmd, void *ptr, int numbytes);
+
+void setTWIspeed(int ch, int speed);
+void getTWIspeed(int ch);
 
 #endif

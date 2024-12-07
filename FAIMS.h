@@ -31,6 +31,10 @@ Drv3 current
 #ifndef FAIMS_h
 #define FAIMS_h
 
+extern int     NumberOfFAIMS; 
+extern bool    FAIMSpresent;
+extern int8_t  FAIMSBoardAddress;
+
 extern float MaxFAIMSVoltage;
 extern bool  DiableArcDetect;
 
@@ -70,7 +74,7 @@ typedef struct
   ADCchan  Imon;
 } Drive;
 
-// FAIMS data structure. This data is saved in EEPROM
+// FAIMS data structure. This data is saved in EEPROM, 444 bytes
 typedef struct
 {
   int16_t Size;              // This data structures size in bytes
@@ -118,6 +122,9 @@ typedef struct
   // External scan trigger options
   char          ScanTrigger;  // Trigger input channel
   int8_t        TriggerLevel; // Trigger level, 0,CHANGE,RISING, or FALLING
+  // Piece wise linear calibration data structures
+  bool          UsePWL;
+  PWLcalibration PWLcal[2];   // Piece wise linear data structures, 0 = pos, 1 = neg
 } FAIMSdata;
 
 extern FAIMSdata  faims;
@@ -129,6 +136,7 @@ enum FAIMSdir
 {
   FAIMSup,
   FAIMSdown,
+  FAIMSadjC,
   FAIMSdone
 };
 

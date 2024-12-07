@@ -1,6 +1,8 @@
 #include "Variants.h"
 #include "Compressor.h"
 
+static DIhandler *restart = NULL;
+
 DialogBoxEntry ARBCompressorEntries[] = {
   {" Mode"                , 0, 1, D_LIST   , 0,  0, 8, 15, false, CmodeList, Cmode, NULL, ARBupdateMode},
   {" Order"               , 0, 2, D_INT    , 0, 65535, 1, 18, false, "%5d", &arb.Corder, NULL, ARBupdateCorder},
@@ -129,6 +131,14 @@ void ARBcompressorTimerISR(void)
   char OP;
 
   // This interrupt occurs when the current state has timed out so advance to the next
+  if(CompressorDisable)
+  {
+    // Stop the timer
+    CompressorTimer.stop();
+    // Restore the mode
+    if(!NoCompressInit) ARBupdateMode();
+    return;    
+  }
   switch (CState)
   {
     case CS_COMPRESS:
@@ -180,6 +190,13 @@ void ARBcompressorTimerISR(void)
         CState = CS_DELAY;  // Delay, hold current mode during delay
         C_NextEvent += C_Delay;
       }
+      else if(OP == 'H')
+      {
+        // Stop the CompressorTimer clock and exit. When the trigger to restart happens 
+        // The clock will be enabled and table will continue
+        CState = CS_TRIG;
+        return;
+      }
       break;
     default:
       break;
@@ -190,7 +207,7 @@ void ARBcompressorTimerISR(void)
     // Stop the timer
     CompressorTimer.stop();
     // Restore the mode
-    ARBupdateMode();
+    if(!NoCompressInit) ARBupdateMode();
     return;
   }
   // Update the timer
@@ -199,8 +216,9 @@ void ARBcompressorTimerISR(void)
 
 void ARBcompressorTriggerISR(void)
 {
+  if(CompressorDisable) return;
   // Clear and setup variables
-  ARBnormal;             // Put system in normal mode
+  if(!NoCompressInit) ARBnormal;             // Put system in normal mode
   ARBgetNextOperationFromTable(true);
   C_NextEvent = C_Td;
   CState = CS_TRIG;
@@ -231,6 +249,30 @@ bool ARBgetValueFromTable(int *index, int *value)
      while(isDigit(TwaveCompressorTable[*index])) *value = *value * 10 + int(TwaveCompressorTable[(*index)++] - '0');
    }
    return valfound;
+}
+
+void WaitForTriggerISR(void)
+{
+  if(restart != NULL) 
+  {
+    restart->detach();
+    // The only way we get here is if the system restarted from a H halt
+    // table command. Reset the NextEvent count and restart the counter
+    C_NextEvent = CompressorTimer.getCounter();
+    //C_NextEvent = 0;
+    //CompressorTimer.enableTrigger();
+  }  
+  if(!CompressorDisable) ARBcompressorTimerISR();
+}
+
+// This function will enable a interrupt of the selected input. If the input is upper case
+// the positive edge will be used else the negative edge is used.
+void WaitForTrigger(char portCH)
+{
+  if(restart == NULL) restart = new DIhandler;
+  restart->detach();
+  if(isupper(portCH)) restart->attached(toupper(portCH),RISING,WaitForTriggerISR);
+  else restart->attached(toupper(portCH),FALLING,WaitForTriggerISR);
 }
 
 // Commands processed in this routine:
@@ -281,6 +323,12 @@ bool ARBgetValueFromTable(int *index, int *value)
 // A      Set aux voltage to positive value, channel, voltage
 // a      Set aux voltage to negative value, channel, voltage
 //
+// Added May25, 2022
+//
+// H      Used to halt execution of the table and wait for a trigger,
+//        followed by the DIO name, upper case for positive edge trigger
+//        lower case of negative edge trigger. HT
+//
 char ARBgetNextOperationFromTable(bool init)
 {
   bool   valfound;
@@ -306,9 +354,11 @@ char ARBgetNextOperationFromTable(bool init)
   }
   while(1)
   {
+    if(CompressorDisable) return(0);
     // Find a valid character
     while(1)  // Updated to support floating point numbers
     {
+      if(CompressorDisable) return(0);
       if(TwaveCompressorTable[tblindex] == 0) return(0);
       OP = TwaveCompressorTable[tblindex++];
       count = 1;  // Default to count of 1
@@ -347,7 +397,7 @@ char ARBgetNextOperationFromTable(bool init)
     }
     else if(OP == 'D') //Delay
     {
-      C_Delay = (((float)count) / 1000.0) * C_clock;
+      C_Delay = (fval / 1000.0) * C_clock;
       count = 0;
       return(OP);
     }
@@ -400,12 +450,21 @@ char ARBgetNextOperationFromTable(bool init)
       }
       else
       {
-        portCH = TwaveCompressorTable[tblindex++];    // Get port charaster
+        portCH = TwaveCompressorTable[tblindex++];    // Get port character
         ARBgetValueFromTable(&tblindex, &count);      // Get desired state
         if(count == 0) ClearOutput(portCH,HIGH);
         if(count == 1) SetOutput(portCH,HIGH);                
       }
       count = 0;
+    }
+    else if(OP == 'H')
+    {
+      // If here we will halt the table and wait for a trigger on the specified
+      // digital input
+      count = 0;
+      portCH = TwaveCompressorTable[tblindex++];    // Get port character
+      WaitForTrigger(portCH);
+      return(OP);
     }
     else if(OP == 'O')
     {

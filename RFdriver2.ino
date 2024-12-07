@@ -25,6 +25,7 @@ int  SelectedRFChan  = 0;    // Active channel
 int  SelectedRFBoard = 0;    // Active board, 0 thru 3
 float MaxRFVoltage = 0;      // This value is set to the highest RF output voltage
 bool Tuning = false;
+bool TuneAbort = false;      // Not used in this driver, defined because its referenced elsewhere
 int  TuningChannel = 0;
 
 RFDRVstate   *RFstate[4][2] = {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
@@ -33,6 +34,11 @@ RFreadBacks  *RFrb[4][2]    = {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
 float RFpVpp;
 float RFnVpp;
 float Power;
+
+// Arc detection parameters. Not implemented in this RFdriver code, place holders so it will compile
+int   RFarcCH = 0;
+float RFarcDrv = 0;
+float RFarcV = 0;
 
 extern DialogBoxEntry RFdriverDialogEntriesPage2[];
 
@@ -56,7 +62,7 @@ int8_t rfgateTrig;
 
 DialogBoxEntry RFdriverDialogEntriesPage2[] = {
   {" Drive limit, %", 0, 1, D_FLOAT, 0, 100, 1, 18, false, "%5.1f", &RFCD.MaxDrive, NULL, NULL},
-  {" Power limit, W", 0, 2, D_FLOAT, 0, 90, 1, 18, false, "%5.1f", &RFCD.MaxPower, NULL, NULL},
+  {" Power limit, W", 0, 2, D_FLOAT, 0, 50, 1, 18, false, "%5.1f", &RFCD.MaxPower, NULL, NULL},
   {" Mode"          , 0, 3, D_LIST, 0, 0, 7, 16, false, ModeList, RFmode, NULL, RFmodeChange},
   {" Auto tune"     , 0, 6, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RFat, NULL},
   {" Auto retune"   , 0, 7, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RFart, NULL},
@@ -191,6 +197,8 @@ void SelectChannel(void)
   else strcpy(RFmode, "AUTO");
   RFmodeChange();
   RFgateChange();
+  // Set the power limit
+  RFdriverDialogEntriesPage2[1].Max = RFDD->PowerLimit;
   // If rev 2 then do not display the RF- channel
   if((RFDD->Rev == 2) || (RFDD->Rev == 4)) RFdriverDialogEntriesPage1[5].Type = D_OFF;
   else RFdriverDialogEntriesPage1[5].Type = D_FLOAT;
@@ -199,7 +207,8 @@ void SelectChannel(void)
 }
 
 // This function uses the selected channel to determine the board number, 0 or 1.
-// Returns -1 if error condition is detected
+// Returns -1 if error condition is detected.
+// The selected channel SC, is 0 thru number of channels - 1
 int8_t BoardFromSelectedChannel(int8_t SC)
 {
   // if selected channel is 0 or 1 then find the first avalible board and return it
@@ -210,7 +219,11 @@ int8_t BoardFromSelectedChannel(int8_t SC)
     return (-1);
   }
   if(SC > 7) return(-1);
-  if(RFDDarray[SC >> 1] == NULL) return(-1);
+  if(RFDDarray[SC >> 1] == NULL) 
+  {
+    if(RFDDarray[2] != NULL) return(2);
+    return(-1);
+  }
   return(SC >> 1);
 }
 
@@ -223,6 +236,7 @@ void RFdriver_init(int8_t Board, int8_t addr)
   DialogBox *sd;
 
   if(NumberOfRFChannels >= 4) Board += 2;
+  if(NumberOfRFChannels >= 2) if(Board == 0) Board += 2;
   // Allocate the RFdriver structures
   RFDDarray[Board]  = new RFdriverData;
   RFstate[Board][0] = new RFDRVstate;
@@ -541,7 +555,7 @@ void RFautoTune(int channel)
   SendACK;
   Tuning = true;
   TuningChannel = channel-1;
-  b = BoardFromSelectedChannel(channel);
+  b = BoardFromSelectedChannel(channel-1);
   TWIsetByte(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_CHAN, (TuningChannel & 1) +1);
   TWIcmd(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_ATUNE);
   DisplayMessage("Tune in process");
@@ -575,7 +589,7 @@ void RFautoRetune(int channel)
   SendACK;
   Tuning = true;
   TuningChannel = channel-1;
-  b = BoardFromSelectedChannel(channel);
+  b = BoardFromSelectedChannel(channel-1);
   TWIsetByte(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_CHAN, (TuningChannel & 1) +1);
   TWIcmd(RFdrvCMDadd(RFDDarray[b]->EEPROMadr), b, TWI_RF_SET_RTUNE);
   DisplayMessage("Retune in process");
@@ -717,7 +731,7 @@ void SaveRF2EEPROM(void)
     if(RFDDarray[b] != NULL)
     {
       SelectBoard(b);
-      if (WriteEEPROM(&RFDDarray[b], RFDDarray[b]->EEPROMadr, 0, sizeof(RFdriverData)) != 0) berr = true;
+      if (WriteEEPROM(RFDDarray[b], RFDDarray[b]->EEPROMadr, 0, sizeof(RFdriverData)) != 0) berr = true;
     }
   }
   SelectBoard(brd);
@@ -842,59 +856,12 @@ void RFdriveAllowADJ(void)
 
 void genPWLcalTable(char *channel, char *phase)
 {
-  String sToken;
-  char   *res;
-  int    brd,ph,i;
-  float  Drive;
-  
-  sToken = channel;
-  PWLch = sToken.toInt();
-  if (!IsChannelValid(PWLch,false)) return;
-  brd = BoardFromSelectedChannel(PWLch - 1);
-  sToken = phase;
-  if((sToken != "RF+") && (sToken != "RF-")) BADARG;
-  if(sToken == "RF+") ph = 0;
-  else ph = 1;
   // Send the user instructions.
-  serial->println("This function will generate a piecewise linear");
-  serial->println("calibration table. Set the drive level to reach");
-  serial->println("desired calibration points and then enter the");
-  serial->println("measured value to the nearest volt. Press enter");
-  serial->println("When finished. Voltage must be increasing!");
-  // Loop to allow user to adjust drive and enter measured voltage
-  RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].num = 0;
-  i=0;
-  Drive = RFDDarray[brd]->RFCD[(PWLch - 1) & 1].DriveLevel;
-  while(true)
-  {
-     serial->print("\nPoint ");
-     serial->println(i+1);
-     res = UserInput("Enter measured voltage: ", RFdriveAllowADJ);
-     if( res == NULL) break;
-     sToken = res;
-     RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].Value[i] = sToken.toInt();
-     // Read the ADC raw counts
-     SelectBoard(BoardFromSelectedChannel(PWLch - 1));
-     if(ph == 0) RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].ADCvalue[i] = AD7998(RFDDarray[brd]->ADCadr, RFDDarray[brd]->RFCD[(PWLch - 1) & 1].RFpADCchan.Chan, 100);
-     else RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].ADCvalue[i] = AD7998(RFDDarray[brd]->ADCadr, RFDDarray[brd]->RFCD[(PWLch - 1) & 1].RFpADCchan.Chan, 100);
-     i++;
-     RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].num = i;
-     if(i>=MAXPWL) break;
-  }
-  serial->println("");
-  // Report the table
-  serial->print("Number of table entries: ");
-  serial->println(RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].num);
-  for(i=0;i<RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].num;i++)
-  {
-    serial->print(RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].Value[i]);
-    serial->print(",");
-    serial->println(RFDDarray[brd]->PWLcal[(PWLch - 1) & 1][ph].ADCvalue[i]);
-  }
-  // Done!
-  serial->println("\nData entry complete!");
-  RFDDarray[brd]->RFCD[(PWLch - 1) & 1].DriveLevel = Drive;
-  if (PWLch - 1 == SelectedRFChan) RFCD.DriveLevel = Drive;
+  serial->println("This version of the RF driver requires you to");
+  serial->println("connect to the modules USB port or to use");
+  serial->println("the TWITALK capability. This calibration is");
+  serial->println("Performed using the modules CPU and host");
+  serial->println("interface.");
 }
 
 #endif

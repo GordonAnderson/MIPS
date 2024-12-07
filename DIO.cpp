@@ -39,6 +39,8 @@ Thread DIOThread  = Thread();
 int DigitialInputs[8];
 int DigitialOutputs[16];
 
+PulseCounter *pulseCounter = NULL;
+
 void UpdateDigitialOutputArray(void)
 {
   int   i;
@@ -320,13 +322,13 @@ void TriggerOut(char *cmd)
       if (digitalRead(TRGOUT) == HIGH)
       {
         digitalWrite(TRGOUT, LOW);
-        delay(1);
+        delayMicroseconds(1000);    //delay(1);
         digitalWrite(TRGOUT, HIGH);
       }
       else
       {
         digitalWrite(TRGOUT, HIGH);
-        delay(1);
+        delayMicroseconds(1000);    //delay(1);
         digitalWrite(TRGOUT, LOW);
       }
     }
@@ -351,13 +353,13 @@ void AuxOut(char *cmd)
       if (digitalRead(AUXTRGOUT) == HIGH)
       {
         digitalWrite(AUXTRGOUT, LOW);
-        delay(1);
+        delayMicroseconds(1000);    //delay(1);
         digitalWrite(AUXTRGOUT, HIGH);
       }
       else
       {
         digitalWrite(AUXTRGOUT, HIGH);
-        delay(1);
+        delayMicroseconds(1000);    //delay(1);
         digitalWrite(AUXTRGOUT, LOW);
       }
     }
@@ -396,7 +398,7 @@ void TriggerOut(int microSec, bool WithLimits)
   static uint32_t dwReg;
   static int16_t skip = 0;
 
-  AtomicBlock< Atomic_RestoreState > a_Block;
+  //AtomicBlock< Atomic_RestoreState > a_Block;
   if((TrigMax > 0) && WithLimits)
   {
     if(++skip > ((PulseFreq-1) / TrigMax)) skip = 0;
@@ -551,7 +553,6 @@ void DIOopsISR(void)
   int  i,j;
   bool DIOset=false;
 
-  TRACE(9);
   for(i=0;i<8;i++)
   {
 //    if((dioops[i].Report) || (dioops[i].Mirror))
@@ -691,4 +692,100 @@ void DIOmirror(char *in, char *out)
   }
   SetErrorCode(ERR_BADARG);
   SendNAK;
+}
+
+// Pulse counter interface and ISR
+//			COUNT,S,POS	; Enable the counter, input and edge, NA = off
+//			GCNT			  ; Read the count
+//			CLRCNT			; Clear count
+//      SCNTTRG     ; Set the threashold count
+//      GCNTTRG     ; Get the threashold count
+//			TRIGCNT,x		; Trigger count, pulse trigger output at count x
+//			TRIGRST,x		; If TRUE reset the count on trigger
+void pulseCounterISR(void)
+{
+  if(pulseCounter == NULL) return;
+  pulseCounter->count++;
+  if(pulseCounter->count >= pulseCounter->tcount)
+  {
+    if(pulseCounter->resetOnTcount) pulseCounter->count = 0;
+    if(pulseCounter->triggerOnTcount) TriggerOut("5");
+  }
+}
+
+void definePulseCounter(char *DI, char *TL)
+{
+  // If structure is NULL create it and set defaults.
+  if(pulseCounter == NULL)
+  {
+    pulseCounter = new PulseCounter ;
+    pulseCounter->ctrDI = new DIhandler;
+    if(pulseCounter == NULL) BADARG;
+    if(pulseCounter->ctrDI == NULL) BADARG;
+    pulseCounter->count = 0;
+    pulseCounter->tcount = 10;
+    pulseCounter->resetOnTcount = false;
+    pulseCounter->triggerOnTcount = false;
+  }
+  // Set digital input and trigger level.
+  sscanf(DI,"%2s", pulseCounter->din);
+  sscanf(TL,"%4s", pulseCounter->level);
+  // If DI or TL are NA then exit and disable the trigger
+  if((strcmp(pulseCounter->din,"NA") == 0) || (strcmp(pulseCounter->level,"NA") == 0))
+  {
+    pulseCounter->ctrDI->detach();
+    SendACK;
+    return;
+  }
+  int di = FindInList(DIlist, pulseCounter->din);
+  int dil = FindInList(DILlist, pulseCounter->level);
+  if((di == -1) || (dil == -1)) BADARG;
+  // Setup ISR and enable the trigger
+  pulseCounter->ctrDI->detach();
+  pulseCounter->ctrDI->attached(pulseCounter->din[0], dil-2, pulseCounterISR);
+  SendACK;
+}
+
+void getPulseCounter(void)
+{
+  if(pulseCounter == NULL) BADARG;
+  SendACKonly;
+  if(!SerialMute) serial->println(pulseCounter->count);
+}
+
+void clearPulseCounter(void)
+{
+  if(pulseCounter == NULL) BADARG;
+  SendACK;
+  pulseCounter->count = 0;
+}
+
+void setPulseCounterThreshold(int thres)
+{
+  if(pulseCounter == NULL) BADARG;
+  SendACK;
+  pulseCounter->tcount = thres;
+}
+
+void getPulseCounterThreshold(void)
+{
+  if(pulseCounter == NULL) BADARG;
+  SendACKonly;
+  if(!SerialMute) serial->println(pulseCounter->tcount);
+}
+
+void triggerOnCounterhreshold(char *val)
+{
+  if((strcmp(val,"TRUE") != 0) && (strcmp(val,"FALSE") != 0)) BADARG;
+  SendACK;
+  if(strcmp(val,"TRUE")==0) pulseCounter->triggerOnTcount = true;
+  else  pulseCounter->triggerOnTcount = false;
+}
+
+void resetOnCounterhreshold(char *val)
+{
+  if((strcmp(val,"TRUE") != 0) && (strcmp(val,"FALSE") != 0)) BADARG;
+  SendACK;
+  if(strcmp(val,"TRUE")==0) pulseCounter->resetOnTcount = true;
+  else  pulseCounter->resetOnTcount = false;
 }

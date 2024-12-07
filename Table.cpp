@@ -1309,7 +1309,6 @@ void ProcessTables(void)
             }
             #endif
             // Process any serial commands
-            //TRACE(7);
             ProcessSerial();
             if(ReadVin() < 10.0) break;
             serial->flush();
@@ -1322,7 +1321,6 @@ void ProcessTables(void)
                uint32_t now = millis();
                delayMicroseconds(200);
                while((now + InterTableDelay) > millis()) control.run();
-               TRACE(8);
             }
             else
             {
@@ -1798,7 +1796,6 @@ SetupNextEntryAgain2:
 
 void Dummy_ISR(void)
 {
-  TRACE(3);
 }
 
 void Trigger_ISR(void)
@@ -1807,7 +1804,6 @@ void Trigger_ISR(void)
   static uint32_t pin =g_APinDescription[BRDSEL].ulPin;
 
    uint32_t csb = pio->PIO_ODSR & pin;
-   TRACE(4);
    if(MPT.getRAcounter() == 0)
    {
      if(DCbiasUpdaated) { ValueChange = true; DCbiasUpdaated = false; }
@@ -1840,7 +1836,6 @@ inline void RAmatch_Handler(void)
   static uint32_t pin =g_APinDescription[BRDSEL].ulPin;
 
   uint32_t csb = pio->PIO_ODSR & pin;
-  TRACE(5);
   if(DCbiasUpdaated) { ValueChange = true; DCbiasUpdaated = false; }
   ProcessTriggerOut();
   ProcessBurst();
@@ -1864,7 +1859,6 @@ inline void RCmatch_Handler(void)
   static uint32_t pin =g_APinDescription[BRDSEL].ulPin;
 
     uint32_t csb = pio->PIO_ODSR & pin;
-    TRACE(6);
     if(StopRequest == true)
     {
         StopTimer();

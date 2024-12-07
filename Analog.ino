@@ -369,7 +369,7 @@ void Analog_init(void)
   ads2 = new Adafruit_ADS1115(analog.ADC2add);
   ads1->begin();
   ads2->begin();
-  Wire1.setClock(400000);
+  Wire1.setClock(Wire1DefaultSpeed);
   adc = ads1->readADC_SingleEnded(0);
   stat = ads1->getStatus();
   adc = ads1->readADC_SingleEnded(0);

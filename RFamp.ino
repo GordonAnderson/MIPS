@@ -30,17 +30,20 @@
 //      - RF amp power out
 //      - RF amp reflected power
 //
-// Calibration menu functions
-//  - Pos Vpp
-//  - Neg Vpp
-//  - Setpoint
-//  - DC outputs (2)
-//  - Power cal, use 50 ohm load and set voltage for 40 watts then calculate all needed values
-//
-// To do, Dec 5, 2020
-//  - Add the dual range level detection control. This requires the following updates:
-//    a.) Add command to return gain range
-//    b.) Add range control to the host interface
+// To do, Jan 9, 2022
+//    1.) Add command and function to turn off/on resolving DC (done)
+//        - One global flag for all QUADs in system
+//    2.) Add auto range enable function (done)
+//        - Add flag to data structure
+//        - Set to high range when open loop mode is selected
+//        - Switch range based on Setpoint in closed loop mode, only
+//          check on change.
+//    3.) Gain compensation with frequency change
+//        - Use one parameter that is a gain multiplier, add to data structure
+//        - Also save calibration frequency
+//        - Correct is (1 - (cal freq - actual freq)) * correction factor. Freq in MHz
+//        - High and low gain detectors
+//        - High and low gain setpoints
 //
 #include "RFAMP.h"
 #include "Variants.h"
@@ -59,12 +62,31 @@ int      SelectedRFAboard=0;                                    // Active board,
 int      RFAmodule = 1;                                         // Selected RFamp module
 bool     RFAupdate = true;                                      // Force all values to update
 bool     QUADupdateFlag = false;                                // This is a flag set by the UI to cause the QUAD parameters to be recalculated
+bool     ResolvingDCenable = true;                              // Allows disabling resolving DC but keep bias on.
 uint16_t RFACPLDimage[2] = {(1<<RFAcpldSTATUS) | (1<<RFAcpldRANGE),(1<<RFAcpldSTATUS) | (1<<RFAcpldRANGE)}; // CPLD control word image
 
 RFAdata  *RFAarray[2] = {NULL,NULL};       // Pointer to RF amp data arrays, one for each module. Allocated at init time
 RFAdata  rfad;                             // Copy of the selected channels data, must be static used in menu structs
 
 RFAstate *RFAstates[2] = {NULL,NULL};
+
+// Auto tune parameters
+#define QUAD_AT_MAX_DWN  5
+bool quadTuneRequest = false;
+bool quadTuning      = false;
+bool quadTuneReport  = false;
+int  quadTuneBrd     = 0;
+int  quadATmaxStep   = 20000;
+int  quadATminF      = 400000;
+int  quadATmaxF      = 1500000;
+enum quadATstate
+{
+  QUAD_AT_IDLE,
+  QUAD_AT_UP,
+  QUAD_AT_UP_SWR,
+  QUAD_AT_DWN,
+  QUAD_AT_DWN_SWR,
+};
 
 extern DialogBoxEntry RFAdialogEntriesPage2[];
 extern DialogBoxEntry RFAdialogEntriesPage3[];
@@ -95,6 +117,7 @@ DialogBoxEntry RFAdialogEntriesPage2[] = {
   {"RF amp parameters"  , 1, 2, D_PAGE, 0, 0, 0, 0, false, NULL, RFAdialogEntriesPage3, NULL, NULL},
   {"Normal"             , 1, 3, D_YESNO, 0, 1, 1, 19, false, NULL, &rfad.Invert, NULL, NULL},
   {"Calibration"        , 1, 4, D_PAGE, 0, 0, 0, 0, false, NULL, RFAdialogEntriesCal, LowRangeCalPrep, NULL},
+  {"Auto tune"          , 1, 5, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, StartAutoTune, NULL},
   {"Save settings"      , 1, 8, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, SaveRFAsettings, NULL},
   {"Restore settings"   , 1, 9, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, RestoreRFAsettings, NULL},
   {"First page"         , 1,10, D_PAGE, 0, 0, 0, 0, false, NULL, RFAdialogEntriesPage1, NULL, NULL},
@@ -177,6 +200,13 @@ DialogBox RFAdialog = {
 };
 
 MenuEntry MERFAmonitor = {" RF amp module", M_DIALOG,0,0,0,NULL,&RFAdialog,NULL,NULL};
+
+void StartAutoTune(void)
+{
+  quadTuneRequest = true;
+  quadTuneBrd     = SelectedRFAboard;
+  quadTuneReport  = false;
+}
 
 void UpdateLowRangeMenu(void)
 {
@@ -276,16 +306,35 @@ void RFampCalibrate(void)
   }
 }
 
-void SetRangeHigh(int brd)
+bool isRangeHigh(int brd)
 {
-   RFACPLDimage[brd] |= 1<<RFAcpldRANGE;
-   SendFRAcpldCommand(RFAarray[brd]->CPLDspi, RFACPLDimage[brd]);  
+  if((RFACPLDimage[brd] & (1<<RFAcpldRANGE)) != 0) return true;
+  return false;
 }
 
-void SetRangeLow(int brd)
+void SetRangeHigh(int brd, bool Send)
+{
+   RFACPLDimage[brd] |= 1<<RFAcpldRANGE;
+   if(Send) SendFRAcpldCommand(RFAarray[brd]->CPLDspi, RFACPLDimage[brd]);  
+}
+
+void SetRangeLow(int brd, bool Send)
 {
    RFACPLDimage[brd] &= ~(1<<RFAcpldRANGE);
-   SendFRAcpldCommand(RFAarray[brd]->CPLDspi, RFACPLDimage[brd]);  
+   if(Send) SendFRAcpldCommand(RFAarray[brd]->CPLDspi, RFACPLDimage[brd]);  
+}
+
+// This function will look at the Setpoint value and select the proper range
+// using the threshold value. 
+// This function only sets the range flags, the processing loop will update the hardware
+// If AutoRange is not enabled this function will take no action.
+// If the system is disable or in open loop mode this function will take no action.
+void SelectRange(int brd, float Setpoint)
+{
+  if(!RFAarray[brd]->AutoRangeEna) return;
+  if((!RFAarray[brd]->Enabled) || (RFAarray[brd]->Mode)) return;
+  if(Setpoint > RFAarray[brd]->RangeThreshold) SetRangeHigh(brd, false);
+  else SetRangeLow(brd, false);
 }
 
 // Set the QUADupdate flag to cause QUAD parameters to be recalcualted and update
@@ -507,7 +556,7 @@ void RFA_init(int8_t Board, int8_t addr)
   // Set full scale limit
   RFAdialogEntrySetPoint.Max = RFAarray[Board]->FullScale;
   // Make sure K is a valid float
-  if(fpclassify(RFAarray[Board]->K) != FP_NORMAL) RFAarray[Board]->K = 5.958257713248639;
+  if((fpclassify(RFAarray[Board]->K) != FP_NORMAL) && (fpclassify(RFAarray[Board]->K) != FP_ZERO)) RFAarray[Board]->K = 5.958257713248639;
   // Setup menu and start the thread
   if(NumberOfRFAchannels == 0)
   {
@@ -539,12 +588,14 @@ void SetPoleBias(int brd, float value)
    if(bd != -1)
    {
      int firstch = (RFAarray[brd]->DCBchan-1) & 0x07;
+     float rdc = RFAarray[brd]->ResolvingDC;
+     if(!ResolvingDCenable) rdc = 0;
      DCbDarray[bd]->DCoffset.VoltageSetpoint =  value;
-     DCbDarray[bd]->DCCD[firstch].VoltageSetpoint  =  RFAarray[brd]->ResolvingDC + value;
-     DCbDarray[bd]->DCCD[firstch+1].VoltageSetpoint  = -RFAarray[brd]->ResolvingDC + value;
+     DCbDarray[bd]->DCCD[firstch].VoltageSetpoint  =  rdc + value;
+     DCbDarray[bd]->DCCD[firstch+1].VoltageSetpoint  = -rdc + value;
      if(GetDCbiasBoard(RFAarray[brd]->DCBchan) == SelectedDCBoard) dcbd.DCoffset.VoltageSetpoint = value;
-     if(GetDCbiasBoard(RFAarray[brd]->DCBchan) == SelectedDCBoard) dcbd.DCCD[firstch].VoltageSetpoint =  RFAarray[brd]->ResolvingDC + value;
-     if(GetDCbiasBoard(RFAarray[brd]->DCBchan+1) == SelectedDCBoard) dcbd.DCCD[firstch+1].VoltageSetpoint = -RFAarray[brd]->ResolvingDC + value;
+     if(GetDCbiasBoard(RFAarray[brd]->DCBchan) == SelectedDCBoard) dcbd.DCCD[firstch].VoltageSetpoint =  rdc + value;
+     if(GetDCbiasBoard(RFAarray[brd]->DCBchan+1) == SelectedDCBoard) dcbd.DCCD[firstch+1].VoltageSetpoint = -rdc + value;
      DelayMonitoring();
    }  
 }
@@ -556,10 +607,11 @@ void SetResolvingDC(int brd, float value)
    if(bd != -1)
    {
      int firstch = (RFAarray[brd]->DCBchan-1) & 0x07;
-     DCbDarray[bd]->DCCD[firstch].VoltageSetpoint =  value + RFAarray[brd]->PoleBias;
-     DCbDarray[bd]->DCCD[firstch+1].VoltageSetpoint = -value + RFAarray[brd]->PoleBias;
-     if(GetDCbiasBoard(RFAarray[brd]->DCBchan) == SelectedDCBoard) dcbd.DCCD[firstch].VoltageSetpoint =  value + RFAarray[brd]->PoleBias;
-     if(GetDCbiasBoard(RFAarray[brd]->DCBchan+1) == SelectedDCBoard) dcbd.DCCD[firstch+1].VoltageSetpoint = -value + RFAarray[brd]->PoleBias;
+     if(!ResolvingDCenable) value = 0;
+     DCbDarray[bd]->DCCD[firstch].VoltageSetpoint =  value + DCbDarray[bd]->DCoffset.VoltageSetpoint;
+     DCbDarray[bd]->DCCD[firstch+1].VoltageSetpoint = -value + DCbDarray[bd]->DCoffset.VoltageSetpoint;
+     if(GetDCbiasBoard(RFAarray[brd]->DCBchan) == SelectedDCBoard) dcbd.DCCD[firstch].VoltageSetpoint =  value + DCbDarray[bd]->DCoffset.VoltageSetpoint;
+     if(GetDCbiasBoard(RFAarray[brd]->DCBchan+1) == SelectedDCBoard) dcbd.DCCD[firstch+1].VoltageSetpoint = -value + DCbDarray[bd]->DCoffset.VoltageSetpoint;
      DelayMonitoring();
    }
 }
@@ -570,7 +622,7 @@ void RFA_loop(void)
 {
   int      brd;
   uint16_t ADCvals[8];
-  float    val;
+  float    val,gc;
   
   // If the user has changed any values upate the proper data structure
   if (ActiveDialog == &RFAdialog)
@@ -587,6 +639,14 @@ void RFA_loop(void)
     if(RFAarray[brd] == NULL) continue;
     if(RFAstates[brd] == NULL) continue;
     SelectBoard(brd);
+    // Calculate the gain compensation factor based on the calibration frequency and the current operating
+    // frequency.
+    if(RFAarray[brd]->EnableComp)
+    {
+       // Here if compensation is enabled so calculate the correction factor. 
+       gc = 1.0 + (RFAarray[brd]->CalFrequency - RFAarray[brd]->Freq)/1000000.0 * RFAarray[brd]->FreqComp;
+    }
+    else gc = 1.0;
     if(QUADupdateFlag) QUADupdate(brd);
     // Look for any changed values and update
     if((RFAarray[brd]->Enabled != RFAstates[brd]->Enabled) || RFAupdate)
@@ -594,15 +654,16 @@ void RFA_loop(void)
       if(RFAarray[brd]->Enabled)
       {
         SetDDSfrequency(RFAarray[brd]->DDSspi, RFAarray[brd]->Freq,false);
-        // Here if enabled so set the drive and SetPoint levels        
+        // Here if enabled so set the drive and SetPoint levels
+        // .. Set drive       
         AD5625(RFAarray[brd]->DACadr,RFAdacDRIVE,Value2Counts(RFAarray[brd]->Drive,&RFAarray[brd]->DACchans[RFAdacDRIVE]),3);
-        if((RFACPLDimage[brd] & (1<<RFAcpldRANGE)) != 0) AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[brd]->SetPoint,&RFAarray[brd]->DACchans[RFAdacSETPOINT]),3);
-        else AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[brd]->SetPoint,&RFAarray[brd]->DACchansLR),3);
-        //AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[brd]->SetPoint,&RFAarray[brd]->DACchans[RFAdacSETPOINT]),3);
+        // .. Set the setpoint
+        SelectRange(brd, RFAarray[brd]->SetPoint);
+        if((RFACPLDimage[brd] & (1<<RFAcpldRANGE)) != 0) AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[brd]->SetPoint,&RFAarray[brd]->DACchans[RFAdacSETPOINT],gc),3);
+        else AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[brd]->SetPoint,&RFAarray[brd]->DACchansLR,gc),3);
+        // .. Set the pole bias and resolving DC
         SetPoleBias(brd,RFAarray[brd]->PoleBias);
         SetResolvingDC(brd,RFAarray[brd]->ResolvingDC);
-        //MIPSconfigData.PowerEnable = true;
-        //SetPowerSource();
       }
       else
       {
@@ -611,11 +672,19 @@ void RFA_loop(void)
         AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(0,&RFAarray[brd]->DACchans[RFAdacSETPOINT]),3);
         SetPoleBias(brd,0);
         SetResolvingDC(brd,0);
-        //MIPSconfigData.PowerEnable = false;
-        //SetPowerSource();
         SetDDSfrequency(RFAarray[brd]->DDSspi, RFAarray[brd]->Freq,true);
       }
       RFAstates[brd]->Enabled = RFAarray[brd]->Enabled;
+      RFAstates[brd]->ResolvingDCenable = ResolvingDCenable;
+    }
+    if(RFAstates[brd]->ResolvingDCenable != ResolvingDCenable)
+    {
+      if(RFAarray[brd]->Enabled)
+      {
+        SetPoleBias(brd,RFAarray[brd]->PoleBias);
+        SetResolvingDC(brd,RFAarray[brd]->ResolvingDC);
+      }
+      RFAstates[brd]->ResolvingDCenable = ResolvingDCenable;
     }
     if((RFAarray[brd]->Freq != RFAstates[brd]->Freq) || RFAupdate)
     {
@@ -634,11 +703,12 @@ void RFA_loop(void)
       // Set the voltage setpoint if enabled
       if(RFAarray[brd]->Enabled) 
       {
+        SelectRange(brd, RFAarray[brd]->SetPoint);
         if((RFACPLDimage[brd] & (1<<RFAcpldRANGE)) != 0)
         {
-           AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[brd]->SetPoint,&RFAarray[brd]->DACchans[RFAdacSETPOINT]),3);
+           AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[brd]->SetPoint,&RFAarray[brd]->DACchans[RFAdacSETPOINT],gc),3);
         }
-        else AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[brd]->SetPoint,&RFAarray[brd]->DACchansLR),3);
+        else AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[brd]->SetPoint,&RFAarray[brd]->DACchansLR,gc),3);
       }
       RFAstates[brd]->SetPoint = RFAarray[brd]->SetPoint;
     }
@@ -646,34 +716,12 @@ void RFA_loop(void)
     {
       // Set the PoleBias value
       if(RFAarray[brd]->Enabled) SetPoleBias(brd,RFAarray[brd]->PoleBias);
-//      int bd = DCbiasCH2Brd(RFAarray[brd]->DCBchan-1);
-//      if(bd != -1)
-//      {
-//        int firstch = (RFAarray[brd]->DCBchan-1) & 0x07;
-//        DCbDarray[bd]->DCoffset.VoltageSetpoint =  RFAarray[brd]->PoleBias;
-//        DCbDarray[bd]->DCCD[firstch].VoltageSetpoint  =  RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
-//        DCbDarray[bd]->DCCD[firstch+1].VoltageSetpoint  = -RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
-//        if(GetDCbiasBoard(RFAarray[brd]->DCBchan) == SelectedDCBoard) dcbd.DCoffset.VoltageSetpoint = RFAarray[brd]->PoleBias;
-//        if(GetDCbiasBoard(RFAarray[brd]->DCBchan) == SelectedDCBoard) dcbd.DCCD[firstch].VoltageSetpoint =  RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
-//        if(GetDCbiasBoard(RFAarray[brd]->DCBchan+1) == SelectedDCBoard) dcbd.DCCD[firstch+1].VoltageSetpoint = -RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
-//        DelayMonitoring();
-//      }
       RFAstates[brd]->PoleBias = RFAarray[brd]->PoleBias;
     }
     if((RFAarray[brd]->ResolvingDC != RFAstates[brd]->ResolvingDC) || RFAupdate)
     {
       // Set the ResolvingDC value
       if(RFAarray[brd]->Enabled) SetResolvingDC(brd,RFAarray[brd]->ResolvingDC);
-//      int bd = DCbiasCH2Brd(RFAarray[brd]->DCBchan-1);
-//      if(bd != -1)
-//      {
-//        int firstch = (RFAarray[brd]->DCBchan-1) & 0x07;
-//        DCbDarray[bd]->DCCD[firstch].VoltageSetpoint =  RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
-//        DCbDarray[bd]->DCCD[firstch+1].VoltageSetpoint = -RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
-//        if(GetDCbiasBoard(RFAarray[brd]->DCBchan) == SelectedDCBoard) dcbd.DCCD[firstch].VoltageSetpoint =  RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
-//        if(GetDCbiasBoard(RFAarray[brd]->DCBchan+1) == SelectedDCBoard) dcbd.DCCD[firstch+1].VoltageSetpoint = -RFAarray[brd]->ResolvingDC + RFAarray[brd]->PoleBias;
-//        DelayMonitoring();
-//      }
       RFAstates[brd]->ResolvingDC = RFAarray[brd]->ResolvingDC;
     }
     if((RFAarray[brd]->Mode != RFAstates[brd]->Mode) || RFAupdate)
@@ -689,12 +737,16 @@ void RFA_loop(void)
       if(RFAarray[brd]->Mode)
       {
         // Here if open loop mode is selected
+        // Set range to high if we are in AutoRange mode
+        if(RFAarray[brd]->AutoRangeEna) SetRangeHigh(brd, false);
         RFACPLDimage[brd] &= ~(1 << RFAcpldCLOSED); // Closed LED off
         RFACPLDimage[brd] &= ~(1 << RFAcpldDRVSP_SELECT); // Select the drive DAC control
       }
       else
       {
         // Here if closed loop mode is selected
+        // Set range
+        SelectRange(brd, RFAarray[brd]->SetPoint);
         RFACPLDimage[brd] |= 1 << RFAcpldCLOSED; // Closed LED on
         RFACPLDimage[brd] |= 1 << RFAcpldDRVSP_SELECT; // Select the setpoint DAC control
       }
@@ -729,16 +781,20 @@ void RFA_loop(void)
       RFAstates[brd]->RFI = Filter * val + (1-Filter) * RFAstates[brd]->RFI;
       if((RFACPLDimage[brd] & (1<<RFAcpldRANGE)) != 0)
       {
-         val = Counts2Value(ADCvals[RFAadcRFLA],&RFAarray[brd]->ADCchans[RFAadcRFLA]);
-         RFAstates[brd]->RFVPpp = Filter * val + (1-Filter) * RFAstates[brd]->RFVPpp;
-         val = Counts2Value(ADCvals[RFAadcRFLB],&RFAarray[brd]->ADCchans[RFAadcRFLB]);
-         RFAstates[brd]->RFVNpp = Filter * val + (1-Filter) * RFAstates[brd]->RFVNpp;
+         val = Counts2Value(ADCvals[RFAadcRFLA],&RFAarray[brd]->ADCchans[RFAadcRFLA],gc);
+         if(RFAstates[brd]->RFVPpp == -1) RFAstates[brd]->RFVPpp = val;
+         else RFAstates[brd]->RFVPpp = Filter * val + (1-Filter) * RFAstates[brd]->RFVPpp;
+         val = Counts2Value(ADCvals[RFAadcRFLB],&RFAarray[brd]->ADCchans[RFAadcRFLB],gc);
+         if(RFAstates[brd]->RFVNpp == -1) RFAstates[brd]->RFVNpp = val;
+         else RFAstates[brd]->RFVNpp = Filter * val + (1-Filter) * RFAstates[brd]->RFVNpp;
       }
       else
       {
-         val = Counts2Value(ADCvals[RFAadcRFLA],&RFAarray[brd]->ADCchansLR[RFAadcRFLA-6]);
-         RFAstates[brd]->RFVPpp = Filter * val + (1-Filter) * RFAstates[brd]->RFVPpp;
-         val = Counts2Value(ADCvals[RFAadcRFLB],&RFAarray[brd]->ADCchansLR[RFAadcRFLB-6]);
+         val = Counts2Value(ADCvals[RFAadcRFLA],&RFAarray[brd]->ADCchansLR[RFAadcRFLA-6],gc);
+         if(RFAstates[brd]->RFVPpp == -1) RFAstates[brd]->RFVPpp = val;
+         else RFAstates[brd]->RFVPpp = Filter * val + (1-Filter) * RFAstates[brd]->RFVPpp;
+         val = Counts2Value(ADCvals[RFAadcRFLB],&RFAarray[brd]->ADCchansLR[RFAadcRFLB-6],gc);
+         if(RFAstates[brd]->RFVNpp == -1) RFAstates[brd]->RFVNpp = val;
          RFAstates[brd]->RFVNpp = Filter * val + (1-Filter) * RFAstates[brd]->RFVNpp;       
       }
       // Calculate the DC power input
@@ -778,6 +834,7 @@ void RFA_loop(void)
   SelectBoard(SelectedRFAboard);
   if ((ActiveDialog == &RFAdialog) && (ActiveDialog->Entry != RFAdialogEntriesCal) && (ActiveDialog->Entry != RFAdialogEntriesCal2)) RefreshAllDialogEntries(&RFAdialog);
   rfad = *RFAD;
+  quadAutoTune(quadTuneBrd,quadTuneReport);
 }
 
 //
@@ -980,7 +1037,7 @@ void RFAsetResolvingDC(char *Module, char *value)
   if((b = RFAmodule2board(mod)) == -1) return;
   token = value;
   v = token.toFloat();
-  if((MIPSconfigData.PowerEnable) && (RFAarray[b]->Enabled)) RFAarray[b]->ResolvingDC = v;
+  if((MIPSconfigData.PowerEnable) && (RFAarray[b]->Enabled) && (ResolvingDCenable)) RFAarray[b]->ResolvingDC = v;
   SendACK;
 }
 
@@ -991,7 +1048,7 @@ void RFAgetResolvingDC(int Module)
   if((b = RFAmodule2board(Module)) == -1) return;
   SendACKonly;
   if(SerialMute) return;
-  if((MIPSconfigData.PowerEnable) && (RFAarray[b]->Enabled)) serial->println(RFAarray[b]->ResolvingDC);
+  if((MIPSconfigData.PowerEnable) && (RFAarray[b]->Enabled) && (ResolvingDCenable)) serial->println(RFAarray[b]->ResolvingDC);
   else serial->println("0.00");
 }
 
@@ -1262,4 +1319,254 @@ void RFAgetDCBchan(int Module)
   if((b = RFAmodule2board(Module)) == -1) return;
   SendACKonly;
   if(!SerialMute) serial->println(RFAarray[b]->DCBchan);
+}
+
+void RFsetDrvZero(char *Module, char *value)
+{
+  String token;
+  int    mod,b;
+
+  token = Module;
+  mod = token.toInt();
+  if((b = RFAmodule2board(mod)) == -1) return;
+  token = value;
+  RFAarray[b]->DACchans[RFAdacDRIVE].b = token.toFloat() * RFAarray[b]->DACchans[RFAdacDRIVE].m;
+  RFAupdate = true;
+  SendACK;
+}
+
+void RFAsetAutoRange(char *Module, char *value)
+{
+  String token;
+  int    mod,b;
+
+  token = Module;
+  mod = token.toInt();
+  if((b = RFAmodule2board(mod)) == -1) return;
+  token = value;
+  if(token == "TRUE") RFAarray[b]->AutoRangeEna = true;
+  else if(token == "FALSE") RFAarray[b]->AutoRangeEna = false;
+  else BADARG;
+  SendACK;
+}
+
+void RFAgetAutoRange(int Module)
+{
+  int b;
+
+  if((b = RFAmodule2board(Module)) == -1) return;
+  SendACKonly;
+  if(RFAarray[b]->AutoRangeEna) serial->println("TRUE");
+  else serial->println("FALSE");
+}
+
+void RFAsetFreqComp(char *Module, char *value)
+{
+  String token;
+  int    mod,b;
+
+  token = Module;
+  mod = token.toInt();
+  if((b = RFAmodule2board(mod)) == -1) return;
+  token = value;
+  if(token == "TRUE") RFAarray[b]->EnableComp = true;
+  else if(token == "FALSE") RFAarray[b]->EnableComp = false;
+  else BADARG;
+  SendACK;  
+}
+
+void RFAgetFreqComp(int Module)
+{
+  int b;
+
+  if((b = RFAmodule2board(Module)) == -1) return;
+  SendACKonly;
+  if(RFAarray[b]->EnableComp) serial->println("TRUE");
+  else serial->println("FALSE");
+}
+
+void RFAsetCalFreq(int Module, int Freq)
+{
+  int b;
+
+  if((b = RFAmodule2board(Module)) == -1) return;
+  RFAarray[b]->CalFrequency = Freq;
+  SendACK;
+}
+
+void RFAgetCalFreq(int Module)
+{
+  int b;
+
+  if((b = RFAmodule2board(Module)) == -1) return;
+  SendACKonly;
+  serial->println(RFAarray[b]->CalFrequency);
+}
+
+void RFAsetCompG(char *Module, char *Comp)
+{
+  String token;
+  int    mod,b;
+
+  token = Module;
+  mod = token.toInt();
+  if((b = RFAmodule2board(mod)) == -1) return;
+  token = Comp;
+  RFAarray[b]->FreqComp = token.toFloat();
+  SendACK;  
+  
+}
+
+void RFAgetCompG(int Module)
+{
+  int b;
+
+  if((b = RFAmodule2board(Module)) == -1) return;
+  SendACKonly;
+  serial->println(RFAarray[b]->FreqComp,4);
+}
+
+// RF amp QUAD Auto Tund function
+// Set conditions to:
+//  - Open loop mode
+//  - Enable
+//  - Drive level to 10%
+// Procedure
+//  - Adjust the frequency to reach the maximum pp voltage
+//    - Scan from start to stop looking for peak
+//    - Scan on each side of peak to fine tune
+//  - Increase drive to 20% and minimize SWR
+//  - Increase dive to 50% and minimize SWR
+// This function does not block, called from the main loop (10 times a sec)
+void quadAutoTune(int brd, bool report)
+{
+   static int         TuneStep;
+   static float       Max, Current, Last;
+   static int         FreqMax, Freq;
+   static int         NumDown;
+   static quadATstate state;
+   static int         qdly = 0;
+
+   if(qdly>0) {qdly--; return;}
+   if(!quadTuneRequest && !quadTuning) return;
+   if(quadTuneRequest)
+   {
+      RFAarray[brd]->Mode    = true;
+      RFAarray[brd]->Drive   = 10;
+      Freq = RFAarray[brd]->Freq = (quadATmaxF + quadATminF)/2;
+      RFAarray[brd]->Enabled = true;
+      TuneStep = quadATmaxStep;
+      state = QUAD_AT_DWN;
+      Last = Max = 0;
+      quadTuneRequest = false;
+      quadTuning = true;
+      qdly = 20;
+      DisplayMessage("Tune in process");
+      return;
+   }
+   if(quadTuning)
+   {
+      // Read the RF level, sum the two phases
+      Current = RFAstates[brd]->RFVPpp + RFAstates[brd]->RFVNpp;
+      RFAstates[brd]->RFVPpp = RFAstates[brd]->RFVNpp = -1;
+      if((state == QUAD_AT_UP_SWR) || (state == QUAD_AT_DWN_SWR)) Current = 100 - RFAstates[brd]->SWR;
+      switch (state)
+      {
+        case QUAD_AT_DWN:
+        case QUAD_AT_DWN_SWR:
+          if(Current > Max)
+          {
+            Max = Current;
+            FreqMax = RFAarray[brd]->Freq;
+          }
+          if((Current <= (Last + 1)) && (TuneStep < quadATmaxStep)) NumDown++;
+          else NumDown = 0;
+          RFAarray[brd]->Freq -= TuneStep;
+          if((NumDown >= QUAD_AT_MAX_DWN) || (RFAarray[brd]->Freq < quadATminF))
+          {
+            if(state == QUAD_AT_DWN_SWR) state = QUAD_AT_UP_SWR;
+            else state = QUAD_AT_UP;
+            RFAarray[brd]->Freq = Freq;
+            NumDown = 0;
+          }
+          if(Current <= (Last + 1)) NumDown++;
+          qdly = 20;
+          break;
+       case QUAD_AT_UP:
+       case QUAD_AT_UP_SWR:
+          if(Current > Max)
+          {
+            Max = Current;
+            FreqMax = RFAarray[brd]->Freq;
+          }
+          if((Current <= (Last + 1)) && (TuneStep < quadATmaxStep)) NumDown++;
+          else NumDown = 0;
+          if((Current == 0) && (Last == 0)) NumDown--;
+          RFAarray[brd]->Freq += TuneStep;
+          if((NumDown >= QUAD_AT_MAX_DWN) || (RFAarray[brd]->Freq > quadATmaxF))
+          {
+            // Here we have found the peak for this step size, this
+            // process repeats until step size is 1KHz
+            Freq = FreqMax;
+            if(Freq < quadATminF) Freq = quadATminF;
+            if(Freq > quadATmaxF) Freq = quadATmaxF;
+            RFAarray[brd]->Freq = Freq;
+            if(TuneStep <= 500)
+            {
+              // If here we found the frequecny peak
+              if((state == QUAD_AT_UP_SWR) && (RFAarray[brd]->Drive == 10))
+              {
+                RFAarray[brd]->Drive = 25;
+                state = QUAD_AT_UP;
+              }
+              if(state == QUAD_AT_UP)
+              {
+                Last = Max = 0;
+                state = QUAD_AT_DWN_SWR;
+                TuneStep = 500;
+                qdly = 40;
+                break;
+              }
+              quadTuning = false;
+              if(report && !SerialMute)
+              {
+                serial->print("Auto tune complete, frequency = ");
+                serial->println(Freq);
+              }
+              DismissMessage();
+              return;
+            }
+            else TuneStep /= 10;
+            state = QUAD_AT_DWN;
+            NumDown = 0;
+          }
+          qdly = 20;
+          break;
+       default:
+          break;
+      }
+   }
+   Last = Current;
+}
+
+void setQuadAT(int module)
+{
+  int b;
+
+  if((b = RFAmodule2board(module)) == -1) return;
+  quadTuneRequest = true;
+  quadTuneBrd     = b;
+  quadTuneReport  = false;
+  SendACK;
+}
+
+void setQuadATR(int module)
+{
+  int b;
+
+  if((b = RFAmodule2board(module)) == -1) return;
+  quadTuneRequest = true;
+  quadTuneBrd     = b;
+  quadTuneReport  = true;
+  SendACK;
 }

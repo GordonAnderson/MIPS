@@ -52,6 +52,7 @@ typedef struct
 } DACstate;
 
 extern int   NumberOfDACchannels;
+extern DACdata  *DACarray[];
 
 // Prototypes
 void ReportDACchannels(void);

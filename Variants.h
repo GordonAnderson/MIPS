@@ -14,12 +14,18 @@
 // definitions.
 // The state is the flags will add a leter to the end of the version number to signal the version
 // of the code that is being built. If no leter is added that all options are false.
-#define FAIMSFBcode false    // appends b to version 
-#define FAIMScode   false    // appends f to version
-#define HOFAIMcode  false    // appends h to version
-#define TABLE2code  true     // appends t to version
-#define RFdriver2   false    // appends r to version
-#define HVPScode    false    // appends v to version
+#define FAIMSFBcode     true    // appends b to version 
+#define FAIMScode       false    // appends f to version
+#define HOFAIMcode      false    // appends h to version
+#define TABLE2code      true     // appends t to version
+#define RFdriver2       false    // appends r to version
+#define HVPScode        false    // appends v to version
+#define DMSDMSMB        false    // appends d to version
+#define DCBanalog       false    // appends a to version
+#define DCBcurrent      false    // appends c to version
+#define DCBswitchCode   false    // appends s to version
+
+#define DCBtripsESI
 
 #include "errors.h"
 #include "DIO.h"
@@ -45,14 +51,20 @@
 #include "RTCDue.h"
 #include "Log.h"
 #include "HVPS.h"
+#include "DMSDMSMB.h"
+#include "FPGA.h"
 
 // Test mode flags, uncomment to enable selected test mode
 //#define TestMode
 //#define TestFilament
 //#define TestTwave
 
+#if defined(TestMode) || defined(TestFilament) || defined(TestTwave)
+#pragma message "MIPS test mode build."
+#endif
+
 #if RFdriver2
-#define NumModAdd  5
+#define NumModAdd  6
 #else
 #define NumModAdd  4
 #endif
@@ -86,7 +98,7 @@ extern RTCDue rtc;
 #define    TMR_DCbiasPulse    5       // Used to generate a pulse on a DC bias channel
 #define    TMR_servos         4       // Used by the HOFAIMS module to drive the servos
 #define    TMR_ARBclock       6       // Used for common clock generation for ARB
-#define    TMR_DelayedTrigger 0 // Used by the delayed trigger capability
+#define    TMR_DelayedTrigger 0       // Used by the delayed trigger capability
 #define    TMR_ADCclock       1       // Used by the ADC digitizer function
 #define    FAIMSFB_ScanClock  6       // Used to generate scan clock in FAIMSFB module
 #define    TMR_RampClock      2       // Used to generate voltage ramps in table mode
@@ -130,38 +142,23 @@ void   DisplayIntensity(void);
 void   SetBackLight(void);
 
 extern MIPSconfigStruct MIPSconfigData;
-
 extern TwaveData Twave_Rev1;
-
 extern TwaveData Twave_Rev2;
-
 extern TwaveData Twave_Rev3;
-
-extern RFdriverData  RFDD_A_Rev_1;
-                             
+extern RFdriverData  RFDD_A_Rev_1; 
 extern RFdriverData  RFDD_B_Rev_1;
-
 extern DCbiasData  DCbD_250_Rev_1;
-
 extern DCbiasData  DCbD_250_Rev_2;
-                            
 extern DCbiasData  DCbD_50_Rev_1;
-
 extern FAIMSdata  FAIMS_Rev_1;
-
 extern ESIdata  ESI_Rev_1;
-
 extern FilamentData FILAMENT_Rev_1;
-
 extern ARBdata  ARB_Rev_1;
-
 extern WiFiData  WiFi_Rev_1;
-
 extern HOFAIMSdata  HOFAIMS_Rev_1;
-
 extern DACdata DAC_Rev1;
-
 extern RFAdata RFA_Rev1;
+extern FPGAmodule FPGA_Rev1;
 
 // List of all posible board addresses. These addresses are those of the EEPROM on the modules
 extern char *BoardAddressList;

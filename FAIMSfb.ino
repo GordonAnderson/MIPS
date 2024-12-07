@@ -11,6 +11,10 @@
 //  will be programmed to generate a interrupt at the scan step duration period. This interrupt will toggle the
 //  step line (48). 
 //
+//  The TWI address used to talk to the module is the SRAM address + 0x20, for example board address of 0x50 results
+//  in TWI address of 0x70 (112 base 10). So TWITALK,0,112 will allow the MIPS app to talk to the M0 processor on
+//  the FAIMFB card.
+//
 //  Gordon Anderson
 //  March 10, 2019
 //
@@ -20,6 +24,15 @@
 #include <Wire.h>
 
 #if FAIMSFBcode
+
+// For differential, default, operation
+#define   MAXCV   48
+#define   CVDIV   1
+// For single ended operation operation
+//#define   MAXCV   24
+//#define   CVDIV   2
+
+#define   MAXELECBIAS 3
 
 MIPStimer *FAIMSfbScanClock = NULL;
 
@@ -52,9 +65,9 @@ DialogBoxEntry FAIMSFBentries[] = {
   {" Drive"              , 0, 4, D_FLOAT, 0, 100, 0.1, 18, false, "%5.1f", &faimsfb.Drive, NULL, NULL},
   {"        Request  Actual", 0, 5, D_TITLE, 0, 0, 0, false, NULL, NULL, NULL, NULL},
   {" Vrf"                , 0, 6, D_FLOAT, 0, 2000, 10, 8, false, "%5.0f", &faimsfb.Vrf, NULL, NULL},
-  {" CV"                 , 0, 7, D_FLOAT, -48, 48, 0.1, 8, false, "%5.1f", &faimsfb.CV, NULL, NULL},
+  {" CV"                 , 0, 7, D_FLOAT, -MAXCV, MAXCV, 0.1, 8, false, "%5.1f", &faimsfb.CV, NULL, NULL},
   {""                    , 0, 6, D_FLOAT, 0, 2000, 10, 18, true, "%5.0f", NULL, NULL, NULL},
-  {""                    , 0, 7, D_FLOAT, -48, 48, 0.1, 18, true, "%5.1f", NULL, NULL, NULL},
+  {""                    , 0, 7, D_FLOAT, -MAXCV, MAXCV, 0.1, 18, true, "%5.1f", NULL, NULL, NULL},
   {" Power"              , 0, 8, D_FLOAT, 0, 100, 1, 18, true, "%5.1f", NULL, NULL, NULL},
   {" Settings"           , 0, 9, D_PAGE,  0, 0  , 0, 0,  false, NULL, FAIMSFBsettings, NULL, NULL},
   {" Electrometer"       , 0,10, D_OFF,  0, 0  , 0, 0,  false, NULL, ElectrometerSettings, NULL, NULL},
@@ -75,8 +88,8 @@ DialogBoxEntry FAIMSFBsettings[] = {
 };
 
 DialogBoxEntry FAIMSFBscan[] = {
-  {" Start CV"           , 0, 1, D_FLOAT, -48, 48 , 0.1, 18, false, "%5.1f", &faimsfb.CVstart, NULL, NULL},
-  {" End CV"             , 0, 2, D_FLOAT, -48, 48 , 0.1, 18, false, "%5.1f", &faimsfb.CVend, NULL, NULL},
+  {" Start CV"           , 0, 1, D_FLOAT, -MAXCV, MAXCV , 0.1, 18, false, "%5.1f", &faimsfb.CVstart, NULL, NULL},
+  {" End CV"             , 0, 2, D_FLOAT, -MAXCV, MAXCV , 0.1, 18, false, "%5.1f", &faimsfb.CVend, NULL, NULL},
   {" Start Vrf"          , 0, 3, D_FLOAT, 0, 2000 , 10,  19, false, "%4.0f", &faimsfb.VRFstart, NULL, NULL},
   {" End Vrf"            , 0, 4, D_FLOAT, 0, 2000 , 10,  19, false, "%4.0f", &faimsfb.VRFend, NULL, NULL},
   {" Num steps"          , 0, 5, D_INT, 10, 2000 , 1,  19, false, "%4d", &faimsfb.Steps, NULL, NULL},
@@ -90,8 +103,8 @@ DialogBoxEntry FAIMSFBscan[] = {
 DialogBoxEntry ElectrometerSettings[] = {
   {" Pos current, pA"    , 0, 1, D_FLOAT, 0, 0 , 0, 17, true, "%6.2f", NULL, NULL, NULL},
   {" Neg current, pA"    , 0, 2, D_FLOAT, 0, 0 , 0, 17, true, "%6.2f", NULL, NULL, NULL},
-  {" Pos offset,V"       , 0, 3, D_FLOAT, 0, 5.0 , 0.01, 18, false, "%5.3f", NULL, NULL, NULL},
-  {" Neg offset,V"       , 0, 4, D_FLOAT, 0, 5.0 , 0.01, 18, false, "%5.3f", NULL, NULL, NULL},
+  {" Pos offset,V"       , 0, 3, D_FLOAT, 0, MAXELECBIAS , 0.01, 18, false, "%5.3f", NULL, NULL, NULL},
+  {" Neg offset,V"       , 0, 4, D_FLOAT, 0, MAXELECBIAS , 0.01, 18, false, "%5.3f", NULL, NULL, NULL},
   {" Zero"               , 0, 5, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, ZeroElectrometer, NULL},
   {" Return"             , 0,11, D_PAGE,  0, 0  , 0, 0,  false, NULL, FAIMSFBentries, NULL, NULL},
   {NULL},
@@ -361,7 +374,7 @@ void FAIMSfb_loop(void)
         TWIreadBlock(FAIMSFBarray[b]->TWIadd | 0x20, b,TWI_FB_READ_READBACKS, (void *)FAIMSFBrb[b], sizeof(ReadBacks));
         if(b==SelectedFAIMSFBboard)
         {
-           faimsfbvars->CVrb = FAIMSFBrb[b]->CV;
+           faimsfbvars->CVrb = FAIMSFBrb[b]->CV = FAIMSFBrb[b]->CV / CVDIV;
            faimsfbvars->VRFrb = FAIMSFBrb[b]->Vrf;
            faimsfbvars->PWR = FAIMSFBrb[b]->V * FAIMSFBrb[b]->I / 1000;
         }
@@ -377,14 +390,14 @@ void FAIMSfb_loop(void)
       if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->Enable) != FAIMSFBarray[b]->Enable)     TWIsetBool(FAIMSFBarray[b]->TWIadd  | 0x20, b, TWI_FB_SET_ENABLE, FAIMSFBstates[b]->Enable = FAIMSFBarray[b]->Enable);
       if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->Mode) != FAIMSFBarray[b]->Mode)         TWIsetBool(FAIMSFBarray[b]->TWIadd  | 0x20, b, TWI_FB_SET_MODE, FAIMSFBstates[b]->Mode = FAIMSFBarray[b]->Mode);
       if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->Drive) != FAIMSFBarray[b]->Drive)       TWIsetFloat(FAIMSFBarray[b]->TWIadd | 0x20, b, TWI_FB_SET_DRIVE, FAIMSFBstates[b]->Drive = FAIMSFBarray[b]->Drive);
-      if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->CV) != FAIMSFBarray[b]->CV)             TWIsetFloat(FAIMSFBarray[b]->TWIadd | 0x20, b, TWI_FB_SET_CV, FAIMSFBstates[b]->CV = FAIMSFBarray[b]->CV);
+      if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->CV) != FAIMSFBarray[b]->CV)             TWIsetFloat(FAIMSFBarray[b]->TWIadd | 0x20, b, TWI_FB_SET_CV, (FAIMSFBstates[b]->CV = FAIMSFBarray[b]->CV)*CVDIV);
       if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->Vrf) != FAIMSFBarray[b]->Vrf)           TWIsetFloat(FAIMSFBarray[b]->TWIadd | 0x20, b, TWI_FB_SET_VRF, FAIMSFBstates[b]->Vrf = FAIMSFBarray[b]->Vrf);
       if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->Freq) != FAIMSFBarray[b]->Freq)         TWIsetInt(FAIMSFBarray[b]->TWIadd   | 0x20, b, TWI_FB_SET_FREQ, FAIMSFBstates[b]->Freq = FAIMSFBarray[b]->Freq);
       if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->Duty) != FAIMSFBarray[b]->Duty)         TWIsetByte(FAIMSFBarray[b]->TWIadd  | 0x20, b, TWI_FB_SET_DUTY, FAIMSFBstates[b]->Duty = FAIMSFBarray[b]->Duty);
       if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->MaxDrive) != FAIMSFBarray[b]->MaxDrive) TWIsetFloat(FAIMSFBarray[b]->TWIadd | 0x20, b, TWI_FB_SET_MAXDRV, FAIMSFBstates[b]->MaxDrive = FAIMSFBarray[b]->MaxDrive);
       if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->MaxPower) != FAIMSFBarray[b]->MaxPower) TWIsetFloat(FAIMSFBarray[b]->TWIadd | 0x20, b, TWI_FB_SET_MAXPWR, FAIMSFBstates[b]->MaxPower = FAIMSFBarray[b]->MaxPower);
-      if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->CVstart) != FAIMSFBarray[b]->CVstart)   TWIsetFloat(FAIMSFBarray[b]->TWIadd | 0x20, b, TWI_FB_SET_CV_START, FAIMSFBstates[b]->CVstart = FAIMSFBarray[b]->CVstart);
-      if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->CVend) != FAIMSFBarray[b]->CVend)       TWIsetFloat(FAIMSFBarray[b]->TWIadd | 0x20, b, TWI_FB_SET_CV_END, FAIMSFBstates[b]->CVend = FAIMSFBarray[b]->CVend);
+      if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->CVstart) != FAIMSFBarray[b]->CVstart)   TWIsetFloat(FAIMSFBarray[b]->TWIadd | 0x20, b, TWI_FB_SET_CV_START, (FAIMSFBstates[b]->CVstart = FAIMSFBarray[b]->CVstart)*CVDIV);
+      if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->CVend) != FAIMSFBarray[b]->CVend)       TWIsetFloat(FAIMSFBarray[b]->TWIadd | 0x20, b, TWI_FB_SET_CV_END, (FAIMSFBstates[b]->CVend = FAIMSFBarray[b]->CVend)*CVDIV);
       if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->VRFstart) != FAIMSFBarray[b]->VRFstart) TWIsetFloat(FAIMSFBarray[b]->TWIadd | 0x20, b, TWI_FB_SET_VRF_START, FAIMSFBstates[b]->VRFstart = FAIMSFBarray[b]->VRFstart);
       if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->VRFend) != FAIMSFBarray[b]->VRFend)     TWIsetFloat(FAIMSFBarray[b]->TWIadd | 0x20, b, TWI_FB_SET_VRF_END, FAIMSFBstates[b]->VRFend = FAIMSFBarray[b]->VRFend);
       if(FAIMSFBstates[b]->update || (FAIMSFBstates[b]->Steps) != FAIMSFBarray[b]->Steps)       TWIsetInt(FAIMSFBarray[b]->TWIadd   | 0x20, b, TWI_FB_SET_STEPS, FAIMSFBstates[b]->Steps = FAIMSFBarray[b]->Steps);
@@ -392,7 +405,7 @@ void FAIMSfb_loop(void)
       // Readback Drive, CV and Vrf in case the module changed the values
       if(TWIreadFloat(FAIMSFBarray[b]->TWIadd | 0x20, b,TWI_FB_READ_DRIVE, &fval)) FAIMSFBstates[b]->Drive = FAIMSFBarray[b]->Drive = fval;
       if(TWIreadFloat(FAIMSFBarray[b]->TWIadd | 0x20, b,TWI_FB_READ_VRF, &fval)) FAIMSFBstates[b]->Vrf = FAIMSFBarray[b]->Vrf = fval;
-      if(TWIreadFloat(FAIMSFBarray[b]->TWIadd | 0x20, b,TWI_FB_READ_CV, &fval)) FAIMSFBstates[b]->CV = FAIMSFBarray[b]->CV = fval;
+      if(TWIreadFloat(FAIMSFBarray[b]->TWIadd | 0x20, b,TWI_FB_READ_CV, &fval)) FAIMSFBstates[b]->CV = FAIMSFBarray[b]->CV = fval / CVDIV;
       FAIMSFBstates[b]->update = false;
     }
   }
@@ -432,9 +445,11 @@ void FAIMSFBscanISR(void)
      if(FAIMSFBarray[b]->ElectM4ena)
      {
         uint16_t buf[2];
-        ReadDualElectrometer(FAIMSFBarray[b]->ElectM4Add, buf);
-        msd->PosCurrent = Counts2Value(buf[0], &FAIMSFBarray[b]->ElectPosCtrlM4);
-        msd->NegCurrent = Counts2Value(buf[1], &FAIMSFBarray[b]->ElectNegCtrlM4);
+        if(ReadDualElectrometer(FAIMSFBarray[b]->ElectM4Add, buf))
+        {
+          msd->PosCurrent = Counts2Value(buf[0], &FAIMSFBarray[b]->ElectPosCtrlM4);
+          msd->NegCurrent = Counts2Value(buf[1], &FAIMSFBarray[b]->ElectNegCtrlM4);
+        }
      }
      else
      {
@@ -738,7 +753,7 @@ void ReturnFAIMSfbMaxPower(int module)
 }
 void SetFAIMSfbCV(char *module, char *CV)
 {
-   SetFAIMSfb(module,CV,&FAIMSFBarray[0]->CV,&FAIMSFBarray[1]->CV,-48, 48);      
+   SetFAIMSfb(module,CV,&FAIMSFBarray[0]->CV,&FAIMSFBarray[1]->CV,-MAXCV, MAXCV);      
 }
 void ReturnFAIMSfbCV(int module)
 {
@@ -750,7 +765,7 @@ void ReturnFAIMSfbCVrb(int module)
 }
 void SetFAIMSfbBIAS(char *module, char *BIAS)
 {
-   SetFAIMSfb(module,BIAS,&FAIMSFBarray[0]->Bias,&FAIMSFBarray[1]->Bias,-48, 48);      
+   SetFAIMSfb(module,BIAS,&FAIMSFBarray[0]->Bias,&FAIMSFBarray[1]->Bias,-MAXCV, MAXCV);      
 }
 void ReturnFAIMSfbBIAS(int module)
 {
@@ -762,7 +777,7 @@ void ReturnFAIMSfbBIASrb(int module)
 }
 void SetFAIMSfbCVstart(char *module, char *CVstart)
 {
-   SetFAIMSfb(module,CVstart,&FAIMSFBarray[0]->CVstart,&FAIMSFBarray[1]->CVstart,-48, 48);      
+   SetFAIMSfb(module,CVstart,&FAIMSFBarray[0]->CVstart,&FAIMSFBarray[1]->CVstart,-MAXCV, MAXCV);      
 }
 void ReturnFAIMSfbCVstart(int module)
 {
@@ -770,7 +785,7 @@ void ReturnFAIMSfbCVstart(int module)
 }
 void SetFAIMSfbCVend(char *module, char *CVend)
 {
-   SetFAIMSfb(module,CVend,&FAIMSFBarray[0]->CVend,&FAIMSFBarray[1]->CVend,-48, 48);    
+   SetFAIMSfb(module,CVend,&FAIMSFBarray[0]->CVend,&FAIMSFBarray[1]->CVend,-MAXCV, MAXCV);    
 }
 void ReturnFAIMSfbCVend(int module)
 {
@@ -881,7 +896,7 @@ void StopFAIMSfbScan(int module)
 void ElectrometerAD5593init(int8_t addr)
 {
    Wire1.begin();
-   Wire1.setClock(400000);
+   Wire1.setClock(Wire1DefaultSpeed);
 
    MIPSconfigData.Ser1ena = false;
    pinMode(18, INPUT);
@@ -1048,7 +1063,7 @@ void ReturnEMRTneg(void)
 void SetEMRTposOff(char *val)
 {
     if(isElectrometer() == -1) return;
-    SetFAIMSfb("1",val,&faimsfbvars->PosOffset,&faimsfbvars->PosOffset,0,5.0);
+    SetFAIMSfb("1",val,&faimsfbvars->PosOffset,&faimsfbvars->PosOffset,0,MAXELECBIAS);
 }
 void ReturnEMRTposOff(void)
 {
@@ -1061,7 +1076,7 @@ void ReturnEMRTposOff(void)
 void SetEMRTnegOff(char *val)
 {
     if(isElectrometer() == -1) return;
-    SetFAIMSfb("1",val,&faimsfbvars->NegOffset,&faimsfbvars->NegOffset,0,5.0);
+    SetFAIMSfb("1",val,&faimsfbvars->NegOffset,&faimsfbvars->NegOffset,0,MAXELECBIAS);
 }
 void ReturnEMRTnegOff(void)
 {
@@ -1077,7 +1092,7 @@ void SetEMRTposZero(char *val)
     int brd;
     
     if((brd=isElectrometer()) == -1) return;
-    SetFAIMSfb("1",val,&FAIMSFBarray[brd]->ElectPosZero,&FAIMSFBarray[brd]->ElectPosZero,0,5.0);
+    SetFAIMSfb("1",val,&FAIMSFBarray[brd]->ElectPosZero,&FAIMSFBarray[brd]->ElectPosZero,0,MAXELECBIAS);
     AD5593writeDACWire1(FAIMSFBarray[brd]->ElectAdd, FAIMSFBarray[brd]->ElectPosZeroCtrl.Chan, Value2Counts(FAIMSFBarray[brd]->ElectPosZero,&FAIMSFBarray[brd]->ElectPosZeroCtrl));
 }
 void ReturnEMRTposZero(void)
@@ -1093,7 +1108,7 @@ void SetEMRTnegZero(char *val)
     int brd;
     
     if((brd=isElectrometer()) == -1) return;
-    SetFAIMSfb("1",val,&FAIMSFBarray[brd]->ElectNegZero,&FAIMSFBarray[brd]->ElectNegZero,0,5.0);
+    SetFAIMSfb("1",val,&FAIMSFBarray[brd]->ElectNegZero,&FAIMSFBarray[brd]->ElectNegZero,0,MAXELECBIAS);
     AD5593writeDACWire1(FAIMSFBarray[brd]->ElectAdd, FAIMSFBarray[brd]->ElectNegZeroCtrl.Chan, Value2Counts(FAIMSFBarray[brd]->ElectNegZero,&FAIMSFBarray[brd]->ElectNegZeroCtrl));
 }
 void ReturnEMRTnegZero(void)
@@ -1122,7 +1137,7 @@ void SendFrag(void)
     pinMode(18,INPUT);
     pinMode(19,INPUT);
     Wire1.begin();
-    Wire1.setClock(100000);
+    Wire1.setClock(Wire1DefaultSpeed);
     setSC16IS740wire(&Wire1);
     init_SC16IS740(0x48); 
   }

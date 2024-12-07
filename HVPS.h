@@ -48,6 +48,8 @@ extern HVPSdata HVPS_Rev_1;
 extern HVPSdata HVPS_Rev_2;
 extern float    MaxHVvoltage;
 
+extern HVPSdata *HVPSarray[];
+
 // Prototypes
 void HVPSNumberOfChannels(void);
 

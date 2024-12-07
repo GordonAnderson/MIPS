@@ -955,7 +955,167 @@
 //      1.) Added the ADC averaging function. The capbility requires the change detection system to be enabled 
 //          and the SADCSAMPS command defines the number of samples in the average. The command ADCAVG will return
 //          last collected average. The ADC conversion rate is ~45KHz
+//  1.209, Oct 8, 2021
+//      1.) Added rev 6 to RF driver to support the rev 2 RF coil driver for the fragmentor. This hardware 
+//          supports dual RF output phases and monitors.
+//  1.210, Oct 30, 2021
+//      1.) Added rev 7 to ESI to support the rev 2.1 ESI hardware module with two seperate outputs using relays 
+//          isolatoion.
+//  1.211, Nov 4, 2021
+//      1.) Added arc detection options to the RF driver. The user must enable through serial commands. This option
+//          can noly be enabled for one channel. This detector is only enabled over 500Vp-p
+//  1.212, Nov 20, 2021
+//      1.) Raised upper fre limit to 5.1MHz on RFdriver for the fragmentor
+//  1.213, Dec 6, 2021
+//      1.) Added Auto Tune for FAIMS to rev 1 and rev 2 controller. Fixed a couple minor bugs.
+//      2.) Improved the capacitor tuning function to better deal with the servo stickeyness.
+//  1.214, Dec 25, 2021
+//      1.) Added commands to display and adjust the gains and offsets for ADC amd DAC channels in 
+//          the following modules, RFD, RFA, and DCB
+//  1.215, Jan 10, 2022
+//      1.) Updated commands to display and adjust the gains and offsets for ADC amd DAC channels in 
+//          the following modules, RFD, RFA, DCB, and ESI. Also added set functions
+//      2.) Added the following features to the QUAD module
+//          - Enable and disable of resolving DC
+//          - Added auto range control
+//          - Added calibration compensation with frequerncy
+//  1.216, Feb 17, 2022
+//      1.) Added ACK to the ARBSYNC command, was missing!
+//  1.217, Feb 23, 2022
+//      1.) Added memory dump function
+//      2.) Added function to set memory pointer to EEPROM buffers, this supports editing buffers
+//      3.) Added address offset function
+//  1.218, April 19, 2022
+//      1.) Changed startup screen to main menu if startp delay is set to 0, also setting to 0 is a 1 sec delay.
+//      2.) Update the display enable funtion to reinit the display
+//  1.219, May 24, 2022
+//      1.) Added table command to enable USB serial link testing while in table mode
+//      2.) Added interrupt blocking in ramp update routing and in the table DAC update routines
+//  1.220, May 26, 2022
+//      1.) Added the halt, H compressor table command, this required updating the MIPStimer library code
+//      2.) Updated the compression table delay function to use floating point numbers
+//      3.) Upgraded the file driven faims mode to support the DC CV and Bis scanning. Does not yet support
+//          externl triggering.
+//  1.221, July 15, 2022
+//      1.) Adjusted the FAIMS autotune parameters.
+//  1.222, August 12, 2022
+//      1.) Fixed bug with RF gating when two RF drivers are in the system
+//      2.) Added a command to disable RF gating
+//      3.) Updated the Auto tune function
+//      4.) Added Auto Tune abort command
+//      5.) Allow button to abort Auto Tune
+//      6.) Add map of Alt waveform trigger to either trigger line
+//      7.) Added command to stop the compressor from setting the compressor trigger defaut on start and stop
+//  1.223, August 24, 2022
+//      1.) Added max power limit setting to the RFdriver2 module
+//  1.224, September 24, 2022
+//      1.) Updated the Twave module to support the rev 4.2 hardware. This is a 500V TW pulse generator
+//          with no guard voltages. 
+//      2.) Fixed a bug in the write byte to ram function
+//  1.225, October 4, 2022
+//      1.) Added support for ADS7828 used on rev 5.3 RFdriver to replace the AD7998
+//      2.) Fixed a bug in the field driven FAIMS offset input host command
+//  1.226, October 14, 2022
+//      1.) Added TWISCAN command to scan for TWI address
+//      2.) Added TWIADDSET command to automatically set TWI addresses for selected devices in 
+//          a few modules, RFD,DCB, and FAIMS. This is to support the ADS7828.
+//      3.) Added PWL option to the FAIMS amplitude display
+//  1.227, November 11, 2022
+//      1.) Added alternut waveform type CUR, use current waveform. Required ARB rev 2.21
+//      2.) Fixed a but in the table STBLTSKS command, tasks would not run in external
+//          trigger mode.
+//  1.228, December 7, 2022
+//      1.) Expanded the ARB bias offset from +/-10V to +/- 30V
+//  1.229, January 9, 2023
+//      1.) Fix bug in auto tune RF driver2 code. The wrong RF head was selected
+//      2.) Added the ARB compressor disable functions, host command only, always enabled on power up
+//      3.) Increased the compression table length to 130 chars, also updated the serial long string
+//          read function to keep the string null terminated as its filled.
+//  1.230, Feb 24, 2023
+//      1.) Added command to allow setting a tasks run interval in mS
+//      2.) Added function to support nonlinear sweeping of the MIPS based ARB sweeping.
+//          This will only work for ARB modules 1 and 2 and requires the ARBs to be using
+//          a common clock.
+//  1.231, Mar 10, 2023
+//      1.) Fixed bug in non linear sweep on ARB module 2
+//  1.232, April 5, 2023
+//      1.) Added feature to disable ESI on DCbias module trip
+//  1.233, June 19, 2023
+//      1.) Added the pulse counting features
+//  1.234, June 27, 2023
+//      1.) Added FPGA module support
+//      2.) Added ADC control of RF drive/setpoint for drive channels 1 and 2
+//  1.235, August 7, 2023
+//      1.) Added ESI 4.3 calibration function
+//  1.236, August 29, 2023
+//      1.) Removed the flashing LT (pin 13) code. This is also the ethernet config line
+//          and the flashing was causing the ethernet interface to fail.
+//      2.) Updated the ADS7828 function in the hardware file. Removed atomic block and also
+//          added timeout and fixed a TWI release bug.
+//  1.237, October 8, 2023
+//      1.) Updated the DCbias readback filter, its now dynamic to support fast changes
+//          in setting and better filtering.
+//  1.238, November 8, 2023
+//      1.) Added RF level control to pulse sequence generator
+//      2.) Added RF gate off RF level, defaults to 0
+//  1.239, November 30, 2023
+//      1.) Fixed FAIMSfb single ended bug that made CV readback double the actual value
+//  1.240, January 9, 2024
+//      1.) Added ESI level detection switching mode gate enable commands
+//  1.241, January 20, 2024 (need testing)
+//      1.) Added FAIMS AT over ride command for several parameters
+//      2.) Added additional FAIMS host commands
+//      3.) Added Auto Tune to QUAD module
+//      4.) Turn on ESI rev 4.3 hardware relays every second due to reported problem with 
+//          ESI output off and readback correct.
+//  1.242, Feb 11, 2024
+//      1.) Added time table voltage delta control to support ramping
+//  1.243, Mar 5, 2024
+//      1.) Fixed a table bug that caused nested loop over 3 to fail.
+//  1.244, Mar 20, 2024
+//      1.) Fixed a bug in the max voltage logic for the Twave module, with two modules
+//          the first module's value was overwritten
+//  1.245, May 11, 2024
+//      1.) Added commands to support changing the alternate freq and freq ena in the ARB
+//  1.246, May 22, 2024
+//      1.) Fixed bug with DCbias pulse generation tht caused readback erros on systems
+//          using board select 0 and 1. Note, this return using TWI hardware driver not the
+//          bit banging.
+//      2.) Added command to mask a signal DCbias channel readback testing.
+//      3.) Fixed a offset readback bug when using multiple DCbias modules in one system.
+//      4.) Adjusted interrupt priorities in DMSDMS code to fix an issue where the timer
+//          tick was missing events.
+//  Aug 1, 2024
+//      1.) Removed the ADC/DAC gain offset adjust commands, they were never used and a bad idea.
+//  1.247, Aug 4, 2024
+//      1.) Fixed a long standing bug in the AD7998 and AD7994 read functions when in software TWI mode.
+//      2.) Seperated offset voltage error testing
+//      3.) These changes fix bug Mike Belov was seeing on random trips
+//      4.) Added logging for DCB power on and off
+//  1.248, Aug 13, 2024
+//      1.) Added error testing on DCBias offset readback when using AD5593, was ignoring error response
+//      2.) Removed trace functions, never used and no longer needed
+//      3.) Inproved the AD7998 performance, 5mS to read all 8 channels, at least 2x faster
+//      4.) Removed a number of delays to speed up loops
+//      5.) Changed boot to load MIPS configuration mennu
+//      6.) Update DCbias display function to reduce display updates, saved 17mS
+//      7.) Added support for DCbias analog control module set, requires compile switch
+//      8.) Added support for DCbias current monitor BNC modules, requires a compile switch
+//  1.249, Aug 28, 2024
+//      1.) Added error detection to FAIMSfb electrometer reading function
 //
+//  Next version
+//      3.) Added Command string function (not yet implemented)
+//          - Trigger from counter
+//          - Trigger via command
+//          - Trigger from delayed trigger function
+//
+  // Test the ADC TWI address and look for options if its not valid, added Oct 2022
+  // The module could use a AD7998 or a ADS7828. If the address defined address is
+  // invalid try the following, 0x20,0x21,0x22,0x23,0x24 of the ADS7828 try
+  // 0x48, 0x49, 0x4A, 0x4B.
+
+
 //      to do:
 //          1.) Add auto tune to QUAD function
 //          2.) Add scanning function to QUAD function, intergrate with electrometer

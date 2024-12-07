@@ -2,17 +2,27 @@
 #define RFDRIVER_H_
 
 extern float MaxRFVoltage;
-extern int  NumberOfRFChannels;
+extern int   NumberOfRFChannels;
 
-#define  MAXPWL 10
-// This data structure is used for the piece wise linear calibration
-// function.
+extern int   RFarcCH;
+extern float RFarcDrv;
+extern float RFarcV;
+
+extern bool  RFgatingOff;
+extern bool  TuneAbort;
+
+// ADC control structure. This allows an ADC channel to control a RF channel's
+// drive or setpoint depending on the RF driver channels mode. ADC input is assumed
+// 0 to 10V.
+// 0 to 10V = 0 to 100%
+// 0 to 10V = 0 to 1000V 
+// 
 typedef struct
 {
-  uint8_t   num;
-  uint16_t  ADCvalue[MAXPWL];
-  uint16_t  Value[MAXPWL];
-} PWLcalibration;
+  bool  enable;           // Enable the channel
+  int   RFchan;           // RF channel 1 thru 4
+  float gain;             // ADC counts to voltage conversion factor
+} ADCcontrolRF;
 
 enum RFdriverMode
 {
@@ -60,6 +70,17 @@ typedef struct  // 147 bytes
                                  // is phase, 0 for RF+ and 1 of RF-
 } RFdriverData;
 
+#if RFdriver2 == true
+extern RFdriverData  *RFDDarray[];
+#define   rfDDarray  (*RFDDarray)
+#else
+extern RFdriverData  RFDDarray[];
+extern float         gatedDrive[4];
+#define   rfDDarray  RFDDarray
+void setRFgatedDrv(char *Chan, char *Val);
+void getRFgatedDrv(int Chan);
+#endif
+
 // Prototypes
 void RF_A1_ISR(void);
 void RF_A2_ISR(void);
@@ -88,10 +109,20 @@ void GetRFpwrLimit(int channel);
 void SetRFpwrLimit(int channel, int Power);
 void genPWLcalTable(char *channel, char *phase);
 float PWLlookup(int ch, int ph, int adcval);
+int8_t BoardFromSelectedChannel(int8_t SC);
+void RFgateDisable(char *cmd);
+void SetRFautoTuneAbort(void);
 
 void RFmodeReport(int);
 void RFmodeSet(char *, char *);
 void SaveRF2EEPROM(void);
+
+void setupADCRFcontrol(char *chan, char *gain);
+void setADCRFenable(char *chan, char *value);
+void getADCRFenable(char *chan);
+
+void UpdateRFdrive(int chan, float value);
+void ProcessRFdrive(void);
 
 #if RFdriver2
 // RFdriver2 specific definitions

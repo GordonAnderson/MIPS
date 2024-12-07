@@ -37,20 +37,13 @@
 //
 // To Dos:
 //  1.) Added serial commands to support FAIMS.
-//      - Add FAIMS count to indicate its present in system. Count or 0 or 1
-//      - Enable, ON OFF
-//      - Frequency
-//      - Drv enable
-//      - Power
-//      - Drv power
-//      - Max pawer
-//      - Max drv power
-//      - Peak pos voltage
-//      - Peak neg voltage
-//      - Lots more to add!
+//      - Add frequency commands
+//      - Add Capcaitor positions commands
+//      - Add phase control commands
 //  2.) Consider adding DC bias power supply ON/OFF and tie the bias to RF on/off??
-//  3.) Add calibration procedure for RF amplitude. This needs to be a three point
-//      second order calibration function.
+//  3.) Update auto tune and add volitial override parameters
+//      - Set start and stop frequency
+//      - Override primary capacitance check
 //
 // Gordon Anderson
 //
@@ -130,9 +123,13 @@ int    Loops = 1;
 FAIMSautoTuneStates FAIMStuneState=FAIMSidle;
 bool FAIMStuneRequest = false;
 bool FAIMStuning = false;
-int  TuneDrive = 20;
 bool TunePos = true;
 char TuneState[25] = "Idle";
+// Volatial auto tune parameters
+int  TuneDrive    = 20;
+int  ATFMstartF   = 500000;
+int  ATFMstopF    = 1500000;
+bool ATFMbypassPC = false;
 
 // Output level control variables
 bool   Lock = false;          // This flag is true when in the output level lock mode
@@ -321,7 +318,8 @@ DialogBoxEntry FAIMSentriesDCMenuFD[] = {
   {" CV start"               , 0, 6, D_FLOAT   , -250, 250, 0.1, 18, false, "%5.1f", &faims.CVstart, NULL, NULL},
   {" CV end"                 , 0, 7, D_FLOAT   , -250, 250, 0.1, 18, false, "%5.1f", &faims.CVend, NULL, NULL},
   {" Duration"               , 0, 8, D_FLOAT   , 0, 10000, 1, 15, false, "%8.1f", &faims.Duration, NULL, NULL},
-  {" Scan"                   , 0, 9, D_ONOFF   , 0, 1, 1, 20, false, NULL, &FAIMSscan, NULL, NULL},
+  {" Loops"                  , 0, 9, D_INT     , 1, 100, 1, 20, false, "%3d", &Loops, NULL, NULL},
+  {" Scan"                   , 0, 10, D_ONOFF   , 0, 1, 1, 20, false, NULL, &FAIMSscan, NULL, NULL},
   {" Return to FAIMS menu"   , 0, 11, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FAIMSMainMenu, NULL, NULL},
   {NULL},
 };
@@ -339,6 +337,13 @@ const Commands  FAIMSCmdArray[] = {
   {"GFMLOCK", CMDbool, 0, (char *)&Lock},                       // Returns FAIMS output level lock mode
   {"SFMSP", CMDfunctionStr, 1, (char *)FAIMSsetLockSP},         // Sets FAIMS output level lock setpoint
   {"GFMSP", CMDfloat, 0, (char *)&LockSetpoint},                // Returns FAIMS output level lock setpoint
+  {"SFMFREQ", CMDfunction, 1, (char *)FAIMSsetFreq},            // Set frequency
+  {"GFMFREQ", CMDint, 0, (char *)&faims.Freq},                  // Return frequency
+  {"SFMPCAP", CMDfunctionStr, 1, (char *)FAIMSsetPcap},         // Set primary capacitor position
+  {"GFMPCAL", CMDfloat, 0, (char *)&faims.Pcap},                // Return primary capacitor position
+  {"SFMHCAP", CMDfunctionStr, 1, (char *)FAIMSsetHcap},         // Set harmonic capacitor position
+  {"GFMHCAP", CMDfloat, 0, (char *)&faims.Hcap},                // Return harmonic capacitor position
+// FAIMS auto tune commands
   {"SFMTUNE", CMDfunction, 0, (char *)FAIMSrequestAutoTune},    // Set auto tune request flag
   {"SFMTABRT", CMDfunction, 0, (char *)FAIMSautoTuneAbort},     // Set auto tune abort flag
   {"GFMTSTAT", CMDstr, 0, (char *)TuneState},                   // Returns the auto tune state string
@@ -346,6 +351,12 @@ const Commands  FAIMSCmdArray[] = {
   {"GFMTPOS",CMDbool, 0, (char *)&TunePos},                     // Return positive peak mode
   {"SFMTDRV",CMDint, 1, (char *)&TuneDrive},                    // Set the tune mode drive level
   {"GFMTDRV",CMDint, 0, (char *)&TuneDrive},                    // Return the tune mode drive level
+  {"SFMATSTRF",CMDint, 1, (char *)&ATFMstartF},                 // Set the auto tune start frequency
+  {"GFMATSTRF",CMDint, 0, (char *)&ATFMstartF},                 // Return the tune mode start frequency
+  {"SFMATSTPF",CMDint, 1, (char *)&ATFMstopF},                  // Set the auto tune stop frequency
+  {"GFMATSTPF",CMDint, 0, (char *)&ATFMstopF},                  // Return the tune mode stop frequency
+  {"SFMATBPC",CMDbool, 1, (char *)&ATFMbypassPC},               // Set flag to true to bypass primary capacitor tune
+  {"SFMATBPC",CMDbool, 0, (char *)&ATFMbypassPC},               // Return the bypass primary capacitor tune flag
 // FAIMS DC CV and Bias commands
   {"SFMCV", CMDfunctionStr, 1, (char *)FAIMSsetCV},                // Sets FAIMS DC CV voltage setpoint
   {"GFMCV", CMDfloat, 0, (char *)&faims.DCcv.VoltageSetpoint},     // Returns FAIMS DC CV voltage setpoint
@@ -377,13 +388,16 @@ const Commands  FAIMSCmdArray[] = {
   {"SRFHPCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharPcal},      // Set FAIMS RF harmonic positive peak readback calibration
   {"SRFHNCAL", CMDfunctionStr, 2, (char *)FAIMSsetRFharNcal},      // Set FAIMS RF harmonic negative peak readback calibration
   {"SARCDIS",CMDbool, 1, (char *)&DiableArcDetect},                // TRUE or FALSE, set to TRUE disable arc detection
-  {"FMISCUR",CMDbool, 0, (char *)&CurtianFound},                   // Returns TRUE is Curtian supply was detected
+  {"FMISCUR",CMDbool, 0, (char *)&CurtianFound},                   // Returns TRUE if Curtian supply was detected
   {"SFMCCUR",CMDbool, 1, (char *)&CurtianCtrl},                    // If TRUE allows enable faims to enable curtian supply
   {"GFMCCUR",CMDbool, 0, (char *)&CurtianCtrl},                    // Returns curtian control flag
   {"SFMMDIS",CMDbool, 1, (char *)&ArcMessAutoDismiss},             // Set the message auto dismiss is TRUE
   {"GFMMDIS",CMDbool, 0, (char *)&ArcMessAutoDismiss},             // Return the message auto dismiss flag 
   {"SFARCR",CMDint, 1, (char *)&FMnumTries},                       // Set the number of arc retry attempts
   {"GFARCR",CMDint, 0, (char *)&FMnumTries},                       // Return the number of arc retry attempts 
+  {"CALFMPWL",CMDfunctionStr, 1, (char *)FAIMSgeneratePWL},        // Generates PWL cal table, POS or NEG
+  {"SFMUSEPWL",CMDbool, 1, (char *)&faims.UsePWL},                 // Sets the use PWL cal table flag
+  {"GFMUSEPWL",CMDbool, 0, (char *)&faims.UsePWL},                 // Returns the use PWL cal table flag
   {0},
 };
 
@@ -711,7 +725,7 @@ void FAIMS_init(int8_t Board)
      FAIMSclockSet(faims.CLOCKadr, faims.Freq);
   }
   // If ESI rev 3 board is present then enable the curtian menu option
-  if((NumberOfESIchannels >= 1) && (ESIarray[1].Rev >= 3))
+  if((NumberOfESIchannels >= 1) && (ESIarray[1].Rev >= 3) && (ESIarray[1].ESIchan[0].VoltageLimit < 5000))
   {
     DialogBoxEntry *de = GetDialogEntries(FAIMSentriesDCMenu, " Curtain V");
     if(de != NULL)
@@ -777,7 +791,7 @@ void FAIMS_init(int8_t Board)
   bmpSensor = false;
   if(bmp.begin())
   {
-    Wire1.setClock(100000);
+    Wire1.setClock(Wire1DefaultSpeed);
     // Here if the pressure / temp sensor is found. Set flag that its present
     bmpSensor = true;
     bmp.getPressure(&basePressure);
@@ -796,6 +810,7 @@ void FAIMS_init(int8_t Board)
     de2->Name = FundamentalDelayName;
     if(de3 != NULL) de3->Type = D_FUNCTION;
   }
+  if(de3 != NULL) de3->Type = D_FUNCTION;
 }
 
 // Monitor power limits and reduce drive if over the limit. First reduce DriveChange until
@@ -826,7 +841,7 @@ void FAIMSpowerMonitor(void)
   }
 }
 
-// This function tests the clock and returns true if its runninng and near the correct frequency.
+// This function tests the clock and returns true if its running and near the correct frequency.
 // Use DUE input on pin 2 as a clock detector, this will have the fundamental divided by 16.
 // This function turns on the pin 2 interrupt and counts edges for 10 millisec.
 bool TestClock(void)
@@ -841,7 +856,13 @@ bool TestClock(void)
   {
   }
   detachInterrupt(2);
-  if ((FAIMSclockChange * 1600) > faims.Freq * .90) return (true);    
+  if ((FAIMSclockChange * 1600) > faims.Freq * .90) return (true);  
+  if(faims.Rev <= 2)
+  {
+     SetRef(20000000);
+     CY_Init(faims.CLOCKadr);
+     SetPLL2freq(faims.CLOCKadr, faims.Freq * FreqMultiplier);
+  }
   return (false);
 }
 
@@ -967,9 +988,9 @@ void FieldDrivenFAIMSDCbiasControl(void)
 {
   static float CVdelta;
   static float SavedCV;
-  static unsigned long StartTime;
+  static unsigned long StartTime, StepTime, Duration;
   
-  if (!FAIMSscan)
+  if ((!FAIMSscan) && (!FAIMSstepScan))
   {
     if (FAIMSscanning)
     {
@@ -996,8 +1017,12 @@ void FieldDrivenFAIMSDCbiasControl(void)
       // Calculate the input output delta voltage
       CVdelta = dcbd.DCCD[3].VoltageSetpoint - dcbd.DCCD[2].VoltageSetpoint;
       SavedCV = dcbd.DCCD[2].VoltageSetpoint;
+      if(FAIMSstepScan) Duration = faims.StepDuration * faims.Steps;
+      else Duration = faims.Duration * 1000;
       // Setup the scanning parameters
+      ScanTime  = 0;
       StartTime = millis();
+      StepTime  = StartTime;
       FAIMSscanning = true;
       ScanCV = faims.CVstart;
       // Set the DCbias voltages
@@ -1016,20 +1041,32 @@ void FieldDrivenFAIMSDCbiasControl(void)
       // Here if system is scanning
       // Determine the total scan time in seconds
       ScanTime = (millis() - StartTime)/1000;
-      if (ScanTime > faims.Duration)
+      if ((ScanTime * 1000) > Duration)
       {
         // Stop scanning and clear all the scanning flags
-        FAIMSscan = false;
-        FAIMSscanning = false;
-        // Set the DCbias voltages
-        dcbd.DCCD[2].VoltageSetpoint = SavedCV;
-        dcbd.DCCD[3].VoltageSetpoint = SavedCV + CVdelta;
-        DelayMonitoring();
+        if(--Loops <= 0)
+        {
+          FAIMSscan = FAIMSscanEnable = false;
+          FAIMSstepScan = FAIMSstepScanEnable = false;
+          FAIMSscanning = false;
+          Loops = faims.Loops;
+          // Set the DCbias voltages
+          dcbd.DCCD[2].VoltageSetpoint = SavedCV;
+          dcbd.DCCD[3].VoltageSetpoint = SavedCV + CVdelta;
+          DelayMonitoring();
+        }
+        else FAIMSscanning = false;
       }
       else
       {
         // Update the scan voltage
-        ScanCV = faims.CVstart + (faims.CVend - faims.CVstart) * ScanTime / faims.Duration;
+        if(FAIMSscan) ScanCV = faims.CVstart + (faims.CVend - faims.CVstart) * ScanTime / faims.Duration;
+        else if((millis()-StepTime) > faims.StepDuration)
+        {
+          StepTime += faims.StepDuration;
+          ScanCV += (faims.CVend - faims.CVstart) / faims.Steps;
+          DCcvRB = ScanCV;  // Reset the filter
+        }
         // Set the DCbias voltages
         dcbd.DCCD[2].VoltageSetpoint = ScanCV;
         dcbd.DCCD[3].VoltageSetpoint = ScanCV + CVdelta;
@@ -1199,6 +1236,7 @@ void FAIMS_loop(void)
       TWI_RESET();
       Wire.begin();
     }
+    TestClock();
     LastFreq = faims.Freq;
   }
   // Process the global drive level changes and set PWM output level
@@ -1306,15 +1344,26 @@ void FAIMS_loop(void)
   if (AD7998(faims.ADC1adr, ADCvals) == 0)
   {
     // Monitor the output voltage both positive and negative peak
-    Vp = Counts2Value(ADCvals[faims.RFharP.Chan], &faims.RFharP);
+    if(faims.UsePWL) Vp = PWLlookup(&faims.PWLcal[0], ADCvals[faims.RFharP.Chan]) / 1000.0;
+    else Vp = Counts2Value(ADCvals[faims.RFharP.Chan], &faims.RFharP);
     if (Vp < 0) Vp = 0;
-    if(KVoutP == 0) KVoutP = Vp = Counts2Value(AD7998(faims.ADC1adr, faims.RFharP.Chan, 10), &faims.RFharP);
+    if(KVoutP == 0) 
+    {
+      if(faims.UsePWL) KVoutP = Vp = PWLlookup(&faims.PWLcal[0], AD7998(faims.ADC1adr, faims.RFharP.Chan, 10)) / 1000.0;
+      else KVoutP = Vp = Counts2Value(AD7998(faims.ADC1adr, faims.RFharP.Chan, 10), &faims.RFharP);
+      //serial->println(AD7998(faims.ADC1adr, faims.RFharP.Chan, 10));
+    }
     KVoutP = Filter * Vp + (1 - Filter) * KVoutP;
     if (KVoutP * 1000 > MaxFAIMSVoltage) MaxFAIMSVoltage = KVoutP * 1000;
 
-    Vn = Counts2Value(ADCvals[faims.RFharN.Chan], &faims.RFharN);
+    if(faims.UsePWL) Vn = PWLlookup(&faims.PWLcal[1], ADCvals[faims.RFharN.Chan]) / 1000.0;
+    else Vn = Counts2Value(ADCvals[faims.RFharN.Chan], &faims.RFharN);
     if (Vn < 0) Vn = 0;
-    if(KVoutN == 0) KVoutN = Vn = Counts2Value(AD7998(faims.ADC1adr, faims.RFharN.Chan, 10), &faims.RFharN);
+    if(KVoutN == 0) 
+    {
+      if(faims.UsePWL) KVoutN = Vn =  PWLlookup(&faims.PWLcal[1], AD7998(faims.ADC1adr, faims.RFharN.Chan, 10)) / 1000.0;
+      else KVoutN = Vn = Counts2Value(AD7998(faims.ADC1adr, faims.RFharN.Chan, 10), &faims.RFharN);
+    }
     KVoutN = Filter * Vn + (1 - Filter) * KVoutN;
     if (KVoutN * 1000 > MaxFAIMSVoltage) MaxFAIMSVoltage = KVoutN * 1000;
     // Arc detection
@@ -1345,17 +1394,30 @@ void FAIMS_loop(void)
         else DisplayMessage(" Arc detected! ", 2000);
       }
     }
-    // If the voltages changed then seed the filters
-    if(LastCV != faims.DCcv.VoltageSetpoint) LastCV = DCcvRB = faims.DCcv.VoltageSetpoint;
-    if(LastBias != faims.DCbias.VoltageSetpoint) LastBias = DCbiasRB = faims.DCbias.VoltageSetpoint;
-    if(LastOffset != faims.DCoffset.VoltageSetpoint) LastOffset = DCoffsetRB = faims.DCoffset.VoltageSetpoint;
-    // Monitor all the readback voltages
-    DCoffsetRB = FAIMS_Filter * Counts2Value(ADCvals[faims.DCoffset.DCmon.Chan], &faims.DCoffset.DCmon) + (1 - FAIMS_Filter) * DCoffsetRB;
+    if(FieldDriven)
+    {
+      DCoffsetRB = dcbd.DCoffset.VoltageSetpoint;
+      DCbiasRB = DCbiasStates[1]->Readbacks[0]; 
+      DCcvRB = DCbiasStates[1]->Readbacks[2]; 
+      faims.DCcv.VoltageSetpoint = dcbd.DCCD[2].VoltageSetpoint;
+      faims.DCbias.VoltageSetpoint = dcbd.DCCD[0].VoltageSetpoint;
+      faims.DCoffset.VoltageSetpoint = dcbd.DCoffset.VoltageSetpoint;
+    }
+    else
+    {
+      // If the voltages changed then seed the filters
+      if(LastCV != faims.DCcv.VoltageSetpoint) LastCV = DCcvRB = faims.DCcv.VoltageSetpoint;
+      if(LastBias != faims.DCbias.VoltageSetpoint) LastBias = DCbiasRB = faims.DCbias.VoltageSetpoint;
+      if(LastOffset != faims.DCoffset.VoltageSetpoint) LastOffset = DCoffsetRB = faims.DCoffset.VoltageSetpoint;
+      // Monitor all the readback voltages
+      DCoffsetRB = FAIMS_Filter * Counts2Value(ADCvals[faims.DCoffset.DCmon.Chan], &faims.DCoffset.DCmon) + (1 - FAIMS_Filter) * DCoffsetRB;
+      DCbiasRB = FAIMS_Filter * Counts2Value(ADCvals[faims.DCbias.DCmon.Chan], &faims.DCbias.DCmon) + (1 - FAIMS_Filter) * DCbiasRB;
+      DCcvRB = FAIMS_Filter * Counts2Value(ADCvals[faims.DCcv.DCmon.Chan], &faims.DCcv.DCmon) + (1 - FAIMS_Filter) * DCcvRB;      
+    }
+    // Max voltage test
     if (DCoffsetRB > MaxFAIMSVoltage) MaxFAIMSVoltage = DCoffsetRB;
-    DCbiasRB = FAIMS_Filter * Counts2Value(ADCvals[faims.DCbias.DCmon.Chan], &faims.DCbias.DCmon) + (1 - FAIMS_Filter) * DCbiasRB;
-    if (DCbiasRB > MaxFAIMSVoltage) MaxFAIMSVoltage = DCbiasRB;
-    DCcvRB = FAIMS_Filter * Counts2Value(ADCvals[faims.DCcv.DCmon.Chan], &faims.DCcv.DCmon) + (1 - FAIMS_Filter) * DCcvRB;
     if (DCcvRB > MaxFAIMSVoltage) MaxFAIMSVoltage = DCcvRB;
+    if (DCbiasRB > MaxFAIMSVoltage) MaxFAIMSVoltage = DCbiasRB;        
   }
   // Display the monitored values based on the dialog box curently being displayed
   if (ActiveDialog == &FAIMSMainMenu) RefreshAllDialogEntries(&FAIMSMainMenu);
@@ -1458,6 +1520,46 @@ void FAIMSsetDrive(char *drv)
   }
 }
 
+void FAIMSsetFreq(int freq)
+{
+  if(faims.Enable) {SendNAK; return;}
+  if(RangeTest(FAIMSentriesTuneMenu,"Frequency",freq))
+  {
+    faims.Freq = freq;
+    SendACK;
+  }
+}
+
+void FAIMSsetPcap(char *pos)
+{
+  String res;
+  float  v;
+
+  res = pos;
+  v = res.toFloat();
+  if((faims.Enable) && (faims.Drv > 30)) {SendNAK; return;}
+  if(RangeTest(FAIMSentriesTuneMenu,"Pri capacitance",v))
+  {
+    faims.Pcap = v;
+    SendACK;
+  }
+}
+
+void FAIMSsetHcap(char *pos)
+{
+  String res;
+  float  v;
+
+  res = pos;
+  v = res.toFloat();
+  if((faims.Enable) && (faims.Drv > 30)) {SendNAK; return;}
+  if(RangeTest(FAIMSentriesTuneMenu,"Har capacitance",v))
+  {
+    faims.Hcap = v;
+    SendACK;
+  }  
+}
+
 // Set the faims CV voltage, get limits from the dialog structure
 void FAIMSsetCV(char *volts)
 {
@@ -1466,6 +1568,15 @@ void FAIMSsetCV(char *volts)
 
   res = volts;
   v = res.toFloat();
+  if(FieldDriven)
+  {
+    if(RangeTest(FAIMSentriesDCMenuFD,"DC CV",v))
+    {
+      dcbd.DCCD[2].VoltageSetpoint = dcbd.DCCD[3].VoltageSetpoint = v;
+      SendACK;
+    }
+    return;
+  }
   if(RangeTest(FAIMSentriesDCMenu,"DC CV",v))
   {
     faims.DCcv.VoltageSetpoint = v;
@@ -1481,6 +1592,15 @@ void FAIMSsetBIAS(char *volts)
 
   res = volts;
   v = res.toFloat();
+  if(FieldDriven)
+  {
+    if(RangeTest(FAIMSentriesDCMenuFD,"DC bias",v))
+    {
+       dcbd.DCCD[0].VoltageSetpoint = dcbd.DCCD[1].VoltageSetpoint = v;
+       SendACK;
+    }
+    return;
+  }
   if(RangeTest(FAIMSentriesDCMenu,"DC bias",v))
   {
      faims.DCbias.VoltageSetpoint = v;
@@ -1505,7 +1625,12 @@ void FAIMSsetOffset(char *volts)
   }
   // Set the offset voltage
   faims.DCoffset.VoltageSetpoint = v;
-  UpdateNFDlimits();
+  if(FieldDriven) 
+  {
+    dcbd.DCoffset.VoltageSetpoint = v;
+    UpdateFDlimits();
+  }
+  else UpdateNFDlimits();
   SendACK;
 }
 
@@ -1558,6 +1683,15 @@ void FAIMSsetCVstart(char *volts)
 
   res = volts;
   v = res.toFloat();
+  if(FieldDriven) 
+  {
+    if(RangeTest(FAIMSentriesDCMenuFD,"CV start",v))
+    {
+       faims.CVstart = v;
+       SendACK;    
+    }
+    return;
+  }
   if(RangeTest(FAIMSentriesDCMenu2,"CV start",v))
   {
      faims.CVstart = v;
@@ -1572,6 +1706,15 @@ void FAIMSsetCVend(char *volts)
 
   res = volts;
   v = res.toFloat();
+  if(FieldDriven) 
+  {
+    if(RangeTest(FAIMSentriesDCMenuFD,"CV end",v))
+    {
+      faims.CVend = v;
+      SendACK;    
+    }
+    return;
+  }
   if(RangeTest(FAIMSentriesDCMenu2,"CV end",v))
   {
      faims.CVend = v;
@@ -1707,18 +1850,18 @@ bool FAIMSfindFrequency(int freqStep, bool reset)
 
   if(reset) 
   {
-    maxFreq = faims.Freq = freq = 500000;
+    maxFreq = faims.Freq = freq = ATFMstartF;
     maxV = KVoutP = 0;
     return false;
   }
-  while(freq < 1500000)
+  while(freq < ATFMstopF)
   {
     if(KVoutP >= maxV)
     {
       maxFreq = freq;
       maxV = KVoutP;
     }
-    else if(maxV > 0.1) break;
+    //else if(maxV > 0.2) break;        // This causes the function to exit too soon in somes cases, 1/20/24
     freq += freqStep;
     faims.Freq = freq;
     KVoutP = 0;
@@ -1732,18 +1875,20 @@ bool FAIMSfindFrequency(int freqStep, bool reset)
 // for a maximum detected voltage.
 // Does not block and returns true when finished.
 // This function must first be called with reset true to initalize.
-bool FAIMSfindCapacitance(float *cap, bool reset)
+bool FAIMSfindCapacitance(float *cap, bool reset, float startC = 10, float stopC = 90)
 {
   static float maxV;
   static float c, maxC;
+  static bool  adjustingC = false;
 
   if(reset) 
   {
-    maxC = *cap = c = 10;
+    maxC = *cap = c = startC;
     maxV = KVoutP = 0;
+    adjustingC = false;
     return false;
   }
-  while(c < 90)
+  while((c < stopC) && (!adjustingC))
   {
     if(KVoutP >= maxV)
     {
@@ -1756,8 +1901,16 @@ bool FAIMSfindCapacitance(float *cap, bool reset)
     KVoutP = 0;
     return false;
   }
-  *cap = maxC;
-  return true;
+  // Here with the max located so move to that position in 0.5 steps
+  // to make sure we go to the same point.
+  if(!adjustingC)
+  {
+    *cap = maxC - 3;
+    adjustingC = true;
+  }
+  if(*cap != maxC) *cap += 0.5;
+  else return true;
+  return false;
 }
 
 // This function will sweep the phase from 0 to 255 looking
@@ -1766,6 +1919,9 @@ bool FAIMSfindCapacitance(float *cap, bool reset)
 // This function must first be called with reset true to initalize.
 bool FAIMSfindPhase(int *phase, bool reset)
 {
+   DialogBoxEntry *de;
+  if(faims.Rev == 3) de = GetDialogEntries(FAIMSentriesTuneMenu, " Fundamental phase");
+  else de = GetDialogEntries(FAIMSentriesTuneMenu, " Coarse phase");
   static float maxV;
   static int p, maxP;
   float *KVout;
@@ -1778,7 +1934,7 @@ bool FAIMSfindPhase(int *phase, bool reset)
     maxV = *KVout = 0;
     return false;
   }
-  while(p < 256)
+  while(p < de->Max)
   {
     if(*KVout >= maxV)
     {
@@ -1830,8 +1986,8 @@ bool FAIMSautoTuneFreq(int freqStep, bool reset)
     else faims.Freq -= freqStep;
     lastV = KVoutP;
   }
-  if(faims.Freq >= 2000000) fd = FAIMSdone;
-  if(faims.Freq <= 600000) fd = FAIMSdone;
+  if(faims.Freq >= ATFMstopF)  fd = FAIMSdone;
+  if(faims.Freq <= ATFMstartF) fd = FAIMSdone;
   KVoutP = 0;
   if(fd == FAIMSdone) return true;
   return false;
@@ -1842,12 +1998,14 @@ bool FAIMSautoTuneFreq(int freqStep, bool reset)
 bool FAIMSautoTuneCap(float *cap, bool reset)
 {
   static FAIMSdir fd;
-  static float lastV;
+  static float    lastV;
+  static int      cmoves;
 
   if(reset)
   {
     fd = FAIMSup;
     lastV = KVoutP = 0;
+    cmoves = 0;
     return false;
   }
   if(fd == FAIMSup)
@@ -1857,20 +2015,31 @@ bool FAIMSautoTuneCap(float *cap, bool reset)
     {
       fd = FAIMSdown;
     }
-    else *cap += 0.5;
+    else { *cap += 0.5; cmoves++; }
     lastV = KVoutP;
   }
-  if(fd == FAIMSdown)
+  else if(fd == FAIMSdown)
   {
     // Read voltage, if its gone down then return to last value and we are done
     if(KVoutP < lastV) 
     {
-      fd = FAIMSdone;
-      *cap += 0.5;
-      return true;
+      fd = FAIMSadjC;
+      // Go forward 5 steps and then we will step back to the position
+      *cap +=  3;
+      cmoves = 5;
+      //return true;
     }
-    else *cap -= 0.5;
+    else { *cap -= 0.5; cmoves--; }
     lastV = KVoutP;
+  }
+  else if(fd == FAIMSadjC)
+  {
+    if(cmoves > 0)
+    {
+      *cap -= 0.5; 
+      cmoves--;
+    }
+    else fd = FAIMSdone;
   }
   if(*cap >= 95) fd = FAIMSdone;
   if(*cap <= 5) fd = FAIMSdone;
@@ -1952,6 +2121,7 @@ bool FAIMSautoTunePhase(int *phase, bool reset)
 // seconds to stop any phase change with system warm up.
 void FAIMS_AutoTune(void)
 {
+  DialogBoxEntry *de = GetDialogEntries(FAIMSentriesTuneMenu, " Coarse phase");
   static int delayCnt = 0;
   static FAIMSautoTuneStates laststate=FAIMSidle;
   static bool AutoPhase = false;
@@ -2008,7 +2178,7 @@ void FAIMS_AutoTune(void)
     faims.Drv3.Enable = false;
     faims.Pcap = 20;
     faims.Hcap = 50;
-    faims.PhaseC = 128;
+    faims.PhaseC = de->Max / 2;
     faims.PhaseF = 128;
     // Display tuning message
     DisplayMessage("Tune in process");
@@ -2047,19 +2217,23 @@ void FAIMS_AutoTune(void)
         if(FAIMSautoTuneFreq(1000,false))
         {
           FAIMStuneState = FAIMSfindPcap;
-          FAIMSautoTuneCap(&faims.Pcap,true);
+          //FAIMSautoTuneCap(&faims.Pcap,true);
+          FAIMSfindCapacitance(&faims.Pcap,true,10,30);
+          delayCnt = 40;
+          break;
         }
         delayCnt = 10;
         break;
       case FAIMSfindPcap:
         strcpy(TuneState,"Setting primary C");
-        if(FAIMSautoTuneCap(&faims.Pcap,false))
+        //if(FAIMSautoTuneCap(&faims.Pcap,false))
+        if((FAIMSfindCapacitance(&faims.Pcap,false,10,30)) || ATFMbypassPC)
         {
           FAIMStuneState = FAIMSfindHcap;
           faims.Drv1.Enable = false;
           faims.Drv2.Enable = false;
           faims.Drv3.Enable = true;  
-          delayCnt = 20; 
+          delayCnt = 40; // Increased from 20, 7/15/22
           return;  
         }
         delayCnt = 10;
@@ -2069,7 +2243,7 @@ void FAIMS_AutoTune(void)
         if(laststate != FAIMSfindHcap) 
         {
           FAIMSfindCapacitance(&faims.Hcap,true);
-          delayCnt = 40;
+          delayCnt = 100;  // increased from 40, 7/15/22
           break;
         }
         else
@@ -2121,6 +2295,55 @@ void FAIMS_AutoTune(void)
     }
     laststate = FAIMStuneState;
   }
+}
+
+// The following routines are used to generate the FAIMS PWL calibration
+// tables.
+
+int readFAIMSposADC(void)
+{
+  SelectBoard(FAIMSBoardAddress);
+  return AD7998(faims.ADC1adr, faims.RFharP.Chan, 100);
+}
+
+int readFAIMSnegADC(void)
+{
+  SelectBoard(FAIMSBoardAddress);
+  return AD7998(faims.ADC1adr, faims.RFharN.Chan, 100);
+}
+
+void allowFAIMSdriveAdj(void)
+{
+  int   brd;
+  float Drive;
+  
+  // Call the task system to allow all system processing
+  control.run();
+  // Process any encoder event
+  if (ButtonRotated)
+  {
+    ButtonRotated = false;
+    Drive = ((float)encValue)/10.0;
+    encValue = 0;
+    // Adjust the drive level 
+    faims.Drv += Drive;
+  }
+}
+
+void FAIMSgeneratePWL(char *option)
+{
+  String sToken;
+
+  sToken = option;
+  if(sToken == "POS")
+  {
+    buildPWLcalTable(&faims.PWLcal[0], readFAIMSposADC, allowFAIMSdriveAdj);
+  }
+  else if(sToken == "NEG")
+  {
+    buildPWLcalTable(&faims.PWLcal[1], readFAIMSnegADC, allowFAIMSdriveAdj);
+  }
+  else BADARG;
 }
 
 #endif

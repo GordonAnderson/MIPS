@@ -94,6 +94,9 @@ int   NumberOfARBchannels  = 0;
 int   SelectedARBboard     = 0;    // Active board, 0 or 1 = A or B
 int   CurrentModule        = -1;
 
+bool ARBaltTrigUseSync = false;
+bool NoCompressInit = false;
+
 // Array used to edit the ARB waveform
 int ARBwaveform[ppp];
 
@@ -160,8 +163,8 @@ DialogBoxEntry ARBentriesPage2[] = {
   {" Aux voltage"        , 0, 1, D_FLOAT   , -50, 50, 0.1, 18, false, "%5.1f", &arb.Aux, NULL, NULL},
   {" Offset, Volts"      , 0, 2, D_FLOAT   , -50, 50, 0.1, 18, false, "%5.1f", &arb.Offset, NULL, NULL},
   {" Setup"              , 0, 3, D_PAGE    , 0, 0, 0, 0, false, NULL, ARBentriesSetup, NULL, NULL},
-  {" Offset A"           , 0, 4, D_OFF     , -10, 10, 0.1, 18, false, "%5.1f", &arb.OffsetA, NULL, NULL},
-  {" Offset B"           , 0, 5, D_OFF     , -10, 10, 0.1, 18, false, "%5.1f", &arb.OffsetB, NULL, NULL},  
+  {" Offset A"           , 0, 4, D_OFF     , -30, 30, 0.1, 18, false, "%5.1f", &arb.OffsetA, NULL, NULL},
+  {" Offset B"           , 0, 5, D_OFF     , -30, 30, 0.1, 18, false, "%5.1f", &arb.OffsetB, NULL, NULL},  
   {" Sweep"              , 0, 6, D_OFF     , 0, 0, 0, 0, false, NULL, ARBentriesSweep, NULL, NULL},
   {" Compressor"         , 0, 7, D_OFF     , 0, 0, 0, 0, false, NULL, &ARBCompressorDialog, NULL,NULL},
   {" Ramp rate"          , 0, 8, D_OFF     , 0, 10000, 1, 17, false, "%6.1f", &arb.RampRate, NULL, NULL},
@@ -540,7 +543,7 @@ bool ReadFloat(int board,int cmd, float *value)
   while (Wire.available()) b[i++] = Wire.read();
   //for(i=0;i<4;i++) b[i] = Wire.read();
   ReleaseTWI();
-  if(fpclassify(*value) != FP_NORMAL)
+  if((fpclassify(*value) != FP_NORMAL) && (fpclassify(*value) != FP_ZERO))
   {
     *value = 0;
     return false;
@@ -734,7 +737,8 @@ void SetARBcommonClock(ARBdata *ad, int freq)
   int actualF;
 
   if(ad == NULL) return;
-  ARBclock->stop();
+  //ARBclock->stop();      // Removing this stop command will remove a 200uS gap in clock when in the sweep mode. GAA 3/3/23
+                           // Does not seem to need this stop command.
   if(strcmp(ad->Mode,"TWAVE") == 0)
   {
     clkdiv = (float)VARIANT_MCK / (float)(2 * ad->PPP * freq) + 0.5; // gaa 2/6/2020
@@ -767,7 +771,13 @@ void SetFrequency(int board, int freq)
   Wire.write(b[2]);
   {
     AtomicBlock< Atomic_RestoreState > a_Block;
-    Wire.endTransmission();
+    if(Wire.endTransmission() != 0) 
+    {
+      //Wire.end();
+      //TWIerror();
+      //Wire.begin();
+      //serial->println(freq);
+    }
   }
   ReleaseTWI();
 }
@@ -1013,16 +1023,17 @@ void ARB_init(int8_t Board, int8_t addr)
     ARBthread.setInterval(100);
     // Add threads to the controller
     control.add(&ARBthread);
-    // Start the common clock in case we need it
+     // Start the common clock in case we need it
     ARBclock = new MIPStimer(TMR_ARBclock);
   }
   else
   {
     // Set back to first board
-    if(NumberOfARBchannels == 8) ARBcompressor_init();
+    //if(NumberOfARBchannels == 8) ARBcompressor_init();
     SelectedARBboard = 0;
     SelectBoard(0);
     arb = *ARB;
+    if(NumberOfARBchannels == 8) ARBcompressor_init();
     SetModeMenus(false);
   }
   // Set the frequency
@@ -1127,6 +1138,7 @@ void ARB_loop(void)
            else SetModeMenus(false);
         }
       }
+/*
       if((ARBstates[b]->update) || (ARBstates[b]->Freq != ARBarray[b]->Frequency))
       {
         if(ARBarray[b]->UseCommonClock)
@@ -1146,11 +1158,36 @@ void ARB_loop(void)
         SetFrequency(b,ARBarray[b]->Frequency);
         ARBstates[b]->Freq = ARBarray[b]->Frequency;
       }
+*/
       if((ARBstates[b]->update) || (ARBstates[b]->Amplitude != ARBarray[b]->Voltage))
       {
         SetAmplitude(b, ARBarray[b]->Voltage);
         ARBstates[b]->Amplitude = ARBarray[b]->Voltage;
       }
+      // Moved the frequency update after the voltage update to reduce the delay between
+      // these two operations. The frequency change is fast where the voltage change
+      // delay is due to TWI speeds. GAA 3/3/23
+      if((ARBstates[b]->update) || (ARBstates[b]->Freq != ARBarray[b]->Frequency))
+      {
+        if(ARBarray[b]->UseCommonClock)
+        {
+          SetARBcommonClock(ARBarray[b], ARBarray[b]->Frequency);
+          // Set all channels with the common clock flag set
+          for(int i=0;i<MAXARBMODULES;i++)
+          {
+            if(ARBarray[i] != NULL)
+            {
+//              if(ARBarray[i]->UseCommonClock) ARBarray[i]->Frequency = ARBarray[b]->Frequency;
+              if(ARBarray[i]->UseCommonClock) ARBarray[i]->Frequency = (ARBarray[b]->Frequency * ARBarray[b]->PPP)/ARBarray[i]->PPP;
+//              serial->println(ARBarray[i]->Frequency);
+            }
+          }
+        }
+        SetFrequency(b,ARBarray[b]->Frequency);
+        ARBstates[b]->Freq = ARBarray[b]->Frequency;
+      }
+
+
       if((ARBstates[b]->update) || (ARBstates[b]->Offset != ARBarray[b]->Offset))
       {
         if (ARBarray[0]->ARBcommonOffset)  // True is using a common offset
@@ -2010,7 +2047,7 @@ void SetARBoffsetBoardA(char *module, char *val)
      SendNAK;
      return;    
    }
-   if((sToken.toFloat() < -10.0) || (sToken.toFloat() > 10.0)) BADARG;
+   if((sToken.toFloat() < -30.0) || (sToken.toFloat() > 30.0)) BADARG;
    ARBarray[b]->OffsetA = sToken.toFloat();
    SendACK;
 }
@@ -2045,7 +2082,7 @@ void SetARBoffsetBoardB(char *module, char *val)
      SendNAK;
      return;    
    }
-   if((sToken.toFloat() < -10.0) || (sToken.toFloat() > 10.0)) BADARG;
+   if((sToken.toFloat() < -30.0) || (sToken.toFloat() > 30.0)) BADARG;
    ARBarray[b]->OffsetB = sToken.toFloat();
    SendACK;  
 }
@@ -2082,6 +2119,7 @@ void ARBmoduleSync(void)
     if(!ARBsyncIN[i]->isAttached()) SetBool(i, TWI_ARB_SET_SYNC_ENA, 0);
 //    if(!ARBsyncIN[i]->isAttached()) SetBool(i, TWI_ARB_SET_SYNC_ENA, false);
   }
+  SendACK;
 }
 
 // The following functions are used by the pulse sequence generator (table mode) to send commands
@@ -2436,12 +2474,19 @@ void GetARBsweepStatus(int module)
 // Pass input trigger to ARB hardware party line
 void ARBaltISR(void)
 {
-  
-  if(ARBaltTrig->state()) ARBcompress;
-  else ARBnormal;
+  if(ARBaltTrigUseSync)
+  {
+    if(ARBaltTrig->state()) digitalWrite(ARBsync,HIGH);
+    else digitalWrite(ARBsync,LOW);
+  }
+  else
+  {
+    if(ARBaltTrig->state()) ARBcompress;
+    else ARBnormal;
+  }
 }
 
-// While this function supports all the ARM modules you only need to and sould enable the trigger
+// While this function supports all the ARB modules you only need to and sould enable the trigger
 // on one module.
 void SetARBaltTrgInp(char *module, char *trgin)
 {
@@ -2596,6 +2641,7 @@ void SetAltWaveFrm(char *module, char *wtype)
    else if(sToken == "REV") ARBarray[b]->AltWaveform = 2;
    else if(sToken == "ARB") ARBarray[b]->AltWaveform = 3;
    else if(sToken == "FIX") ARBarray[b]->AltWaveform = 4;
+   else if(sToken == "CUR") ARBarray[b]->AltWaveform = 5;
    else BADARG;
    TWIsetByte(ARBarray[b]->ARBadr, b, TWI_SET_AWFRM, ARBarray[b]->AltWaveform);
    SendACK;   
@@ -2611,6 +2657,7 @@ void GetAltWaveFrm(int module)
   else if(ARBarray[b]->AltWaveform == 2) serial->println("REV");
   else if(ARBarray[b]->AltWaveform == 3) serial->println("ARB");
   else if(ARBarray[b]->AltWaveform == 4) serial->println("FIX");
+  else if(ARBarray[b]->AltWaveform == 5) serial->println("CUR");
   else serial->println("?");
 }
 void SetARBaltTrgDly(char *module, char *fval)
@@ -2712,6 +2759,59 @@ void GetARBaltRng(int module)
   SendACKonly;
   if(SerialMute) return;
   serial->println(ARBarray[b]->AlternateRng);    
+}
+
+void SetARBaltFrqEna(char *module, char *bval)
+{
+   String sToken;
+   int    b,mod;
+
+   sToken = module;
+   mod = sToken.toInt();
+   if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+   sToken = bval;
+   if((sToken != "TRUE") && (sToken != "FALSE")) BADARG;
+   if(sToken == "TRUE") ARBarray[b]->AlternateFreqEna = true;
+   else ARBarray[b]->AlternateFreqEna = false;
+   TWIsetBool(ARBarray[b]->ARBadr, b, TWI_SET_AFRQENA, ARBarray[b]->AlternateFreqEna);
+   SendACK;  
+}
+void GetARBaltFrqEna(int module)
+{
+  int    b;
+
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  if(ARBarray[b]->AlternateFreqEna) serial->println("TRUE");
+  else serial->println("FALSE");    
+}
+
+void SetARBaltFrq(char *module, char *fval)
+{
+   String sToken;
+   int    b,mod;
+   int    f;
+
+   sToken = module;
+   mod = sToken.toInt();
+   if((b = ARBmoduleToBoard(mod,true)) == -1) return;
+   sToken = fval;
+   f = sToken.toInt();
+   if((f < 1000) || (f > 160000)) BADARG;
+   ARBarray[b]->AltFreq = f;
+   TWIset24bitInt(ARBarray[b]->ARBadr, b, TWI_SET_AFRQ, ARBarray[b]->AltFreq);
+   SendACK;
+}
+
+void GetARBaltFrq(int module)
+{
+  int    b;
+
+  if((b = ARBmoduleToBoard(module,true)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(ARBarray[b]->AltFreq);    
 }
 
 // Reverse direction AUX voltage change commands
@@ -2869,7 +2969,7 @@ void ARBdelayOnChange(char *TWIadd, char *ARBmask)
   pinMode(SDA1,INPUT);
   pinMode(LEVCHANGE,INPUT);
   Wire1.begin();
-  Wire1.setClock(100000);
+  Wire1.setClock(Wire1DefaultSpeed);
   attachInterrupt(digitalPinToInterrupt(LEVCHANGE), ARBchangeDelayISR, RISING);
   SendACK;  
 }
@@ -2885,7 +2985,7 @@ void ARBdurationOnChange(char *TWIadd, char *ARBmask)
   pinMode(SDA1,INPUT);
   pinMode(LEVCHANGE,INPUT);
   Wire1.begin();
-  Wire1.setClock(100000);
+  Wire1.setClock(Wire1DefaultSpeed);
   attachInterrupt(digitalPinToInterrupt(LEVCHANGE), ARBchangeDurationISR, RISING);
   SendACK;  
 }
