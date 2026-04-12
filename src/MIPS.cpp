@@ -148,55 +148,46 @@ int  LEDstate = 0;
 uint32_t BrightTime = 0;
 
 #if FAIMSFBcode
-#pragma message "FAIMSFB module enabled."
 #define FAIMSFBvf "b"
 #else
 #define FAIMSFBvf ""
 #endif
 #if FAIMScode
-#pragma message "FAIMS module enabled."
 #define FAIMSvf "f"
 #else
 #define FAIMSvf ""
 #endif
 #if HOFAIMcode
-#pragma message "HOFAIMS module enabled."
 #define HOFAIMSvf "h"
 #else
 #define HOFAIMSvf ""
 #endif
 #if HVPScode
-#pragma message "HVPS module enabled."
 #define HVPSv "v"
 #else
 #define HVPSv ""
 #endif
 #if DMSDMSMB
-#pragma message "DMSDMSMB module enabled."
 #define DMSDMSMBv "d"
 #else
 #define DMSDMSMBv ""
 #endif
 #if DCBanalog
-#pragma message "DCB analog module enabled."
 #define DCBanalogv "a"
 #else
 #define DCBanalogv ""
 #endif
 #if DCBcurrent
-#pragma message "DCB current monitor enabled."
 #define DCBcurrentv "c"
 #else
 #define DCBcurrentv ""
 #endif
 #if DCBswitchCode
-#pragma message "DCB switch module enabled."
 #define DCBswitchCodev "s"
 #else
 #define DCBswitchCodev ""
 #endif
 #if HVPSinterface
-#pragma message "HV power supply interface module enabled."
 #define HVPSinterfacev "i"
 #else
 #define HVPSinterfacev ""
@@ -205,7 +196,7 @@ uint32_t BrightTime = 0;
 const char Version[] PROGMEM = "Version 1.262" DCBswitchCodev DCBanalogv DCBcurrentv FAIMSFBvf FAIMSvf HOFAIMSvf HVPSv DMSDMSMBv HVPSinterfacev ",Feb 7,2026";
 
 // ThreadController that will control all threads
-ThreadController control = ThreadController();
+ThreadController control = ThreadController(); 
 //MIPS Threads
 Thread MIPSsystemThread = Thread();
 Thread LEDThread        = Thread();
