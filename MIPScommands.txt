@@ -1,0 +1,1027 @@
+
+MIPS host interface commands. These commands are grouped into
+catagories. This list includes commands for the common MIPS functions
+and modules.
+
+General commands
+  NOP               Do nothing
+  GVER              Report version
+  ISPWR             Report power status
+  SUPPLIES          Report main supply voltages
+  V12               Report 12 volt supply
+  V24               Report 24 volt supply
+  CUR               Report input current, in amps
+  PWR               Report input power in watts
+  UPTIME            Report uptime in mins
+  GERR              Report the last error code
+  GNAME             Report MIPS system name
+  SNAME             Set MIPS system name
+  SSERWD            Set serial watch dog time in seconds, 0 to negative to disable
+  GSERWD            Return serial watch dog time in seconds
+  UUID              Reports the microcontrollers unique ID, 128 bits, hex format
+  BIMAGE            Set MIPS boot image
+  ABOUT             Report about this MIPS system
+  SMREV             Set module rev level, board (a or b),add (hex), rev
+  RESET             Reset the Due
+  STATUS            Reports the last reboot status and time in millisec from boot
+  SAVE              Save MIPS configuration data to default.cfg on SD card
+  GCHAN             Report number for the selected system
+  MUTE              Turns on and off the serial response from the MIPS system
+  ECHO              Turns on and off the serial echo mode where the command is echoed to host, TRUE or FALSE
+  TRIGOUT           Generates output trigger on rev 2 and higher controllers
+                    supports, HIGH,LOW,PULSE
+  AUXOUT            Generates output trigger on Aux output, supports, HIGH,LOW,PULSE
+  DELAY             Generates a delay in milliseconds. This is used by the macro functions
+                    to define delays in voltage ramp up etc.
+  GCMDS             Send a list of all commands
+  GAENA             Print the UseAnalog flag, true or false
+  SAENA             Sets the UseAnalog flag, true or false
+  THREADS           List all threads, there IDs, and there last runtimes
+  THREAD            List details on the named thread
+  STHRDENA          Set thread enable to true or false
+  STHRDINT          Set thread run interval in mS, name, interval (1 to 10000)
+  RUNNOW            Run the thread defined by name, now
+  THRDRESTART       Restart all threads
+  SDEVADD           Set device board and address
+  RDEV              Read the ADC channel value, AD7998 device
+  RDEV2             Read the ADC channel value, AD7994 device
+  TBLTSKENA         Enables tasks in table mode, true or false
+  LEDOVRD           Override the LED operation is true, always false on startup
+  LED               Define the LEDs state you are looking for.
+  DSPOFF            Print the UseAnalog flag, true or false
+  STRTDLY           Startup delay in seconds
+  CHKIMAGE          Reports the image file status
+  LOADIMAGE         Loads an image file to the display
+  SSERIALNAV        Set flag to TRUE to enable UI navigation from the host interface
+  DIR               List all file in the SD card
+  CREATE            Create an empty file, fails if file is present
+  ADD               Add a string to the filename passed
+  MORE              List file to serial port
+  READSD            Read line number from file, 0 is first line
+  DEL               Delete file on the SD card
+  GET               Dump file contents, hex, from SD card file
+  PUT               Create file on SD card from host interface
+  SAVEMOD           Save module EEPROM to SD file. Filename,Board (A or B),Add (hex)
+  LOADMOD           Load module EEPROM from SD file. Filename,Board (A or B),Add (hex)
+  SAVEALL           Saves all the modules EEPROM data to the SD card
+  LOADALL           Loads all the modules EEPROM data from the SD card
+  GETEEPROM         Sends the selected EEPROM data to the host, Board( A or B), Add (Hex)
+  PUTEEPROM         Receives data from the host and writes to EEPROM, Board( A or B), Add (Hex)
+  SSPND             Suspend all tasks, suspends real time control, TRUE or FALSE
+  GSPND             Returns suspend status, TRUE or FALSE
+  CPUTEMP           Returns the CPU temp in degrees C, not an accurate reading
+  SSER1ENA          Set the Serial1 port enable, TRUE = general use
+  GSER1ENA          Get the Serial1 port enable status
+  SETADDRESS        Set memory address to read or write, hex
+  SETOFFSET         Set memory address offset to read or write, hex
+  SETEEPADD         Set memory address to selected EEPROM buffer, Module name, board address
+  WRITE             Write to memory, BYTE,WORD,DWORD,INT,FLOAT
+  READ              Read from memory, BYTE,WORD,DWORD,INT,FLOAT
+  DUMP              Dump 512 bytes of data in hex format. The address is defined
+                    by SETADDRESS or SETEEPADD
+  FORMAT            Format the EEPROM, args example,A 0x50,RFdrvA R1
+  REEPROM           Read the EEPROM, args board, TWI address, EEPROM address, all data base 10
+  WEEPROM           Write the EEPROM, args board, TWI address, address, data, all base 10
+  SAVEM             Save the defined module to EEPROM
+  STBLRETRIG        Set the table retriggerable flag, TRUE=retriggerable.
+  GTBLRETRIG        Returns the table retriggerable flag, TRUE=retriggerable.
+  SSETECHO          Set the SerialUSB to Serial1 echo, TRUE enables echo.
+  GSERECHO          Return the SerialUSB to Serial1 echo, TRUE enables echo.
+  POWER             Cycle MIPS system power
+  SUBRDSEL          Set to true to enable the use of board select, default
+  GUBRDSEL          Returns the state of the UseBRDSEL flag
+  USBPWR            Enables or disables USB powering controller. TRUE = enable. Note if false
+                    and power is lost the system will reboot to being powered by USB
+  DREAD             Read an arduino pin, returns HIGH or LOW
+  DWRITE            Write an arduino pin, Set HIGH or LOW or PULSE or SPLUSE
+  DSET              Sets an arduino pin, INPUT, PULLUP, OUTPUT
+  DEBUG             Debug function, as needed
+  STRPLVL           Set the DCbias power supply readback error trip point in percentage of FS
+  GTRPLVL           Returns the DCbias power supply readback error trip point in percentage of FS
+TWI commands
+  TWIRESET          Resets the TWI interface
+  TWIERROR          Reports the numner of detected TWI failures
+  STWIHDW           If true then the TWI hardware interface is used for ADC read functions
+  GTWIHDW           Returns the current status.
+  TWICMD            Sends a command to the addressed TWI (Wire) address, TWICMD,brd,add,string.
+                    add is decimal, string is \n terminated
+  TWI1CMD           Sends a command to the addressed TWI1 (Wire1) address, TWICMD,add,string.
+                    add is decimal, string is \n terminated
+  TWISCAN           Scans the selected board address for TWI devices and displays a map (Wire interface)
+  TWI1SCAN          Scans the selected board address for TWI devices and displays a map (Wire1 interface)
+  TWIADDSET         This function will automatically set the TWI addresses for the selected
+                    module. RFD,DCB,FAIMS
+  TWITALK           Redirect the serial communications through a board and TWI address passed
+  TWI1TALK          Redirect the serial communications through a board and TWI address passed
+  STWISPEED         Set TWI speed, 0 | 1, speed
+  GTWISPEED         Returns TWI speed, 0 | 1
+  GTWI              Reads value from TWI device
+  STWI              Writes a value to a TWI device
+Log commands
+  SLOGENA           Enables logging if TRUE, disable if FALSE
+  GLOGENA           Returns the log enable status
+  LOGREP            Reports the current log entries
+Real time clock functions. Note, no battery backup so the clock reset every time the hardware boots.
+  STIME             Sets the current time, 00:00:00 format
+  GTIME             Returns the current time, 00:00:00 format
+  SDATE             Sets the current date, dd/mm/yyyy format
+  GDATE             Returns the current date, dd/mm/yyyy format
+Level detection module change enable
+  ENALDET           Enables the level detection module to report a detected change to the host.
+                    This function requires the module address in hex. OFF to disable
+  ENAWLDET          Enables the level detection module to report window state to the host.
+                    This function requires the module address in hex. OFF to disable
+Pulse counter functions
+  COUNT             Setup pulse counter, (Q-X or NA) and level, POS, NEG, BOTH, NA
+                    NA disables
+  GCNT              Returns the current pulse count
+  CLRCNT            Clear the current count
+  SCNTTRG           Set the counter threshold count
+  GCNTTRG           Return the counter threshold count
+  TRIGCNT           If TRUE generate 5uS trigger on Trig out at threshold count
+  TRIGRST           If TRUE reset counter out at threshold count
+Clock generation functions
+  GWIDTH            Report the pulse width in microseconds
+  SWIDTH            Set the pulse width in microseconds
+  GFREQ             Report the pulse frequency in Hz
+  SFREQ             Set the pulse frequency in Hz
+  BURST             Generates a frequencyy burst on trig out line
+  GMAXFTRIG         Report the maximum frequency for trig out, 0 = nolimit
+  SMAXFTRIG         Sets the maximum frequency for trig out, 0 = nolimit
+  GMAXFATRIG        Report the maximum frequency for aux trig out, 0 = nolimit
+  SMAXFATRIG        Sets the maximum frequency for aux trig out, 0 = nolimit
+Delay trigger functions. This supports delayed trigger and retriggering of supported modules
+  SDTRIGINP         Set delay trigger input (Q-X) and level, POS or NEG
+  SDTRIGDLY         Set trigger delay in uS
+  GDTRIGDLY         Returns trigger delay in uS
+  SDTRIGPRD         Set trigger delay repeat period in uS
+  GDTRIGPRD         Returns trigger delay repeat period in uS
+  SDTRIGRPT         Defines the number of trigger repeats, 0 = forever
+  GDTRIGRPT         Returns the number of trigger repeats, 0 = forever
+  SDTRIGMOD         Defines the delay trigger module, ARB, ADC, SWEEP, AUXTRIG
+  SDTRIGENA         TRUE enables the trigger FALSE disables
+  GDTRIGENA         Returns the trigger delay enable status
+ADC functions
+  ADC               Read and report ADC channel. Valid range 0 through 3
+  ADCAVG            Report the average ADC value read by the change detection function. This
+                    uses the SADCSAMPS value to set the number of samples in the average
+  ADCGAIN           Set ADC channel gain. Channel range 0 to 3, gains are 1,2, or 4
+  ADCCHG            Enable ADC change detection. Channel range 0 to 3, threshold 0 to 100
+  ADCCPRM           Set ADC change filter parameters
+  RADCCHG           This function will report ADC value changes to the host, the ADC value is multiplied by gain
+  ADCINIT           ADC vector recording setup
+  ADCTRIG           ADC vector recording software trigger
+  ADCABORT          ADC system abort
+  SADCCHAN          Set ADC channel number
+  GADCCHAN          Get ADC channel number
+  SADCSAMPS         Set ADC number of samples
+  GADCSAMPS         Get ADC number of samples
+  SADCVECTS         Set ADC number of vectors
+  GADCVECTS         Get ADC number of vectors
+  SADCRATE          Set ADC sample rate in Hz
+  GADCRATE          Get ADC sample rate in Hz
+                    ADC record vector to ram buffer commands, implemented Aug 2, 2025
+  ADCRBINIT         ADC record vector initilization
+  ADCRBTRIG         ADC record vector trigger
+  ADCRBREAD         ADC record vector read, start,num
+  ADCRBSUM          Reports the sum of all values in the vector recorded
+  ADCRBMAX          Reports the maximum value in the vector recorded
+  ADCRBVECS         Reports the number of vectors recorded
+DC bias module commands
+  SDCB              Set voltage value
+  GDCB              Get Voltage value requested
+  GDCBV             Get Voltage actual voltage value
+  SDCBOF            Set float voltage for selected board
+  GDCBOF            Read float voltage for selected board
+  GDCMIN            Read float voltage for selected board
+  GDCMAX            Read float voltage for selected board
+  SDCPWR            Sets the DC bias power, on or off
+  GDCPWR            Get the DC bias power, on or off
+  SDCBALL           Sets the DCbias setpoints for all outputs
+  GDCBALL           Returns the DC bias voltage setpoints for all channels in the system
+  GDCBALLV          Returns the DC bias voltage readback values for all channels in the system
+  SDCBDELTA         Set all DC bias channels by a delta value
+  SDCBCHNS          Sets the number of channels on a DCbias board. Used for setup only.
+  SDCBONEOFF        TRUE to enable use of one offset
+  DCBOFFRBENA       TRUE to enable use of offset readback
+  SDCBOFFENA        Set the DC bias channels offsetable flag, setup command
+  SDCBTEST          Set to FALSE to disable readback testing
+  SDCBADCADD        Set a modules ADC TWI address, radix 10
+  SDCBDACADD        Set a modules DAC TWI address, radix 10
+  SDCBARST          Set to TRUE to enable power supply auto reset
+  SDCBRNG           Set the range for the DC bias board
+  SDCBLMT           Set the limit for the DC bias board
+  SDCBEXT           Set the DCbias board for extended addressing, factory command
+  RDCBSPLY          Report the DCbias board supply voltages. Requires AD5593 for this
+                    function to work.
+  SDCBUPDATE        Set to TRUE to force all DC bias channels to update
+  GDCBCAL           This command will return the selected channels calibration parameters
+  SDCCALM           Set the DC bias channels cal parameter M
+  SDCCALB           Set the DC bias channels cal parameter B
+  SCHTSTMSK         Set DCBias channel readback test mask, TRUE to mask, i.e. not test
+  GCHTSTMSK         Returns the DCBias channel mask
+DC bias module offset control
+  SDCBOFOF          Set the DC bias global offset, will apply to all channels on module
+  GDCBOFOF          Returns the DC bias global offset
+  SDCBCHOF          Set the DC bias channel offset, will apply to all enabled channels on the module
+  GDCBCHOF          Returns the DC bias channel offset
+  SDCBCHMK          Set the DC bias channel offset mask, value in hex, defines channels to apply offset
+  GDCBCHMK          Returns the DC bias channel offset mask, in hex
+  DCBCADCOF         Connect the ADC change detector to the OffsetOffset on select board
+  DCBCADCCO         Connect the ADC change detector to the Channel Offset on select board
+  SDCBCADCP         Sets the ADC gain polarity control DIO, Q thru X or NA
+  GDCBCADCP         Returns the ADC gain polarity control DIO
+  DCBCLDOF          Connect the Level Detect module to the OffsetOffset on selected board
+  DCBCLDCH          Connect the Level Detect module to the Channel offset on selected board
+DC bias module profile commands
+  SDCBPRO           Sets a DC bias profile
+  GDCBPRO           Reports the select DC bias profile
+  ADCBPRO           Applies the select DC bias profile
+  CDCBPRO           Copy the current DC bias values to the select profile
+  TDCBPRO           Enables toggling between two profiles with user defined dwell time, mS
+  TDCBSTP           Stop the profile toggling
+DC bias list functions, supports DMA high speed transfer
+  DSTATE            Define a state, name,ch,val....
+  SSTATE            Sets the DCbias channels to the values defined in named state
+  LSTATES           List all the defined state names
+  RSTATE            Remove a state from the linked list
+  RSTATES           Clear the full linked list of states
+  GSTATE            Returns true if named state is in list, else false
+  DSEGMENT          Defines a segment with the following arguments: name, length, next, repeat count
+  ADDSEGTP          Adds a time point to a segment, arguments: name,count, state1, state 2... (variable number of states)
+  ADDSEGTRG         Adds a trigger point to a segment, arguments: name,count,port,level
+  ADDSEGSTRG        Defines the start trigger for a segment, arguments: name,source,level
+  LSEGMENTS         List all the defined segments
+  RSEGMENT          Remove a segment from the linked list
+  RSEGMENTS         Clear the full linked list of segments
+  PSEGMENTS         Execute the segment list
+  SABORT            Abort an executing the segment list
+  TSEGMENT          Software trigger the segment if ready
+  RCURSEG           Report the current segment
+  FRCTRIG           Force a trigger of the current segment
+DC bias channel pulse commands
+  SDCBPCH           Set DC bias pulse channel
+  GDCBPCH           Get DC bias pulse channel
+  SDCBPV            Set DC bias pulse voltage, in volts
+  GDCBPV            Get DC bias pulse voltage, in volts
+  SDCBPD            Set DC bias pulse delay, in uS
+  GDCBPD            Get DC bias pulse delay, in uS
+  SDCBPW            Set DC bias pulse width, in uS
+  GDCBPW            Get DC bias pulse width, in uS
+  SDCBPT            Set DC bias pulse trigger source, Q-X or t
+  GDCBPT            Get DC bias pulse trigger source, Q-X or t
+  SDCBPENA          Set DC bias pulse enable, TRUE or FALSE
+  GDCBPENA          Get DC bias pulse enable, TRUE or FALSE
+DCbias serial calibration functions
+  CDCBCH            Calibrate the requested DC bias channel
+  CDCBCHS           Calibrate all DC bias channel in order
+  CDCBOFF           Calibrate all DC bias offset for channel number
+DCbias waveform generation commands
+  WFMINIT           Initalize the waveform generation and define samples per second
+  WFMADDWF          Define a waveform, arguments: channel,freq, min, max
+  WFMENA            Enable the waveform generation
+  WFMDIS            Disable the waveform generation
+  WFMRPR            Report the selected channel's parameter, arguments: channel, parm
+                    parm 0=freq,1=min,2=max
+RF driver module commands
+  SRFFRQ            Set RF frequency
+  SRFVLT            Set RF output voltage
+  SRFDRV            Set RF drive level
+  GRFFRQ            Report RF frequency
+  GRFPPVP           Report RF output voltage, positive phase
+  GRFPPVN           Report RF output voltage, negative phase
+  GRFDRV            Report RF drive level in percentage
+  GRFVLT            Report RF output voltage setpoint
+  GRFPWR            Report RF head power draw
+  GRFMODE           Report RF mode (MANUAL | AUTO) for the selected channel
+  SRFMODE           Sets the RF mode (MANUAL | AUTO) for the selected channel
+  GRFALL            Reports Freq, RFVpp + and - for each RF channel in system
+  TUNERFCH          Auto tune the select RF channel
+  RETUNERFCH        Auto retune the select RF channel, start and current freq and drive
+  SRFCAL            Sets the RF calibration parameters, channel,slope,intercept
+  RFCALP            Adjust the calibration for a RF+ channel, channel,actual level in Vp-p, enter negative to set defaults
+  RFCALN            Adjust the calibration for a RF- channel, channel,actual level in Vp-p, enter negative to set defaults
+  SRFPL             Sets the RF power limit for the given channel, in watts
+  GRFPL             Returns the RF power limit for the given channel, in watts
+  RFPWLC            Generate piecewise linear calibration table for selected channel and phase
+                    Phase is RF+ or RF-
+  SRFTFR            If TRUE the first step of auto turn will use the full range
+  TUNEABORT         Auto tune abort
+  SRFGDIS           Set to TRUE to disable RF driver gating
+  GRFGDIS           Returns the RF gating disable statue,  if FALSE gating is enabled
+                    The following commands support analog level control of RF driver channels 1 and 2
+  SADCRF            Setup ADC control of RF level, channel 1 or 2, ADC gain value
+  SADCRFENA         Set ADC control enable, channel 1 or 2, TRUE or FALSE
+  GADCRFENA         Return ADC control enable, channel 1 or 2, returns TRUE or FALSE
+  SRFGTDRV          Sets the RF driver gated drive level, channel, level
+  GRFGTDRV          Return the RF driver gated drive level, channel
+                    The following commands support arc detection.
+                    Arc detection parameters
+  SRFACRCH          Set the RF channel to enable arc detection, 0 = disabled
+  GRFACRCH          Return the RF arc detection channel
+  GRFACV            Return the voltage at last arc
+  GRFACDRV          Return the drive level at last arc
+DIO module commands
+  SDIO              Set DIO output bit
+  GDIO              Get DIO output bit
+  RPT               Report an input state change
+  SHOLDOFF          Set DIO change reporting holdoff in mS
+  GHOLDOFF          Report DIO change reporting holdoff in mS
+  MIRROR            Mirror an input to an output
+  MDIO              Monitors a digital input for a state change
+  RDIO              Returns true if a state change was detected, else return false
+  SDIINV            Sets digital input inversion mask, radix 10
+  GDIINV            Returns digital input inversion mask, radix 10
+ESI module commands
+  SHV               Set channel high voltage
+  GHV               Returns the high voltage setpoint
+  GHVV              Returns the actual high voltage output
+  GHVI              Returns the output current in mA
+  GHVMAX            Returns the maximum high voltage outut value
+  GHVMIN            Returns the minimum high voltage outut value
+  SHVENA            Enables a selected channel
+  SHVDIS            Disables a selected channel
+  GHVSTATUS         Returns the selected channel's status, ON or OFF
+  SHVPSUP           Sets a  modules positive supply voltage
+  SHVNSUP           Sets a  modules negative supply voltage
+  GHVITST           Returns TRUE is current testing is enabled, else FALSE
+  SHVITST           Set to TRUE to enable ESI current testing, FALSE to disable
+  SHVENAGT          Enables a selected module gate option. This will enable all modules
+                    in the system for any enabled module. Factory setup command.
+                    This should only be enabled for firmware rev 4.0.
+                    TRUE to enable FALSE to disable
+  SHVGATE           Sets the gating enable flag for selected channel. Only valid on firmware
+                    Rev 4.0 and when gating is enabled
+  GHVGATE           Returns the gating enable flag for selected channel
+  SHVRAMP           Set ESI voltage ramp rate, this will effect both channels on a module.
+                    Units are V/0.1s
+  GHVRAMP           Returns ESI voltage ramp rate for the selected module
+  CAL4P3            Calibration procedure for rev 4.3 ESI hardware board.
+                    module (1 thru 4), channel (POS or NEG)
+Table commands, tables enable pulse sequence generation
+  STBLDAT           Set the pulse sequence table
+  STBLCLK           Clock mode, EXT or INT
+  STBLTRG           Trigger mode, EXT or SW
+  TBLABRT           Abort table operation
+  SMOD              Set the table mode
+  TBLSTRT           Set the software trigger
+  TBLSTOP           Stops a running table
+  GTBLFRQ           Returns the current internal clock frequency
+  STBLNUM           Set the active table number
+  GTBLNUM           Get the active table number
+  STBLADV           Set the table advance status, ON or OFF
+  GTBLADV           Get the table advance status, ON or OFF
+  STBLVLT           Set a value in a loaded table
+  GTBLVLT           Get a value from a loaded table
+  STBLCNT           Set a count value in a loaded table
+  STBLDLY           Defines the inter table delay in milli seconds
+  SOFTLDAC          TRUE or FALSE, set to TRUE to force the used of software LDAC
+  GTBLREPLY         Returns TRUE or FALSE state of enable table response flag
+  STBLREPLY         TRUE or FALSE, set to TRUE enable table response messages (default)
+  TBLRPT            Report table as hex bytes
+  STBLTSKS          Set to TRUE to enable tasks in table mode based on available time, FALSE is default
+  GTBLTSKS          Returns the TblTasks flag status
+  SEXTFREQ          Sets the external frequency used for the table clock, needed for TblTasks capability, 0 by default
+  GEXTFREQ          Returns the ExtFreq value, in Hz
+  STBLUSBTST        Sets the table mode USB link test flag, TRUE to enable
+  GTBLUSBTST        Returns the table mode USB link test flag, TRUE to enable
+  STBLVDLT          If true voltage delta mode is enable in table
+  TBLCHK            The function tests a table for timing violations and prints the results
+  STBLRMPENA        Enable the table ramp mode and set ramp ISR frequency
+                    ADC change triggering of table
+  STPADJ            Select table time point for adjustment on ADC change detection
+  SADJRNG           Define the time point valid range for ADC
+  SADCMZCAL         Set ADC to m/z calibration parameters, m and b
+  SMZTARG           Define target mz. parms index, mx, count
+  TRGTBLADC         Enables triggering on ADC change
+  TRIGCHG           This command enabled the change detection module and triggers
+                    The table on detected change, TWIaddress in hex is passed to
+                    init the change module.
+  STBLDLT           Sets the TimeDelta values that is added to all flaged time point counts
+  GTBLDLT           Returns the TimeDelta values that is added to all flaged time point counts
+  GTBLSTA           Returns the table status
+  STBLEVY           If true and in ext trigger mode and retrigger is enabled then stop table after each segment
+Macro commands
+  MRECORD           Turn on macro recording into the filename argument
+  MSTOP             Stop macro recording and close the file
+  MPLAY             Play a macro file
+  MLIST             Send a list of macro files
+  MDELETE           Delete a macro file
+TWAVE commands
+  GTWF              Report the TWAVE frequency
+  STWF              Set the TWAVE frequency
+  GTWPV             Report the TWAVE pulse voltage
+  STWPV             Set the TWAVE pulse voltage
+  GTWG1V            Report the TWAVE Guard 1 voltage
+  STWG1V            Set the TWAVE Guard 1 voltage
+  GTWG2V            Report the TWAVE Guard 2 voltage
+  STWG2V            Set the TWAVE Guard 2 voltage
+  GTWSEQ            Report the TWAVE sequence
+  STWSEQ            Set the TWAVE sequence
+  GTWDIR            Report the TWAVE waveform direction, FWD or REV
+  STWDIR            Set the TWAVE waveform direction, FWD or REV
+  STBLRBT           Set the readback test enable flag, TRUE or FALSE
+Twave compressor commands
+  STWCTBL           Twave compressor table definition setting command
+  GTWCTBL           Twave compressor table definition reporting command
+  GTWCMODE          Report Twave compressor mode
+  STWCMODE          Set Twave compressor mode
+  GTWCORDER         Report Twave compressor order
+  STWCORDER         Set Twave compressor order
+  GTWCTD            Report Twave compressor trigger delay in mS
+  STWCTD            Set Twave compressor trigger delay in mS
+  GTWCTC            Report Twave compressor compress time in mS
+  STWCTC            Set Twave compressor compress time in mS
+  GTWCTN            Report Twave compressor normal time in mS
+  STWCTN            Set Twave compressor normal time in mS
+  GTWCTNC           Report Twave compressor non compress time in mS
+  STWCTNC           Set Twave compressor non compress time in mS
+  TWCTRG            Force a Twave compressor trigger
+  GTWCSW            Report Twave compressor Switch state
+  STWCSW            Set Twave compressor Switch state
+Twave and ARB frequency/voltage sweep commands
+  STWSSTRT          Set the TWAVE sweep start frequency
+  GTWSSTRT          Return the TWAVE sweep start frequency
+  STWSSTP           Set the TWAVE sweep stop frequency
+  GTWSSTP           Return the TWAVE sweep stop frequency
+  STWSSTRTV         Set the TWAVE sweep start voltage
+  GTWSSTRTV         Return the TWAVE sweep start voltage
+  STWSSTPV          Set the TWAVE sweep stop voltage
+  GTWSSTPV          Return the TWAVE sweep stop voltage
+  STWSTM            Set the TWAVE sweep time, module and time in seconds
+  GTWSTM            Return the TWAVE sweep time
+                    There are two ARB sweep systems, the following commands start the sweep functions controlled
+                    from the MIPS system. These work on both ARB and TWAVE systems and support only channel 1 and 2.
+                    The new ARB (version 1.14 and later) support ARB module sweeping and you can use all 4 ARB board.
+                    The above setup commands work for both system. The following 3 commands are only the old system.
+                    Look in the ARB secton for the new sweep start/stop/status commands.
+  STWSGO            Start the sweep
+  STWSHLT           Stop the sweep
+  GTWSTA            Return the TWAVE sweep status
+Twave configuration commands
+  STWCCLK           Flag to indicate common clock mode for two Twave modules.
+  STWCMP            Flag to indicate Twave compressor mode is enabled.
+  STWINV            Flag to invert Twave if TRUE.
+Filament commands
+  GFLENA            Get filament ON/OFF status
+  SFLENA            Set filament ON/OFF status
+  GFLI              Get filament channel current (setpoint)
+  GFLAI             Get filament channel actual current
+  SFLI              Set filament channel current
+  GFLSV             Get filament supply voltage (setpoint)
+  GFLASV            Get the actual supply side voltage
+  SFLSV             Set filament supply voltage
+  GFLV              Get filament voltage (actual)
+  GFLPWR            Get filament power (actual)
+  GFLRT             Get filament current ramp rate in amps per second
+  SFLRT             Set filament current ramp rate in amps per second
+  GFLDIR            Get filament current direcrtion,rev 2
+  SFLDIR            Set filament current direction, rev 2
+  GFLP1             Get filament cycle current 1 (setpoint)
+  SFLP1             Set filament cycle current 1 (setpoint)
+  GFLP2             Get filament cycle current 2 (setpoint)
+  SFLP2             Set filament cycle current 2 (setpoint)
+  GFLCY             Get filament cycle count
+  SFLCY             Set filament cycle count
+  GFLENAR           Get filament cycle status, OFF, or the number of cycles remaining
+  SFLENAR           Set filament cycle status, ON or OFF
+  RFLPARMS          Sets a filament channel reporting rate, 0 = off. Rate is in seconds
+  GFLSRES           Returns the bias current sense resistor value
+  SFLSRES           Sets the bias current sense resistor value
+  GFLECUR           Returns the filament emission current
+  SFLSWD            Set serial watch dog timer mode
+  CALFIL            Calibration procedure for rev 4 filament module
+WiFi commands
+  GHOST             Report this MIPS box host name
+  GSSID             Report the WiFi SSID to connect to
+  GPSWD             Report the WiFi network password
+  SHOST             Set this MIPS box host name
+  SSSID             Set the WiFi SSID to connect to
+  SPSWD             Set the WiFi network password
+  SWIFIENA          Set the WiFi enable flag
+  SWIFISP           Set the WiFi serial port
+Ethernet commands
+  ENTEST            Tests the eternet adapter connection
+  GEIP              Report the ethernet adapter IP address
+  SEIP              Set the ethernet adapter IP address
+  GESNIP            Report the ethernet adapter Subnet IP address
+  SESNIP            Set the ethernet adapter Subnet IP address
+  GEPORT            Report the ethernet adapter port number
+  SEPORT            Set the ethernet adapter port number
+  GEGATE            Report the ethernet adapter gateway IP address
+  SEGATE            Set the ethernet adapter gateway IP address
+  SENTTWI           Sets the TWI interface flag for enet interface, TRUE=use TWI
+  GENTTWI           Returns the enet TWI flag
+ARB general commands
+  SARBMODE          Sets the ARB mode
+  GARBMODE          Reports the ARB mode
+  SWFREQ            Sets waveform frequency, 0 to 40000Hz
+  GWFREQ            Returns the waveform frequency, 0 to 40000Hz
+  SWFVRNG           Sets waveform voltage range, rev 2.0
+  SWFVRAMP          Sets waveform voltage chanel ramp rate in V/s
+  SWFVOFF           Sets waveform offset voltage, rev 2.0
+  SWFVAUX           Sets waveform aux voltage, rev 2.0
+  SWFDIS            Stops waveform generation
+  SWFENA            Starts waveform generation
+  SWFDIR            Sets the waveform direction, FWD or REV
+  GWFDIR            Returns the waveform direction, FWD or REV
+  SWFARB            Sets an arbitrary waveform
+  GWFARB            Returns an arbitrary waveform
+  SWFTYP            Sets the arbitrary waveform type
+  GWFTYP            Returns the arbitrary waveform type
+  SARBOFFA          For a dual output board ARB channel this commands sets the board A offset
+  GARBOFFA          For a dual output board ARB channel this commands returns the board A offset
+  SARBOFFB          For a dual output board ARB channel this commands sets the board B offset
+  GARBOFFB          For a dual output board ARB channel this commands returns the board B offset
+  ARBSYNC           Issues a software sync, note
+ARB conventional ARB mode commands
+  SARBBUF           Sets ARB buffer length
+  GARBBUF           Reports ARB buffer length
+  SARBNUM           Sets number of ARB buffer repeats per trigger
+  GARBNUM           Reports number of ARB buffer repeats per trigger
+  SARBCHS           Sets all ARB channels in the full buffer to a defined value
+  SARBCH            Sets a defined ARB channel in the full buffer to a defined value
+  SACHRNG           Sets an ARB channel to a value over a defined range
+  SARBSINE          Sets a specific ARB channel to one sine wave cycle at select starting phase
+                    parameters; module, channel, phase
+ARB compressor commands
+  SARBCDIS          If TRUE disables the compression table
+  GARBCDIS          Retruns the state of the compression table disable flag
+  SARBCTBL          Twave compressor table definition setting command
+  GARBCTBL          Twave compressor table definition reporting command
+  GARBCMODE         Report Twave compressor mode
+  SARBCMODE         Set Twave compressor mode
+  GARBCORDER        Report Twave compressor order
+  SARBCORDER        Set Twave compressor order
+  GARBCTD           Report Twave compressor trigger delay in mS
+  SARBCTD           Set Twave compressor trigger delay in mS
+  GARBCTC           Report Twave compressor compress time in mS
+  SARBCTC           Set Twave compressor compress time in mS
+  GARBCTN           Report Twave compressor normal time in mS
+  SARBCTN           Set Twave compressor normal time in mS
+  GARBCTNC          Report Twave compressor non compress time in mS
+  SARBCTNC          Set Twave compressor non compress time in mS
+  TARBTRG           Force a Twave compressor trigger
+  GARBCSW           Report Twave compressor Switch state
+  SARBCSW           Set Twave compressor Switch state
+ARB alternate waveform commands
+  SALTTRG           Defines the alternate waveform external trigger input on MIPS, Input Q thru W or NA to disable
+  GALTTRG           Returns the alternate waveform external trigger input on MIPS, Input Q thru W or NA to disable
+  SALTENA           Enables alternate waveform for selected module, TRUE or FALSE
+  GALTENA           Returns alternate waveform enable status for selected module
+  SALTHWD           Enables alternate waveform harware triggering for selected module. TRUE or FALSE
+  GALTHWD           Returns alternate waveform harware triggering status for selected module
+  SALTTMODE         Sets the alternate trigger mode for selected module, LEVEL, POS, NEG
+  GALTTMODE         Return the alternate trigger mode for the selected module
+  SALTFVAL          Sets the alternate waveform fixed value in percent for selected module, -100 to 100. first argument is index 0 to 7
+  GALTFVAL          Returns the alternate waveform fixed value in percent for selected module, -100 to 100. first argument is index 0 to 7
+  SALTWFM           Sets the alternate waveform type for the selected module, COMP (default),REV,ARB,FIX,CUR
+  GALTWFM           Returns the alternate waveform type for the selected module, COMP (default),REV,ARB,FIX,CUR
+  SALTDLY           Sets the alternate waveform trigger delay for pos or neg edge trigging only, in mS, for selected module
+  GALTDLY           Returns the alternate waveform trigger delay for pos or neg edge trigging only, in mS, for selected module
+  SALTPLY           Sets the alternate waveform play or apply time for pos or neg edge trigging only, in mS, for selected module
+  GALTPLY           Returns the alternate waveform play or apply time for pos or neg edge trigging only, in mS, for selected module
+  SALTRENA          Enables alternate waveform range for selected module. TRUE or FALSE
+  GALTRENA          Returns alternate waveform range enable flag for selected module
+  SALTRNG           Sets the alternate waveform range in volts, for selected module
+  GALTRNG           Returns the alternate waveform range in volts, for selected module
+  SALTFENA          Enables alternate waveform frequency. TRUE or FALSE
+  GALTFENA          Returns alternate waveform frequency enable flag
+  SALTFRQ           Sets the alternate waveform frequency in Hz
+  GALTFRQ           Returns the alternate waveform frequency in Hz
+  CARBADLY          Enables level detector to change delay time in mS for the selected ARB modules
+                    parameters, TWI address in hex of the level detector (hex), ARB mask that defines the
+                    ARB modules to change (hex)
+  CARBADUR          Enables level detector to change duration time in mS for the selected ARB modules
+                    parameters, TWI address in hex of the level detector (hex), ARB mask that defines the
+                    ARB modules to change (hex)
+ARB commands for application of reverse direction aux voltage change
+  SARBREVA          Sets the reverse direction ARB AUX output voltage, for selected module
+  CLRARBRV          Clears the reverse direction ARB AUX output voltage application, for selected module
+ARB sweep commands, ARB module based
+  SARBSGO           Start the sweep
+  SARBSHLT          Stop the sweep
+  GARBSTA           Return the TWAVE sweep status
+  CLRSPTTBL         Clear the ARB PWL sweep table
+  ADDSPPNT          Add table sweep point, parameters in ring buffer, time ms, V1, V2, F
+ARB configuration commands
+  SARBCCLK          Flag to indicate common clock mode for the given ARB module.
+  SARBCMP           Flag to indicate ARB compressor mode is enabled.
+  SARBCOFF          Flag for all ARB channels use a common offset.
+  SARBADD           Set the TWI address (base 10) for the ARB module.
+  GARBADD           Return the TWI address (base 10) for the ARB module.
+  SARBDBRD          Sets module dual board flag to true or false.
+  GARBVER           Returns the ARB module version number
+  GARBPPP           Returns the ARB module points per period, 8 to 32
+  SARBPPP           Sets the ARB module points per period, 8 to 32
+  SARBEXT           Sets the selected ARB external clock source, MIPS or EXT
+ARB advanced setup commands
+  SARBCPEX          Sets the ARB compress line hardware control, TRUE enables
+  SARBHISR          Sets the ARB compress line process to ISR if true
+  SARBSYNLN         Sets the ARB sync line to use, 1 or 2, 1 = default
+  SARBCMPLN         Sets the ARB comp line to use, 1 or 2, 2 = default
+  SARBALTTS         Sets the ARB alt waveform trigger to use sync party line
+  SARBDISCI         Sets the ARB disable compressor hardware trigger line init, TRUE disables
+DAC module commands
+  SDACV             Sets the named DAC channel's value
+  GDACV             Returns the named DAC channel's value
+  SDACMAX           Sets the named DAC channel's maximum
+  GDACMAX           Returns the named DAC channel's maximum
+  SDACMIN           Sets the named DAC channel's minimum
+  GDACMIN           Returns the named DAC channel's minimum
+  SDACUN            Sets the named DAC channel's units
+  GDACUN            Returns the named DAC channel's units
+  SDACNM            Sets the DAC channel name defined by module and channel number
+  GDACMN            Returns the DAC channel name defined by module and channel number
+
+DC bias current monitor output module commands
+
+  CURLOAD           Load saved parameters from SD, ch = any channel on module
+  CURSAVE           Save parameters to the SD, ch = any channel on module
+  SCURTST           
+  GCURTST           
+  SCURLIM           
+  GCURLIM           
+  GCURRENT          
+  CALDCBCUR         
+
+DC bias control output module commands
+
+  DCBCLOAD          Load saved parameters from EEPROM, ch = any channel on module
+  DCBCSAVE          Save parameters to the EEPORM, ch = any channel on module
+  DCBCFORMAT        Save default parameters to the EEPORM, ch = any channel on module
+  SDCBCMD           Sets a channels mode, ch, mode = ADC|MIPS
+  GDCBCMD           Returns a channels mode, ch
+  SDCBCOF           Sets a channels offset when in ADC mode, ch, offset in adc counts
+  GDCBCOF           Returns a channels offset, ch
+  GDCBCADC          Returns a ADC value for the channel selected
+  CALDCBCCH         Calibrates an ADC value for select channel
+
+DC bias switch module commands
+
+  SDCBEE            Enable the DC bias switch module, brd, TRUE or FALSE
+  SDCBS             Set DC bias switch voltage, ch, voltage
+  GDCBS             Returns DC bias switch voltage, ch
+  GDCBSV            Returns actual DC bias switch voltage, ch
+  SDCBSPWR          Set DC power supply, ON or OFF
+  GDCBSPWR          Return DC power supply status, ON or OFF
+  SDCBSIO           Set digital output,A|B|C|D,0|1
+  GDCBSIO           Return digital input states,A|B|C|D|Q|R|S|T
+  SDCBSSW           Set FET state,switch#,0|1
+  GDCBSSW           Return FET state,switch#
+  PDCBSSW           Pulse FET switch,switch#,width in uS
+  SDCBSTRGSW        Set FET switch follow input,switch#,0|Q|R|S|T
+  GDCBSTRGSW        Return FET switch follow input,switch#
+  SDCBSRBTST        Enable read back testing if TRUE
+  GDCBSRBTST        Enable read back testing if TRUE
+Pulse generator command
+  SPGENA            Set Pulse Generator enable,Ch,TRUE|FALSE
+  GPGENA            Return Pulse Generator enable,Ch
+  SPGRET            Set Pulse Generator re-trigger,Ch,TRUE|FALSE
+  GPGRET            Return Pulse Generator re-trigger,Ch
+  SPGARMT           Set Pulse Generator arm input,Ch,0|Q|R|S|T
+  GPGARMT           Return Pulse Generator arm input,Ch
+  SPGARML           Set Pulse Generator arm level,Ch,CHANGE|RISING|FALLING
+  GPGARML           Return Pulse Generator arm level,Ch
+  SPGTRG            Set Pulse Generator trigger input,Ch,0|Q|R|S|T
+  GPGTRG            Return Pulse Generator trigger input,Ch
+  SPGTRGL           Set Pulse Generator trigger level,Ch,CHANGE|RISING|FALLING
+  GPGTRGL           Return Pulse Generator trigger level,Ch
+  SPGSKIP           Set Pulse Generator trigger skip count,Ch,Count
+  GPGSKIP           Return Pulse Generator trigger skip count,Ch
+  SPGDLY            Set Pulse Generator trigger delay in uS,Ch,Delay
+  GPGDLY            Return Pulse Generator trigger delay in uS,Ch
+  SPGWDTH           Set Pulse Generator pulse width in uS in uS,Ch,Width
+  GPGWDTH           Return Pulse Generator pulse width in uS in uS,Ch
+  SPGTRGO           Set Pulse Generator trigger output,Ch,0|A|B|D|D
+  GPGTRGO           Return Pulse Generator trigger output,Ch
+  SPGTRGF           Set Pulse Generator FET switch output,Ch,0|1|2
+  GPGTRGF           Return Pulse Generator FET switch output,Ch
+  SPGOUTCH          Set Pulse Generator DC bias output,Ch,0|1|2|3|4
+  GPGOUTCH          Return Pulse Generator DC bias output,Ch
+  SPGPV             Set Pulse Generator pulse voltage,Ch,Voltage
+  GPGPV             Return Pulse Generator pulse voltage,Ch
+  SPGNUM            Set Pulse Generator number of pulses,Ch,Count
+  GPGNUM            Return Pulse Generator number of pulses,Ch
+  SPGPER            Set Pulse Generator period in uS,Ch,Value
+  GPGPER            Return Pulse Generator period in uS,Ch
+
+DMSDMS system General FAIMS commands
+
+  SDDENA            Set module number to TRUE to enable FAIMS
+  GDDENA            Returns enable status for selected module
+  SDDMODE           Set module number to TRUE to enable closed loop control of Vrf
+  GDDMODE           Returns mode control for selected module
+  SDDFREQ           Set FAIMS frequency, in Hz for seletced module
+  GDDFREQ           Returns frequency for the selected module
+  SDDDUTY           Set FAIMS duty cycle in percent for seletced module
+  GDDDUTY           Returns duty cycle for selected module
+  SDDDRV            Set FAIMS drive level in percent for the selected module
+  GDDDRV            Returns drive level for the selected module
+  GDRVV             Returns voltage level into drive FET, V for the selected module
+  GDRVI             Returns current into drive FET, mA for the selected module
+  SVRF              Sets the drive level setpoint to achieve the desired voltage for the selected module
+  GVRF              Returns the Vrf peak voltage for the selected module
+  GVRFV             Returns the Vrf peak voltage readback for the selected module
+  GPWR              Returns the power in watts for the selected module
+  SVRFN             Sets the drive level setpoint achieve the desired voltage for the selected module
+                    and adjusts the drive level to reach the setpoint
+  SVRFT             Sets the drive level setpoint achieve the desired voltage for the selected module
+                    and adjusts the drive level to reach the setpoint using the drive level table
+  GENVRFTBL         This function will generate the Vrf lookup table
+DMSDMS Limits
+  SDDMAXDRV         Set the maximum drive level allowed for the selected module
+  GDDMAXDRV         Returns the maximum drive level for the selected module
+  SDDMAXPWR         Set the maximum power allowed for the selected module
+  GDDMAXPWR         Returns the maximum power limit for the selected module
+DMSDMS DC bias commands
+  SCV               Set the current CV for the seletced module
+  GCV               Return the current CV for the seletced module
+  GCVV              Return the CV readback value for the seletced module
+  SBIAS             Set the current BIAS for the seletced module
+  GBIAS             Return the current BIAS for the seletced module
+  GBIASV            Set the current BIAS for the seletced module
+DMSDMS scanning commands
+  SDDCVSTRT         set the CV scan start voltage for the seletced module
+  GDDCVSTRT         returns the CV scan start voltage for the seletced module
+  SDDCVEND          set the CV scan end voltage for the seletced module
+  GDDCVEND          returns the CV scan end voltage for the seletced module
+  SDDVRFSTRT        set the Vrf scan start voltage for the seletced module
+  GDDVRFSTRT        returns the Vrf scan start voltage for the seletced module
+  SDDVRFEND         set the Vrf scan end voltage for the seletced module
+  GDDVRFEND         returns the Vrf scan end voltage for the seletced module
+  SDDSTEPDUR        set the scan step duration in mS
+  GDDSTEPDUR        returns the scan step duration in mS
+  SDDNUMSTP         set the scan number of steps
+  GDDNUMSTP         returns the scan number of steps
+  DDSCNSTRT         Start the scan
+  DDSCNSTP          Stop a scan that is in process
+  SFBADCSMP         Set the number of adc sample to average, 1 to 16
+  GFBADCSMP         Returns the number of adc sample to average, 1 to 16
+Electrometer commands
+  SELTMTRM4         Set the M4 electrometer enabled flag, TRUE or FALSE
+  GELTMTRM4         Return the M4 electrometer enable flag
+  GELTMTRPOS        Return the electrometer positive channel
+  GELTMTRNEG        Return the electrometer negative channel
+  SELTMTRPOSOFF     Set the electrometer positive channel offset
+  GELTMTRPOSOFF     Returns the electrometer positive channel offset
+  SELTMTRNEGOFF     Set the electrometer negative channel offset
+  GELTMTRNEGOFF     Returns the electrometer negative channel offset
+  SELTMTRPOSZERO    Set the electrometer positive channel zero
+  GELTMTRPOSZERO    Returns the electrometer positive channel zero
+  SELTMTRNEGZERO    Set the electrometer negative channel zero
+  GELTMTRNEGZERO    Returns the electrometer negative channel zero
+  ELTMTRZERO        Execute the electrometer zero procedure
+Fragmentor interface commands. This a RS232 interface using RX0 and TX0 of the MIPS ARM processor.
+The fragmentor commands are sent using the SFRAG command and the reply is relayed through the MIPS
+host communications channel.
+  SFRAG             Send command through fragmentor interface
+HV supply commands
+  DDHVINT           DMS/DMS High voltage supply init
+  SDDHVENA          Set DMS/DMS High voltage supply enable, TRUE or FALSE
+  GDDHVENA          Get DMS/DMS High voltage supply enable, TRUE or FALSE
+  SDDHV             Set DMS/DMS High voltage supply voltage
+  GDDHV             Get DMS/DMS High voltage supply voltage
+  GDDHVA            Get DMS/DMS High voltage supply voltage readback
+
+FAIMS  General FAIMS commands
+
+  SFMENA            Set the FAIMS enable flag, TRUE enables waveform generation
+  GFMENA            Returns the FAIMS enable flag
+  SFMDRV            Sets FAIMS drive level in percent
+  GFMDRV            Returns FAIMS drive level in percent
+  GFMPWR            Returns FAIMS total power in watts
+  GFMPV             Returns FAIMS positive peak output voltage
+  GFMNV             Returns FAIMS negative peak output voltage
+  SFMLOCK           Sets FAIMS output level lock mode
+  GFMLOCK           Returns FAIMS output level lock mode
+  SFMSP             Sets FAIMS output level lock setpoint
+  GFMSP             Returns FAIMS output level lock setpoint
+  SFMFREQ           Set frequency
+  GFMFREQ           Return frequency
+  SFMPCAP           Set primary capacitor position
+  GFMPCAP           Return primary capacitor position
+  SFMHCAP           Set harmonic capacitor position
+  GFMHCAP           Return harmonic capacitor position
+FAIMS auto tune commands
+  SFMTUNE           Set auto tune request flag
+  SFMTABRT          Set auto tune abort flag
+  GFMTSTAT          Returns the auto tune state string
+  SFMTPOS           Set the positive tune mode if TRUE, if FALSE tune for neg peak
+  GFMTPOS           Return positive peak mode
+  SFMTDRV           Set the tune mode drive level
+  GFMTDRV           Return the tune mode drive level
+  SFMATSTRF         Set the auto tune start frequency
+  GFMATSTRF         Return the tune mode start frequency
+  SFMATSTPF         Set the auto tune stop frequency
+  GFMATSTPF         Return the tune mode stop frequency
+  SFMATBPC          Set flag to true to bypass primary capacitor tune
+  SFMATBPC          Return the bypass primary capacitor tune flag
+FAIMS DC CV and Bias commands
+  SFMCV             Sets FAIMS DC CV voltage setpoint
+  GFMCV             Returns FAIMS DC CV voltage setpoint
+  GFMCVA            Returns FAIMS DC CV voltage actual
+  SFMBIAS           Sets FAIMS DC Bias voltage setpoint
+  GFMBIAS           Returns FAIMS DC Bias voltage setpoint
+  GFMBIASA          Returns FAIMS DC Bias voltage actual
+  SFMOFF            Sets FAIMS DC offset voltage setpoint
+  GFMOFF            Returns FAIMS DC offset voltage setpoint
+  GFMOFFA           Returns FAIMS DC offset voltage actual
+FAIMS CV Scan commands
+  SFMCVSTART        Sets FAIMS DC CV scan start voltage
+  GFMCVSTART        Returns FAIMS DC CV scan start voltage
+  SFMCVEND          Sets FAIMS DC CV scan end voltage
+  GFMCVEND          Returns FAIMS DC CV scan end voltage
+  SFMDUR            Sets FAIMS DC CV scan duration in seconds
+  GFMDUR            Returns FAIMS DC CV scan duration in seconds
+  SFMLOOPS          Sets FAIMS DC CV scan loops
+  GFMLOOPS          Returns FAIMS DC CV scan loops
+  SFMSTRTLIN        Sets FAIMS DC CV linear scan flag
+  GFMSTRTLIN        Returns FAIMS DC CV linear scan flag
+  SFMSTPTM          Sets FAIMS DC CV scan step duration
+  GFMSTPTM          Returns FAIMS DC CV scan step duration
+  SFMSTEPS          Sets FAIMS DC CV step scan number of steps
+  GFMSTEPS          Returns FAIMS DC CV step scan number of steps
+  SFMSTRTSTP        Sets FAIMS DC CV step scan flag
+  GFMSTRTSTP        Returns FAIMS DC CV step scan flag
+FAIMS configuration / calibration commands
+  SRFHPCAL          Set FAIMS RF harmonic positive peak readback calibration
+  SRFHNCAL          Set FAIMS RF harmonic negative peak readback calibration
+  SARCDIS           TRUE or FALSE, set to TRUE disable arc detection
+  FMISCUR           Returns TRUE if Curtian supply was detected
+  SFMCCUR           If TRUE allows enable faims to enable curtian supply
+  GFMCCUR           Returns curtian control flag
+  SFMMDIS           Set the message auto dismiss is TRUE
+  GFMMDIS           Return the message auto dismiss flag
+  SFARCR            Set the number of arc retry attempts
+  GFARCR            Return the number of arc retry attempts
+  CALFMPWL          Generates PWL cal table, POS or NEG
+  SFMUSEPWL         Sets the use PWL cal table flag
+  GFMUSEPWL         Returns the use PWL cal table flag
+
+FAIMS fly back module commands
+
+  SFBENA            Set module number to TRUE to enable FAIMS
+  GFBENA            Returns enable status for selected module
+  SFBMODE           Set module number to TRUE to enable closed loop control of Vrf
+  GFBMODE           Returns mode control for selected module
+  SFBFREQ           Set FAIMS frequency, in Hz for seletced module
+  GFBFREQ           Returns frequency for the selected module
+  SFBDUTY           Set FAIMS duty cycle in percent for seletced module
+  GFBDUTY           Returns duty cycle for selected module
+  SFBDRV            Set FAIMS drive level in percent for the selected module
+  GFBDRV            Returns drive level for the selected module
+  GDRVV             Returns voltage level into drive FET, V for the selected module
+  GDRVI             Returns current into drive FET, mA for the selected module
+  SVRF              Sets the drive level setpoint to achieve the desired voltage for the selected module
+  GVRF              Returns the Vrf peak voltage for the selected module
+  GVRFV             Returns the Vrf peak voltage readback for the selected module
+  GPWR              Returns the power in watts for the selected module
+  SVRFN             Sets the drive level setpoint achieve the desired voltage for the selected module
+                    and adjusts the drive level to reach the setpoint
+  SVRFT             Sets the drive level setpoint achieve the desired voltage for the selected module
+                    and adjusts the drive level to reach the setpoint using the drive level table
+  GENVRFTBL         This function will generate
+FAIMSFB Limits
+  SFBMAXDRV         Set the maximum drive level allowed for the selected module
+  GFBMAXDRV         Returns the maximum drive level for the selected module
+  SFBMAXPWR         Set the maximum power allowed for the selected module
+  GFBMAXPWR         Returns the maximum power limit for the selected module
+FAIMSFB DC bias commands
+  SCV               Set the current CV for the seletced module
+  GCV               Return the current CV for the seletced module
+  GCVV              Return the CV readback value for the seletced module
+  SBIAS             Set the current BIAS for the seletced module
+  GBIAS             Return the current BIAS for the seletced module
+  GBIASV            Set the current BIAS for the seletced module
+FAIMSFB scanning commands
+  SFBCVSTRT         set the CV scan start voltage for the seletced module
+  GFBCVSTRT         returns the CV scan start voltage for the seletced module
+  SFBCVEND          set the CV scan end voltage for the seletced module
+  GFBCVEND          returns the CV scan end voltage for the seletced module
+  SFBVRFSTRT        set the Vrf scan start voltage for the seletced module
+  GFBVRFSTRT        returns the Vrf scan start voltage for the seletced module
+  SFBVRFEND         set the Vrf scan end voltage for the seletced module
+  GFBVRFEND         returns the Vrf scan end voltage for the seletced module
+  SFBSTEPDUR        set the scan step duration in mS for the seletced module
+  GFBSTEPDUR        returns the scan step duration in mS for the seletced module
+  SFBNUMSTP         set the scan number of steps for the seletced module
+  GFBNUMSTP         returns the scan number of steps for the seletced module
+  FBSCNSTRT         Start the scan for the seletced module
+  FBSCNSTP          Stop a scn that is in process for the seletced module
+  SFBADCSMP         Set the number of adc sample to average, 1 to 16
+  GFBADCSMP         Returns the number of adc sample to average, 1 to 16
+Electrometer commands
+  SELTMTRENA        Set the electrometer enabled flag, TRUE or FALSE
+  GELTMTRENA        Return the electrometer enable flag
+  SELTMTRM4         Set the M4 electrometer enabled flag, TRUE or FALSE
+  GELTMTRM4         Return the M4 electrometer enable flag
+  GELTMTRPOS        Return the electrometer positive channel
+  GELTMTRNEG        Return the electrometer negative channel
+  SELTMTRPOSOFF     Set the electrometer positive channel offset
+  GELTMTRPOSOFF     Returns the electrometer positive channel offset
+  SELTMTRNEGOFF     Set the electrometer negative channel offset
+  GELTMTRNEGOFF     Returns the electrometer negative channel offset
+  SELTMTRPOSZERO    Set the electrometer positive channel zero
+  GELTMTRPOSZERO    Returns the electrometer positive channel zero
+  SELTMTRNEGZERO    Set the electrometer negative channel zero
+  GELTMTRNEGZERO    Returns the electrometer negative channel zero
+  ELTMTRZERO        Execute the electrometer zero procedure
+Fragmentor interface commands. This interface is a TWI to RS232 interface. These commands sends fragmentor commands
+through the interface
+  SFRAG             Send command through fragmentor interface
+  PFRAG             Poll frgmentor interface, results to host interface
+
+FPGA module commands
+
+  SFPGACFG          Set the FPGA config word, value is in hex
+  GFPGACFG          Returns the FPGA config word, value is in hex
+  SFPGABC           Set FPGA bus control mode, TRUE = fpga in control
+  GFPGABC           Returns FPGA bus control mode, TRUE = fpga in control
+  SFPGAP            Set FPGA process mode, TRUE = fpga processes ADC data and outputs DAC data
+  GFPGAP            Returns FPGA process mode, TRUE = fpga processes ADC data and outputs DAC data
+  SFPGASCN          Set FPGA ADC scan mode, TRUE = fpga scans ADC data
+  GFPGASCN          Returns FPGA ADC scan mode, TRUE = fpga scans ADC data
+  SFPGAADD          Set the FPGA DAC address, value is 0 thru 7
+  GFPGAADD          Returns the FPGA DAC address, value is 0 thru 7
+  SFPGAARY          Sets an array element, (M,B,ADC,DAC), index (1 thru 8), value
+  GFPGAARY          Returns an array element, (M,B,ADC,DAC), index (1 thru 8)
+  SADCMSK           Set the ADC mask, hex. When a bit is set the channel is not updated
+  GADCMSK           Return the ADC mask, hex. When a bit is set the channel is not updated
+  SDACMSK           Set the DAC mask, hex. When a bit is set the channel is not updated
+  GDACMSK           Return the DAC mask, hex. When a bit is set the channel is not updated
+  RADCALL           Report all 8 ADC channels
+  GADCCH            Report an ADC channel, 1 thru 8
+  SAVEFPGA          Save setting to EEPROM
+  RSTRFPGA          Restore settings from FPGA
+  FPGACAL           Calibrate ADC channel
+  FPGACALR          Calibrate ADC to DAC reflector, first DAC channel to use, must
+                    1 or 9
+
+HV module commands
+
+  SHVPS             Set HVPS channel voltage
+  GHVPS             Return HVPS channel voltage, setpoint
+  GHVPSV            Return HVPS channel voltage, readback
+  SHVPSENA          Set HVPS channel enable, ON or OFF
+  GHVPSENA          Return HVPS channel enable, ON or OFF
+
+General RFamp and QUAD commands
+
+  SRFAENA           Sets the RF system enable mode, ON or OFF
+  GRFAENA           Returns the RF system enable mode, ON or OFF
+  SRFAFREQ          Sets the RF system frequency
+  GRFAFREQ          Returns the RF frequency
+  SRFAK             Sets the resolving DC voltage ratio
+  GRFAK             Returns the resolving DC voltage ratio
+  SRFAMOD           Sets the RF system to open or closed loop
+  GRFAMOD           Returns the RF mode state, open or closed
+  SRFADRV           Sets the RF drive level to 0 to 100 %
+  GRFADRV           Returns the RF drive level
+  SRFALEV           Sets the RF output voltage setpoint
+  GRFALEV           Returns the RF output voltage setpoint
+  GRFAVPPA          Returns the RF output A actual level
+  GFRAVPPB          Returns the RF output B actual level
+  GRFAPWR           Returns the RF amp RF forward pwr
+  SRFARNG           Sets the QUAD RF maximum RF level
+  GRFARNG           Returns the QUAD RF maximum RF level
+  SRFAPB            Sets the pole bias DC
+  GRFAPB            Returns the pole bias DC
+  SRFARDC           Sets the resolving DC + and - voltages using DC bias channels 1 and 2
+  GRFARDC           Returns the resolving DC + and - voltages using DC bias channels 1 and 2
+  SRFAR0            Sets the Ro value in mm
+  GRFAR0            Returns the Ro value in mm
+  SRFAMZ            Sets the m/z in amu
+  GRFAMZ            Returns the m/z in amu
+  SRFARES           Sets the resolution in AMU
+  GRFARES           Returns the resolution in AMU
+  RFAQUPDATE        Updates the QUAD parameters
+  RFAACQ            Report last point and acquire,module,mz,delta,dwell
+  SRFAGAIN          Sets RF head level control gain, HIGH or LOW (HIGH is high voltage range)
+  GRFAGAIN          Returns RF head level control gain, HIGH or LOW
+  RRFAAMP           Reports RF amplifier parameters
+  SRFADCCH          Sets the RF quad dc bias channel used for resolving DC
+  GRFADCCH          Reports the RF quad dc bias channel used for resolving DC
+  SRFDRVZ           Sets the RF drive zero point in percentage
+  SRDCENA           Sets the enable resolving DC enable flag, true or false
+  GRDCENA           Returns the enable resolving DC enable flag status
+  SRFAAR            Sets RF head level auto range flag, TRUE to enable, FALSE to disable
+  GRFAAR            Returns RF head level control flag
+RF level detection frequency compensation
+  SRFACP            Sets RF head frequency compensation flag, TRUE to enable, FALSE to disable
+  GRFACP            Returns RF head frequency compensation flag
+  SRFACPF           Sets RF head frequency compensation calibration frequency
+  GRFACPF           Returns RF head frequency compensation calibration frequency
+  SRFACPG           Sets RF head frequency compensation gain factor
+  GRFACPG           Returns RF head frequency compensation gain factor
+RF amp / quad auto tune
+  SRFATUNE          Start auto tune for selected module
+  SRFATUNER         Start auto tune for selected module, with reporting to console
+  SRFATMINF         Set auto tune start frequency
+  GRFATMINF         Return auto tune start frequency
+  SRFATMAXF         Set auto tune stop frequency
+  GRFATMAXF         Return auto tune stop frequency
+  SRFATHP           Set the auto tune max drive mode level
+  GRFATHP           Return the auto tune max drive mode level
+  SRFATSWR          If TRUE auto tune uses SWR on second phase
+  GRFATSWR          Returns the auto tune SWR second tune phase flag
