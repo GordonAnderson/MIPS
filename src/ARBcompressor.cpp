@@ -144,7 +144,7 @@ void ARBsetWFT2(void)
 // This function will update the state
 void ARBcompressorTimerISR(void)
 {
-  char OP;
+  char OP=0;
 
   // This interrupt occurs when the current state has timed out so advance to the next
   if(CompressorDisable)
@@ -351,7 +351,7 @@ char ARBgetNextOperationFromTable(bool init)
   char   portCH,c;
   int    b;
   bool   CE;
-  float  fval;
+  float  fval=0;
   static int tblindex=0;
   static char OP;
   static int count = 0;
@@ -685,9 +685,7 @@ char ARBgetNextOperationFromTable(bool init)
 // Compressor init function, called on startup
 void ARBcompressor_init(void)
 {
-  int            i;
-  
-  if(!ARBarray[0]->CompressorEnabled) return;  // Exit if the compressor is not enabled
+    if(!ARBarray[0]->CompressorEnabled) return;  // Exit if the compressor is not enabled
 //  ARBarray[0]->UseCommonClock = true;          // If we are in compressor mode then we must use a common clock
 //  ARBarray[1]->UseCommonClock = true;
   // Enable the compressor hardware mode contol line in the compress ARB module

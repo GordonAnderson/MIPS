@@ -22,6 +22,22 @@
 #include "HVPSinterface.h"
 #include <WireServer.h>
 
+// External symbols defined in other translation units
+extern Menu             MainMenu;
+extern ThreadController control;
+
+// Forward declarations for functions defined later in this file
+void HVPSinterfaceModuleSelected(void);
+void PolChange(void);
+void SaveHVPSISettings(void);
+void RestoreHVPSISettings(void);
+void HVPSinterfaceConfigure(int module);
+void HVPSinterfaceUpdateUIoptions(void);
+void HVPSinterface_loop(void);
+
+// Forward declarations for cross-TU functions
+void AddMainMenuEntry(MenuEntry *me);
+
 //MIPS Threads
 Thread HVPSinterfaceThread  = Thread();
 
@@ -39,7 +55,7 @@ int HVPSinterfaceSelectModule = 0;
 
 extern DialogBoxEntry HVPSinterfaceTWIsettings[];
 
-char   *PolList = "POS,NEG";
+const char *PolList = "POS,NEG";
 char   Polarity[4] = "POS";
 
 DialogBoxEntry HVPSinterfaceTWIHome[] = {
@@ -80,7 +96,7 @@ void SaveHVPSISettings(void)
   uint8_t  cmd;
 
   cmd = TWI_HVPSI_SET_Save;
-  ws.SendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1);
+  ws.sendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1);
   DisplayMessage("Parameters Saved!", 2000);
 }
 
@@ -89,7 +105,7 @@ void RestoreHVPSISettings(void)
   uint8_t  cmd;
 
   cmd = TWI_HVPSI_SET_Restore;
-  ws.SendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1);
+  ws.sendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1);
   DisplayMessage("Parameters Restored!", 2000);
   HVPSinterfaceModuleSelected();
 }
@@ -101,8 +117,8 @@ void PolChange(void)
   if(strcmp(Polarity,"POS") == 0) hvpsi.polarity = true;
   else hvpsi.polarity = false;
   cmd = TWI_HVPSI_SET_Pol;
-  ws.SendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
-  ws.SendBool(hvpsi.polarity);
+  ws.sendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
+  ws.sendBool(hvpsi.polarity);
 }
 
 void HVPSinterfaceModuleSelected(void)
@@ -134,29 +150,29 @@ void HVPSinterfaceConfigure(int module)
 
   // Read the selected module parameters and update the data structure
   cmd = TWI_HVPSI_GET_Power;
-  ws.SendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
-  ws.ReadBool(&hvpsi.power);
+  ws.sendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
+  ws.readBool(&hvpsi.power);
   cmd = TWI_HVPSI_GET_Voltage;
-  ws.SendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
-  ws.ReadFloat(&hvpsi.setpoint);
+  ws.sendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
+  ws.readFloat(&hvpsi.setpoint);
   cmd = TWI_HVPSI_GET_Pol;
-  ws.SendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
-  ws.ReadBool(&hvpsi.polarity);
+  ws.sendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
+  ws.readBool(&hvpsi.polarity);
   cmd = TWI_HVPSI_GET_Range;
-  ws.SendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
-  ws.ReadFloat(&hvpsi.range);
+  ws.sendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
+  ws.readFloat(&hvpsi.range);
   cmd = TWI_HVPSI_GET_MaxV;
-  ws.SendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
-  ws.ReadFloat(&hvpsi.maxVoltage);
+  ws.sendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
+  ws.readFloat(&hvpsi.maxVoltage);
   cmd = TWI_HVPSI_GET_MaxI;
-  ws.SendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
-  ws.ReadFloat(&hvpsi.maxCurrent);
+  ws.sendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
+  ws.readFloat(&hvpsi.maxCurrent);
   cmd = TWI_HVPSI_GET_Reversable;
-  ws.SendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
-  ws.ReadBool(&hvpsi.reversable);
+  ws.sendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
+  ws.readBool(&hvpsi.reversable);
   cmd = TWI_HVPSI_GET_CurEnable;
-  ws.SendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
-  ws.ReadBool(&hvpsi.curMonEnabled);
+  ws.sendCommand(HVPSinterfaceTWIadd[module],&cmd,1);
+  ws.readBool(&hvpsi.curMonEnabled);
   // Set the UI based on parameters
   HVPSinterfaceUpdateUIoptions();
 }
@@ -167,14 +183,14 @@ void HVPSinterface_init(void)
 
   Wire1.begin();
   Wire1.setClock(Wire1DefaultSpeed);
-  ws.SetInterface(&Wire1);
+  ws.setInterface(&Wire1);
   // Look for HVPSinterface modules, expected on Wire1 at
   // addresses 0x20 through 0x23. 
   for(uint8_t i=0x20;i<0x24;i++)
   {
     cmd = TWI_HVPSI_READ_ID;
-    ws.SendCommand(i,&cmd,1);
-    ws.ReadUnsignedByte(&cmd);
+    ws.sendCommand(i,&cmd,1);
+    ws.readUint8(&cmd);
     if(cmd == DeviceID_HVPSI)
     {
       HVPSinterfaceTWIadd[numHVPSinterface] = i;
@@ -210,42 +226,42 @@ void HVPSinterface_loop(void)
     if(ActiveDialog->Entry == HVPSinterfaceTWIHome)
     {
       cmd = TWI_HVPSI_SET_Power;
-      ws.SendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
-      ws.SendBool(hvpsi.power);
+      ws.sendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
+      ws.sendBool(hvpsi.power);
       cmd = TWI_HVPSI_SET_Voltage;
-      ws.SendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
-      ws.SendFloat(hvpsi.setpoint);
+      ws.sendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
+      ws.sendFloat(hvpsi.setpoint);
     }
     if(ActiveDialog->Entry == HVPSinterfaceTWIsettings)
     {
       cmd = TWI_HVPSI_SET_Range;
-      ws.SendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
-      ws.SendFloat(hvpsi.range);
+      ws.sendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
+      ws.sendFloat(hvpsi.range);
       cmd = TWI_HVPSI_SET_Reversable;
-      ws.SendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
-      ws.SendBool(hvpsi.reversable);
+      ws.sendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
+      ws.sendBool(hvpsi.reversable);
       cmd = TWI_HVPSI_SET_CurEnable;
-      ws.SendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
-      ws.SendBool(hvpsi.curMonEnabled);
+      ws.sendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
+      ws.sendBool(hvpsi.curMonEnabled);
       cmd = TWI_HVPSI_SET_MaxV;
-      ws.SendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
-      ws.SendFloat(hvpsi.maxVoltage);
+      ws.sendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
+      ws.sendFloat(hvpsi.maxVoltage);
       cmd = TWI_HVPSI_SET_MaxI;
-      ws.SendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
-      ws.SendFloat(hvpsi.maxCurrent);
+      ws.sendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1,true);
+      ws.sendFloat(hvpsi.maxCurrent);
       HVPSinterfaceUpdateUIoptions();
     }
   }
   // Update the readbacks
   cmd = TWI_HVPSI_GET_Vrb;
-  ws.SendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1);
-  ws.ReadFloat(&Vrb);
+  ws.sendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1);
+  ws.readFloat(&Vrb);
   cmd = TWI_HVPSI_GET_Irb;
-  ws.SendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1);
-  ws.ReadFloat(&Irb);
+  ws.sendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1);
+  ws.readFloat(&Irb);
   cmd = TWI_HVPSI_GET_Prb;
-  ws.SendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1);
-  ws.ReadBool(&Prb);
+  ws.sendCommand(HVPSinterfaceTWIadd[HVPSinterfaceSelectModule-1],&cmd,1);
+  ws.readBool(&Prb);
 
   RefreshAllDialogEntries(&HVPSinterfaceDialog);
 }

@@ -212,7 +212,6 @@ void AnalogChanCal(void)
 {
   ChannelCal CC;
   char       Name[20];
-  int        b=0;
 
   // Set up the calibration data structure
   CC.ADCpointer = &ADS1115readAverage;
@@ -275,7 +274,7 @@ void RestoreAnalogSettings(bool NoDisplay)
     if (!(file = SD.open("Analog.cfg", FILE_READ))) break;
     // read the data
     b = (byte *)&a;
-    for (i = 0; i < sizeof(Analog); i++)
+    for (i = 0; i < (int)sizeof(Analog); i++)
     {
       if ((iVal = file.read()) == -1) break;
       b[i] = iVal;
@@ -361,7 +360,6 @@ void AnalogControl(void)
 // will enable the analog input system if ADC(s) are found.
 void Analog_init(void)
 {
-  int16_t adc;
   int     i, j, stat;
 
   // Read the configuration data from the SD. If is not found then use the default settings
@@ -382,17 +380,17 @@ void Analog_init(void)
   ads1->begin();
   ads2->begin();
   Wire1.setClock(Wire1DefaultSpeed);
-  adc = ads1->readADC_SingleEnded(0);
+  ads1->readADC_SingleEnded(0);
   stat = ads1->getStatus();
-  adc = ads1->readADC_SingleEnded(0);
+  ads1->readADC_SingleEnded(0);
   stat |= ads1->getStatus();
   if (stat == 0)
   {
     analog.Enabled = true;
     analog.NumChannels = 4;
-    adc = ads2->readADC_SingleEnded(0);
+    ads2->readADC_SingleEnded(0);
     stat = ads2->getStatus();
-    adc = ads2->readADC_SingleEnded(0);
+    ads2->readADC_SingleEnded(0);
     stat |= ads2->getStatus();
     if (stat == 0) analog.NumChannels = 8;
   }

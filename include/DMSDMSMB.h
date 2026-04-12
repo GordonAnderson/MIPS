@@ -254,5 +254,9 @@ typedef struct
   ADCchan       VnegMon;
 } HVmodule;
 
+// Init prototypes
+void CVBIAS_init(int brd, int add);
+void WAVEFORMS_init(int brd, int add);
+
 #endif
 #endif

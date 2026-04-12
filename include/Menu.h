@@ -32,12 +32,12 @@ enum MenuBorder
 
 typedef struct
 {
-  char        *Name;            // Menu entry text
+  const char  *Name;            // Menu entry text
   MenuTypes   Type;             // Entry type
   int16_t     Min;
   int16_t     Max;
   int8_t      Xpos;             // Position for data display
-  char        *fmt;             // Printf format string for display
+  const char  *fmt;             // Printf format string for display
   void        *Value;           // Pointer to value data as appropriate
   void (*PreFunction)(void);    // Pointer to function called when entry is selected
   void (*PostFunction)(void);   // Pointer to function called after value entry
@@ -45,7 +45,7 @@ typedef struct
 
 typedef struct
 {
-  char        *Title;         // Menu title, NULL if no title wanted
+  const char  *Title;         // Menu title, NULL if no title wanted
   uint16_t    Bcolor;         // Background color
   uint16_t    Fcolor;         // Forground color
   uint8_t     Tsize;          // Text size for menu
@@ -68,7 +68,7 @@ extern Menu *ActiveMenu;
 extern bool PopupDismissed;
 
 // Function prototypes
-void p(char *fmt, ... );
+void p(const char *fmt, ... );
 void CalculatePositionVariables(Window *wn);
 void MenuProcessChange(Menu *m, int8_t change);
 void MenuButtonPress(Menu *m);
@@ -80,10 +80,10 @@ void MenuOptions(Menu *m);
 void SetWindowTextPos(Window *w, uint8_t X, uint8_t Y);
 void DisplayWindow(Window *wn);
 void MenuDisplay(Menu *m);
-void DisplayMessage(char *message);
+void DisplayMessage(const char *message);
 void DismissMessage(void);
-void DisplayMessage(char *message, int DisplayTime);
-void DisplayMessageButtonDismiss(char *message);
+void DisplayMessage(const char *message, int DisplayTime);
+void DisplayMessageButtonDismiss(const char *message);
 void DismissMessageIfButton(void);
 
 

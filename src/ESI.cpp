@@ -157,7 +157,7 @@ DialogBoxEntry ESIentries[] = {
   {NULL},
 };
 
-char  *LevelModeList = "OFF,IF>,IF<";
+const char  *LevelModeList = "OFF,IF>,IF<";
 char  LevelMode[4] = "OFF";
 float Vthreshold = 0;
 
@@ -328,7 +328,6 @@ void ESIcalibrate(void)
 {
   ChannelCal CC;
   char       Name[20];
-  int        b=0;
   
   SelectBoard(SelectedESIboard);
   // Set up the calibration data structure
@@ -337,7 +336,7 @@ void ESIcalibrate(void)
   CC.Max=esidata->ESIchan[(ESIchannel-1)&1].MaxVoltage;
   CC.DACaddr=esidata->DACadr;  
   CC.ADCaddr=esidata->ADCadr;
-  if(esidata->Rev == 4) CC.ADCaddr=NULL;
+  if(esidata->Rev == 4) CC.ADCaddr=0;
   CC.DACout=&esidata->ESIchan[(ESIchannel-1)&1].DCctrl;
   CC.ADCreadback=&esidata->ESIchan[(ESIchannel-1)&1].DCVmon;
   // Define this channels name
@@ -351,7 +350,6 @@ void ESIcalibratePos(void)
 {
   ChannelCal CC;
   char       Name[20];
-  int        b=0;
   
   SelectBoard(SelectedESIboard);
   ESIrelay(0);
@@ -381,7 +379,6 @@ void ESIcalibrateNeg(void)
 {
   ChannelCal CC;
   char       Name[20];
-  int        b=0;
   
   SelectBoard(SelectedESIboard);
   ESIrelay(0);
@@ -600,8 +597,10 @@ void ESIrelay(int action, ESIdata *esid)
   if(ed == NULL) return;
 
   if(ed->Rev == 6)
+  {
     if(action == 1) action = 2;
     else if(action == 2) action = 1;
+  }
   switch (action)
   {
     case 0:

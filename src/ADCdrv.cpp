@@ -101,7 +101,7 @@ void ADC_Handler(void)
 {
   int f = ADC->ADC_ISR;
   int ll,hl;
-  int val;
+  int val=0;
   int static count;
   unsigned int static countatvalue;
 
@@ -114,7 +114,7 @@ void ADC_Handler(void)
       else
       {
         ADCsum+=val;
-        if(++ADCsampleNum > ADCnumsamples)
+        if(++ADCsampleNum > (uint32_t)ADCnumsamples)
         {
           ADCcount = ADCsum;
           ADCsampleNum = ADCsum = 0;
@@ -137,7 +137,7 @@ void ADC_Handler(void)
       }
     }
     else { count = 0; countatvalue++; }
-    if(countatvalue == SameCount) if(ADCchangeFunc != NULL) ADCchangeFunc(val);
+    if(countatvalue == (unsigned int)SameCount) if(ADCchangeFunc != NULL) ADCchangeFunc(val);
     f = ADC->ADC_ISR;
     return;
   }

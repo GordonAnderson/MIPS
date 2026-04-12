@@ -31,7 +31,7 @@ extern bool NormalStartup;
 extern bool SDcardPresent;
 extern ThreadController control;
 
-char *GetEntry(char *list, int num);
+char *GetEntry(const char *list, int num);
 void AddMainMenuEntry(MenuEntry *me);
 
 // Forward declarations for functions used in static initializers
@@ -51,11 +51,11 @@ WiFiData wifidata = WiFi_Rev_1;
 
 Stream *WiFiSerial = &Serial1;
 
-char *StartModeList = "IDLE,CONNECT,AP";
+const char *StartModeList = "IDLE,CONNECT,AP";
 char STM[20] = "IDLE";
 
 // From wl_status_t, 0 through 6
-char *WiFiStatusList = "IDLE,NOssid,SCANED,CONNECTED,FAILED,LOST,DISCON,AP";
+const char *WiFiStatusList = "IDLE,NOssid,SCANED,CONNECTED,FAILED,LOST,DISCON,AP";
 char WFS[20] = "IDLE";
 
 extern DialogBoxEntry WiFiEntriesPage2[];
@@ -161,7 +161,7 @@ void RestorWiFiSettings(bool Display)
   }
   // read the data
   b = (byte *)&wfd;
-  for(i=0;i<sizeof(WiFiData);i++)
+  for(i=0;i<(int)sizeof(WiFiData);i++)
   {
     if((fVal = file.read()) == -1) break;
     b[i] = fVal;

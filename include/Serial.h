@@ -12,8 +12,10 @@
 #include "Adafruit_ILI9340.h"
 
 #if defined(__SAM3X8E__)
-#undef __FlashStringHelper::F(string_literal)
+#undef F
+#ifndef F
 #define F(string_literal) string_literal
+#endif
 #endif
 
 
@@ -41,7 +43,7 @@ extern Adafruit_ILI9340 tft;
 
 #define TWI_CMD       0x7F
 
-extern char *SelectedACKonlyString;
+extern const char *SelectedACKonlyString;
 
 #define SendNAK {if(!SerialMute) serial->write("\x15?\n\r");}
 #define SendACK {if(!SerialMute) serial->write("\x06\n\r");}
@@ -53,6 +55,7 @@ extern char *SelectedACKonlyString;
 // The serial receiver uses Xon and Xoff to control input data from the source
 #define XON   0x11
 #define XOFF  0x13
+#undef EOF
 #define EOF   0x1A
 #define ACK   0x06
 #define NAK   0x15
@@ -157,7 +160,7 @@ void PutCh(char ch);
 int  GetLine(Ring_Buffer *rb,char *cbuf,int maxlen);
 void MacroRecord(char *filename);
 void MacroStop(void);
-char *MacroBuildList(char *current);
+char *MacroBuildList(const char *current);
 void MacroList(void);
 void MacroDelete(char *filename);
 void MacroPlay(char *filename, bool optional = false);
@@ -184,9 +187,9 @@ char *TokenFromCommandLine(char expectedDel);
 bool valueFromCommandLine(int *value, int ll, int ul);
 bool valueFromCommandLine(float *value, float ll, float ul);
 bool valueFromCommandLine(char *c, char *options);
-char *UserInput(char *message, void (*function)(void) = NULL);
+char *UserInput(const char *message, void (*function)(void) = NULL);
 int  UserInputInt(char *message, void (*function)(void) = NULL);
-float UserInputFloat(char *message, void (*function)(void) = NULL);
+float UserInputFloat(const char *message, void (*function)(void) = NULL);
 void GetADCgain(void);
 void GetADCoffset(void);
 void AdjADCgain(bool set = false);

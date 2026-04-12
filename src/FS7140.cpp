@@ -68,7 +68,6 @@ void FS7140setup(int addr, int Fout)
   float CP[4] = {0.000002, 0.0000045, 0.000011, 0.0000225};
   float LR[4] = {400000, 133000, 30000, 12000};
   float LC[2] = {0.000000000185, 0.0000000005};
-  float C2 = 0.0000000000295;
   // Now calculate the loop filter parameters and 3 dB Bandwidth
   float fPD = Fref / NR;
   int selLC = 0;
@@ -111,7 +110,7 @@ void FS7140setup(int addr, int Fout)
   Wire.beginTransmission(addr);
   byte *bvals = (byte *)&fs7140;
   Wire.write(0);
-  for (i = 0; i < sizeof(FS7140); i++)
+  for (i = 0; i < (int)sizeof(FS7140); i++)
   {
     Wire.write(bvals[i]);
   }

@@ -47,7 +47,7 @@ DIhandler::DIhandler(void)
 
 DIhandler::~DIhandler(void)
 {
-   int Index,i;
+   int i;
    
    detach();
    NumHandlers=0;
@@ -114,7 +114,7 @@ void DIhandler::detach(void)
    {
       if(handlers[i] != NULL) if(handlers[i]->di == ('Q'+Index)) return;
    }
-   if(DIpin[Index] != NULL) detachInterrupt(DIpin[Index]);
+   if(DIpin[Index] != 0) detachInterrupt(DIpin[Index]);
    DI_ISR[Index] = NULL;
 }
 

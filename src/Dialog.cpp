@@ -10,11 +10,11 @@
 #include "Menu.h"
 
 // Forward declarations for functions used before definition
-int    NumListEntries(char *list);
-char  *GetEntry(char *list, int num);
+int    NumListEntries(const char *list);
+char  *GetEntry(const char *list, int num);
 
-char *DIlist = "NA,Q,R,S,T,U,V,W,X";
-char *DILlist = "NA,LOW,HIGH,BOTH,NEG,POS";
+const char *DIlist = "NA,Q,R,S,T,U,V,W,X";
+const char *DILlist = "NA,LOW,HIGH,BOTH,NEG,POS";
 // Arduino system constants
 //  Low = 0
 //  High = 1
@@ -23,8 +23,8 @@ char *DILlist = "NA,LOW,HIGH,BOTH,NEG,POS";
 //  Rising = 4
 // The trigger/level list need to be in this order
 
-char *DOlist = "NA,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P";
-char *DOLlist = "NA,LOW,HIGH";
+const char *DOlist = "NA,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P";
+const char *DOLlist = "NA,LOW,HIGH";
 
 DialogBox *ActiveDialog = NULL;
 
@@ -46,7 +46,6 @@ void DialogBoxProcessChange(DialogBox *d, int8_t change)
 // The function will check the state and process the button press.
 void DialogButtonPress(DialogBox *d)
 {
-  void (*function)(void);
 
   // If state is scrolling then see if this is an entry that we can take action with, if so
   // do it, else ignore the button
@@ -129,7 +128,7 @@ void DialogValueAdjust(DialogBox *d, int8_t change)
 
   if (change == 0) return;
   if (lastTime == 0) lastTime = millis();
-  if ((millis() - lastTime) < 200 / multiplier) multiplier *= 10;
+  if ((millis() - lastTime) < (unsigned int)(200 / multiplier)) multiplier *= 10;
   else multiplier /= 10;
   if ((millis() - lastTime) > 500) multiplier = 1;
   if (d->Entry[d->Selected].Value == NULL) return;
@@ -416,7 +415,7 @@ void DisplayDialogEntryNames(Window *w, DialogBoxEntry *de, bool HighLight)
   p((char *)de->Name);
 }
 
-void PrintDialog(DialogBox *d, int X, int Y, char *text)
+void PrintDialog(DialogBox *d, int X, int Y, const char *text)
 {
   tft.setTextColor(d->w.Fcolor, d->w.Bcolor);
   SetWindowTextPos(&d->w, X, Y);
@@ -458,7 +457,7 @@ void DialogBoxDisplay(DialogBox *d)
 // This function returns a pointer to the requested dialog box entry.
 // The entry is specifided by name. The name search is case sensitive.
 // A pointer to the dialog box entry is retuned or NULL is not found.
-DialogBoxEntry *GetDialogEntries(DialogBoxEntry *de, char *rname)
+DialogBoxEntry *GetDialogEntries(DialogBoxEntry *de, const char *rname)
 {
   int   i = 0;
 
@@ -487,7 +486,7 @@ DialogBoxEntry *GetDialogEntries(DialogBoxEntry *de, char *rname)
 // are comma separated for this function just counts commas and returns the
 // count plus 1.
 // Zero is returned of the list is a null string or null pointer
-int NumListEntries(char *list)
+int NumListEntries(const char *list)
 {
   int i = 0, num = 1;
 
@@ -503,7 +502,7 @@ int NumListEntries(char *list)
 // do not assume it will persist, it will be overwritten on the next call
 // to this function. null is returned of the entry is not found.
 // Max list entry length (token) is 10, this is enforced.
-char *GetEntry(char *list, int num)
+char *GetEntry(const char *list, int num)
 {
   int i = 0, j = 1;
   static char token[11];
@@ -531,7 +530,7 @@ char *GetEntry(char *list, int num)
 // This function finds the entry (string) in the list and returns its
 // entry number, 1 through max entries. -1 is returned if not found
 // or any errors.
-int FindInList(char *list, char *entry)
+int FindInList(const char *list, char *entry)
 {
   int i, num;
   char *token;
@@ -548,7 +547,7 @@ int FindInList(char *list, char *entry)
 
 // This function is used by the serial IO command processor to test
 // of valid range of a parameter.
-bool RangeTest(DialogBoxEntry *des, char *EntryName, float fval)
+bool RangeTest(DialogBoxEntry *des, const char *EntryName, float fval)
 {
   DialogBoxEntry *de;
   

@@ -130,7 +130,8 @@ TBLSTRT
 #include "Variants.h"    // This brings in most of the application specific include files
 
 #if defined(__SAM3X8E__)
-    #undef __FlashStringHelper::F(string_literal)
+    //#undef __FlashStringHelper::F(string_literal)
+    #undef F
     #define F(string_literal) string_literal
 //#endif
 
@@ -179,7 +180,7 @@ volatile bool TableAdv = false;       // If this flag is true then the table num
 volatile bool SWtriggered = false;
 volatile int  TableN = 0;             // This variable will allow the table to run N times if greater then 0
 
-char *TableStatus = "IDLE";           // Table status
+const char *TableStatus = "IDLE";           // Table status
 
 volatile bool softLDAC = false;       // If true forces the use of software LDAC
 bool TableResponse = true;            // This flag is true to enable table status response
@@ -728,7 +729,6 @@ TableEntry *FindTableEntry(int Count,int Chan)
    TableHeader  *TH;
    TableEntryHeader *TEH;
    TableEntry *TE;
-   char LastChan;
     
    TH = (TableHeader *) &(VoltageTable[CT][i]); i += sizeof(TableHeader);
    while(1)
@@ -743,7 +743,6 @@ TableEntry *FindTableEntry(int Count,int Chan)
            TE = (TableEntry *) &(VoltageTable[CT][i]);
            for(j=0;j<TEH->NumChans;j++)
            {
-               LastChan = TE[j].Chan;
                if((TEH->Count == Count) && (TE[j].Chan == (Chan-1))) return(&TE[j]);
            }
            // Advance to next Table entry
@@ -765,7 +764,6 @@ TableEntryHeader *FindTableEntryHeader(int Count,int Chan)
    TableHeader  *TH;
    TableEntryHeader *TEH;
    TableEntry *TE;
-   char LastChan;
     
    TH = (TableHeader *) &(VoltageTable[CT][i]); i += sizeof(TableHeader);
    while(1)
@@ -780,7 +778,6 @@ TableEntryHeader *FindTableEntryHeader(int Count,int Chan)
            TE = (TableEntry *) &(VoltageTable[CT][i]);
            for(j=0;j<TEH->NumChans;j++)
            {
-               LastChan = TE[j].Chan;
                if((TEH->Count == Count) && (TE[j].Chan == (Chan-1))) return(TEH);
            }
            // Advance to next Table entry
@@ -1066,7 +1063,7 @@ void ParseTableCommand(void)
         TH->MaxCount = InitialOffset+i;
         while(1)
         {
-            if((MaxTable - ptr) < (sizeof(TableHeader) + sizeof(TableEntryHeader) + sizeof(TableEntry)))
+            if((unsigned int)(MaxTable - ptr) < (sizeof(TableHeader) + sizeof(TableEntryHeader) + sizeof(TableEntry)))
             {
                 VoltageTable[CT] = (unsigned char *)realloc((void *)VoltageTable[CT], MaxTable += 1000);
                 if(VoltageTable[CT] == NULL)
@@ -1229,7 +1226,7 @@ int ParseEntry(int Count, char *TK)
             TE->Chan = i;
             if(!ExpectColon()) break;
             if(!Token2float(&fval)) break;
-            *((float *)(&TE->Value)) = fval;  // Put the float value in the 32 bit int, for the ARB commands and RF channels
+            memcpy(&TE->Value, &fval, sizeof(float)); // Put the float value in the 32-bit int
             if((((i>=1)&&(i<=32)) || (((i&(RAMP | INITIAL))!=0))) && (((i-1) & 0x20) == 0)) // Added INITIAL 2/10/24 
                                                                                             // Added (((i-1) & 0x20) == 0) 2/17, 2026 to fix arb aux bug
             {
@@ -1330,7 +1327,7 @@ void AdvanceTableNumber(void)
 
 void ProcessTasks(void)
 {
-  uint32_t TCcount,RAcount,RCcount,AvalibleClocks;
+  uint32_t TCcount,RAcount,RCcount,AvalibleClocks=0;
 
   if(!TblTasks) return;   // Flag to enable this mode that will call tasks if there is time available to do so
   if(Ramping) return;
@@ -1786,12 +1783,12 @@ inline void SetupNextEntry(void)
   static uint32_t pinTrig =g_APinDescription[TRGOUT].ulPin;
   static int   i,k,maxc;
   static bool  DIOchange;
+  float  tempFloat;
 
     MPT.nostopOnRC();  // 01-21-22
 //  ValueChange = true;
     DIOchange=false;
     // Set the address
-SetupNextEntryAgain:
     // Set the next event counts. These are compare registers that will cause interrupts
     // and generate LDAC latch signal
     if(TEheader->Count >= 0) MPTtc.TC_RA = TEheader->Count;
@@ -1900,14 +1897,14 @@ SetupNextEntryAgain2:
             {
               AtomicBlock< Atomic_RestoreState > a_Block;
               // See if the SPI address is correct, if not update
-              if((pioA->PIO_PDSR & 7) != ((Chan2Brd[Tentry[i].Chan] >> 4) & 7))
+              if((pioA->PIO_PDSR & 7) != ((Chan2Brd[(uint8_t)Tentry[i].Chan] >> 4) & 7))
               {
                    pioA->PIO_CODR = 7;
-                   pioA->PIO_SODR = ((Chan2Brd[Tentry[i].Chan] >> 4) & 7);                
+                   pioA->PIO_SODR = ((Chan2Brd[(uint8_t)Tentry[i].Chan] >> 4) & 7);                
               }              
               DCbiasUpdaated = true;
               //int cb = SelectedBoard();                 // Added 9/3/17, takes 1uS, moved to top of loop, 3/4/21
-              SelectBoard(Chan2Brd[Tentry[i].Chan] & 1);  // Takes 1uS
+              SelectBoard(Chan2Brd[(uint8_t)Tentry[i].Chan] & 1);  // Takes 1uS
               k=Tentry[i].Value;
               SPI.transfer(SPI_CS, (uint8_t *)&k, 4);
               //SelectBoard(cb);                          // Added 9/3/17, takes 1uS, moved to end of loop, 3/4/21
@@ -1924,7 +1921,7 @@ SetupNextEntryAgain2:
               DCbiasUpdaated = true;
               SelectBoard(Chan2Brd[Tentry[i].Chan & 0x1F] & 1);
               k=TVramp(Tentry[i].Chan, Tentry[i].Value);
-              if(k != 0xFFFFFFFF) SPI.transfer(SPI_CS, (uint8_t *)&k, 4);
+              if((unsigned int)k != 0xFFFFFFFF) SPI.transfer(SPI_CS, (uint8_t *)&k, 4);
             }
             else if(tableBasedRamping)
             {
@@ -1935,21 +1932,23 @@ SetupNextEntryAgain2:
             else if((Tentry[i].Chan & RAMP)!=0) TABLEqueue(ProcessRamp,&Tentry[i]);
             else if((Tentry[i].Chan >= 101) && (Tentry[i].Chan <= 108))  // 65 hex to 6C hex
             {
+              memcpy(&tempFloat, (const void *)&Tentry[i].Value, sizeof(float));
               // Here if ARB commands
-              if(Tentry[i].Chan == 101)      UpdateAux(0, *(float *)&Tentry[i].Value, false);     // 101, e
-              else if(Tentry[i].Chan == 102) UpdateAux(1, *(float *)&Tentry[i].Value, false);     // 102, f
-              else if(Tentry[i].Chan == 103) UpdateAux(2, *(float *)&Tentry[i].Value, false);     // 103, g
-              else if(Tentry[i].Chan == 104) UpdateAux(3, *(float *)&Tentry[i].Value, false);     // 104, h
-              else if(Tentry[i].Chan == 105) UpdateOffsetA(0, *(float *)&Tentry[i].Value, false); // 105, i
-              else if(Tentry[i].Chan == 106) UpdateOffsetB(0, *(float *)&Tentry[i].Value, false); // 106, j
-              else if(Tentry[i].Chan == 107) UpdateOffsetA(1, *(float *)&Tentry[i].Value, false); // 107, k
-              else if(Tentry[i].Chan == 108) UpdateOffsetB(1, *(float *)&Tentry[i].Value, false); // 108, l
+              if(Tentry[i].Chan == 101)      UpdateAux(0, tempFloat, false);     // 101, e
+              else if(Tentry[i].Chan == 102) UpdateAux(1, tempFloat, false);     // 102, f
+              else if(Tentry[i].Chan == 103) UpdateAux(2, tempFloat, false);     // 103, g
+              else if(Tentry[i].Chan == 104) UpdateAux(3, tempFloat, false);     // 104, h
+              else if(Tentry[i].Chan == 105) UpdateOffsetA(0, tempFloat, false); // 105, i
+              else if(Tentry[i].Chan == 106) UpdateOffsetB(0, tempFloat, false); // 106, j
+              else if(Tentry[i].Chan == 107) UpdateOffsetA(1, tempFloat, false); // 107, k
+              else if(Tentry[i].Chan == 108) UpdateOffsetB(1, tempFloat, false); // 108, l
               TABLEqueue(ProcessARB,true);
             }
             // Process the RF channels
             else if((Tentry[i].Chan >= 33) && (Tentry[i].Chan <= 36))
             {
-              UpdateRFdrive(Tentry[i].Chan - 33, *(float *)&Tentry[i].Value);
+              memcpy(&tempFloat, (const void *)&Tentry[i].Value, sizeof(float));
+              UpdateRFdrive(Tentry[i].Chan - 33, tempFloat);
               TABLEqueue(ProcessRFdrive,true);
             }
             // if Chan is A through P its a DIO to process
@@ -2132,7 +2131,7 @@ inline void RCmatch_Handler(void)
 // This ISR needs to select the board and set the SPI address.
 void RampISR()
 {
-   volatile int i,sum=0,k;
+   volatile int sum=0,k;
    volatile uint8_t *s,*d;
 
    AtomicBlock< Atomic_RestoreState > a_Block;
@@ -2254,7 +2253,6 @@ uint32_t TVramp(int chan, uint32_t value)
    uint32_t retVal;
    uint8_t  *rb = (uint8_t *)&retVal;
    uint8_t  *vb;
-   int8_t   indx;
    
    if((chan & (INITIAL | RAMP)) == 0) return value;
    if(TVD == NULL)

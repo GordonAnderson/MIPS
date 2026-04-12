@@ -233,7 +233,7 @@ bool RestoreFPGAsettings(void)
     if (strcmp(fm.Name, fpgaM->Name) == 0)
     {
       // Here if the name matches so copy the data to the operating data structure
-      if (fm.Size > sizeof(FPGAmodule)) fm.Size = sizeof(FPGAmodule);
+      if (fm.Size > (int16_t)sizeof(FPGAmodule)) fm.Size = sizeof(FPGAmodule);
       fm.TWIadd = fpgaM->TWIadd;
       memcpy(fpgaM, &fm, fm.Size);
       return true;
@@ -299,7 +299,6 @@ bool setVariable(int *v,int value, int LL, int UL)
 
 bool setVariable(bool *v,char *value)
 {
-  float   d;
   String  T=value;
 
   if(T == "TRUE") *v = true;

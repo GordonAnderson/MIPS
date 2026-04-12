@@ -1,8 +1,9 @@
-#include "DMSDMSMB.h"
-#if DMSDMSMB
+#include "Variants.h"
 #include "DMSDMSMB.h"
 #include "Arduino.h"
 #include <Wire.h>
+
+#if DMSDMSMB
 
 MIPStimer *DMSDMSScanClock = NULL;
 
@@ -30,6 +31,87 @@ float        NegCurrent = 0;               // Negative electrometer channel
 
 float        power=0;
 
+// External symbols defined in other translation units
+extern Menu             MainMenu;
+extern ThreadController control;
+
+// Forward declarations for functions defined later in this file
+void setDMSDMSch(void);
+void SaveDMSDMSsettings(void);
+bool RestoreDMSDMSsettings(int brd, CVBIASdata *cvd, bool NoDisplay);
+bool RestoreDMSDMSsettings(int brd, WAVEFORMSdata *wfd, bool NoDisplay);
+void RestoreDMSDMSsettings(void);
+void DMSDMSstartScan(void);
+void DMSDMSscanAbort(void);
+void ZeroElectrometer(void);
+void SetDMSDMSEnable(char *chan, char *value);
+void ReturnDMSDMSEnable(int chan);
+void SetDMSDMSMode(char *chan, char *value);
+void ReturnDMSDMSMode(int chan);
+void SetDMSDMSFreq(int chan, int value);
+void ReturnDMSDMSFreq(int chan);
+void SetDMSDMSDuty(int chan, int value);
+void ReturnDMSDMSDuty(int chan);
+void SetDMSDMSDrive(char *chan, char *value);
+void ReturnDMSDMSDrive(int chan);
+void ReturnDMSDMSDriveV(int chan);
+void ReturnDMSDMSDriveI(int chan);
+void SetDMSDMSVrf(char *chan, char *value);
+void ReturnDMSDMSVrf(int chan);
+void ReturnDMSDMSVrfV(int chan);
+void ReturnDMSDMSPWR(int chan);
+void SetDMSDMSVrfNow(char *chan, char *value);
+void SetDMSDMSVrfTable(char *chan, char *value);
+void GenerateVrfTable(int chan);
+void SetDMSDMSMaxDrive(char *chan, char *value);
+void ReturnDMSDMSMaxDrive(int chan);
+void SetDMSDMSMaxPower(char *chan, char *value);
+void ReturnDMSDMSMaxPower(int chan);
+void SetDMSDMSCV(char *chan, char *value);
+void ReturnDMSDMSCV(int chan);
+void ReturnDMSDMSCVrb(int chan);
+void SetDMSDMSBIAS(char *chan, char *value);
+void ReturnDMSDMSBIAS(int chan);
+void ReturnDMSDMSBIASrb(int chan);
+void SetDMSDMSCVstart(char *chan, char *value);
+void ReturnDMSDMSCVstart(int chan);
+void SetDMSDMSCVend(char *chan, char *value);
+void ReturnDMSDMSCVend(int chan);
+void SetDMSDMSVRFstart(char *chan, char *value);
+void ReturnDMSDMSVRFstart(int chan);
+void SetDMSDMSVRFend(char *chan, char *value);
+void ReturnDMSDMSVRFend(int chan);
+void SetDMSDMSStepDuration(int value);
+void SetDMSDMSSteps(int value);
+void InitDMSDMSScan(void);
+void StopDMSDMSScan(void);
+void SetEMRTM4enable(char *value);
+void SetEMRTposOff(char *value);
+void SetEMRTnegOff(char *value);
+void SetEMRTposZero(char *value);
+void SetEMRTnegZero(char *value);
+void SetEMRTzero(void);
+void PollFrag(void);
+void SendFrag(void);
+void hvmInit(void);
+void hvmSetEnable(char *val);
+void hvmGetEnable(void);
+void hvmSetVoltage(char *val);
+void hvmGetVoltage(void);
+void hvmGetReadback(void);
+void StartDMSDMSScan(void);
+void AbortDMSDMSScan(void);
+void DMSDMS_loop(void);
+
+// Forward declarations for cross-TU functions
+void AddMainMenuEntry(MenuEntry *me);
+void attachProcessSerial(void (*func)(void));
+int  AD5593writeWire1(uint8_t addr, uint8_t pb, uint16_t val);
+int  AD5593readADCWire1(int8_t addr, int8_t chan);
+int  AD5593readADCWire1(int8_t addr, int8_t chan, int8_t num);
+int  AD5593writeDACWire1(int8_t addr, int8_t chan, int val);
+bool setVariable(int *v, int value, int LL, int UL);
+bool setVariable(bool *v, char *value);
 
 extern DialogBoxEntry DMSDMSsettings[];
 extern DialogBoxEntry DMSDMSscan[];
@@ -241,7 +323,7 @@ bool RestoreDMSDMSsettings(int brd, CVBIASdata  *cvd,bool NoDisplay)
     if ((strcmp(d.Name, "CVBIAS") == 0) && (d.Signature == SIGNATURE))
     {
       // Here if the name matches so copy the data to the operating data structure
-      if (d.Size > sizeof(CVBIASdata)) d.Size = sizeof(CVBIASdata);
+      if (d.Size > (int16_t)sizeof(CVBIASdata)) d.Size = sizeof(CVBIASdata);
       d.TWIadd = cvd->TWIadd;
       memcpy(cvd, &d, d.Size);
       if (!NoDisplay) DisplayMessage("Parameters Restored!", 2000);
@@ -262,7 +344,7 @@ bool RestoreDMSDMSsettings(int brd, WAVEFORMSdata  *wfd,bool NoDisplay)
     if ((strcmp(d.Name, "WAVEFORMS") == 0) && (d.Signature == SIGNATURE))
     {
       // Here if the name matches so copy the data to the operating data structure
-      if (d.Size > sizeof(WAVEFORMSdata)) d.Size = sizeof(WAVEFORMSdata);
+      if (d.Size > (uint16_t)sizeof(WAVEFORMSdata)) d.Size = sizeof(WAVEFORMSdata);
       d.TWIadd = wfd->TWIadd;
       memcpy(wfd, &d, d.Size);
       if (!NoDisplay) DisplayMessage("Parameters Restored!", 2000);
@@ -537,8 +619,6 @@ void DMSDMSscanISR(void)
 // system is also configured to return no report.
 void StartDMSDMSScan(void)
 {
-  int num;
-
   DMSDMSScanClock->stop();
   if(msd == NULL) msd = new MIPSscanData;
   msd->Updated = false;
@@ -593,8 +673,6 @@ void ReportDMSDMSScan(void)
 // Stops a scan in progress
 void AbortDMSDMSScan(void)
 {
-  int brd;
-    
   DMSDMSScanClock->stop();
   TWIcmd(cvbiasdata.TWIadd | 0x20, CVBIASbrd, TWI_SET_STEPSTP);
   TWIcmd(waveformsdata.TWIadd | 0x20, WAVEFORMSbrd, TWI_SET_STEPSTP);

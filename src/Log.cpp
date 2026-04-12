@@ -26,7 +26,7 @@ void DisplayLog(void)
   {
     if(!LogGetMessage(&logTime, &mess)) return;
     PrintDialog(&MIPSlog, 1, i*2, "Time :");
-    sprintf(str,"%u",logTime);
+    sprintf(str,"%lu",(unsigned long)logTime);
     PrintDialog(&MIPSlog, 8, i*2, str);
     PrintDialog(&MIPSlog, 1, i*2 + 1, mess);
   }

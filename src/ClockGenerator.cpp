@@ -127,7 +127,7 @@ int CY_Init(int8_t adr, int8_t brd)
   //
   Wire.beginTransmission(adr);
   byte *bvals = (byte *)&CYregs[brd];
-  for (int i = 0; i < sizeof(CY22393_regs); i++)
+  for (int i = 0; i < (int)sizeof(CY22393_regs); i++)
   {
     Wire.write(bvals[i]);
   }
@@ -182,7 +182,7 @@ int SetPLL2freq(int8_t adr, int Freq, int8_t brd)
   Wire.beginTransmission(adr);
   byte *bvals = (byte *)&CYregs[brd];
 
-  for (int i = 0; i < sizeof(CY22393_regs); i++)
+  for (int i = 0; i < (int)sizeof(CY22393_regs); i++)
   {
     Wire.write(bvals[i]);
   }
@@ -242,7 +242,7 @@ int SetPLL3freq(int8_t adr, int Freq, int8_t brd)
   //
   Wire.beginTransmission(adr);
   byte *bvals = (byte *)&CYregs[brd];
-  for (int i = 0; i < sizeof(CY22393_regs); i++)
+  for (int i = 0; i < (int)sizeof(CY22393_regs); i++)
   {
     Wire.write(bvals[i]);
   }
@@ -266,7 +266,7 @@ int SetPLL3freq(int8_t adr, int Freq, int8_t brd)
 int FAIMSclockSet(int8_t adr, int Freq)
 {
   float PTdivQT,error;
-  int   PT,QT,Q,P,PO,BestPT,BestQT;
+  int   PT,QT,Q,P,PO,BestPT=0,BestQT=0;
   int iStat;
 
   CYregs[0].PLL2_Misc &= ~0x40;
@@ -301,7 +301,6 @@ int FAIMSclockSet(int8_t adr, int Freq)
     {
       if(error > abs(PTdivQT - (float)PT/(float)QT))
       {
-        error > abs(PTdivQT - (float)PT/(float)QT);
         BestPT = PT;
         BestQT = QT;
       }
@@ -337,7 +336,7 @@ int FAIMSclockSet(int8_t adr, int Freq)
   // Send the data to the chip
   Wire.beginTransmission(adr);
   byte *bvals = (byte *)&CYregs[0];
-  for (int i = 0; i < sizeof(CY22393_regs); i++) Wire.write(bvals[i]);
+  for (int i = 0; i < (int)sizeof(CY22393_regs); i++) Wire.write(bvals[i]);
   if ((iStat = Wire.endTransmission(true)) != 0) return (iStat);  
   // Set the PLL1 regs, use PLL2 in struct
   CYregs[0].PLL2_Misc |= 0x40;

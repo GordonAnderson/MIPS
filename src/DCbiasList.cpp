@@ -250,9 +250,7 @@ void DACsetup(void)
 void DIOsetup(void)
 {
   static Pio *pio = g_APinDescription[ADDR0].pPort;
-  int  i,j;
   Spi* pSpi = SPI0;
-  uint32_t   d;
 
     pio->PIO_CODR = 7;    // Set all bits low
     pio->PIO_SODR = 6;    // Set bit high
@@ -262,7 +260,7 @@ void DIOsetup(void)
 
     // return SPI_Read(spi);
     while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
-    d = pSpi->SPI_RDR;
+    pSpi->SPI_RDR;
 }
 
 // This function uses the CurrentSegment pointer and the CurrentTimePoint to setup the system to
@@ -295,7 +293,7 @@ void DeleteEntry(DCstate *dcs)
 // Delete a segment entry
 void DeleteEntry(DCsegment *dcs)
 {
-   int i,j;
+   int i;
 
    // Delete all of the state pointers in each time point
    for(i=0;i<dcs->NumTimePoints;i++)
@@ -460,13 +458,8 @@ void SetDBbiasState(DCstate *dcs)
 {
     int i;
     Spi* pSpi = SPI0;
-    static bool inited = false;
 
-    //if(!inited)
-    {
-      spiDMAinit();
-      inited = true;
-    }
+    spiDMAinit();
     // Find the first module and setup 
     for(i=0;i<4;i++) if(dcs->md[i].Count > 0) break;
     if(i==4) return; // Nothing to do

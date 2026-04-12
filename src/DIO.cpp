@@ -300,7 +300,7 @@ void SDIO_Serial(char *CH, char *State)
 //  LOW, sets the output low
 //  PULSE, pulses the output from its current state for 1 milli sec
 //  If an integer value is passed then we pulse in micro seconds
-void TriggerOut(char *cmd)
+void TriggerOut(const char *cmd)
 {
   String Cmd;
   int uS;
@@ -541,9 +541,9 @@ void DIOopsReport(void)
     {
       uint32_t t = millis();
       if(t < DIOreportAfter) return;
-      if(dioops[i].ReportState == CHANGE) sprintf(sbuf,"DIC,%c,CHANGED,%u\n",chan,t);
-      if(dioops[i].ReportState == RISING) sprintf(sbuf,"DIC,%c,RISING,%u\n",chan,t);
-      if(dioops[i].ReportState == FALLING) sprintf(sbuf,"DIC,%c,FALLING,%u\n",chan,t);
+      if(dioops[i].ReportState == CHANGE) sprintf(sbuf,"DIC,%c,CHANGED,%lu\n",chan,(unsigned long)t);
+      if(dioops[i].ReportState == RISING) sprintf(sbuf,"DIC,%c,RISING,%lu\n",chan,(unsigned long)t);
+      if(dioops[i].ReportState == FALLING) sprintf(sbuf,"DIC,%c,FALLING,%lu\n",chan,(unsigned long)t);
       serial->print(sbuf);
       dioops[i].Changed = false;
     }

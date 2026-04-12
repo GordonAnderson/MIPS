@@ -250,6 +250,7 @@ void ReturnEMRTposZero(void);
 void SetEMRTnegZero(char *val);
 void ReturnEMRTnegZero(void);
 void SetEMRTzero(void);
+void FAIMSfb_init(int8_t Board, int8_t addr);
 
 #endif
 #endif

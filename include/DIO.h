@@ -5,8 +5,10 @@
 #include "DIhandler.h"
 
 #if defined(__SAM3X8E__)
-#undef __FlashStringHelper::F(string_literal)
+#undef F
+#ifndef F
 #define F(string_literal) string_literal
+#endif
 #endif
 
 extern int mapDItoPIN[8];
@@ -26,10 +28,10 @@ typedef struct
 
 extern PulseCounter *pulseCounter;
 extern uint32_t  DIOholdOff;
-int FindInList(char *list, char *entry);
+int FindInList(const char *list, char *entry);
 
 // Macros
-#define ReadDIO(a) (digitalRead(mapDItoPIN[a-'Q']) ^ ((MIPSconfigData.DIinvert >> a-'Q') & 1))
+#define ReadDIO(a) (digitalRead(mapDItoPIN[(a)-'Q']) ^ ((MIPSconfigData.DIinvert >> ((a)-'Q')) & 1))
 #define DOrefresh  DigitalOut(MIPSconfigData.DOmsb, MIPSconfigData.DOlsb)
 
 // Prototypes
@@ -42,7 +44,7 @@ void UpdateDigitialOutputArray(void);
 void SetImageRegs(void);
 
 // General purpose DIO functions
-void TriggerOut(char *cmd);
+void TriggerOut(const char *cmd);
 void AuxOut(char *cmd);
 void FollowSisr(void);
 void TriggerFollowS(void);

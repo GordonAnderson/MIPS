@@ -180,7 +180,7 @@ DialogBoxEntry FilamentEntriesPage1[] = {
   {NULL},
 };
 
-char *FmodeList = "Ictrl,IVctrl";
+const char *FmodeList = "Ictrl,IVctrl";
 char Fmode[8]   = "Ictrl";
 
 DialogBoxEntry FilamentEntriesPage2[] = {
@@ -235,7 +235,7 @@ MenuEntry MEFilamentModule = {" Filament module", M_DIALOG, 0, 0, 0, NULL, &Fila
 void CalFilamentSupplyV(void)
 {
   ChannelCal CC;
-  char *Name = " Filament Supply Voltage";
+  const char *Name = " Filament Supply Voltage";
 
   SelectBoard(SelectedFilamentBoard);
   // Set up the calibration data structure
@@ -255,7 +255,7 @@ void CalFilamentSupplyV(void)
 void CalFilamentV(void)
 {
   ChannelCal CC;
-  char *Name = "    Filament Voltage";
+  const char *Name = "    Filament Voltage";
 
   SelectBoard(SelectedFilamentBoard);
   // Set up the calibration data structure
@@ -275,7 +275,7 @@ void CalFilamentV(void)
 void CalFilamentI(void)
 {
   ChannelCal CC;
-  char *Name = "    Filament Current";
+  const char *Name = "    Filament Current";
 
   SelectBoard(SelectedFilamentBoard);
   // Set up the calibration data structure
@@ -295,7 +295,7 @@ void CalFilamentI(void)
 void CalEmissionI(void)
 {
   ChannelCal CC;
-  char *Name = "    Emission Current";
+  const char *Name = "    Emission Current";
 
   SelectBoard(SelectedFilamentBoard);
   // Set up the calibration data structure
@@ -791,10 +791,10 @@ void Filament_loop(void)
       {
         int i;
         adcStatus = 0;
-        if((i=AD5593readADC(FDarray[b].ADCadr, 2)) == -1) adcStatus=-1; ADCvals[2] = i;
-        if((i=AD5593readADC(FDarray[b].ADCadr, 3)) == -1) adcStatus=-1; ADCvals[3] = i;
-        if((i=AD5593readADC(FDarray[b].ADCadr, 5)) == -1) adcStatus=-1; ADCvals[5] = i;
-        if((i=AD5593readADC(FDarray[b].ADCadr, 6)) == -1) adcStatus=-1; ADCvals[6] = i;
+        if((i=AD5593readADC(FDarray[b].ADCadr, 2)) == -1) { adcStatus=-1; } ADCvals[2] = i;
+        if((i=AD5593readADC(FDarray[b].ADCadr, 3)) == -1) { adcStatus=-1; } ADCvals[3] = i;
+        if((i=AD5593readADC(FDarray[b].ADCadr, 5)) == -1) { adcStatus=-1; } ADCvals[5] = i;
+        if((i=AD5593readADC(FDarray[b].ADCadr, 6)) == -1) { adcStatus=-1; } ADCvals[6] = i;
       }
       else adcStatus = AD7998(FDarray[b].ADCadr, ADCvals);  // adcStatus is zero if no errors
       for (c = 0; c < FDarray[b].NumChannels; c++)
@@ -991,7 +991,7 @@ void SetFilamentCurrent(char *Chan, char *Current)
     return;
   }
   FDarray[b].FCD[Channel2Index(c - 1)].CurrentSetpoint = I;
-  if(FDarray[b].Rev >= 2) FDarray[b].FCD[0].CurrentSetpoint = FDarray[b].FCD[0].CurrentSetpoint = I;
+  if(FDarray[b].Rev >= 2) FDarray[b].FCD[0].CurrentSetpoint = I;
   if ((c - 1) == SelectedFilamentChan) FCD.CurrentSetpoint = I;
   SendACK;
 }
@@ -1027,7 +1027,7 @@ void SetFilamentSupplyVoltage(char *Chan, char *Voltage)
   }
   FDarray[b].FCD[Channel2Index(c - 1)].FilamentVoltage = V;
   if ((c - 1) == SelectedFilamentChan) FCD.FilamentVoltage = FDarray[b].FCD[Channel2Index(c - 1)].FilamentVoltage;
-  if(FDarray[b].Rev >= 2) FDarray[b].FCD[0].FilamentVoltage = FDarray[b].FCD[0].FilamentVoltage = V;  
+  if(FDarray[b].Rev >= 2) FDarray[b].FCD[0].FilamentVoltage = V;  
   SendACK;
 }
 
@@ -1127,7 +1127,6 @@ void SetCurrentDirection(char *chan, char *dir)
 {
   int b, channel;
   String res;
-  float fval;
 
   res = chan;
   channel = res.toInt();
@@ -1277,7 +1276,6 @@ void SetFilamentStatus(char *chan, char *Status)
 {
   String res;
   int b, c;
-  int cnt;
 
   res = chan;
   c = res.toInt();
@@ -1349,10 +1347,9 @@ void Filament_4_Report(void)
 
 void SetFilamentReporting(int channel, int period)
 {
-  int b,c;
+  int c;
 
   if (!IsFilamentChannelValid(channel)) return;
-  b = BoardFromSelectedFilamentChannel(channel-1);
   c = channel - 1;
   if ((period < 0) || (period > 10000))
   {
@@ -1437,7 +1434,7 @@ void SaveFIL2EEPROM(void)
 void CalFilSupplyV(void)
 {
   ChannelCal CC;
-  char *Name = "Filament Supply Voltage";
+  const char *Name = "Filament Supply Voltage";
 
   SelectBoard(0);
   // Set up the calibration data structure
@@ -1457,7 +1454,7 @@ void CalFilSupplyV(void)
 void CalFilV(void)
 {
   ChannelCal CC;
-  char *Name = "Filament Voltage";
+  const char *Name = "Filament Voltage";
 
   SelectBoard(0);
   // Set up the calibration data structure
@@ -1477,7 +1474,7 @@ void CalFilV(void)
 void CalFilI(float p1, float p2)
 {
   ChannelCal CC;
-  char *Name = "Filament Current";
+  const char *Name = "Filament Current";
 
   SelectBoard(0);
   // Set up the calibration data structure

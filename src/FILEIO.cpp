@@ -46,7 +46,7 @@ bool bmpDraw(char *filename, uint8_t x, uint8_t y)
   if((x >= tft.width()) || (y >= tft.height())) return(false);
 
   // Open requested file on SD card
-  if ((bmpFile = SD.open(filename)) == NULL)
+  if (!(bmpFile = SD.open(filename)))
   {
     return(false);
   }
@@ -140,7 +140,6 @@ void bmpReport(char *filename)
   int      bmpWidth, bmpHeight;   // W+H in pixels
   uint8_t  bmpDepth;              // Bit depth (currently must be 24)
   uint32_t bmpImageoffset;        // Start of image data in file
-  uint32_t rowSize;               // Not always = bmpWidth; may have padding
   boolean  goodBmp = false;       // Set to true on valid header parse
 
 
@@ -158,7 +157,7 @@ void bmpReport(char *filename)
   serial->println('\'');
 
   // Open requested file on SD card
-  if ((bmpFile = SD.open(filename)) == NULL)
+  if (!(bmpFile = SD.open(filename)))
   {
     serial->print("File not found");
     return;
@@ -922,7 +921,7 @@ void EEPROMtoSerial(char *brd, char *add)
 
   sscanf(add,"%x",&addr);
   // Check the inputs and exit if error
-  if(((toupper(brd[0]) != 'A') && (toupper(brd[0] != 'B')) || (addr < 0x50) || (addr > 0x56) || ((addr & 1) !=0)))
+  if((((toupper(brd[0]) != 'A') && (toupper(brd[0] != 'B'))) || (addr < 0x50) || (addr > 0x56) || ((addr & 1) !=0)))
   {
       SetErrorCode(ERR_BADARG);
       SendNAK;
@@ -966,7 +965,7 @@ void SerialtoEEPROM(char *brd, char *add)
 
   sscanf(add,"%x",&addr);
   // Check the inputs and exit if error
-  if(((toupper(brd[0]) != 'A') && (toupper(brd[0] != 'B')) || (addr < 0x50) || (addr > 0x56) || ((addr & 1) !=0)))
+  if((((toupper(brd[0]) != 'A') && (toupper(brd[0] != 'B'))) || (addr < 0x50) || (addr > 0x56) || ((addr & 1) !=0)))
   {
       SetErrorCode(ERR_BADARG);
       SendNAK;

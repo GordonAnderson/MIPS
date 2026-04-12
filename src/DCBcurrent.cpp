@@ -1,3 +1,4 @@
+#include "Variants.h"
 #include "DCBcurrent.h"
 #include "Arduino.h"
 #include <Wire.h>
@@ -29,6 +30,23 @@ DCBcurData dcbcurTemplate
   }
 };
 
+// Forward declarations
+extern ThreadController control;
+extern bool SDcardPresent;
+bool IsPowerON(void);
+void SetPowerSource(void);
+int DCBadd2chan(int brd, int ch);
+void DCbiasCur_loop(void);
+bool dccurLoad(int brd);
+void dccurRestore(int ch);
+void dccurSave(int ch);
+void dccurSetTest(char *chan, char *state);
+void dccurGetTest(int ch);
+void dccurSetLim(char *chan, char *value);
+void dccurGetLim(int ch);
+void dccurGetCur(int ch);
+void dccurCalCH(int ch);
+
 const Commands DCBiasCurCmdArray[] = {
 // Start of command block
 // 
@@ -59,7 +77,6 @@ int ADS7828(TwoWire *wire, int8_t adr, int8_t chan, int num)
 void DCbiasCur_loop(void)
 {
   float maxI   = 0;
-  int   maxIch = 0;
 
   for(int brd=0;brd<4;brd++)
   {
@@ -80,7 +97,6 @@ void DCbiasCur_loop(void)
           if(abs(currents[brd]->ch[i]) > maxI)
           {
             maxI   = abs(currents[brd]->ch[i]);
-            maxIch = DCBadd2chan(brd, i);
           }
         }
       }

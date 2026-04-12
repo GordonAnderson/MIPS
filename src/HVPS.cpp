@@ -1,12 +1,37 @@
 // HVPS module driver
 //
-#if HVPScode
-
+#include "Variants.h"
 #include "HVPS.h"
 #include "Arduino.h"
 
+#if HVPScode
+
 //MIPS Threads
 Thread HVPSthread  = Thread();
+
+#define Filter 0.05
+
+// Forward declarations
+extern Menu MainMenu;
+extern ThreadController control;
+extern bool NormalStartup;
+void AddMainMenuEntry(MenuEntry *me);
+void initHVPSui(void);
+void HVPSChanCalPos(void);
+void HVPSChanCalNeg(void);
+void SaveHVPSSettings(void);
+void RestoreHVPSSettings(void);
+void RestoreHVPSSettings(bool NoDisplay);
+void HVPS_loop(void);
+void SetHVPSvoltage(int chan, int value);
+void GetHVPSvoltage(int chan);
+void GetHVPSvoltageRB(int chan);
+void SetHVPSenable(char *chan, char *value);
+void GetHVPSenable(int chan);
+void DAC7678write(uint8_t addr, int data);
+void DAC7678(uint8_t addr, uint8_t chan, uint16_t counts);
+int  HVPSgetBoard(int chan);
+int  HVPSgetCh(int chan);
 
 #define HVPS HVPSarray[SelectedHVPSboard]
 

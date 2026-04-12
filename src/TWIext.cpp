@@ -121,7 +121,7 @@ bool TWI_WRITE(int8_t val)
 // if reply is false the NAK is sent.
 int8_t TWI_READ(bool Reply)
 {
-  int8_t val, r;
+  int8_t val;
 
 //  AtomicBlock< Atomic_RestoreState > a_Block;
   val = 0;
@@ -740,7 +740,6 @@ int8_t hexCharToInt(char c) {
  */
 int hexStringToBytes(const char* hexStr, uint8_t* output) {
     size_t len = strlen(hexStr);
-    int byteCount = (len + 1) / 2;
     int strIdx = 0;
     int outIdx = 0;
 
@@ -816,7 +815,7 @@ void stwi(char *cmdString, char *value)
   }
   else if((buffer[byteCount-1] & 0x0F) == 6)  // float
   {
-    sscanf(value,"%f",(int *)bptr);
+    sscanf(value,"%f",(float *)bptr);
     for(int i=0;i<4;i++) wire->write(bptr[i]);
   } 
   wire->endTransmission();

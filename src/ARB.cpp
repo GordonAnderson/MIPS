@@ -134,10 +134,10 @@ float ChanLevelAll = 0;
 int   startI       = 1;
 int   stopI        = 10;
 
-char *ARBwfrmList = "SIN,RAMP,TRI,PULSE,ARB";
+const char *ARBwfrmList = "SIN,RAMP,TRI,PULSE,ARB";
 char WFT[8] = "SIN";
 
-char *ARBmodeList = "TWAVE,ARB";
+const char *ARBmodeList = "TWAVE,ARB";
 
 extern DialogBoxEntry ARBentriesPage2[];
 extern DialogBoxEntry ARBwaveformEdit[];
@@ -521,7 +521,13 @@ void EditBuffer2Waveform(void)
 {
   int i;
 
-  for (i = 0; i < ppp; i++) ARBarray[SelectedARBboard]->WaveForm[i] = arb.WaveForm[i] = ARBwaveform[i];
+  for (i = 0; i < ppp; i++) 
+  {
+    if(i < 32)
+    {
+      ARBarray[SelectedARBboard]->WaveForm[i] = arb.WaveForm[i] = ARBwaveform[i];
+    }
+  }
   // Set flag to cause ARB waveform update in the processing loop.
   ARBstates[SelectedARBboard]->ARBwaveformUpdate = true;
 }
@@ -530,7 +536,13 @@ void Waveform2EditBuffer(void)
 {
   int i;
 
-  for (i = 0; i < ppp; i++) ARBwaveform[i] = arb.WaveForm[i];
+  for (i = 0; i < ppp; i++) 
+  {
+    if(i < 32)
+    {
+      ARBwaveform[i] = arb.WaveForm[i];
+    }
+  }
   SetupNumWaveformPoints();
 }
 
@@ -811,9 +823,7 @@ void SetFrequency(int board, int freq)
 
 void SetAmplitude(int board, float Voltage)
 {
-  uint8_t *b;
-  
-  SelectBoard(board);
+    SelectBoard(board);
   // Amplitude is 0 to 100Vp-p for 0 to 4095 ref level on the ARB
   int i = Voltage * 32.8;
   if (i > 4095) i = 4095;
@@ -941,7 +951,7 @@ void RestorARBsettings(bool NoDisplay)
     if (strcmp(ad.Name, ARB->Name) == 0)
     {
       // Here if the name matches so copy the data to the operating data structure
-      if (ad.Size > sizeof(ARBdata)) ad.Size = sizeof(ARBdata);
+      if (ad.Size > (int16_t)sizeof(ARBdata)) ad.Size = sizeof(ARBdata);
       ad.EEPROMadr = ARB->EEPROMadr;
       memcpy(ARB, &ad, ad.Size);
       arb = *ARB;
@@ -1063,7 +1073,7 @@ void ARB_init(int8_t Board, int8_t addr)
     if(NumberOfARBchannels == 8) ARBcompressor_init();
     SetModeMenus(false);
   }
-  // Set the frequency
+  // Set the frequency 
   //SetFrequency(Board,ARBarray[Board]->Frequency);
   // If we are using a common clock then signal the ARB module to use external clock
   if(ARBarray[Board]->UseCommonClock) SetBool(Board, TWI_ARB_SET_EXT_CLOCK, true);
@@ -1105,7 +1115,7 @@ void UpdateALTparms(int b)
   {
     int cb = TWIstart(ARBarray[b]->ARBadr, b, TWI_SET_FIXED);
     TWIBYTE(i);
-    TWIFLOAT(*(int *)&(ARBarray[b]->Fixed[i]));
+    int fint; memcpy(&fint, &(ARBarray[b]->Fixed[i]), sizeof(fint)); TWIFLOAT(fint);
     TWIend(ARBarray[b]->ARBadr,cb);
   }
   TWIsetByte(ARBarray[b]->ARBadr, b, TWI_SET_AWFRM, ARBarray[b]->AltWaveform);
@@ -2641,7 +2651,7 @@ void SetFixedValue(int module, int index, char *ival)
    ARBarray[b]->Fixed[index] = f;
    int cb = TWIstart(ARBarray[b]->ARBadr, b, TWI_SET_FIXED);
    TWIBYTE(index);
-   TWIFLOAT(*(int *)&(f));
+   int fint; memcpy(&fint, &f, sizeof(fint)); TWIFLOAT(fint);
    TWIend(ARBarray[b]->ARBadr,cb);
    SendACK;
 }
@@ -2933,7 +2943,7 @@ void ARBsendDelayTime(void)
 {
   for(int i=0;i<6;i++)
   {
-    if(((ARBdelayMask & (1<<i) != 0)) && (ARBarray[i] != NULL))
+    if(((ARBdelayMask & (1<<i)) != 0) && (ARBarray[i] != NULL))
     {
       ARBarray[i]->TriggerDly = ARBdelayAdjust;
       TWIsetFloat(ARBarray[i]->ARBadr, i, TWI_SET_TRGDELAY, ARBarray[i]->TriggerDly);
@@ -2945,7 +2955,7 @@ void ARBsendDurationTime(void)
 {
   for(int i=0;i<6;i++)
   {
-    if(((ARBdelayMask & (1<<i) != 0)) && (ARBarray[i] != NULL))
+    if(((ARBdelayMask & (1<<i)) != 0) && (ARBarray[i] != NULL))
     {
       ARBarray[i]->TriggerDly = ARBdurationAdjust;
       TWIsetFloat(ARBarray[i]->ARBadr, i, TWI_SET_PLYTIME, ARBarray[i]->TriggerDly);

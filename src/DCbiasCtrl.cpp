@@ -1,9 +1,28 @@
+#include "Variants.h"
 #include "DCbiasCtrl.h"
 #include "Arduino.h"
 #include <Wire.h>
 #include "Hardware.h"
 
 #if DCBanalog
+
+#include "AtomicBlock.h"
+
+// External symbols defined in other translation units
+extern ThreadController control;
+
+// Forward declarations for functions defined later in this file
+void dcbcRestore(int CH);
+void dcbcSave(int CH);
+void dcbcFormat(int CH);
+void dcbcSetCHmode(char *chan, char *mode);
+void dcbcGetCHmode(int ch);
+void dcbcSetCHoff(int ch, int offset);
+void dcbcGetCHoff(int ch);
+void dcbcGetADC(int ch);
+void dcbcCalibratetADC(int ch);
+bool dcbcLoad(int brd);
+int  TLC3578IDW(uint8_t spiADD, int cmd);
 
 //
 // This file adds support for the DCbias analog control and DCbias amplifier modules.
@@ -145,19 +164,19 @@ void TLC3578IDWscan(int brd)
 {
   TLC3578IDW(DCbDarray[brd]->DACspi, 0x0AA00);
   // Initial read and setup for first channel
-  TLC3578IDW(DCbDarray[brd]->DACspi, 0x00A00 | (dcbiasctrl[brd]->adcCH[0].Chan << 12) & 0x7000);
+  TLC3578IDW(DCbDarray[brd]->DACspi, (0x00A00 | (dcbiasctrl[brd]->adcCH[0].Chan << 12)) & 0x7000);
   for(int i=0;i<8;i++)
   {
-    float fval = Counts2Value(TLC3578IDW(DCbDarray[brd]->DACspi, 0x00A00 | (dcbiasctrl[brd]->adcCH[(i+1)&7].Chan << 12) & 0x7000), &dcbiasctrl[brd]->adcCH[i]);
+    float fval = Counts2Value(TLC3578IDW(DCbDarray[brd]->DACspi, (0x00A00 | (dcbiasctrl[brd]->adcCH[(i+1)&7].Chan << 12)) & 0x7000), &dcbiasctrl[brd]->adcCH[i]);
     adcctrlvs[brd]->ch[i] = fval * FILTER + (1-FILTER) *  adcctrlvs[brd]->ch[i];
   }
 }
 
 int TLC3578IDW(int brd, int ch, int num)
 {
-  TLC3578IDW(DCbDarray[brd]->DACspi, 0x00A00 | (dcbiasctrl[brd]->adcCH[ch].Chan << 12) & 0x7000);
+  TLC3578IDW(DCbDarray[brd]->DACspi, (0x00A00 | (dcbiasctrl[brd]->adcCH[ch].Chan << 12)) & 0x7000);
   int sum=0;
-  for(int i=0;i<num;i++) sum += TLC3578IDW(DCbDarray[brd]->DACspi, 0x00A00 | (dcbiasctrl[brd]->adcCH[ch].Chan << 12) & 0x7000);
+  for(int i=0;i<num;i++) sum += TLC3578IDW(DCbDarray[brd]->DACspi, (0x00A00 | (dcbiasctrl[brd]->adcCH[ch].Chan << 12)) & 0x7000);
   return sum/num;
 }
 
@@ -324,7 +343,6 @@ bool dcbcLoad(int brd)
 
 void dcbcRestore(int CH)
 {
-  DCBiasCtrlData dcb;
   int brd;
 
   if((brd=checkBoard(CH)) == -1) return;

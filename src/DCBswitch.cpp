@@ -1,3 +1,4 @@
+#include "Variants.h"
 #include "DCBswitch.h"
 #include "Arduino.h"
 #include <Wire.h>
@@ -9,6 +10,63 @@ int           NumberOfDCBSmodules=0;
 DCBswitch     *DCBswitchData[2]   = {NULL,NULL};
 DCBswitchRB   *DCBswitchrb[2]     = {NULL,NULL};
 Thread        DCBswitchThread     = Thread();
+
+// Forward declarations
+extern ThreadController control;
+bool RestoreDCBswitch(int8_t brd);
+void DCBswitchCtrl_loop(void);
+bool rangeCheck(char *value, bool *target, bool report);
+bool rangeCheck(int value, int *target, int ll, int ul, bool report);
+bool rangeCheck(char *value, int *target, int ll, int ul, bool report);
+bool rangeCheck(float value, float *target, float ll, float ul, bool report);
+bool rangeCheck(char *value, float *target, float ll, float ul, bool report);
+bool rangeCheck(char *value, char **target, char *options, bool report);
+bool rangeCheck(char *value, char *target, char *options, bool report);
+void setDCBSeepromEnable(char *board, char *value);
+void setDCBSvoltage(char *chan, char *value);
+void getDCBSvoltage(int ch);
+void getDCBSreadback(int ch);
+void setDCBSpwr(char *ch, char *value);
+void getDCBSpwr(int ch);
+void setDCBSdout(void);
+void getDCBSdin(char *module, char *dioCH);
+void setDCBSsw(char *ch, char *value);
+void getDCBSsw(int ch);
+void pulseDCBSsw(char *ch, char *value);
+void setDCBStrigger(char *ch, char *dioCH);
+void getDCBStrigger(int ch);
+void setDCBSrbTest(char *ch, char *value);
+void getDCBSrbTest(int ch);
+void setPGena(char *ch, char *value);
+void getPGena(int ch);
+void setPGretrig(char *ch, char *value);
+void getPGretrig(int ch);
+void setPGarmT(char *ch, char *value);
+void getPGarmT(int ch);
+void setPGarmL(char *ch, char *value);
+void getPGarmL(int ch);
+void setPGtrig(char *ch, char *value);
+void getPGtrig(int ch);
+void setPGtrigL(char *ch, char *value);
+void getPGtrigL(int ch);
+void setPGskip(int chan, int value);
+void getPGskip(int chan);
+void setPGdly(int chan, int value);
+void getPGdly(int chan);
+void setPGwdth(int chan, int value);
+void getPGwdth(int chan);
+void setPGtrgOut(char *ch, char *value);
+void getPGtrgOut(int ch);
+void setPGtrhFET(char *ch, char *value);
+void getPGtrhFET(int ch);
+void setPGoutCh(int chan, int value);
+void getPGoutCh(int chan);
+void setPGvoltage(char *chan, char *value);
+void getPGvoltage(int chan);
+void setPGnum(int chan, int value);
+void getPGnum(int chan);
+void setPGperiod(int chan, int value);
+void getPGperiod(int chan);
 
 const Commands  DCBSCmdArray[] = {
 // Start of command block
@@ -294,7 +352,7 @@ void setDCBSdout(void)
   while(true)
   {
     if(!valueFromCommandLine(&mod, 1, 2))    break;
-    if(!valueFromCommandLine(&c, "ABCD")) break;
+    if(!valueFromCommandLine(&c, (char*)"ABCD")) break;
     if(!valueFromCommandLine(&state, 0, 1))  break;
     if((brd = DCBSmod2brd(mod)) == -1) break;
     uint16_t wval = c | (state << 8);
@@ -309,7 +367,7 @@ void getDCBSdin(char *module, char *dioCH)
   while(true)
   {
     int brd; if((brd = DCBSmod2brd(module)) == -1) break;
-    char c;  if(!rangeCheck(dioCH, &c, "ABCDQRST", false)) break;
+    char c;  if(!rangeCheck(dioCH, &c, (char*)"ABCDQRST", false)) break;
     TWIsetByte(DCBswitchData[brd]->TWIadd, brd, 0x80 | GET_DCBS_SDIN, c);
     int value; if(!TWIread8bitUnsigned(DCBswitchData[brd]->TWIadd, brd, -1, &value)) break;
     if((value != 0) && (value != 1)) break;
@@ -343,7 +401,7 @@ void pulseDCBSsw(char *ch, char *value)
 {
   int brd; if((brd = getDCBSbrd(ch,2)) == -1) return; 
   int val; if(!rangeCheck(value, &val, 1, 10000, true)) return;
-  val << 8 & 0xFFFF00 | getDCBSch(ch,2);
+  val = (val << 8 & 0xFFFF00) | getDCBSch(ch, 2);
   TWIset24bitInt(DCBswitchData[brd]->TWIadd, brd, 0x80 | SET_DCBS_FETPULSE, val);
   SendACK;
 }
@@ -351,7 +409,7 @@ void pulseDCBSsw(char *ch, char *value)
 void setDCBStrigger(char *ch, char *dioCH)
 {
   int brd; if((brd = getDCBSbrd(ch,2)) == -1) return; 
-  char c;  if(!rangeCheck(dioCH, &c, "0QRST", true)) return;
+  char c;  if(!rangeCheck(dioCH, &c, (char*)"0QRST", true)) return;
   uint16_t wval = (getDCBSch(ch,2) + 1) | (c << 8);
   TWIsetWord(DCBswitchData[brd]->TWIadd, brd, 0x80 | SET_DCBS_SWFOL, wval);
   SendACK;
@@ -364,7 +422,7 @@ void getDCBStrigger(int ch)
   int value; if(!TWIread8bitUnsigned(DCBswitchData[brd]->TWIadd, brd, -1, &value)) BADARG;
   if(value == 0) value = '0';
   char c[2]; c[0] = value; c[1] = 0;
-  char res;  if(!rangeCheck(c, &res, "0QRST", true)) return;
+  char res;  if(!rangeCheck(c, &res, (char*)"0QRST", true)) return;
   SendACKonly; if(SerialMute) return; serial->println(res);
 }
 
@@ -383,7 +441,7 @@ void setPGena(char *ch, char *value) {int brd = getDCBSbrd(ch,2); if(brd == -1) 
 void getPGena(int ch) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; SendACKonly; if(SerialMute) return; if(DCBswitchData[brd]->PG[getDCBSch(ch,2)].enable) serial->println("TRUE"); else serial->println("FALSE");}
 void setPGretrig(char *ch, char *value) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; setDCBSvalue(brd,value,&DCBswitchData[brd]->PG[getDCBSch(ch,2)].reTrig);}
 void getPGretrig(int ch) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; SendACKonly; if(SerialMute) return; if(DCBswitchData[brd]->PG[getDCBSch(ch,2)].reTrig) serial->println("TRUE"); else serial->println("FALSE");}
-void setPGarmT(char *ch, char *value) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; setDCBSvalue(brd,value,&DCBswitchData[brd]->PG[getDCBSch(ch,2)].armTrig,"0QRST");}
+void setPGarmT(char *ch, char *value) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; setDCBSvalue(brd,value,&DCBswitchData[brd]->PG[getDCBSch(ch,2)].armTrig,(char*)"0QRST");}
 void getPGarmT(int ch) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; SendACKonly; reportIOport(DCBswitchData[brd]->PG[getDCBSch(ch,2)].armTrig);}
 
 // Note, the level enums don't seem to match the teensy!
@@ -402,9 +460,9 @@ int level2int(char *value)
 void reportLevel(int lvl)
 {
   char *rep = NULL;
-  if(lvl == 4) rep = "CHANGE";
-  else if(lvl == 3) rep = "RISING";
-  else if(lvl == 2) rep = "FALING";
+  if(lvl == 4) rep = (char*)"CHANGE";
+  else if(lvl == 3) rep = (char*)"RISING";
+  else if(lvl == 2) rep = (char*)"FALING";
   if(SerialMute) return;
   if(rep == NULL) BADARG;
   serial->println(rep);
@@ -412,7 +470,7 @@ void reportLevel(int lvl)
 
 void setPGarmL(char *ch, char *value){int brd = getDCBSbrd(ch,2); int lvl = level2int(value); if((brd == -1) || (lvl == -1)) return; setDCBSvalue(brd,lvl,&DCBswitchData[brd]->PG[getDCBSch(ch,2)].armLevel,0,10);}
 void getPGarmL(int ch) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; reportLevel(DCBswitchData[brd]->PG[getDCBSch(ch,2)].armLevel);}
-void setPGtrig(char *ch, char *value) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; setDCBSvalue(brd,value,&DCBswitchData[brd]->PG[getDCBSch(ch,2)].trig,"0QRST");}
+void setPGtrig(char *ch, char *value) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; setDCBSvalue(brd,value,&DCBswitchData[brd]->PG[getDCBSch(ch,2)].trig,(char*)"0QRST");}
 void getPGtrig(int ch) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; SendACKonly; reportIOport(DCBswitchData[brd]->PG[getDCBSch(ch,2)].trig);}
 void setPGtrigL(char *ch, char *value){int brd = getDCBSbrd(ch,2); int lvl = level2int(value); if((brd == -1) || (lvl == -1)) return; setDCBSvalue(brd,lvl,&DCBswitchData[brd]->PG[getDCBSch(ch,2)].trigLevel,0,10);}
 void getPGtrigL(int ch) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; reportLevel(DCBswitchData[brd]->PG[getDCBSch(ch,2)].trigLevel);}
@@ -422,9 +480,9 @@ void setPGdly(int chan, int value) {int brd = getDCBSbrd(chan,2); if(brd == -1) 
 void getPGdly(int chan){int brd = getDCBSbrd(chan,2); if(brd == -1) return; SendACKonly; if(!SerialMute) serial->println(DCBswitchData[brd]->PG[getDCBSch(chan,2)].delay);}
 void setPGwdth(int chan, int value) {int brd = getDCBSbrd(chan,2); if(brd == -1) return; setDCBSvalue(brd,value,&DCBswitchData[brd]->PG[getDCBSch(chan,2)].width,0, 10000000);}
 void getPGwdth(int chan){int brd = getDCBSbrd(chan,2); if(brd == -1) return; SendACKonly; if(!SerialMute) serial->println(DCBswitchData[brd]->PG[getDCBSch(chan,2)].width);}
-void setPGtrgOut(char *ch, char *value) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; setDCBSvalue(brd,value,&DCBswitchData[brd]->PG[getDCBSch(ch,2)].trigOut,"0ABCD");}
+void setPGtrgOut(char *ch, char *value) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; setDCBSvalue(brd,value,&DCBswitchData[brd]->PG[getDCBSch(ch,2)].trigOut,(char*)"0ABCD");}
 void getPGtrgOut(int ch) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; SendACKonly; reportIOport(DCBswitchData[brd]->PG[getDCBSch(ch,2)].trigOut);}
-void setPGtrhFET(char *ch, char *value) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; setDCBSvalue(brd,value,&DCBswitchData[brd]->PG[getDCBSch(ch,2)].trigFET,"012");}
+void setPGtrhFET(char *ch, char *value) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; setDCBSvalue(brd,value,&DCBswitchData[brd]->PG[getDCBSch(ch,2)].trigFET,(char*)"012");}
 void getPGtrhFET(int ch) {int brd = getDCBSbrd(ch,2); if(brd == -1) return; SendACKonly; reportIOport(DCBswitchData[brd]->PG[getDCBSch(ch,2)].trigFET);}
 void setPGoutCh(int chan, int value) {int brd = getDCBSbrd(chan,2); if(brd == -1) return; setDCBSvalue(brd,value,&DCBswitchData[brd]->PG[getDCBSch(chan,2)].outputCh,0, 4);}
 void getPGoutCh(int chan){int brd = getDCBSbrd(chan,2); if(brd == -1) return; SendACKonly; if(!SerialMute) serial->println(DCBswitchData[brd]->PG[getDCBSch(chan,2)].outputCh);}

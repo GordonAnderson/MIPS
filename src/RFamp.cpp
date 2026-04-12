@@ -1204,7 +1204,6 @@ void RFAsetPoleBias(char *Module, char *value)
   String token;
   int    b,mod;
   float  v;
-  char   vstr[100];
 
   token = Module;
   mod = token.toInt();
@@ -1231,7 +1230,6 @@ void RFAsetResolvingDC(char *Module, char *value)
   String token;
   int    b,mod;
   float  v;
-  char   vstr[100];
 
   token = Module;
   mod = token.toInt();

@@ -14,14 +14,14 @@
 // definitions.
 // The state is the flags will add a letter to the end of the version number to signal the version
 // of the code that is being built. If no letter is added that all options are false.
-#define FAIMSFBcode     false    // appends b to version 
+#define FAIMSFBcode     false    // appends b to version
 #define FAIMScode       false    // appends f to version
 #define HOFAIMcode      false    // appends h to version
 #define HVPScode        false    // appends v to version
-#define DMSDMSMB        fasle    // appends d to version
+#define DMSDMSMB        false    // appends d to version
 #define DCBanalog       false    // appends a to version
 #define DCBcurrent      false    // appends c to version
-#define DCBswitchCode   false     // appends s to version
+#define DCBswitchCode   false    // appends s to version
 #define HVPSinterface   false    // appends i to version
 
 #define DCBtripsESI
@@ -52,9 +52,13 @@
 #include "DateTime.h"
 #include "Log.h"
 #include "HVPS.h"
+
 #include "DMSDMSMB.h"
 #include "FPGA.h"
 #include "HVPSinterface.h"
+#include "FAIMSfb.h"
+#include "DCBcurrent.h"
+#include "DCBswitch.h"
 
 // Test mode flags, uncomment to enable selected test mode
 //#define TestMode
@@ -159,10 +163,10 @@ extern RFAdata RFA_Rev1;
 extern FPGAmodule FPGA_Rev1;
 
 // List of all possible board addresses. These addresses are those of the EEPROM on the modules
-extern char *BoardAddressList;
+extern const char *BoardAddressList;
 
 // List of board names used to allow user to select a board by name for initial setup of re-init
-extern char *BoardVariantsNames;
+extern const char *BoardVariantsNames;
 
 // List of variant board default data structure pointers with a one to one correspondence to list of board names
 extern void *BoardVariants[];

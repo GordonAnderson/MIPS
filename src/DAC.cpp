@@ -246,9 +246,9 @@ void RestoreDACsettings(bool NoDisplay)
 void SetupDACentry(DACdata *dc, DialogBoxEntry *dbe)
 {
   int  i;
-  static char *Format1 = "%5.2f"; 
-  static char *Format2 = "%5.1f"; 
-  static char *Format3 = "%5.0f"; 
+  static const char *Format1 = "%5.2f"; 
+  static const char *Format2 = "%5.1f"; 
+  static const char *Format3 = "%5.0f"; 
 
   for(i=0;i<8;i++)
   {

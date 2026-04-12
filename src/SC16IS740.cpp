@@ -22,6 +22,7 @@ JP1-1    JP1-2     Address, hex
 X = jumper installed
 
 */
+#include "Variants.h"
 #include "SC16IS740.h"
 #include "Wire.h"
 

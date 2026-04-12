@@ -64,12 +64,12 @@ int ErrorCode = 0;   // Last communication error that was logged
 Ring_Buffer  RB;     // Receive ring buffer
 
 // ACK only string, two options. Need a comma when in the echo mode
-char *ACKonlyString1 = "\x06";
-char *ACKonlyString2 = ",\x06";
-char *SelectedACKonlyString = ACKonlyString1;
+const char *ACKonlyString1 = "\x06";
+const char *ACKonlyString2 = ",\x06";
+const char *SelectedACKonlyString = ACKonlyString1;
 
-char *OnMessage  = "ON";
-char *OffMessage = "OFF";
+const char *OnMessage  = "ON";
+const char *OffMessage = "OFF";
 
 bool echoMode = false;
 
@@ -117,7 +117,7 @@ const Commands  CmdArray[] = 	{
   {"GCHAN", CMDfunctionStr, 1, (char *)GetNumChans},     // Report number for the selected system
   {"MUTE",  CMDfunctionStr, 1, (char *)Mute},            // Turns on and off the serial response from the MIPS system
   {"ECHO",  CMDbool, 1, (char *)&echoMode},              // Turns on and off the serial echo mode where the command is echoed to host, TRUE or FALSE
-  {"TRIGOUT", CMDfunctionStr, 1, (char *)(static_cast<void (*)(char *)>(&TriggerOut))},    // Generates output trigger on rev 2 and higher controllers
+  {"TRIGOUT", CMDfunctionStr, 1, (char *)(static_cast<void (*)(const char *)>(&TriggerOut))},    // Generates output trigger on rev 2 and higher controllers
                                                          // supports, HIGH,LOW,PULSE
   {"AUXOUT",  CMDfunctionStr, 1, (char *)AuxOut},        // Generates output trigger on Aux output, supports, HIGH,LOW,PULSE                                                         
   {"DELAY", CMDfunction, 1, (char *)DelayCommand},       // Generates a delay in milliseconds. This is used by the macro functions
@@ -1044,7 +1044,7 @@ bool checkChange(char *str, int *change)
 // Real time clock functions
 void GetTime(void)
 {
-  char buf[3];
+  char buf[6];
   uint8_t day,month,hour,minute,second,week;
   uint16_t year;
   bool isPM,is12H;
@@ -1095,7 +1095,7 @@ void SetTime(void)
 
 void GetDate(void)
 {
-  char buf[5];
+  char buf[8];
   uint8_t day,month,hour,minute,second,week;
   uint16_t year;
   bool isPM,is12H;
@@ -1103,11 +1103,11 @@ void GetDate(void)
   SendACKonly;
   if(SerialMute) return; 
   rtc.read(day, month, year, hour, minute, second, isPM, is12H, week);
-  sprintf(buf,"%.2d/", day);
+  snprintf(buf, sizeof(buf),"%.2d/", day);
   serial->print(buf);
-  sprintf(buf,"%.2d/", month);
+  snprintf(buf, sizeof(buf),"%.2d/", month);
   serial->print(buf);
-  sprintf(buf,"%.4d", year);
+  snprintf(buf, sizeof(buf), "%.4d", year);
   serial->println(buf);  
 }
 
@@ -1361,7 +1361,7 @@ uint32_t MemoryAddressOffset = 0;
 void SetMemAddress(char *address)
 {
   MemoryAddressOffset = 0;
-  sscanf(address,"%x",&MemoryAddress);
+  sscanf(address,"%lx",&MemoryAddress);
   serial->println(MemoryAddress,16);    
 }
 
@@ -1369,7 +1369,7 @@ void SetMemAddress(char *address)
 void SetMemAddressOffset(char *address)
 {
   MemoryAddressOffset = 0;
-  sscanf(address,"%x",&MemoryAddressOffset);
+  sscanf(address,"%lx",&MemoryAddressOffset);
   serial->println(MemoryAddressOffset,16);    
 }
 
@@ -1383,22 +1383,22 @@ void WriteMemory(char *type, char *val)
   sType = type;
   if(sType == "BYTE") 
   {
-    sscanf(val,"%x",&i);
+    sscanf(val,"%lx",&i);
     *(uint8_t *)(MemoryAddress+MemoryAddressOffset) = i;
   }
   else if(sType == "WORD") 
   {
-    sscanf(val,"%x",&i);
+    sscanf(val,"%lx",&i);
     *(uint16_t *)(MemoryAddress+MemoryAddressOffset) = i;
   }
   else if(sType == "DWORD") 
   {
-    sscanf(val,"%x",&i);
+    sscanf(val,"%lx",&i);
     *(uint32_t *)(MemoryAddress+MemoryAddressOffset) = i;
   }
   else if(sType == "INT") 
   {
-    sscanf(val,"%d",&i);
+    sscanf(val,"%d",(int *)&i);
     *(int *)(MemoryAddress+MemoryAddressOffset) = i;
   }
   else if(sType == "FLOAT") 
@@ -1439,7 +1439,7 @@ void Dump(void)
   serial->println("");
   for(int i=0;i<32;i++)
   {
-    sprintf(sbuf,"%03x: ",i * 16,16);
+    sprintf(sbuf,"%03x: ",i * 16);
     serial->print(sbuf);
     for(int j=0;j<16;j++)
     {
@@ -1989,7 +1989,7 @@ bool valueFromCommandLine(char *c, char *options)
   return false;
 }
 
-char  *UserInput(char *message, void (*function)(void))
+char  *UserInput(const char *message, void (*function)(void))
 {
   char *tkn;
   
@@ -2020,7 +2020,7 @@ int   UserInputInt(char *message, void (*function)(void))
   return arg.toInt();
 }
 
-float UserInputFloat(char *message, void (*function)(void))
+float UserInputFloat(const char *message, void (*function)(void))
 {
   char   *tkn;
   String arg;
@@ -2372,7 +2372,7 @@ void MacroRecord(char *filename)
 {
   char   fname[30];
   char   ch;
-  char   *TK;
+  char   *TK=nullptr;
   String cmd;
 
   if (!SDcardPresent)
@@ -2459,7 +2459,7 @@ void MacroStop(void)
 // list of macro file names. This is used by the UI list function to allow the user to
 // select a macro file.
 // The extension is stripped from the file name.
-char *MacroBuildList(char *current)
+char *MacroBuildList(const char *current)
 {
   File root, entry;
   String FileName;
@@ -2558,8 +2558,8 @@ void MacroDelete(char *filename)
 void MacroPlay(char *filename, bool silent)
 {
   char fname[30];
-  char *mute = "MUTE,ON\n";
-  char *unmute = "MUTE,OFF\n";
+  const char *mute = "MUTE,ON\n";
+  const char *unmute = "MUTE,OFF\n";
   File mfile;
   int  i;
 
@@ -2597,7 +2597,7 @@ void MacroPlay(char *filename, bool silent)
   }
   if (!silent) SendACK;
   // Mute the serial response
-  for (i = 0; i < strlen(mute); i++) RB_Put(&RB, mute[i]);
+  for (i = 0; i < (int)strlen(mute); i++) RB_Put(&RB, mute[i]);
   // Fill the ring buffer with the macro file contents
   while (true)
   {
@@ -2611,5 +2611,5 @@ void MacroPlay(char *filename, bool silent)
   }
   mfile.close();
   // Unmute the serial system
-  for (i = 0; i < strlen(unmute); i++) RB_Put(&RB, unmute[i]);
+  for (i = 0; i < (int)strlen(unmute); i++) RB_Put(&RB, unmute[i]);
 }

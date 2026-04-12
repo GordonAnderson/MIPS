@@ -358,11 +358,11 @@ WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_IDLE,"MIPSnet","MIPS","MIPS
 
 
 // List of all possible board addresses. These addresses are those of the EEPROM on the modules
-char *BoardAddressList = "A 0x50,A 0x52,A 0x54,A 0x56,B 0x50,B 0x52,B 0x54,B 0x56";
+const char *BoardAddressList = "A 0x50,A 0x52,A 0x54,A 0x56,B 0x50,B 0x52,B 0x54,B 0x56";
 // List of board names used to allow user to select a board by name for initial setup or re-init
 //char *BoardVariantsNames = "RFdrvA R1,RFdrvB R1,RFdrvA R2,RFdrvB R2,DC250V R1,DC250V R2,DC750V R1,DC50V  R1,DC60V  R1,DC60V  R3,Twave R1,Twave R2,Twave R3,Twave R5,FAIMS R1,ESI  R1,FIL R1,FIL R4,ARB R1,HOFAIMS,DAC R1,RFamp R1";
 
-char *BoardVariantsNames = "RFdrvA R1,"
+const char *BoardVariantsNames = "RFdrvA R1,"
                            "RFdrvB R1,"
                            "RFdrvA R2,"
                            "RFdrvB R2,"

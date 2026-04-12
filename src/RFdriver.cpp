@@ -136,7 +136,7 @@ DialogBoxEntry RFdriverDialogEntriesPage1[] = {
   {NULL},
 };
 
-char *ModeList     = "MANUAL,AUTO";
+const char *ModeList     = "MANUAL,AUTO";
 char RFmode[8]     = "MANUAL";
 char RFgateDI[5]   = "NA";
 char RFgateTrig[5] = "NA";
@@ -430,7 +430,7 @@ void RFdriver_init(int8_t Board, int8_t addr)
     rfddarray[Board]  = new RFdriverData;
     RFstate[Board][0] = new RFDRVstate;
     RFstate[Board][1] = new RFDRVstate;
-    RFstate[Board][0]->update = RFstate[Board][0]->update = false;
+    RFstate[Board][0]->update = false;
     RFrb[Board][0]    = new RFreadBacks;
     RFrb[Board][1]    = new RFreadBacks;
     // Init the name so the restore will pass
@@ -710,7 +710,7 @@ void RFdriver_tune(void)
 
 float RFdriverCounts2Volts(int Rev, int ADCcounts, ADCchan *adcchan)
 {
-   float Pv;
+   float Pv=0;
    int   brd;
    
    if(Rev == 3)
@@ -750,11 +750,10 @@ float RFdriverCounts2Volts(int Rev, int ADCcounts, ADCchan *adcchan)
 // This function is called by the main loop every 100 millisec
 void RFdriver_loop_model1(void)
 {
-  int i,j,iStat;
+  int i,j,iStat=0;
   uint16_t ADCvals[8];
-  float V, I, Pv, Nv;
+  float V, I, Pv=0, Nv=0;
   static int LastFreq[2][2] = { -1, -1, -1, -1};
-  static  int disIndex = 0;
 
   RFdriver_tune();
   // Process ADC control settings
@@ -1651,7 +1650,7 @@ void RFcalP(char *channel, char *Vpp)
 {
   String sToken;
   int ch,brd,ADCraw;
-  float vpp,MVpp, m;
+  float vpp,MVpp;
 
   sToken = channel;
   ch = sToken.toInt();
@@ -1674,8 +1673,6 @@ void RFcalP(char *channel, char *Vpp)
   }
   // Read the ADC value for the current settings.
   ADCraw = AD7998(RFDDarray[brd]->ADCadr, RFDDarray[brd]->RFCD[(ch-1) & 1].RFpADCchan.Chan, 100);
-  // Save the current gain value
-  m = RFDDarray[brd]->RFCD[(ch-1) & 1].RFpADCchan.m;
   // Adj m to find calibration match
   for(int i=0;i<100000;i++)
   {
@@ -1691,7 +1688,7 @@ void RFcalN(char *channel, char *Vpp)
 {
   String sToken;
   int ch,brd,ADCraw;
-  float vpp,MVpp, m;
+  float vpp,MVpp;
 
   sToken = channel;
   ch = sToken.toInt();
@@ -1714,8 +1711,6 @@ void RFcalN(char *channel, char *Vpp)
   }
   // Read the ADC value for the current settings.
   ADCraw = AD7998(RFDDarray[brd]->ADCadr, RFDDarray[brd]->RFCD[(ch-1) & 1].RFnADCchan.Chan, 100);
-  // Save the current gain value
-  m = RFDDarray[brd]->RFCD[(ch-1) & 1].RFnADCchan.m;
   // Adj m to find calibration match
   for(int i=0;i<100000;i++)
   {
@@ -1836,7 +1831,7 @@ void genPWLcalTable(char *channel, char *phase)
 // ph = phase, 0 = RF+, 1 = RF-
 float PWLlookup(int ch, int ph, int adcval)
 {
-  int            brd,i;
+  int            brd;
   PWLcalibration *pwl;
   
   if (!IsChannelValid(ch,false)) return 0;

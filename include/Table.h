@@ -92,7 +92,7 @@ extern bool TblTasks;
 extern int  ExtFreq;
 extern unsigned int Counter;
 extern int  TimeDelta;
-extern char *TableStatus;
+extern const char *TableStatus;
 extern bool TrigEvyCycle;
 extern bool TBLportTest;
 

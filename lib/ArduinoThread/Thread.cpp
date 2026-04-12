@@ -15,7 +15,7 @@ Thread::Thread(void (*callback)(void), long _interval){
 	setInterval(_interval);
 };
 
-void Thread::setName(char *name)
+void Thread::setName(const char *name)
 {
    Name = name;
 }

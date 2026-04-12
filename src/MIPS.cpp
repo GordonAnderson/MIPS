@@ -104,7 +104,8 @@
 #pragma GCC optimize "-Os"
 
 #if defined(__SAM3X8E__)
-#undef __FlashStringHelper::F(string_literal)
+//#undef __FlashStringHelper::F(string_literal)
+#undef F
 #define F(string_literal) string_literal
 #endif
 
@@ -113,9 +114,13 @@
 #define UseWDT
 
 // Define my names for the native USB driver
+#ifndef USB_PRODUCT
 #define  USB_PRODUCT      "MIPS, native USB"
+#endif
 //#pragma "-DUSB_PRODUCT=MIPS, native USB"
+#ifndef USB_MANUFACTURER
 #define  USB_MANUFACTURER "GAA Custom Electronics, LLC"
+#endif
 
 DueFlashStorage    dueFlashStorage;
 const PROGMEM byte NonVolStorage[1000] = {};
@@ -235,9 +240,9 @@ void BoardFormat(void);
 bool BoardFormatEEPROM(void);
 void UIplayMacro(void);
 void MIPSsystemLoop(void);
-int  SAVEparms(char *filename);
-bool LOADparms(char *filename);
-char *GetEntry(char *list, int num);
+int  SAVEparms(const char *filename);
+bool LOADparms(const char *filename);
+char *GetEntry(const char *list, int num);
 // Module init functions (defined in each module's .cpp)
 void ScanHardware(void);
 bool AcquireADC(void);
@@ -485,7 +490,7 @@ void DisplayAbout(void)
     PrintDialog(&MIPSabout, 1, y++, "System modules:");
     PrintDialog(&MIPSabout, 1, y++, "  Board,Addr,Name,Rev");
   }
-  for (i; i < NumModAdd; i++)
+  for (; i < NumModAdd; i++)
   {
     if (y > 9)
     {
@@ -669,10 +674,10 @@ void AddMainMenuEntry(MenuEntry *me)
 
   for (i = 0; i < MaxMainMenuEntries - 1; i++)
   {
-    if (MainMenuEntries[i].Name[0] == 0)
+    if (MainMenuEntries[i].Name == NULL || MainMenuEntries[i].Name[0] == 0)
     {
       memcpy(&(MainMenuEntries[i]), me, sizeof(MenuEntry));
-      MainMenuEntries[i + 1].Name[0] = 0;
+      MainMenuEntries[i + 1].Name = NULL;
       return;
     }
   }
@@ -901,7 +906,7 @@ int sysTickHook(void)
 {
   //  LDAChigh;
   //  LDAClow;
-  //  return(0);
+  return(0);
 }
 
 // this one was getting called until the init function ended...
@@ -1044,11 +1049,11 @@ void setup()
   ButtonRotated = false;
   // Set ActiveDialog to not NULL, this will stop any module from displaying.
   // This happen only when the startup delay is set to 0
-  if(MIPSconfigData.StartupDelay == 0) ActiveDialog = (DialogBox *)~NULL;
+  if(MIPSconfigData.StartupDelay == 0) ActiveDialog = (DialogBox *)(-1);
   // Init the baords
   ScanHardware();
   DIO_init();
-  if(ActiveDialog == (DialogBox *)~NULL) MenuDisplay(&MainMenu);
+  if(ActiveDialog == (DialogBox *)(-1)) MenuDisplay(&MainMenu);
   // Configure Threads
   MIPSsystemThread.setName("System");
   MIPSsystemThread.onRun(MIPSsystemLoop);
@@ -1072,7 +1077,6 @@ void setup()
 // This task is called every 10 milliseconds and handels a number of tasks.
 void MIPSsystemLoop(void)
 {
-  char cbuf[20];
 
   if ((BrightTime + 30000) < millis()) SetBackLight();
   float MaxVoltage;
@@ -1316,7 +1320,7 @@ void SerialWD(void)
     return;
   }
   if (SerialWatchDog <= 0) return;
-  if (((millis() - lastcharT) / (ulong)1000) < SerialWatchDog) return;
+  if (((millis() - lastcharT) / (ulong)1000) < (ulong)SerialWatchDog) return;
   // If here rest the comm power
   SerialPortReset();
   lastcharT = millis();
@@ -1510,7 +1514,7 @@ void loop()
 // Host command processing function.
 
 // Save parameters to default.cfg file on SD card
-int SAVEparms(char *filename)
+int SAVEparms(const char *filename)
 {
   File file;
 
@@ -1553,7 +1557,7 @@ void SAVEparms(void)
 // and new additional (at the bottom of the struct) will use the default
 // values.
 // Returns true if all went well!
-bool LOADparms(char *filename)
+bool LOADparms(const char *filename)
 {
   File file;
   MIPSconfigStruct MCS;
@@ -1569,14 +1573,14 @@ bool LOADparms(char *filename)
     if (!(file = SD.open(filename, FILE_READ))) break;
     // read the data
     b = (byte *)&MCS;
-    for (i = 0; i < sizeof(MIPSconfigStruct); i++)
+    for (i = 0; i < (int)sizeof(MIPSconfigStruct); i++)
     {
       if ((fVal = file.read()) == -1) break;
       b[i] = fVal;
     }
     file.close();
     // Copy to MIPS config struct
-    if (MCS.signature == 0xA55AE99E)
+    if ((unsigned int)MCS.signature == 0xA55AE99E)
     {
       memcpy(&MIPSconfigData, &MCS, MCS.Size);
       DisableDisplay = MIPSconfigData.DisableDisplay;
@@ -1586,12 +1590,12 @@ bool LOADparms(char *filename)
   }
   // If here then the SD card read failed so try loading from FLASH
   b = (byte *)&MCS;
-  for (i = 0; i < sizeof(MIPSconfigStruct); i++)
+  for (i = 0; i < (int)sizeof(MIPSconfigStruct); i++)
   {
     b[i] = dueFlashStorage.readAbs(((uint32_t)NonVolStorage) + i);
   }
   // Check signature, if correct then update
-  if (MCS.signature == 0xA55AE99E)
+  if ((unsigned int)MCS.signature == 0xA55AE99E)
   {
     memcpy(&MIPSconfigData, &MCS, MCS.Size);
     DisableDisplay = MIPSconfigData.DisableDisplay;

@@ -1548,7 +1548,7 @@ void sendTWAVEfrequency(int channel)
 void setTWAVEfrequency(int channel, int freq)
 {
   DialogBoxEntry *DBE;
-  int i, saveselected;
+  int i;
 
   i = GetTwaveIndex(channel);
   if (i == -1) return;
@@ -1579,9 +1579,9 @@ void setTWAVEsequence(char * chan, char *value)
   sscanf(chan, " %d", &channel);
   index = GetTwaveIndex(channel);
   if (index == -1) return;
-  for (i = 0; i < strlen(value); i++)
+  for (i = 0; i < (int)strlen(value); i++)
   {
-    if ((value[i] != '0') && (value[i] != '1') || (strlen(value) > 8))
+    if (((value[i] != '0') && (value[i] != '1')) || (strlen(value) > 8))
     {
       // error exit for bad argument
       SetErrorCode(ERR_BADARG);
@@ -1600,7 +1600,6 @@ void setTWAVEsequence(char * chan, char *value)
 void sendTWAVEpulseVoltage(int channel)
 {
   int index;
-  float *fval;
 
   index = GetTwaveIndex(channel);
   if (index == -1) return;
@@ -1621,8 +1620,8 @@ void setTWAVEpulseVoltage(char *chan, char *voltage)
   if (index == -1) return;
   token = voltage;
   fval = token.toFloat();
-  if (TD.Rev == 1) if(!RangeTest(TwaveDialogEntries, "Pulse voltage", fval)) return;
-  else if(!RangeTest(TwaveDialogEntries2, "Pulse voltage", fval)) return;
+  if (TD.Rev == 1) {if(!RangeTest(TwaveDialogEntries, "Pulse voltage", fval)) return;}
+  else {if(!RangeTest(TwaveDialogEntries2, "Pulse voltage", fval)) return;}
   // Update the voltage value and exit
   if (index == SelectedTwaveModule) TD.TWCD[0].VoltageSetpoint = fval;
   TDarray[index].TWCD[0].VoltageSetpoint = fval;
@@ -1655,8 +1654,8 @@ void setTWAVEguard1Voltage(char *chan, char *voltage)
   if(((TDarray[index].ADCadr & 0xFE) == 0x10) && (TDarray[index].Rev == 5)) ERR(ERR_NOTSUPPORTED);
   token = voltage;
   fval = token.toFloat();
-  if (TD.Rev == 1) if(!RangeTest(TwaveDialogEntries, "Guard 1", fval)) return;
-  else if(!RangeTest(TwaveDialogEntries2, "Guard 1", fval)) return;
+  if (TD.Rev == 1) {if(!RangeTest(TwaveDialogEntries, "Guard 1", fval)) return;}
+  else {if(!RangeTest(TwaveDialogEntries2, "Guard 1", fval)) return;}
   // Update the voltage value and exit
   if (index == SelectedTwaveModule) TD.TWCD[2].VoltageSetpoint = fval;
   TDarray[index].TWCD[2].VoltageSetpoint = fval;
@@ -1689,8 +1688,8 @@ void setTWAVEguard2Voltage(char *chan, char *voltage)
   if(((TDarray[index].ADCadr & 0xFE) == 0x10) && (TDarray[index].Rev == 5)) ERR(ERR_NOTSUPPORTED);
   token = voltage;
   fval = token.toFloat();
-  if (TD.Rev == 1) if(!RangeTest(TwaveDialogEntries, "Guard 2", fval)) return;
-  else if(!RangeTest(TwaveDialogEntries2, "Guard 2", fval)) return;
+  if (TD.Rev == 1) {if(!RangeTest(TwaveDialogEntries, "Guard 2", fval)) return;}
+  else {if(!RangeTest(TwaveDialogEntries2, "Guard 2", fval)) return;}
   // Update the voltage value and exit
   if (index == SelectedTwaveModule) TD.TWCD[3].VoltageSetpoint = fval;
   TDarray[index].TWCD[3].VoltageSetpoint = fval;
@@ -1879,9 +1878,7 @@ volatile Pio *pio;
 
 void UpdateMode(void)
 {
-  uint8_t *b;
-  
-  if(TDarray[0].Rev >= 4)
+    if(TDarray[0].Rev >= 4)
   {
     // Rev 4.0 uses a CPLD for clock and compression logic
     uint8_t *b = (uint8_t *)&TWcpld[1];    // board address 1 is always the compressor channel
@@ -1952,7 +1949,7 @@ void SwitchTimerISR(void)
 // This function will update the state
 void CompressorTimerISR(void)
 {
-  char OP;
+  char OP=0;
 
   // This interrupt occurs when the current state has timed out so advance to the next
   switch (CState)
@@ -2050,9 +2047,7 @@ void CompressorTimerISR(void)
 // The B compare register is used for the switch or gate timing
 void CompressorTriggerISR(void)
 {
-  uint32_t   start;
-  
-  AtomicBlock< Atomic_RestoreState > a_Block;  // uncommented, 8/22/17
+    AtomicBlock< Atomic_RestoreState > a_Block;  // uncommented, 8/22/17
   // Clear and setup variables
   ClockReset = 8;             // Put system in normal mode
   CrampCounter = 0;
@@ -2157,8 +2152,8 @@ void TWCsetV1toV2(void)
 //    
 char GetNextOperationFromTable(bool init)
 {
-  int         index,b;
-  float       fval;
+  int         index;
+  float       fval=0.0;
   static int  tblindex=0;
   static char OP;
   static int  count = 0;

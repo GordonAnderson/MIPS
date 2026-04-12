@@ -231,8 +231,8 @@ MenuEntry MEDCbiasMonitor = {" DC bias module", M_DIALOG,0,0,0,NULL,&DCbiasDialo
 void SetupEntry(DCbiasData *dc, DialogBoxEntry *dbe)
 {
   int   i;
-  static char *Format1 = "%5.1f";
-  static char *Format2 = "%5.0f";
+  static const char *Format1 = "%5.1f";
+  static const char *Format2 = "%5.0f";
   
   if((dc->MaxVoltage - dc->MinVoltage) <= 140)
   {
@@ -278,9 +278,7 @@ void UpdateLimits(void)
 
 void SetNextDCbiasPage(void)
 {
-  int i;
-  
-  // Go to page 1a if we have 16 output channel, 2 boards
+    // Go to page 1a if we have 16 output channel, 2 boards
   if((DCbiasDialog.Entry == DCDialogEntriesPage1) && (NumberOfDCChannels > 8))
   {
     DCbiasDialog.Entry = DCDialogEntriesPage1a;
@@ -323,9 +321,7 @@ void SetNextDCbiasPage(void)
 
 void SetFirstDCbiasPage(void)
 {
-  int i;
-  
-  DCbiasDialog.Entry = DCDialogEntriesPage1;
+    DCbiasDialog.Entry = DCDialogEntriesPage1;
   // Select the first board
   SelectedDCBoard = DCbiasCH2Brd(0);
 //  if(DCbDarray[0] != NULL) SelectedDCBoard=0;
@@ -771,7 +767,7 @@ void DCbias_loop(void)
   static  bool SuppliesOff = true;
   static  bool LastSuppliesState = true;
   static  int  SuppliesStableCount = 10;
-  int     i,b;
+  int     i,b,tempInt;
   uint16_t ADCvals[8];
 
   if(!inited) SetPowerSource();
@@ -802,13 +798,16 @@ void DCbias_loop(void)
   #if FAIMScode
     *DCbD = dcbd;
   #endif
-  //if(DCbDarray[0]->UseOneOffset) DCbDarray[SelectedDCBoard ^ 1]->DCoffset.VoltageSetpoint = DCbDarray[SelectedDCBoard]->DCoffset.VoltageSetpoint;
-  if(*(int *)&DCbDarray[SelectedDCBoard]->UseOneOffset != 2) for(i=0;i<MAXDCbiasMODULES;i++)
+  memcpy(&tempInt, &DCbDarray[SelectedDCBoard]->UseOneOffset, sizeof(int));
+  if(tempInt != 2)  
   {
      if(DCbDarray[0]->UseOneOffset) 
-       if(DCbDarray[i] != 0) 
-         if(*(int *)&DCbDarray[i]->UseOneOffset != 2)
+       if(DCbDarray[i] != 0)
+       {
+         memcpy(&tempInt, &DCbDarray[i]->UseOneOffset, sizeof(int));
+         if(tempInt != 2)
             DCbDarray[i]->DCoffset.VoltageSetpoint = DCbDarray[SelectedDCBoard]->DCoffset.VoltageSetpoint;    
+       }
   }
   MaxDCbiasVoltage = 0;
   Verror = 0;
@@ -878,7 +877,11 @@ void DCbias_loop(void)
   LastSuppliesState = SuppliesOff;
   // End of version 1.150 rampup updates  
   int lastModule = 0;
-  for(b=0;b<4;b++) if(DCbDarray[b] != NULL) if(*(int *)&DCbDarray[b]->UseOneOffset != 2) lastModule = b;
+  for(b=0;b<4;b++) if(DCbDarray[b] != NULL) 
+  {
+    memcpy(&tempInt, &DCbDarray[b]->UseOneOffset, sizeof(int));
+    if(tempInt != 2) lastModule = b;
+  }
   for(b=0;b<4;b++)
   {
     if(DCbDarray[b] == NULL) continue;
@@ -893,10 +896,12 @@ void DCbias_loop(void)
       {
          if((DCbDarray[0] != NULL) && (DCbDarray[0]->OffsetReadback) && (i == 0))   // Added i==0 April 6, 2019.
          {
+           memcpy(&tempInt, &DCbDarray[b]->UseOneOffset, sizeof(int));
            if((DCbDarray[b]->DACadr & 0xFE) == 0x10)
            {
               int ov=0;
-              if((DCbDarray[0]->UseOneOffset) && (*(int *)&DCbDarray[b]->UseOneOffset != 2))
+              memcpy(&tempInt, &DCbDarray[b]->UseOneOffset, sizeof(int));
+              if((DCbDarray[0]->UseOneOffset) && (tempInt != 2))
               {
                 // If we are using one offset for all board and offset readback is enabled then we assume the
                 // last module is providing the readback. This code was updated to support running all modules
@@ -917,7 +922,7 @@ void DCbias_loop(void)
                 LogMessage("ADC readoff fault!");
               }
            }
-           else if((DCbDarray[0]->UseOneOffset) && (*(int *)&DCbDarray[b]->UseOneOffset != 2))
+           else if((DCbDarray[0]->UseOneOffset) && (tempInt != 2))
            {
               // This is legacy code, if offset readback is enabled and DAC is not a AD5593 then offset readback is
               // assumed to use channel 8 of the last module. The boards have to have a jummper from offset amp
@@ -986,14 +991,14 @@ void DCbias_loop(void)
       SetPowerSource();
       // Display a popup error message
       if(VerrorCh >= 0) sprintf(mess,"Output Verror, ch %1d",VerrorCh);
-      else sprintf(mess,"Offset Verror, brd %1d",(-VerrorCh) - 1);
+      else snprintf(mess, sizeof(mess), "Offset Verror, brd %1d", (int8_t)(-VerrorCh) - 1);
       LogMessage("DCBias Verror!");
       DisplayMessageButtonDismiss(mess);
       Tripped = true;
       // Disable all ESI channels if mode flag is set
       #ifdef DCBtripsESI
         ESIarray[0]->ESIchan[0].Enable = ESIarray[0]->ESIchan[1].Enable = false; 
-        ESIarray[0]->Enable = ESIarray[0]->Enable = esi.Enable = false;
+        ESIarray[0]->Enable = esi.Enable = false;
         ESIarray[1]->ESIchan[0].Enable = ESIarray[1]->ESIchan[1].Enable = false; 
         esi.ESIchan[0].Enable = esi.ESIchan[1].Enable = false;
         esich.Enable = false;
@@ -1242,7 +1247,7 @@ void DCbiasReadV(int chan)
 void DCbiasSetFloat(char *Chan, char *Value)
 {
   DCbiasData *DCbData;
-  int        chan;
+  int        chan,tempInt;
   int8_t     i;
   float      value;
   
@@ -1265,10 +1270,11 @@ void DCbiasSetFloat(char *Chan, char *Value)
   // loop update the outputs.
   DelayMonitoring();
   DCbData->DCoffset.VoltageSetpoint = value;
-  //if(DCbDarray[0]->UseOneOffset) DCbDarray[0]->DCoffset.VoltageSetpoint = DCbDarray[1]->DCoffset.VoltageSetpoint = value;
-  if(DCbDarray[0]->UseOneOffset) if(*(int *)&DCbData->UseOneOffset != 2) for(i=0;i<MAXDCbiasMODULES;i++) 
+  memcpy(&tempInt, &DCbData->UseOneOffset, sizeof(int));
+  if(DCbDarray[0]->UseOneOffset) if(tempInt != 2) for(i=0;i<MAXDCbiasMODULES;i++) 
   {
-    if(DCbDarray[i] != NULL) if(*(int *)&DCbDarray[i]->UseOneOffset != 2) DCbDarray[i]->DCoffset.VoltageSetpoint = value;
+    memcpy(&tempInt, &DCbDarray[i]->UseOneOffset, sizeof(int));
+    if(DCbDarray[i] != NULL) if(tempInt != 2) DCbDarray[i]->DCoffset.VoltageSetpoint = value;
   }
   // If this channel is being displayed in a dialog then refresh the display
   if(GetDCbiasBoard(chan) == SelectedDCBoard) dcbd = *DCbD;
@@ -1582,9 +1588,7 @@ void  DCbiasOffsetReadback(char *state)
 // Sets the ADC TWI address, radix 10
 void SetDCbiasADCtwiADD(int board, int add)
 {
-  int b;
-  
-  if((DCbDarray[board] == NULL) || (board < 0) || (board >3)) BADARG;
+    if((DCbDarray[board] == NULL) || (board < 0) || (board >3)) BADARG;
   DCbDarray[board]->ADCadr = add;
   SendACK;  
 }
@@ -1592,9 +1596,7 @@ void SetDCbiasADCtwiADD(int board, int add)
 // Sets the DAC TWI address, radix 10
 void SetDCbiasDACtwiADD(int board, int add)
 {
-  int b;
-  
-  if((DCbDarray[board] == NULL) || (board < 0) || (board >3)) BADARG;
+    if((DCbDarray[board] == NULL) || (board < 0) || (board >3)) BADARG;
   DCbDarray[board]->DACadr = add;
   SendACK;  
 }
@@ -1602,9 +1604,7 @@ void SetDCbiasDACtwiADD(int board, int add)
 // board = 0 thru 3
 void ReportDCbiasSuppplies(int board)
 {
-  int b;
-  
-  if((DCbDarray[board] == NULL) || (board < 0) || (board >3)) BADARG;
+    if((DCbDarray[board] == NULL) || (board < 0) || (board >3)) BADARG;
   if((DCbDarray[board]->DACadr & 0xFE) != 0x10)
   {
      SetErrorCode(ERR_NOTSUPPORTED);
@@ -1666,7 +1666,6 @@ void SetDCbiasProfile(void)
    char   *Token;
    String sToken;
    int    num,ch;
-   float  val;
 
    num = -1;
    while(1)
@@ -1837,7 +1836,6 @@ void profileLevelISR(void)
                                       // Set profile 2 when level sensor pulse is grater than 10 uS wide
 void SetDCbiasProfileToggle(void)
 {
-   DCbiasData *DCbData;
    char   *Token;
    String sToken;
 
@@ -2442,7 +2440,6 @@ void SetLevelDetChOffsetAdjust(char *brd, char *TWIadd)
 bool DCbiasAllZeroCheck(void)
 {
   DCbiasData *DCbData;
-  int i;
 
   // Check all the channels
   for(int i=1;i<=NumberOfDCChannels;i++)

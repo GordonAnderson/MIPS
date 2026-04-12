@@ -47,7 +47,7 @@ bool EloadConfig(EConfig *ec, bool report)
     Wire1.endTransmission();
     delay(2000);
     ptr = (uint8_t *)&EC;
-    for(i=0;i<sizeof(EConfig);i++) 
+    for(i=0;i<(int)sizeof(EConfig);i++)
     {
       Wire1.requestFrom(TWI_ENET_ADD, 1);
       if(Wire1.available() >= 1) ptr[i] = Wire1.read();
@@ -56,7 +56,7 @@ bool EloadConfig(EConfig *ec, bool report)
     // Verify the checksum
     chksum = 0;
     ptr = (uint8_t *)&EC;
-    for(i=0;i<sizeof(EConfig)-1;i++) chksum += ptr[i];
+    for(i=0;i<(int)sizeof(EConfig)-1;i++) chksum += ptr[i];
     if(chksum != EC.CheckSum) return false;
     // Move data to passed in pointer
     memcpy((void *)ec,(void *)&EC,sizeof(EConfig));
@@ -89,7 +89,7 @@ bool EloadConfig(EConfig *ec, bool report)
   ptr = (uint8_t *)&EC;
   mtime = millis();
   if(report) serial->println("Reading config data");
-  for(i=0;i<sizeof(EConfig);i++)
+  for(i=0;i<(int)sizeof(EConfig);i++)
   {
     while(true)
     {
@@ -102,7 +102,7 @@ bool EloadConfig(EConfig *ec, bool report)
   // Verify the checksum
   chksum = 0;
   ptr = (uint8_t *)&EC;
-  for(i=0;i<sizeof(EConfig)-1;i++) chksum += ptr[i];
+  for(i=0;i<(int)sizeof(EConfig)-1;i++) chksum += ptr[i];
   if(chksum != EC.CheckSum) { if(report) serial->println("Checksum error"); return false; }
   // Move data to passed in pointer
   memcpy((void *)ec,(void *)&EC,sizeof(EConfig));
@@ -123,13 +123,13 @@ bool EsendConfig(EConfig *ec)
   // Calculate the checksum and update the data structure
   ptr = (uint8_t *)ec;
   ec->CheckSum = 0;
-  for(i=0;i<sizeof(EConfig)-2;i++) ec->CheckSum += ptr[i];
+  for(i=0;i<(int)sizeof(EConfig)-2;i++) ec->CheckSum += ptr[i];
   if(MIPSconfigData.EnetUseTWI)
   { 
     ptr = (uint8_t *)ec;
     Wire1.beginTransmission(TWI_ENET_ADD);
     Wire1.write(TWI_SET_CFG);
-    for(i=0;i<sizeof(EConfig);i++) Wire1.write(ptr[i]);
+    for(i=0;i<(int)sizeof(EConfig);i++) Wire1.write(ptr[i]);
     Wire1.endTransmission();
     return true;
   }
@@ -141,7 +141,7 @@ bool EsendConfig(EConfig *ec)
   //Serial1.flush();
   Serial1.write(0x55);
   Serial1.write(0xBA);  //was AA
-  for(i=0;i<(sizeof(EConfig)-2);i++)  Serial1.write(ptr[i]);
+  for(i=0;i<(int)(sizeof(EConfig)-2);i++)  Serial1.write(ptr[i]);
   Serial1.write(ec->CheckSum);
   // We should have a 'K' in the serial buffer so find it!
   mtime = millis();
@@ -182,7 +182,7 @@ bool ScanIP(char *ips, uint8_t *ip)
 
   sval = "";
   count = 0;
-  for(i=0;i<strlen(ips);i++)
+  for(i=0;i<(int)strlen(ips);i++)
   {
     if(ips[i] == '.')
     {
@@ -196,6 +196,7 @@ bool ScanIP(char *ips, uint8_t *ip)
   IP[count] = sval.toInt();
   // Move the data to the passed in pointer
   for(i=0;i<4;i++) ip[3-i] = IP[i];
+  return true;
 }
 
 void Ethernet_init(void)

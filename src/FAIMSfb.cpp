@@ -19,9 +19,11 @@
 //  March 10, 2019
 //
 
+#include "Variants.h"
 #include "FAIMSfb.h"
 #include "Arduino.h"
 #include <Wire.h>
+#include "SC16IS740.h"
 
 #if FAIMSFBcode
 
@@ -33,6 +35,88 @@
 //#define   CVDIV   2
 
 #define   MAXELECBIAS 3
+
+// Forward declarations
+extern ThreadController control;
+extern int SelectedARBboard;
+extern Menu MainMenu;
+void AddMainMenuEntry(MenuEntry *me);
+int AD5593writeWire1(uint8_t addr, uint8_t pb, uint16_t val);
+int AD5593readADCWire1(int8_t addr, int8_t chan);
+int AD5593readADCWire1(int8_t addr, int8_t chan, int8_t num);
+int AD5593writeDACWire1(int8_t addr, int8_t chan, int val);
+void InitFBScan(int module);
+void ReportFBScan(void);
+void StopFBScan(int module);
+void SaveFAIMSFBsettings(void);
+void RestorFAIMSFBsettings(bool NoDisplay);
+void RestorFAIMSFBsettings(void);
+void FAIMSfbScan(void);
+void FAIMSfbScanAbort(void);
+void FAIMSfb_loop(void);
+void FAIMSFBscanISR(void);
+void ElectrometerAD5593init(int8_t addr);
+void ZeroElectrometer(void);
+void SetFAIMSfbEnable(char *module, char *ena);
+void ReturnFAIMSfbEnable(int module);
+void SetFAIMSfbMode(char *module, char *mode);
+void ReturnFAIMSfbMode(int module);
+void SetFAIMSfbFreq(int module, int freq);
+void ReturnFAIMSfbFreq(int module);
+void SetFAIMSfbDuty(int module, int duty);
+void ReturnFAIMSfbDuty(int module);
+void SetFAIMSfbDrive(char *module, char *drive);
+void ReturnFAIMSfbDrive(int module);
+void ReturnFAIMSfbDriveV(int module);
+void ReturnFAIMSfbDriveI(int module);
+void SetFAIMSfbVrf(char *module, char *Vrf);
+void ReturnFAIMSfbVrf(int module);
+void ReturnFAIMSfbVrfV(int module);
+void ReturnFAIMSfbPWR(int module);
+void SetFAIMSfbVrfNow(char *module, char *Vrf);
+void SetFAIMSfbVrfTable(char *module, char *Vrf);
+void GenerateVrfTable(int module);
+void SetFAIMSfbMaxDrive(char *module, char *MaxDrv);
+void ReturnFAIMSfbMaxDrive(int module);
+void SetFAIMSfbMaxPower(char *module, char *MaxPwr);
+void ReturnFAIMSfbMaxPower(int module);
+void SetFAIMSfbCV(char *module, char *CV);
+void ReturnFAIMSfbCV(int module);
+void ReturnFAIMSfbCVrb(int module);
+void SetFAIMSfbBIAS(char *module, char *BIAS);
+void ReturnFAIMSfbBIAS(int module);
+void ReturnFAIMSfbBIASrb(int module);
+void SetFAIMSfbCVstart(char *module, char *CVstart);
+void ReturnFAIMSfbCVstart(int module);
+void SetFAIMSfbCVend(char *module, char *CVend);
+void ReturnFAIMSfbCVend(int module);
+void SetFAIMSfbVRFstart(char *module, char *VRFstart);
+void ReturnFAIMSfbVRFstart(int module);
+void SetFAIMSfbVRFend(char *module, char *VRFend);
+void ReturnFAIMSfbVRFend(int module);
+void SetFAIMSfbStepDuration(int module, int StpDur);
+void ReturnFAIMSfbStepDuration(int module);
+void SetFAIMSfbSteps(int module, int Steps);
+void ReturnFAIMSfbSteps(int module);
+void InitFAIMSfbScan(int module);
+void StopFAIMSfbScan(int module);
+void SetEMRTenable(char *ena);
+void ReturnEMRTenable(void);
+void SetEMRTM4enable(char *ena);
+void ReturnEMRTM4enable(void);
+void ReturnEMRTpos(void);
+void ReturnEMRTneg(void);
+void SetEMRTposOff(char *val);
+void ReturnEMRTposOff(void);
+void SetEMRTnegOff(char *val);
+void ReturnEMRTnegOff(void);
+void SetEMRTposZero(char *val);
+void ReturnEMRTposZero(void);
+void SetEMRTnegZero(char *val);
+void ReturnEMRTnegZero(void);
+void SetEMRTzero(void);
+void SendFrag(void);
+void PollFrag(void);
 
 MIPStimer *FAIMSfbScanClock = NULL;
 
@@ -241,7 +325,7 @@ void RestorFAIMSFBsettings(bool NoDisplay)
     if (strcmp(fd.Name, "FAIMSfb") == 0)
     {
       // Here if the name matches so copy the data to the operating data structure
-      if (fd.Size > sizeof(FAIMSFBdata)) fd.Size = sizeof(FAIMSFBdata);
+      if (fd.Size > (int16_t)sizeof(FAIMSFBdata)) fd.Size = sizeof(FAIMSFBdata);
       fd.TWIadd = FAIMSFB->TWIadd;
       FAIMSFB->ElectM4ena = false;
       memcpy(FAIMSFB, &fd, fd.Size);
@@ -503,7 +587,6 @@ void FAIMSFBscanISR(void)
 void InitFBScan(int module)
 {
   int brd;
-  int num;
 
   FAIMSfbScanClock->stop();
   if(msd == NULL) msd = new MIPSscanData;
@@ -567,7 +650,7 @@ void StopFBScan(int module)
   int brd;
     
   FAIMSfbScanClock->stop();
-  for(int i=1;i<=2;i)
+  for(int i=1;i<=2;i++)
   {
     if((brd=FAIMSfbModule2Brd(module & i, false)) != -1)
     {
@@ -1092,7 +1175,7 @@ void ReturnEMRTneg(void)
 void SetEMRTposOff(char *val)
 {
     if(isElectrometer() == -1) return;
-    SetFAIMSfb("1",val,&faimsfbvars->PosOffset,&faimsfbvars->PosOffset,0,MAXELECBIAS);
+    SetFAIMSfb((char*)"1",val,&faimsfbvars->PosOffset,&faimsfbvars->PosOffset,0,MAXELECBIAS);
 }
 void ReturnEMRTposOff(void)
 {
@@ -1105,7 +1188,7 @@ void ReturnEMRTposOff(void)
 void SetEMRTnegOff(char *val)
 {
     if(isElectrometer() == -1) return;
-    SetFAIMSfb("1",val,&faimsfbvars->NegOffset,&faimsfbvars->NegOffset,0,MAXELECBIAS);
+    SetFAIMSfb((char*)"1",val,&faimsfbvars->NegOffset,&faimsfbvars->NegOffset,0,MAXELECBIAS);
 }
 void ReturnEMRTnegOff(void)
 {
@@ -1121,7 +1204,7 @@ void SetEMRTposZero(char *val)
     int brd;
     
     if((brd=isElectrometer()) == -1) return;
-    SetFAIMSfb("1",val,&FAIMSFBarray[brd]->ElectPosZero,&FAIMSFBarray[brd]->ElectPosZero,0,MAXELECBIAS);
+    SetFAIMSfb((char*)"1",val,&FAIMSFBarray[brd]->ElectPosZero,&FAIMSFBarray[brd]->ElectPosZero,0,MAXELECBIAS);
     AD5593writeDACWire1(FAIMSFBarray[brd]->ElectAdd, FAIMSFBarray[brd]->ElectPosZeroCtrl.Chan, Value2Counts(FAIMSFBarray[brd]->ElectPosZero,&FAIMSFBarray[brd]->ElectPosZeroCtrl));
 }
 void ReturnEMRTposZero(void)
@@ -1137,7 +1220,7 @@ void SetEMRTnegZero(char *val)
     int brd;
     
     if((brd=isElectrometer()) == -1) return;
-    SetFAIMSfb("1",val,&FAIMSFBarray[brd]->ElectNegZero,&FAIMSFBarray[brd]->ElectNegZero,0,MAXELECBIAS);
+    SetFAIMSfb((char*)"1",val,&FAIMSFBarray[brd]->ElectNegZero,&FAIMSFBarray[brd]->ElectNegZero,0,MAXELECBIAS);
     AD5593writeDACWire1(FAIMSFBarray[brd]->ElectAdd, FAIMSFBarray[brd]->ElectNegZeroCtrl.Chan, Value2Counts(FAIMSFBarray[brd]->ElectNegZero,&FAIMSFBarray[brd]->ElectNegZeroCtrl));
 }
 void ReturnEMRTnegZero(void)

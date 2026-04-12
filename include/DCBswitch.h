@@ -97,5 +97,7 @@ typedef struct
 
 extern DCBswitch  *DCBswitchData[2];
 
+void DCBswitch_init(int8_t Board, int8_t addr);
+
 #endif
 #endif

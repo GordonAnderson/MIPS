@@ -185,6 +185,7 @@ MIPStimer MIPStimer::enableTrigger()
     t.tc->TC_CHANNEL[t.channel].TC_CMR = (t.tc->TC_CHANNEL[t.channel].TC_CMR) | TC_CMR_ENETRG;
     
     //t.tc->TC_CHANNEL[t.channel].TC_CMR = (t.tc->TC_CHANNEL[t.channel].TC_CMR) | 0xD00;
+	return *this;
 }
 
 MIPStimer MIPStimer::halt(bool state)
@@ -197,11 +198,13 @@ MIPStimer MIPStimer::halt(bool state)
 	{
 	   t.tc->TC_CHANNEL[t.channel].TC_CCR = 0x01;
 	}
+	return *this;
 }
 
 MIPStimer MIPStimer::softwareTrigger()
 {
 	TC_Start(Timers[timer].tc, Timers[timer].channel);
+	return *this;
 }
 
 

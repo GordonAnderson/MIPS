@@ -32,12 +32,12 @@ extern bool CompressorDisable;
 
 extern volatile int  C_NormAmpMode;
 
-extern char *CmodeList;
+extern const char *CmodeList;
 extern char Cmode[];
 
 extern char Cmode[];
 extern char CswitchState[];
-extern char *CswitchList;
+extern const char *CswitchList;
 
 extern CompressorState CState;
 extern CompressorSwitchState CSState;

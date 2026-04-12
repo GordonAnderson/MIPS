@@ -188,5 +188,6 @@ void FAIMSsetLockSP(char *KV);
 
 void FAIMSrequestAutoTune(void);
 void FAIMSautoTuneAbort(void);
+void FAIMS_init(int8_t Board);
 
 #endif

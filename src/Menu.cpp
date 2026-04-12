@@ -47,7 +47,7 @@ void CalculatePositionVariables(Window *wn)
   if (wn->MaxLines < ch) ch = wn->MaxLines;
 }
 
-void p(char *fmt, ... )
+void p(const char *fmt, ... )
 {
   char tmp[128]; // resulting string limited to 128 chars
   va_list args;
@@ -69,7 +69,6 @@ void MenuProcessChange(Menu *m, int8_t change)
 // The function will check the state and process the button press.
 void MenuButtonPress(Menu *m)
 {
-  void (*function)(void);
 
   // If state is scrolling then see if this is an entry that we can take action with, if so
   // do it, else ignore the button
@@ -317,14 +316,14 @@ Window mw =  {" System Message ",
 Thread DisplayDismissThread  = Thread();
 
 // Displays a pop up message and it remains until DismissMessage is called
-void DisplayMessage(char *message)
+void DisplayMessage(const char *message)
 {
   DisplayIntensity();
   // Exit there is something to restore, thus popup message is already on screen
   if((saveActiveMenu != NULL) || (saveActiveDialog != NULL)) return;
   // Save the menu and dialogbox pointers then set to null. This
   // will stop screen updates
-  if(saveActiveMenu == NULL); saveActiveMenu = ActiveMenu;
+  if(saveActiveMenu == NULL) saveActiveMenu = ActiveMenu;
   if(saveActiveDialog == NULL) saveActiveDialog = ActiveDialog;
   ActiveMenu = NULL;
   ActiveDialog = NULL;
@@ -339,7 +338,7 @@ void DisplayMessage(char *message)
 }
 
 // Displays a pop up message and it remains until the user presses the controlknob
-void DisplayMessageButtonDismiss(char *message)
+void DisplayMessageButtonDismiss(const char *message)
 {
   // Display the message
   DisplayMessage(message);
@@ -360,7 +359,7 @@ void DismissMessageThread(void)
 }
 
 // This function displays a message for a defined length of time in millisec
-void DisplayMessage(char *message, int DisplayTime)
+void DisplayMessage(const char *message, int DisplayTime)
 {
   // Display the message
   DisplayMessage(message);

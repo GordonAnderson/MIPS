@@ -3,11 +3,11 @@
 
 #include "Menu.h"
 
-extern char *DIlist;
-extern char *DILlist;
+extern const char *DIlist;
+extern const char *DILlist;
 
-extern char *DOlist;
-extern char *DOLlist;
+extern const char *DOlist;
+extern const char *DOLlist;
 
 
 enum DialogTypes
@@ -45,7 +45,7 @@ typedef struct
   float       StepSize;
   int8_t      Xpos;             // X offset for entry location for data display
   bool        NoEdit;           // Flag set to true if field is not editable
-  char        *fmt;             // Printf format string for display
+  const char  *fmt;             // Printf format string for display
   void        *Value;           // Pointer to value data as appropriate
   void (*PreFunction)(void);    // Pointer to function called when entry is selected
   void (*PostFunction)(void);   // Pointer to function called after value entry
@@ -75,9 +75,9 @@ void DisplayAllDialogEntries(DialogBox *d);
 void DisplayDialogEntryNames(Window *w, DialogBoxEntry *de, bool HighLight);
 void DisplayAllDialogEntryNames(DialogBox *d);
 void DialogBoxDisplay(DialogBox *d);
-DialogBoxEntry *GetDialogEntries(DialogBoxEntry *de, char *rname);
+DialogBoxEntry *GetDialogEntries(DialogBoxEntry *de, const char *rname);
 void RefreshAllDialogEntries(DialogBox *d);
-void PrintDialog(DialogBox *d, int X, int Y, char *text);
-bool RangeTest(DialogBoxEntry *des, char *EntryName, float fval);
+void PrintDialog(DialogBox *d, int X, int Y, const char *text);
+bool RangeTest(DialogBoxEntry *des, const char *EntryName, float fval);
 
 #endif

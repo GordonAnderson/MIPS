@@ -23,10 +23,10 @@ char TwaveCompressorTable[131] = "C";
 
 bool CompressorDisable = false;
 
-char *CmodeList = "Normal,Compress";
+const char *CmodeList = "Normal,Compress";
 char Cmode[12]  = "Normal";
 
-char *CswitchList    = "Open,Close";
+const char *CswitchList    = "Open,Close";
 char CswitchState[6] = "Open";
 
 DIhandler *CtrigInput;
@@ -66,6 +66,7 @@ bool CompressorLoopStart(int Index)
   CStackLevel++;
   cStack[CStackLevel - 1].StartOfLoop = Index;
   cStack[CStackLevel - 1].Inited = false;
+  return true;
 }
 
 int CompressorProcessLoop(int Count)
@@ -238,13 +239,19 @@ void ProcessSweep(void)
 // or false with range error. If range error then NAK is sent.
 bool TWSWvalidateCF(int chan, int freq)
 {
-  DialogBoxEntry *de;
+  DialogBoxEntry *de=nullptr;
   int MaxChan = 0;
 
   if(NumberOfTwaveModules > 0) de = GetDialogEntries(TwaveDialogEntries2, "Clock freq, Hz");
   if(NumberOfARBchannels > 0) de = GetDialogEntries(ARBentriesPage1, "Frequency");
   if(NumberOfTwaveModules > 0) MaxChan = NumberOfTwaveModules;
   if(NumberOfARBchannels > 0) MaxChan = NumberOfARBchannels/8;
+  if(de==nullptr)
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return false;
+  }
   if((chan <= 0) || (chan > MaxChan) || (freq > de->Max) || (freq < de->Min))
   {
     SetErrorCode(ERR_BADARG);
@@ -256,13 +263,19 @@ bool TWSWvalidateCF(int chan, int freq)
 
 bool TWSWvalidateCV(int chan, int volts)
 {
-  DialogBoxEntry *de;
+  DialogBoxEntry *de=nullptr;
   int MaxChan = 0;
 
   if(NumberOfTwaveModules > 0) de = GetDialogEntries(TwaveDialogEntries2, "Pulse voltage");
   if(NumberOfARBchannels > 0) de = GetDialogEntries(ARBentriesPage1, "Amplitude, Vp-p");
   if(NumberOfTwaveModules > 0) MaxChan = NumberOfTwaveModules;
   if(NumberOfARBchannels > 0) MaxChan = NumberOfARBchannels/8;
+  if(de==nullptr)
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return false;
+  }
   if((chan <= 0) || (chan > MaxChan) || (volts > de->Max) || (volts < de->Min))
   {
     SetErrorCode(ERR_BADARG);

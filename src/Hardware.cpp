@@ -211,7 +211,7 @@ DialogBox CalibrationDialog = {
 // This function allows calibration of a DAC output channel along with its ADC readback channel.
 //
 // If this function blocks it will shut down all normal processing including the dialog box processing.
-void ChannelCalibrate(ChannelCal *CC, char *Name)
+void ChannelCalibrate(ChannelCal *CC, const char *Name)
 {
   int ZeroPoint;
   int MidPoint;
@@ -221,7 +221,7 @@ void ChannelCalibrate(ChannelCal *CC, char *Name)
   ChannelCalibrate(CC, Name, ZeroPoint, MidPoint);
 }
 
-void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
+void ChannelCalibrate(ChannelCal *CC, const char *Name, int ZeroPoint, int MidPoint)
 {
   ZeroCalValue = ZeroPoint;
   MidCalValue = MidPoint;
@@ -373,7 +373,7 @@ void ChannelCalibrate(ChannelCal *CC, char *Name, int ZeroPoint, int MidPoint)
 
 // This is a generic calibration function that uses the host interface to perform the calibration.
 // Entering an empty string will cause the calibration function to abort
-bool ChannelCalibrateSerial(ChannelCal *CC, char *Message)
+bool ChannelCalibrateSerial(ChannelCal *CC, const char *Message)
 {
   float ZeroPoint;
   float MidPoint;
@@ -383,7 +383,7 @@ bool ChannelCalibrateSerial(ChannelCal *CC, char *Message)
   return ChannelCalibrateSerial(CC, Message, ZeroPoint, MidPoint);  
 }
 
-bool ChannelCalibrateSerial(ChannelCal *CC, char *Message, float ZeroPoint, float MidPoint)
+bool ChannelCalibrateSerial(ChannelCal *CC, const char *Message, float ZeroPoint, float MidPoint)
 {
   char   *tkn;
   String arg;
@@ -1144,7 +1144,6 @@ int AD7994_b(int8_t adr, int8_t chan)
 
 int AD7994(int8_t adr, int8_t chan)
 {
-  int          i;
   unsigned int val;
 
   if(MIPSconfigData.TWIhardware) return(AD7994_b(adr,chan));
@@ -1202,7 +1201,7 @@ int AD7998_b (int8_t adr, int8_t chan)
     if(i==-1) break;
     val |= (i=Wire.read()) & 0xFF;
     if(i==-1) break;
-    if((val & 0x7000) != (chan<<12)) break;
+    if((val & 0x7000) != (unsigned int)(chan<<12)) break;
     val &= 0xFFF;
     val <<= 4;
     ReleaseTWI();
@@ -1220,7 +1219,6 @@ int AD7998_b (int8_t adr, int8_t chan)
 // Updated 8/4/24, had a logic error and could return invalid data on bus errors.
 int AD7998(int8_t adr, int8_t chan)
 {
-  int          i;
   unsigned int val;
 
   if(adr >= 0x48) return(ADS7828(adr, chan));
@@ -1239,7 +1237,7 @@ int AD7998(int8_t adr, int8_t chan)
     val = (TWI_READ(LOW) << 8) & 0xFF00;
     val |= (TWI_READ(HIGH)) & 0xFF;
     TWI_STOP();
-    if(((val & 0x7000) >> 12) != chan) break;
+    if(((val & 0x7000) >> 12) != (unsigned int)chan) break;
     val &= 0xFFF;
     val <<= 4;     // Left justify the result into 16 bits
     Wire.begin();  // Release control of clock and data lines
@@ -1397,7 +1395,7 @@ int AD5593readWord(uint8_t addr, uint8_t pb)
     return (-1);
   }
   // Now read the data word
-  int i = 0,j = 0;
+  int j = 0;
   Wire.requestFrom(addr, (uint8_t)2);
 //  while(Wire.available())
 //  {
@@ -1482,7 +1480,7 @@ int AD5593readWordWire1(uint8_t addr, uint8_t pb)
   }
   if(iStat != 0) return (-1);
   // Now read the data word
-  int i = 0,j = 0;
+  int j = 0;
   Wire1.requestFrom(addr, (uint8_t)2);
 //  while(Wire1.available())
 //  {
@@ -1524,7 +1522,7 @@ int AD5593readADCWire1__(int8_t addr, int8_t chan, int8_t num)
 
 int AD5593readADCWire1(int8_t addr, int8_t chan, int8_t num)
 {
-  int i,j,k,val=0;
+  int i,j,k;
   int iStat;
 
   // Select the ADC channel number for repeat read
@@ -1573,6 +1571,7 @@ int AD5593writeDACWire1(int8_t addr, int8_t chan, int val)
 int AD5625(int8_t adr, uint8_t chan, uint16_t val)
 {
   AD5625(adr, chan, val, 0);
+  return 0;
 }
 
 int AD5625(int8_t adr, uint8_t chan, uint16_t val,int8_t Cmd)
@@ -1655,7 +1654,6 @@ void AD5668_EnableRef(int8_t spiAdr)
 //#define useSPIDMA
 void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali, int8_t Cmd)
 {
-  uint8_t     buf[4];
   uint16_t    val;
   static bool inited = false;
 
@@ -1692,20 +1690,19 @@ void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali, int8_t Cmd)
 // Option 2, send with inline minimul code
 #ifdef useSPIinline
   Spi* pSpi = SPI0;
-  uint32_t b;
   static uint32_t ch = BOARD_PIN_TO_SPI_CHANNEL(SPI_CS);
   pSpi->SPI_TDR = (uint32_t)Cmd | SPI_PCS(ch);
   while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
-  b = pSpi->SPI_RDR;
+  pSpi->SPI_RDR;
   pSpi->SPI_TDR = (uint32_t)(((DACchan << 4) | (val >> 12)) & 0xFF) | SPI_PCS(ch);
   while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
-  b = pSpi->SPI_RDR;
+  pSpi->SPI_RDR;
   pSpi->SPI_TDR = (uint32_t)((val >> 4) & 0xFF) | SPI_PCS(ch);
   while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
-  b = pSpi->SPI_RDR;
+  pSpi->SPI_RDR;
   pSpi->SPI_TDR = (uint32_t)((val << 4) & 0xFF) | SPI_PCS(ch) | SPI_TDR_LASTXFER;
   while ((pSpi->SPI_SR & SPI_SR_RDRF) == 0);
-  b = pSpi->SPI_RDR;
+  pSpi->SPI_RDR;
 #endif
 // Option 3, Send with DMA, will help on big buffers
 #ifdef useSPIDMA
@@ -1873,7 +1870,7 @@ void DelayedTriggerISR(void)
 // is used for the MALDI2 system
 void SetDelayTrigInput(char *input, char *level)
 {
-  int di,dil;
+  int di,dil=0;
   
   // Validate input values
   if(input[0] != 't')
@@ -2043,7 +2040,7 @@ void spiDmaTX(uint32_t* src, uint16_t count,void (*isr)())
   DMAisr = isr;
   if(isr != NULL)
   {
-      int i = DMAC->DMAC_EBCISR;
+      (void)DMAC->DMAC_EBCISR;
 
       DMAC->DMAC_EBCIER |= 1 << (SPI_DMAC_TX_CH);
 
@@ -2060,7 +2057,7 @@ void spiDmaWait(void)
 
    while (!dmac_channel_transfer_done(SPI_DMAC_TX_CH)) {}
    while ((pSpi->SPI_SR & SPI_SR_TXEMPTY) == 0) {}
-   uint8_t b = pSpi->SPI_RDR;
+   (void)pSpi->SPI_RDR;
 }
 
 void CPUtemp(void) 
@@ -2071,14 +2068,14 @@ void CPUtemp(void)
   /* Start conversion. */
   ADC->ADC_CR = ADC_CR_START;
   /* Wait for end of the conversion. */
-  while (ADC->ADC_ISR & ADC_ISR_EOC15 == ADC_ISR_EOC15);
+  while ((ADC->ADC_ISR & ADC_ISR_EOC15) == ADC_ISR_EOC15);
   delay(100); // Keep this delay      
   /* Read the value. */ 
   int mV = ADC->ADC_LCDR;
   /* Start conversion. */
   ADC->ADC_CR = ADC_CR_START;
   /* Wait for end of the conversion. */
-  while (ADC->ADC_ISR & ADC_ISR_EOC15 == ADC_ISR_EOC15);
+  while ((ADC->ADC_ISR & ADC_ISR_EOC15) == ADC_ISR_EOC15);
   delay(100); // Keep this delay      
   /* Read the value. */ 
   mV = ADC->ADC_LCDR;
@@ -2109,7 +2106,7 @@ void LevelDetWindowISR(void)
 void LevelDetChangeReport(void)
 {
   float fval;
-  byte *b,ws;
+  byte *b,ws=0;
   int  i=0;
   char sbuf[50];
 
@@ -2125,7 +2122,7 @@ void LevelDetChangeReport(void)
     while (Wire1.available() > 0) b[i++] = Wire1.read();
     // Report change message, value, and time stamp in mSec
     uint32_t t = millis();
-    sprintf(sbuf,"LevelChanged,%.2f,%u\n",fval,t);
+    sprintf(sbuf,"LevelChanged,%.2f,%lu\n",fval,(unsigned long)t);
     serial->print(sbuf);
   }
   if(LevelDetWindowDetected)
@@ -2139,9 +2136,9 @@ void LevelDetChangeReport(void)
     if(Wire1.available() > 0) ws = Wire1.read();
     // Report change message, value, and time stamp in mSec
     uint32_t t = millis();
-    if(ws == 1) sprintf(sbuf,"LevelChanged,ABOVE,%u\n",t);
-    if(ws == 2) sprintf(sbuf,"LevelChanged,WITHIN,%u\n",t);
-    if(ws == 3) sprintf(sbuf,"LevelChanged,BELOW,%u\n",t);
+    if(ws == 1) sprintf(sbuf,"LevelChanged,ABOVE,%lu\n",(unsigned long)t);
+    if(ws == 2) sprintf(sbuf,"LevelChanged,WITHIN,%lu\n",(unsigned long)t);
+    if(ws == 3) sprintf(sbuf,"LevelChanged,BELOW,%lu\n",(unsigned long)t);
     serial->print(sbuf);
   }
 }

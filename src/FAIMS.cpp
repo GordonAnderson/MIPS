@@ -53,6 +53,7 @@
 #include "Variants.h"
 #include "Hardware.h"
 #include "Errors.h"
+#include "ClockGenerator.h"
 #include <Adafruit_PWMServoDriver.h>
 
 float MaxFAIMSVoltage = 0;    // This value is set to the highest DC bias voltage
@@ -159,7 +160,33 @@ float  DCbiasRB   = 0;
 float  DCcvRB     = 0;
 
 bool DiableArcDetect = false;
+
+// Forward declarations
+extern Menu MainMenu;
+extern DCbiasData dcbd;
+extern ThreadController control;
+extern int NumberOfESIchannels;
+extern bool NormalStartup;
+extern int encValue;
+extern bool ButtonRotated;
+void AddMainMenuEntry(MenuEntry *me);
+void RestoreDCbiasSettings(void);
+void RestoreDCbiasSettings(bool NoDisplay);
+void FAIMSscanISR(void);
+void FAIMS_loop(void);
+void FAIMS_AutoTune(void);
 void DelayArcDetect(void);
+void LockLevel(void);
+void EnableFAIMSscan(void);
+void UpdateNFDlimits(void);
+void UpdateFDlimits(void);
+void SaveFAIMSSettings(void);
+void RestoreFAIMSSettings(void);
+void RestoreFAIMSSettings(bool NoDisplay);
+void FAIMSsetFreq(int freq);
+void FAIMSsetPcap(char *pos);
+void FAIMSsetHcap(char *pos);
+void FAIMSgeneratePWL(char *option);
 
 DIhandler *FAIMSscanTrigger;
 
@@ -273,7 +300,7 @@ DialogBoxEntry FAIMSentriesDCMenu[] = {
   {""                        , 0, 1, D_FLOAT   , 0, 0, 0, 17, true, "%6.1f", &DCbiasRB, NULL, NULL},
   {""                        , 0, 2, D_FLOAT   , 0, 0, 0, 17, true, "%6.1f", &DCcvRB, NULL, NULL},
   {""                        , 0, 3, D_FLOAT   , 0, 0, 0, 17, true, "%6.1f", &DCoffsetRB, NULL, NULL},
-  {" Curtain V"              , 0, 4, D_OFF     , -1000, 1000, 10, 18, false, "%5.0f", &ESIarray[1].VoltageSetpoint, NULL, NULL},
+  {" Curtain V"              , 0, 4, D_OFF     , -1000, 1000, 10, 18, false, "%5.0f", &ESIarray[1]->VoltageSetpoint, NULL, NULL},
   {" Linear scan"            , 0, 5, D_PAGE    , 0, 0, 0, 0, false, NULL, &FAIMSentriesDCMenu2, NULL, NULL},
   {" Step scan"              , 0, 6, D_PAGE    , 0, 0, 0, 0, false, NULL, &FAIMSentriesDCMenu3, NULL, NULL},
   {" Scan trigger"           , 0, 7, D_DI      , 0, 0, 2, 21, false, DIlist, &faims.ScanTrigger, NULL, NULL},
@@ -645,7 +672,7 @@ void RestoreFAIMSSettings(bool NoDisplay)
 
 int BuildGPIOimage(void)
 {
-  int   image;
+  int   image=0;
 
   if(faims.Rev <= 2) image = faims.PhaseC & 0x07;
   if (faims.Drv1.Enable) image |= 0x10;
@@ -729,7 +756,7 @@ void FAIMS_init(int8_t Board)
      FAIMSclockSet(faims.CLOCKadr, faims.Freq);
   }
   // If ESI rev 3 board is present then enable the curtian menu option
-  if((NumberOfESIchannels >= 1) && (ESIarray[1].Rev >= 3) && (ESIarray[1].ESIchan[0].VoltageLimit < 5000))
+  if((NumberOfESIchannels >= 1) && (ESIarray[1]->Rev >= 3) && (ESIarray[1]->ESIchan[0].VoltageLimit < 5000))
   {
     DialogBoxEntry *de = GetDialogEntries(FAIMSentriesDCMenu, " Curtain V");
     if(de != NULL)
@@ -737,8 +764,8 @@ void FAIMS_init(int8_t Board)
       CurtianFound = true;
       de->Type = D_FLOAT;
       // Set the range, pull from ESI module
-      de->Min = -ESIarray[1].ESIchan[0].VoltageLimit;
-      de->Max = ESIarray[1].ESIchan[0].VoltageLimit;
+      de->Min = -ESIarray[1]->ESIchan[0].VoltageLimit;
+      de->Max = ESIarray[1]->ESIchan[0].VoltageLimit;
     }
   }
   // Setup the PWM outputs and set levels
@@ -974,7 +1001,7 @@ void FAIMSDCbiasControl(void)
         {
           // Update the scan voltage
           if(FAIMSscan) ScanCV = faims.CVstart + (faims.CVend - faims.CVstart) * ScanTime / faims.Duration;
-          else if((millis()-StepTime) > faims.StepDuration)
+          else if((millis()-StepTime) > (unsigned int)faims.StepDuration)
           {
             StepTime += faims.StepDuration;
             ScanCV += (faims.CVend - faims.CVstart) / faims.Steps;
@@ -1065,7 +1092,7 @@ void FieldDrivenFAIMSDCbiasControl(void)
       {
         // Update the scan voltage
         if(FAIMSscan) ScanCV = faims.CVstart + (faims.CVend - faims.CVstart) * ScanTime / faims.Duration;
-        else if((millis()-StepTime) > faims.StepDuration)
+        else if((millis()-StepTime) > (unsigned int)faims.StepDuration)
         {
           StepTime += faims.StepDuration;
           ScanCV += (faims.CVend - faims.CVstart) / faims.Steps;
@@ -1126,7 +1153,6 @@ void FAIMS_loop(void)
   static DialogBoxEntry *PCde = GetDialogEntries(FAIMSentriesTuneMenu, " Pri capacitance");
   static DialogBoxEntry *HCde = GetDialogEntries(FAIMSentriesTuneMenu, " Har capacitance");
   static uint32_t FMarcTime=0;
-  static bool FMarced = false;
   static bool FMrestart = false;
 
   if(FMnumTries < 0) FMnumTries = 0;
@@ -1164,7 +1190,7 @@ void FAIMS_loop(void)
   }
   if((faims.Enable) && (FMcurrentTry > 0))
   {
-    if((millis() - OnMillis) > (10 * FMrestartDelay)) FMcurrentTry = 0;
+    if((millis() - OnMillis) > (unsigned int)(10 * FMrestartDelay)) FMcurrentTry = 0;
   }
   // If the global enable has just changed state to on, then check the clock to
   // make sure its running and correct. If not do not enable and issue a warning.
@@ -1194,7 +1220,7 @@ void FAIMS_loop(void)
       // Raise digital output A to flag we are on!
       SetOutput('A', HIGH);
       // Enable the curtian supply if present in system
-      if(CurtianCtrl) if((NumberOfESIchannels >= 1) && (ESIarray[1].Rev >= 3)) ESIarray[1].Enable =true;
+      if(CurtianCtrl) if((NumberOfESIchannels >= 1) && (ESIarray[1]->Rev >= 3)) ESIarray[1]->Enable =true;
     }
   }
   if ((LastEnable) && (!faims.Enable))
@@ -1202,7 +1228,7 @@ void FAIMS_loop(void)
     // Here if the system was just disabled.
     ClearOutput('A', HIGH);    
     // Turn off the esi board, used for curtian supply
-    if(CurtianCtrl) if((NumberOfESIchannels >= 1) && (ESIarray[1].Rev >= 3)) ESIarray[0].Enable = ESIarray[1].Enable =false;
+    if(CurtianCtrl) if((NumberOfESIchannels >= 1) && (ESIarray[1]->Rev >= 3)) ESIarray[0]->Enable = ESIarray[1]->Enable =false;
   }
   LastEnable = faims.Enable;
   // Turn on RF on led in faims RF deck if any drive is enabled and global enable
@@ -1249,7 +1275,7 @@ void FAIMS_loop(void)
     analogWrite(faims.Drv1.PWMchan, 0);
     analogWrite(faims.Drv2.PWMchan, 0);
     analogWrite(faims.Drv3.PWMchan, 0);
-    if(FMrestart && ((millis() - FMarcTime) > FMrestartDelay))
+    if(FMrestart && ((millis() - FMarcTime) > (unsigned int)FMrestartDelay))
     {
       // if here we will try and restart the system and ramp the drive level back up
       FMcurrentTry++;
@@ -1384,7 +1410,6 @@ void FAIMS_loop(void)
         // Lower the drive level
         faims.Drv = 5;
         // Set arc detected flag and set arc detect time
-        FMarced = true;
         FMrestart = true;
         FMarcTime = millis();
         LogMessage("FAIMS arc detected.");
@@ -2318,7 +2343,6 @@ int readFAIMSnegADC(void)
 
 void allowFAIMSdriveAdj(void)
 {
-  int   brd;
   float Drive;
   
   // Call the task system to allow all system processing

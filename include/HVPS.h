@@ -52,5 +52,6 @@ extern HVPSdata *HVPSarray[];
 
 // Prototypes
 void HVPSNumberOfChannels(void);
+void HVPS_init(int8_t Board, int8_t addr);
 
 #endif

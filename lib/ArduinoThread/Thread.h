@@ -77,7 +77,7 @@ public:
     // Returns the run time in millisec for the last task call
     unsigned long runTimeMs(void);
 
-    void setName(char *);
+    void setName(const char *);
     const char *getName(void);
     
     int getID(void);
