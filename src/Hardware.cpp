@@ -2068,14 +2068,14 @@ void CPUtemp(void)
   /* Start conversion. */
   ADC->ADC_CR = ADC_CR_START;
   /* Wait for end of the conversion. */
-  while ((ADC->ADC_ISR & ADC_ISR_EOC15) == ADC_ISR_EOC15);
-  delay(100); // Keep this delay      
-  /* Read the value. */ 
+  while (!(ADC->ADC_ISR & ADC_ISR_EOC15));
+  delay(100); // Keep this delay
+  /* Read the value. */
   int mV = ADC->ADC_LCDR;
   /* Start conversion. */
   ADC->ADC_CR = ADC_CR_START;
   /* Wait for end of the conversion. */
-  while ((ADC->ADC_ISR & ADC_ISR_EOC15) == ADC_ISR_EOC15);
+  while (!(ADC->ADC_ISR & ADC_ISR_EOC15));
   delay(100); // Keep this delay      
   /* Read the value. */ 
   mV = ADC->ADC_LCDR;
