@@ -113,14 +113,9 @@
 
 #define UseWDT
 
-// Define my names for the native USB driver
-#ifndef USB_PRODUCT
-#define  USB_PRODUCT      "MIPS, native USB"
-#endif
-//#pragma "-DUSB_PRODUCT=MIPS, native USB"
-#ifndef USB_MANUFACTURER
-#define  USB_MANUFACTURER "GAA Custom Electronics, LLC"
-#endif
+// USB_PRODUCT and USB_MANUFACTURER are set via build_flags in platformio.ini
+// so they are defined before the Arduino USB headers are included.
+// Defining them here is too late (headers already processed by this point).
 
 DueFlashStorage    dueFlashStorage;
 const PROGMEM byte NonVolStorage[1000] = {};

@@ -41,4 +41,5 @@
                                                             
 ## New features
 - [X] Add the help file creator python app to this build system
+- [ ] Add RFamp/quad surrport for rev 3.0 hadware
 

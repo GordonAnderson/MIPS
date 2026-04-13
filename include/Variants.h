@@ -10,7 +10,7 @@
 
 // Set false to disable sections of code when the application is built. This was added with rev 1.154 to
 // manage the memory problem. Options are provided for modules that are not very common.
-// Make sure to include all the header files that depend on these flags directly after these 
+// Make sure to include all the header files that depend on these flags directly after these
 // definitions.
 // The state is the flags will add a letter to the end of the version number to signal the version
 // of the code that is being built. If no letter is added that all options are false.
