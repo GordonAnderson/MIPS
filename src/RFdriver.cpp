@@ -1595,7 +1595,7 @@ void SaveRF2EEPROM(void)
     if(rfddarray[b] != NULL)
     {
       SelectBoard(b);
-      if (WriteEEPROM(&RFDDarray[b], RFDDarray[b]->EEPROMadr, 0, sizeof(RFdriverData)) != 0) berr = true;
+      if (WriteEEPROM(RFDDarray[b], RFDDarray[b]->EEPROMadr, 0, sizeof(RFdriverData)) != 0) berr = true;
     }
   }
   SelectBoard(brd);
