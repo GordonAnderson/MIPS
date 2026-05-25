@@ -1044,8 +1044,8 @@ void RFdriver_loop(void)
     RFnVpp = RFnVpps[SelectedRFBoard][SelectedRFChan & 1];
     Power = Powers[SelectedRFBoard][SelectedRFChan & 1];    
   }
-  if (ActiveDialog == &RFdriverDialog) RefreshAllDialogEntries(&RFdriverDialog);
   RFCD = RFDD->RFCD[SelectedRFChan & 1]; 
+  if (ActiveDialog == &RFdriverDialog) RefreshAllDialogEntries(&RFdriverDialog);
 }
 
 // The following functions support gating.
