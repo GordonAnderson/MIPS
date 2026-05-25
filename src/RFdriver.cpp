@@ -527,7 +527,7 @@ void RFcontrol(void)
       if (Powers[board][chan] > RFDDarray[board]->RFCD[chan].MaxPower) RFDDarray[board]->RFCD[chan].DriveLevel -= 0.1;
       if (RFDDarray[board]->RFCD[chan].DriveLevel < 0) RFDDarray[board]->RFCD[chan].DriveLevel = 0;
       // Only process if  this channel is not gated off
-      if(!DIh[board][chan]->test(RFDDarray[board]->RFgateTrig[chan])) break;
+      if(!DIh[board][chan]->test(RFDDarray[board]->RFgateTrig[chan])) continue;
       if ((SelectedRFBoard == board) && ((SelectedRFChan & 1) == chan))
       {
         RFCD.DriveLevel = RFDDarray[board]->RFCD[chan].DriveLevel;
