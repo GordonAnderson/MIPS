@@ -17,7 +17,7 @@
 #define FAIMSFBcode     false    // appends b to version
 #define FAIMScode       false    // appends f to version
 #define HOFAIMcode      false    // appends h to version
-#define HVPScode        false    // appends v to version
+#define HVPScode        true    // appends v to version
 #define DMSDMSMB        false    // appends d to version
 #define DCBanalog       false    // appends a to version
 #define DCBcurrent      false    // appends c to version

@@ -57,7 +57,7 @@ HVPSdata HVPS_Rev_1 = {
     2,26000,0,
     3,-3.43,334.67,
     1,-12.77,1068.67,
-    3000,-3000,3000,-3000,
+    1200,-3000,1200,-3000,
 
     false,0,
     4,26000,0,
@@ -81,7 +81,7 @@ HVPSdata HVPS_Rev_2 = {
     2,26000,0,
     3,-3.43,334.67,
     1,-12.77,1068.67,
-    3000,-3000,3000,-3000,
+    1200,0,1200,0,
 
     false,0,
     4,26000,0,
@@ -239,7 +239,7 @@ void HVPSChanCalPos(void)
   // Define this channels name
   sprintf(Name,"  HVPS Channel %2d",HVPSCalChannel);
   // Calibrate this channel
-  ChannelCalibrate(&CC, Name,500,2000);
+  ChannelCalibrate(&CC, Name,HVPSarray[b]->HVPSCH[c].PosSupplyV / 10,HVPSarray[b]->HVPSCH[c].PosSupplyV / 1.5);
   // Turn everything off
   DAC7678(HVPSarray[b]->TWIdac,HVPSarray[b]->HVPSCH[c].DCPctrl.Chan,Value2Counts(0, &HVPSarray[b]->HVPSCH[c].DCPctrl));
   DAC7678(HVPSarray[b]->TWIdac,HVPSarray[b]->HVPSCH[c].DCNctrl.Chan,Value2Counts(0, &HVPSarray[b]->HVPSCH[c].DCNctrl));
