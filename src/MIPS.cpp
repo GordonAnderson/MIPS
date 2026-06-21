@@ -188,7 +188,7 @@ uint32_t BrightTime = 0;
 #define HVPSinterfacev ""
 #endif
 
-const char Version[] PROGMEM = "Version 1.262" DCBswitchCodev DCBanalogv DCBcurrentv FAIMSFBvf FAIMSvf HOFAIMSvf HVPSv DMSDMSMBv HVPSinterfacev ",Feb 7,2026";
+const char Version[] PROGMEM = "Version 1.263" DCBswitchCodev DCBanalogv DCBcurrentv FAIMSFBvf FAIMSvf HOFAIMSvf HVPSv DMSDMSMBv HVPSinterfacev ",June 20,2026";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController(); 

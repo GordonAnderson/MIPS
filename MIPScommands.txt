@@ -358,6 +358,8 @@ ESI module commands
   GHVRAMP           Returns ESI voltage ramp rate for the selected module
   CAL4P3            Calibration procedure for rev 4.3 ESI hardware board.
                     module (1 thru 4), channel (POS or NEG)
+  SESICTRL          Defines ADC channel to control output channel voltage
+                    channel,enable DI,ADC channel,gain,offset. ADC channel = -1 to disable
 Table commands, tables enable pulse sequence generation
   STBLDAT           Set the pulse sequence table
   STBLCLK           Clock mode, EXT or INT
@@ -965,6 +967,10 @@ HV module commands
   GHVPSV            Return HVPS channel voltage, readback
   SHVPSENA          Set HVPS channel enable, ON or OFF
   GHVPSENA          Return HVPS channel enable, ON or OFF
+  SHVPSPOS          Set the positive HV supply voltage, channel, value
+  SHVPSNEG          Set the negative HV supply voltage, channel, value
+  SHVPSCTRL         Defines ADC channel to control output channel voltage
+                    channel,enable DI,ADC channel,gain,offset. ADC channel = -1 to disable
 
 General RFamp and QUAD commands
 

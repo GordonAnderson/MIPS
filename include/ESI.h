@@ -54,6 +54,14 @@ typedef struct
   bool    SystemGatable;     // Flag  set to  enable the gate menu options  
 } ESIdata;
 
+typedef struct
+{
+  char         enable;
+  int          adc;
+  float        m;
+  float        b;
+} ESIadc;
+
 extern ESIdata  *ESIarray[];
 
 extern ESIdata         esi;    
@@ -83,5 +91,6 @@ void SetESIramp(int module, int ramp);
 void GetESIramp(int module);
 
 void calESI4P3(char *mod, char *chan);
+void SetESIadcControl(void);
 
 #endif

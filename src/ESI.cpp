@@ -78,6 +78,7 @@
 // Revised Jan 8,  2022 added rev 8 updates
 // Revised Dec 24, 2024 added rev 9 updates
 // Revised Feb 7,  2026 added support for 4 modules, changed the code to allocate the data structures.
+// Revised June 21,2026 added ESI ADC control support
 //
 #include <Arduino.h>
 #include "ESI.h"
@@ -132,6 +133,7 @@ ESIdata  *ESIarray[MAXESI] = {NULL,NULL,NULL,NULL};
 
 ESIdata         esi;     // Holds the selected modules's data structure
 ESIChannellData esich;   // Holds the selected channel's data, only used in Rev 1, 2, and 4
+ESIadc          *esiadc = NULL;
 
 #define HVPOS_OFF   AD5625(esidata->DACadr,2,0)
 #define HVPOS_ON    AD5625(esidata->DACadr,2,65535)
@@ -762,7 +764,58 @@ void ESI_init(int8_t Board, int8_t addr)
   }
 }
 
-// ESI module polling loop, called from the scheduler at a 10 Hz rate.
+// ESI_ADC_Control() iterates over the configured ESI channels, checks each channel’s enable input, 
+// and updates the corresponding board or per-channel enable state based on the board revision. When 
+// a channel is enabled and has a valid ADC input, it averages 10 ADC readings, applies the channel’s 
+// calibration scaling and offset, and writes the resulting voltage to the appropriate voltage 
+// setpoint field.
+void ESI_ADC_Control(void)
+{
+  int   b,counts;
+  float voltage;
+  bool  enabled;
+
+  if(esiadc == NULL) return;
+  // Loop through all posible channels
+  for(int i=0;i<NumberOfESIchannels;i++)
+  {
+    b = ESIchannel2board(i+1);
+    if((ESIarray[b] != NULL) && (esiadc[i].enable != 0))
+    {
+      if(ReadDIO(esiadc[i].enable)==1)
+      {
+        if((ESIarray[b]->Rev == 3) || (ESIarray[b]->Rev == 5) || (ESIarray[b]->Rev == 6) || (ESIarray[b]->Rev == 8))  ESIarray[b]->Enable = true;
+        else ESIarray[b]->ESIchan[i&1].Enable = true;
+      }
+      else
+      {
+        if((ESIarray[b]->Rev == 3) || (ESIarray[b]->Rev == 5) || (ESIarray[b]->Rev == 6) || (ESIarray[b]->Rev == 8))  ESIarray[b]->Enable = false;
+        else ESIarray[b]->ESIchan[i&1].Enable = false;
+      }
+    }
+    if((ESIarray[b]->Rev == 3) || (ESIarray[b]->Rev == 5) || (ESIarray[b]->Rev == 6) || (ESIarray[b]->Rev == 8))  enabled = ESIarray[b]->Enable;
+    else enabled = ESIarray[b]->ESIchan[i&1].Enable;
+    if((ESIarray[b] != NULL) && (enabled == true) && (esiadc[i].adc != -1))
+    {
+      // Read the ADC raw counts and apply calibration
+      counts = 0;
+      for(int j=0;j<10;j++) counts += analogRead(esiadc[i].adc);
+      voltage = counts/10 * esiadc[i].m + esiadc[i].b;
+      // Now set the voltage setpoint
+      if((ESIarray[b]->Rev == 3) || (ESIarray[b]->Rev == 5) || (ESIarray[b]->Rev == 6) || (ESIarray[b]->Rev == 8))
+      {
+        ESIarray[b]->VoltageSetpoint = voltage;
+      }
+      else ESIarray[b]->ESIchan[i&1].VoltageSetpoint = voltage;
+    }
+  }
+}
+
+// ESI_loop is the main 10 Hz polling/control loop for the ESI subsystem, run by the scheduler to 
+// keep the ESI boards in sync with the UI and hardware. It handles board/channel selection, 
+// relay and enable-state changes for different board revisions, ramps and clamps voltage setpoints, 
+// writes DAC control values, reads back ADC voltage/current measurements, and enforces current/voltage 
+// limits by disabling or adjusting channels as needed.
 void ESI_loop(void)
 {
   int             i,b,c;
@@ -774,6 +827,7 @@ void ESI_loop(void)
   static   bool   Enable[MAXESI][2] = {false,false,false,false,false,false,false,false};
   static   int8_t ESIoverCurrentTimer[MAXESI] = {5,5,5,5};
   
+  ESI_ADC_Control();
   if(--relayDly < 0) relayDly = 100;
   SelectBoard(SelectedESIboard);
   if (ActiveDialog == &ESIdialog)
@@ -1431,8 +1485,12 @@ void GetESIramp(int module)
   serial->println(ESIarray[module -1]->ESIstepsize);
 }
 
-// Interactive calibration function for ESI rev 4.3
-// Also works for Rev 4.4
+// calESI4P3 is an interactive calibration routine for ESI revision 4.3/4.4 hardware that 
+// accepts a module number and channel ("POS" or "NEG"), validates the selection, enables 
+// the module, and prompts for user-entered voltages and ADC readings at two DAC setpoints 
+// to derive and store calibration coefficients for the DAC control, voltage readback, and 
+// current monitor paths. It prints the computed parameters over serial, exits early if the 
+// entered maximum voltage is zero, and resets the voltage setpoint before returning.
 void calESI4P3(char *mod, char *chan)
 {
   String token;
@@ -1506,4 +1564,43 @@ void calESI4P3(char *mod, char *chan)
   ESIarray[b]->ESIchan[ch].DCImon.b = B;
   //
   ESIarray[b]->VoltageSetpoint=0;
+}
+
+// SetESIadcControl parses one configuration command from the command-line/ring-buffer input and 
+// applies it to an ESI ADC channel entry. It reads a channel number, ADC index, slope, intercept, 
+// and an optional enable token; initializes the ESIadc array if needed, sets the channel’s 
+// enable/ADC/slope/intercept values (with the enable token normalized to a range of Q–X or 
+// disabled if absent), and sends an ACK on success or a NAK if parsing fails.
+void SetESIadcControl(void)
+{
+  int    chan,adc;
+  char   *tkn;
+  float  slope,intercept;
+
+  // Read the arguments from the ring buffer
+  while(true)
+  { 
+    if(!valueFromCommandLine(&chan,1,NumberOfESIchannels)) break;
+    tkn = TokenFromCommandLine(',');
+    if(!valueFromCommandLine(&adc,-1,8)) break;
+    if(!valueFromCommandLine(&slope,-100000,100000)) break;
+    if(!valueFromCommandLine(&intercept,-100000,100000)) break;
+    if(esiadc == NULL)
+    {
+      esiadc = new ESIadc[NumberOfESIchannels];
+      for(int i=0;i<NumberOfESIchannels;i++) esiadc[i].adc = -1;
+    }
+    if(tkn == NULL) esiadc[chan-1].enable = 0;
+    else 
+    {
+      if((tkn[0] < 'Q') || (tkn[0] > 'X')) tkn[0] = 0;
+      esiadc[chan-1].enable = tkn[0];
+    }
+    esiadc[chan-1].adc    = adc;
+    esiadc[chan-1].m      = slope;
+    esiadc[chan-1].b      = intercept;
+    SendACK;
+    return;
+  }
+  SendNAK;
 }

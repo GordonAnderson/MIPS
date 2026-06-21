@@ -1171,6 +1171,10 @@
 //          in uS with the width defined by value. This update allows -1 to set the output and 0 to reset
 //          the output.
 //      5.) fixed bug in the ARB aux out when used in the timing generator
+//  1.263, June 20, 2026
+//      1.) Added power supply voltage seting commands for HVPS
+//      2.) Added support to control the HVPS voltage setpoint from a ADC channel
+//      3.) Added ESI ADC voltage control capability
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

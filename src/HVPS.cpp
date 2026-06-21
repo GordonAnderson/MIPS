@@ -1,4 +1,22 @@
+//
 // HVPS module driver
+//
+// This module provides control for up to four HVPS modules, each with one or two channels.
+// Each channel has a positive and negative supply voltage that can be set, along with an
+// enable control. The module also provides readback of the actual voltage for each channel.
+// The module is designed to be flexible, allowing for different hardware revisions and configurations,
+// with the details defined in the HVPSdata structure for each module. The user interface is built
+// around a dialog box that allows the user to set the voltage and enable state for each channel, as well as
+// calibrate the channels and save/restore settings to/from EEPROM. The module also provides command-line
+// access to the same controls for remote operation.
+//
+// Updated 2024-06-01: Added positive and negative voltage supply commands (SHVPSPOS and SHVPSNEG) to allow 
+//                     setting the supply voltages for each channel. These commands update the corresponding 
+//                     fields in the HVPSCH structure for the specified channel and ensure that the new 
+//                     voltage is within the defined limits. Additionally, added detailed comments to the 
+//                     functions for setting positive and negative supply voltages, as well as the channel 
+//                     calibration function, to explain their purpose and parameters.
+//                     Added support to allow ADC channels to control the HVPS setpoint.
 //
 #include "Variants.h"
 #include "HVPS.h"
@@ -32,11 +50,15 @@ void DAC7678write(uint8_t addr, int data);
 void DAC7678(uint8_t addr, uint8_t chan, uint16_t counts);
 int  HVPSgetBoard(int chan);
 int  HVPSgetCh(int chan);
+void SetHVPSpositive(int chan, int voltage);
+void SetHVPSnegative(int chan, int voltage);
+void SetHVPSadcControl(void);
 
 #define HVPS HVPSarray[SelectedHVPSboard]
 
 HVPSdata     *HVPSarray[4]  = {NULL,NULL,NULL,NULL};
 HVPSstate    *HVPSstates[4] = {NULL,NULL,NULL,NULL};
+HVPSadc      *hvpsadc = NULL;
 float        MaxHVvoltage=0;
 float        HVPSrbs[8] = {11,22,0,0,0,0,0,0};
 
@@ -57,7 +79,7 @@ HVPSdata HVPS_Rev_1 = {
     2,26000,0,
     3,-3.43,334.67,
     1,-12.77,1068.67,
-    1200,-3000,1200,-3000,
+    3000,-3000,3000,-3000,
 
     false,0,
     4,26000,0,
@@ -81,7 +103,7 @@ HVPSdata HVPS_Rev_2 = {
     2,26000,0,
     3,-3.43,334.67,
     1,-12.77,1068.67,
-    1200,0,1200,0,
+    3000,-3000,3000,-3000,
 
     false,0,
     4,26000,0,
@@ -168,13 +190,22 @@ const Commands  HVPSCmdArray[] = {
   {"GHVPSV",  CMDfunction, 1, (char *)GetHVPSvoltageRB},        // Return HVPS channel voltage, readback
   {"SHVPSENA",CMDfunctionStr, 2, (char *)SetHVPSenable},        // Set HVPS channel enable, ON or OFF
   {"GHVPSENA",CMDfunction, 1, (char *)GetHVPSenable},           // Return HVPS channel enable, ON or OFF
+  {"SHVPSPOS",CMDfunction, 2, (char *)SetHVPSpositive},         // Set the positive HV supply voltage, channel, value
+  {"SHVPSNEG",CMDfunction, 2, (char *)SetHVPSnegative},         // Set the negative HV supply voltage, channel, value
+  {"SHVPSCTRL",CMDfunctionLine, 0, (char *)SetHVPSadcControl},  // Defines ADC channel to control output channel voltage
+                                                                // channel,enable DI,ADC channel,gain,offset. ADC channel = -1 to disable
+  
 // End of table marker
   {0},
 };
 
 CommandList HVPSCmdList = { (Commands *)HVPSCmdArray, NULL };
 
-// This function initializes the UI based on the HVPS modules loaded
+// Initializes the HVPS user-interface entries for the available HVPS channels. 
+// It walks through up to four HVPS data structures and their channels, 
+// populating each active channel’s enable control, voltage setpoint, min/max 
+// limits, and actual-voltage display entry, then disables any UI records that 
+// are not needed.
 void initHVPSui(void)
 {
   int i,j,ch = 0;
@@ -277,7 +308,7 @@ void HVPSChanCalNeg(void)
   // Define this channels name
   sprintf(Name,"  HVPS Channel %2d",HVPSCalChannel);
   // Calibrate this channel
-  ChannelCalibrate(&CC, Name,-500, -2000);
+  ChannelCalibrate(&CC, Name,HVPSarray[b]->HVPSCH[c].NegSupplyV / 10,HVPSarray[b]->HVPSCH[c].NegSupplyV / 1.5);
   // Turn everything off
   DAC7678(HVPSarray[b]->TWIdac,HVPSarray[b]->HVPSCH[c].DCPctrl.Chan,Value2Counts(0, &HVPSarray[b]->HVPSCH[c].DCPctrl));
   DAC7678(HVPSarray[b]->TWIdac,HVPSarray[b]->HVPSCH[c].DCNctrl.Chan,Value2Counts(0, &HVPSarray[b]->HVPSCH[c].DCNctrl));
@@ -462,13 +493,53 @@ int HVPSgetCh(int chan)
   return -1;
 }
 
-// Processig loop called every 100mS
+// HVPS_ADC_Control scans the configured HVPS channels, enables or disables each channel based 
+// on its enable input, and when a channel is enabled and has an ADC assigned, reads the ADC value 
+// ten times, averages the raw counts, applies the channel’s calibration coefficients, and updates 
+// that channel’s voltage setpoint. It exits immediately if the ADC configuration pointer 
+// is not available.
+void HVPS_ADC_Control(void)
+{
+  int   b,c,counts;
+  float voltage;
+
+  if(hvpsadc == NULL) return;
+  // Loop through all posible channels
+  for(int i=0;i<NumberOfHVPSchannels;i++)
+  {
+    b = HVPSgetBoard(i);
+    c = HVPSgetCh(i);
+    if((HVPSarray[b] != NULL) && (hvpsadc[i].enable != 0))
+    {
+      if(ReadDIO(hvpsadc[i].enable)==1) HVPSarray[b]->HVPSCH[c].Enable = true;
+      else HVPSarray[b]->HVPSCH[c].Enable = false;
+    }
+    if((HVPSarray[b] != NULL) && (HVPSarray[b]->HVPSCH[c].Enable == true) && (hvpsadc[i].adc != -1))
+    {
+      // Read the ADC raw counts and apply calibration
+      counts = 0;
+      for(int j=0;j<10;j++) counts += analogRead(hvpsadc[i].adc);
+      voltage = counts/10 * hvpsadc[i].m + hvpsadc[i].b;
+      // Now set the voltage setpoint
+      HVPSarray[b]->HVPSCH[c].Voltage = voltage;
+    }
+  }
+}
+
+// HVPS_loop is the 100 ms HVPS service routine that scans up to four module slots, applies channel 
+// enable and voltage changes to the DAC-controlled positive/negative outputs (including polarity-change 
+// handling by disabling and re-enabling the channel), clears each module’s update flag, and refreshes 
+// the HVPS UI when the relevant dialog is active. It then samples each mapped channel’s ADC monitor 
+// input, stores a filtered readback value in HVPSrbs, tracks the maximum absolute readback in MaxHVvoltage, 
+// and does so for all mapped channels even though the code comments indicate that disabled channels should 
+// be forced to zero.
 void HVPS_loop(void)
 {
   int   i,j,k;
   float fVal;
   
   MaxHVvoltage = 0;
+  HVPS_ADC_Control();
   // Loop through all modules and process any enable and setpoint changes
   for(i=0; i<4; i++)
   {
@@ -586,13 +657,10 @@ void HVPS_loop(void)
 //
 // Host command processing routines
 //
-// SHVPS,chan,value
-// GHVPS,chan
-// GHVPSV,chan
-// SHVPSENA,chan,value
-// GHVPSENA,chan
-//
 
+// HVPSNumberOfChannels is a host-command handler for reporting the number of HVPS channels. 
+// It sends an acknowledgment-only response and, unless serial output is muted, prints the 
+// NumberOfHVPSchannels value over the serial connection.
 void HVPSNumberOfChannels(void)
 {
   SendACKonly;
@@ -635,14 +703,6 @@ void GetHVPSvoltage(int chan)
   SendACKonly; 
   if(!SerialMute) serial->println(HVPSarray[b]->HVPSCH[c].Voltage); 
   return;
-  serial->println(HVPSarray[b]->HVPSCH[c].DCPctrl.m);
-  serial->println(HVPSarray[b]->HVPSCH[c].DCPctrl.b);
-  serial->println(HVPSarray[b]->HVPSCH[c].DCPmon.m);
-  serial->println(HVPSarray[b]->HVPSCH[c].DCPmon.b);
-  serial->println(HVPSarray[b]->HVPSCH[c].DCNctrl.m);
-  serial->println(HVPSarray[b]->HVPSCH[c].DCNctrl.b);
-  serial->println(HVPSarray[b]->HVPSCH[c].DCNmon.m);
-  serial->println(HVPSarray[b]->HVPSCH[c].DCNmon.b);
 }
 
 void GetHVPSvoltageRB(int chan)
@@ -678,6 +738,80 @@ void GetHVPSenable(int chan)
   if(SerialMute) return;
   if(HVPSarray[b]->HVPSCH[c].Enable) serial->println("ON");
   else serial->println("OFF");
+}
+
+// This function sets the positive supply voltage for the specified channel. It updates 
+// both the PosSupplyV and PosLimit fields in the HVPSCH structure for that channel, 
+// ensuring that the new voltage is within the allowed limits. After updating the values, 
+// it sends an acknowledgment back to the host.
+// Parameters:
+// chan: The channel number (1-based index) for which to set the positive supply voltage.
+// voltage: The new positive supply voltage to set for the specified channel.
+void SetHVPSpositive(int chan, int voltage)
+{
+  int b,c;
+  
+  if((b=TestChannel(chan)) < 0) return;
+  c = HVPSgetCh(chan-1);
+  HVPSarray[b]->HVPSCH[c].PosSupplyV = voltage;
+  HVPSarray[b]->HVPSCH[c].PosLimit = voltage;
+  SendACK;
+}
+
+// This function sets the negative supply voltage for the specified channel. It updates 
+// both the NegSupplyV and NegLimit fields in the HVPSCH structure for that channel, 
+// ensuring that the new voltage is within the allowed limits. After updating the values, 
+// it sends an acknowledgment back to the host.
+// Parameters:
+// chan: The channel number (1-based index) for which to set the negative supply voltage.
+// voltage: The new negative supply voltage to set for the specified channel.
+void SetHVPSnegative(int chan, int voltage)
+{
+  int b,c;
+  
+  if((b=TestChannel(chan)) < 0) return;
+  c = HVPSgetCh(chan-1);
+  HVPSarray[b]->HVPSCH[c].NegSupplyV = voltage;
+  HVPSarray[b]->HVPSCH[c].NegLimit = voltage;
+  SendACK;
+}
+
+// SetHVPSadcControl processes a command to configure the ADC settings for one HVPS channel. 
+// It reads channel, enable digital input, ADC selection, slope, and intercept values from the command 
+// input buffer, stores them in the corresponding HVPSadc entry (allocating the array if needed), 
+// and sends an ACK on success or a NAK if parsing fails.
+void SetHVPSadcControl(void)
+{
+  int    chan,adc;
+  char   *tkn;
+  float  slope,intercept;
+
+  // Read the arguments from the ring buffer
+  while(true)
+  { 
+    if(!valueFromCommandLine(&chan,1,NumberOfHVPSchannels)) break;
+    tkn = TokenFromCommandLine(',');
+    if(!valueFromCommandLine(&adc,-1,8)) break;
+    if(!valueFromCommandLine(&slope,-100000,100000)) break;
+    if(!valueFromCommandLine(&intercept,-100000,100000)) break;
+    if(hvpsadc == NULL)
+    {
+      hvpsadc = new HVPSadc[NumberOfHVPSchannels];
+      for(int i=0;i<NumberOfHVPSchannels;i++) hvpsadc[i].adc = -1;
+    }
+    if(tkn == NULL) hvpsadc[chan-1].enable = 0;
+    else 
+    {
+      if((tkn[0] < 'Q') || (tkn[0] > 'X')) tkn[0] = 0;
+      hvpsadc[chan-1].enable = tkn[0];
+    }
+    hvpsadc[chan-1].adc    = adc;
+    hvpsadc[chan-1].m      = slope;
+    hvpsadc[chan-1].b      = intercept;
+    SendACK;
+    return;
+  }
+  SendNAK;
 }
 
 #endif

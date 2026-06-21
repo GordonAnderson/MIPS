@@ -448,6 +448,8 @@ const Commands  CmdArray[] = 	{
   {"GHVRAMP", CMDfunction, 1, (char *)GetESIramp},          // Returns ESI voltage ramp rate for the selected module
   {"CAL4P3", CMDfunctionStr, 2, (char *)calESI4P3},         // Calibration procedure for rev 4.3 ESI hardware board. 
                                                             // module (1 thru 4), channel (POS or NEG)
+  {"SESICTRL",CMDfunctionLine, 0, (char *)SetESIadcControl},// Defines ADC channel to control output channel voltage
+                                                            // channel,enable DI,ADC channel,gain,offset. ADC channel = -1 to disable
   
 // Table commands, tables enable pulse sequence generation
   {"STBLDAT", CMDfunction, 0, (char *)ParseTableCommand}, // Set the pulse sequence table
