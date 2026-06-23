@@ -53,6 +53,10 @@ int  HVPSgetCh(int chan);
 void SetHVPSpositive(int chan, int voltage);
 void SetHVPSnegative(int chan, int voltage);
 void SetHVPSadcControl(void);
+void GetHVPSposCal(int chan);
+void SetHVPSposCal(void);
+void GetHVPSnegCal(int chan);
+void SetHVPSnegCal(void);
 
 #define HVPS HVPSarray[SelectedHVPSboard]
 
@@ -194,7 +198,11 @@ const Commands  HVPSCmdArray[] = {
   {"SHVPSNEG",CMDfunction, 2, (char *)SetHVPSnegative},         // Set the negative HV supply voltage, channel, value
   {"SHVPSCTRL",CMDfunctionLine, 0, (char *)SetHVPSadcControl},  // Defines ADC channel to control output channel voltage
                                                                 // channel,enable DI,ADC channel,gain,offset. ADC channel = -1 to disable
-  
+  {"GHVPSPCAL",CMDfunction, 1, (char *)GetHVPSposCal},          // Reports a positive channel slope and offset DAC parameters
+  {"SHVPSPCAL",CMDfunctionLine, 0, (char *)SetHVPSposCal},      // Sets a positive channel slope and offset DAC parameters
+  {"GHVPSNCAL",CMDfunction, 1, (char *)GetHVPSnegCal},          // Reports a negative channel slope and offset DAC parameters
+  {"SHVPSNCAL",CMDfunctionLine, 0, (char *)SetHVPSnegCal},      // Sets a negative channel slope and offset DAC parameters
+ 
 // End of table marker
   {0},
 };
@@ -811,7 +819,95 @@ void SetHVPSadcControl(void)
     SendACK;
     return;
   }
-  SendNAK;
+  BADARG;
+}
+
+// GetHVPSposCal retrieves the position-calibration values for a specified HVPS channel and reports 
+// them over serial. It validates the incoming channel, maps it to the internal channel index, sends 
+// an ACK-only response, and then prints the DCPctrl.m and DCPctrl.b values unless serial output is 
+// muted or the channel is invalid.
+void GetHVPSposCal(int chan)
+{
+  int b,c;
+  
+  if((b=TestChannel(chan)) < 0) return;
+  c = HVPSgetCh(chan-1);
+  SendACKonly; 
+  if(SerialMute) return;
+  serial->print(HVPSarray[b]->HVPSCH[c].DCPctrl.m);
+  serial->print(",");
+  serial->println(HVPSarray[b]->HVPSCH[c].DCPctrl.b);
+}
+
+// SetHVPSposCal() reads a channel number, a slope, and an intercept from the command/ring-buffer 
+// input, validates the channel, and, if the selected HVPS channel exists, stores those values into 
+// the target channel’s DCP control calibration fields (m and b). It sends an acknowledgement and 
+// returns on success, while malformed input or an invalid channel causes it to terminate with a 
+// bad-argument response.
+void SetHVPSposCal(void)
+{
+  int    chan;
+  int    b,c;
+  float  slope,intercept;
+
+  // Read the arguments from the ring buffer
+  while(true)
+  { 
+    if(!valueFromCommandLine(&chan,1,NumberOfHVPSchannels)) break;
+    if(!valueFromCommandLine(&slope,-100000,100000)) break;
+    if(!valueFromCommandLine(&intercept,-100000,100000)) break;
+    if((b=TestChannel(chan)) < 0) return;
+    c = HVPSgetCh(chan-1);
+    if(HVPSarray[b] != NULL) HVPSarray[b]->HVPSCH[c].DCPctrl.m = slope;
+    if(HVPSarray[b] != NULL) HVPSarray[b]->HVPSCH[c].DCPctrl.b = intercept;
+    SendACK;
+    return;
+  }
+  BADARG;
+}
+
+// GetHVPSnegCal retrieves the negative-calibration values for a specified HVPS channel and reports 
+// them over serial. It validates the incoming channel, maps it to the internal channel index, sends 
+// an ACK-only response, and then prints the DCNctrl.m and DCNctrl.b values unless serial output is 
+// muted or the channel is invalid.
+void GetHVPSnegCal(int chan)
+{
+  int b,c;
+  
+  if((b=TestChannel(chan)) < 0) return;
+  c = HVPSgetCh(chan-1);
+  SendACKonly; 
+  if(SerialMute) return;
+  serial->print(HVPSarray[b]->HVPSCH[c].DCNctrl.m);
+  serial->print(",");
+  serial->println(HVPSarray[b]->HVPSCH[c].DCNctrl.b);
+}
+
+// SetHVPSnegCal() reads a channel number, a slope, and an intercept from the command/ring-buffer 
+// input, validates the channel, and, if the selected HVPS channel exists, stores those values into 
+// the target channel’s DCP control calibration fields (m and b). It sends an acknowledgement and 
+// returns on success, while malformed input or an invalid channel causes it to terminate with a 
+// bad-argument response.
+void SetHVPSnegCal(void)
+{
+  int    chan;
+  int    b,c;
+  float  slope,intercept;
+
+  // Read the arguments from the ring buffer
+  while(true)
+  { 
+    if(!valueFromCommandLine(&chan,1,NumberOfHVPSchannels)) break;
+    if(!valueFromCommandLine(&slope,-100000,100000)) break;
+    if(!valueFromCommandLine(&intercept,-100000,100000)) break;
+    if((b=TestChannel(chan)) < 0) return;
+    c = HVPSgetCh(chan-1);
+    if(HVPSarray[b] != NULL) HVPSarray[b]->HVPSCH[c].DCNctrl.m = slope;
+    if(HVPSarray[b] != NULL) HVPSarray[b]->HVPSCH[c].DCNctrl.b = intercept;
+    SendACK;
+    return;
+  }
+  BADARG;
 }
 
 #endif

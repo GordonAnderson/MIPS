@@ -971,6 +971,10 @@ HV module commands
   SHVPSNEG          Set the negative HV supply voltage, channel, value
   SHVPSCTRL         Defines ADC channel to control output channel voltage
                     channel,enable DI,ADC channel,gain,offset. ADC channel = -1 to disable
+  GHVPSPCAL         Reports a positive channel slope and offset DAC parameters
+  SHVPSPCAL         Sets a positive channel slope and offset DAC parameters
+  GHVPSNCAL         Reports a negative channel slope and offset DAC parameters
+  SHVPSNCAL         Sets a negative channel slope and offset DAC parameters
 
 General RFamp and QUAD commands
 
