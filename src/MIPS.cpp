@@ -1398,7 +1398,11 @@ void USBportTest(void)
   }
 }
 
-// Main processing loop
+// This Arduino-style loop() function is the main runtime cycle for the device, repeatedly 
+// testing the USB port, managing display enable/disable and redraws, restarting the watchdog, 
+// running the thread controller or LED-processing path, and handling idle timeout, button/encoder, 
+// and serial input. It also monitors the interlock input/output signals to trip or re-enable 
+// power when needed and updates the power-control state accordingly.
 void loop()
 {
   static bool DisableDisplayStatus = false;
