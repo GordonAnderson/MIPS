@@ -764,15 +764,18 @@ void ESI_ADC_Control(void)
     b = ESIchannel2board(i+1);
     if((ESIarray[b] != NULL) && (esiadc[i].enable != 0))
     {
-      if(ReadDIO(esiadc[i].enable)==1)
+      if((esiadc[i].enable >= 'Q') && (esiadc[i].enable <= 'X'))
       {
-        if(ESIisRelayRev(ESIarray[b]->Rev))  ESIarray[b]->Enable = true;
-        else ESIarray[b]->ESIchan[i&1].Enable = true;
-      }
-      else
-      {
-        if(ESIisRelayRev(ESIarray[b]->Rev))  ESIarray[b]->Enable = false;
-        else ESIarray[b]->ESIchan[i&1].Enable = false;
+        if(ReadDIO(esiadc[i].enable)==1)
+        {
+          if(ESIisRelayRev(ESIarray[b]->Rev))  ESIarray[b]->Enable = true;
+          else ESIarray[b]->ESIchan[i&1].Enable = true;
+        }
+        else
+        {
+          if(ESIisRelayRev(ESIarray[b]->Rev))  ESIarray[b]->Enable = false;
+          else ESIarray[b]->ESIchan[i&1].Enable = false;
+        }
       }
     }
     if(ESIisRelayRev(ESIarray[b]->Rev))  enabled = ESIarray[b]->Enable;
@@ -1556,7 +1559,7 @@ void calESI4P3(char *mod, char *chan)
 void SetESIadcControl(void)
 {
   int    chan,adc;
-  char   *tkn;
+  char   *tkn,e;
   float  slope,intercept;
 
   // Read the arguments from the ring buffer
@@ -1564,7 +1567,10 @@ void SetESIadcControl(void)
   { 
     if(!valueFromCommandLine(&chan,1,NumberOfESIchannels)) break;
     tkn = TokenFromCommandLine(',');
-    if(!valueFromCommandLine(&adc,-1,8)) break;
+    if(tkn != NULL) e = tkn[0];
+    else e = 0;
+    if((e < 'Q') || (e > 'X')) e = 0;
+    if(!valueFromCommandLine(&adc,-1,9)) break;
     if(!valueFromCommandLine(&slope,-100000,100000)) break;
     if(!valueFromCommandLine(&intercept,-100000,100000)) break;
     if(esiadc == NULL)
@@ -1572,12 +1578,7 @@ void SetESIadcControl(void)
       esiadc = new ESIadc[NumberOfESIchannels];
       for(int i=0;i<NumberOfESIchannels;i++) esiadc[i].adc = -1;
     }
-    if(tkn == NULL) esiadc[chan-1].enable = 0;
-    else 
-    {
-      if((tkn[0] < 'Q') || (tkn[0] > 'X')) tkn[0] = 0;
-      esiadc[chan-1].enable = tkn[0];
-    }
+    esiadc[chan-1].enable = e;
     esiadc[chan-1].adc    = adc;
     esiadc[chan-1].m      = slope;
     esiadc[chan-1].b      = intercept;

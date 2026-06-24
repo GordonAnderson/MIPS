@@ -526,11 +526,16 @@ void HVPS_ADC_Control(void)
   for(int i=0;i<NumberOfHVPSchannels;i++)
   {
     b = HVPSgetBoard(i);
-    c = HVPSgetCh(i);
+    if(b < 0) continue;
+    c = HVPSgetCh(i) & 1;
+    if(c < 0) continue;
     if((HVPSarray[b] != NULL) && (hvpsadc[i].enable != 0))
     {
-      if(ReadDIO(hvpsadc[i].enable)==1) HVPSarray[b]->HVPSCH[c].Enable = true;
-      else HVPSarray[b]->HVPSCH[c].Enable = false;
+      if((hvpsadc[i].enable >= 'Q') && (hvpsadc[i].enable <= 'X'))
+      {
+        if(ReadDIO(hvpsadc[i].enable)==1) HVPSarray[b]->HVPSCH[c].Enable = true;
+        else HVPSarray[b]->HVPSCH[c].Enable = false;
+      }
     }
     if((HVPSarray[b] != NULL) && (HVPSarray[b]->HVPSCH[c].Enable == true) && (hvpsadc[i].adc != -1))
     {
@@ -805,7 +810,7 @@ void SetHVPSnegative(int chan, int voltage)
 void SetHVPSadcControl(void)
 {
   int    chan,adc;
-  char   *tkn;
+  char   *tkn,e;
   float  slope,intercept;
 
   // Read the arguments from the ring buffer
@@ -813,7 +818,10 @@ void SetHVPSadcControl(void)
   { 
     if(!valueFromCommandLine(&chan,1,NumberOfHVPSchannels)) break;
     tkn = TokenFromCommandLine(',');
-    if(!valueFromCommandLine(&adc,-1,8)) break;
+    if(tkn != NULL) e = tkn[0];
+    else e = 0;
+    if((e < 'Q') || (e > 'X')) e = 0;
+    if(!valueFromCommandLine(&adc,-1,9)) break;
     if(!valueFromCommandLine(&slope,-100000,100000)) break;
     if(!valueFromCommandLine(&intercept,-100000,100000)) break;
     if(hvpsadc == NULL)
@@ -821,12 +829,7 @@ void SetHVPSadcControl(void)
       hvpsadc = new HVPSadc[NumberOfHVPSchannels];
       for(int i=0;i<NumberOfHVPSchannels;i++) hvpsadc[i].adc = -1;
     }
-    if(tkn == NULL) hvpsadc[chan-1].enable = 0;
-    else 
-    {
-      if((tkn[0] < 'Q') || (tkn[0] > 'X')) tkn[0] = 0;
-      hvpsadc[chan-1].enable = tkn[0];
-    }
+    hvpsadc[chan-1].enable = e;
     hvpsadc[chan-1].adc    = adc;
     hvpsadc[chan-1].m      = slope;
     hvpsadc[chan-1].b      = intercept;
