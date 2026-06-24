@@ -280,6 +280,20 @@ void ESILevelDetISR(void)
   else TWIqueue(ESILevelDet);
 }
 
+// Returns true if rev uses two independent channels (positive and negative), with
+// no relay polarity switching. Applies to hardware Rev 1, 2, 4, 7, and 9.
+bool ESIisDualChanRev(int8_t rev)
+{
+  return (rev == 1) || (rev == 2) || (rev == 4) || (rev == 7) || (rev == 9);
+}
+
+// Returns true if rev uses a single output with relay polarity switching.
+// Applies to hardware Rev 3, 5, 6, and 8.
+bool ESIisRelayRev(int8_t rev)
+{
+  return (rev == 3) || (rev == 5) || (rev == 6) || (rev == 8);
+}
+
 // This function converts the ESI channel number to a board address, 0 through MAXESI-1.
 // The channel number is 1 through the maximum number of channels.
 // The ESI module have two power supplies and for single output modules each board has 1
@@ -307,13 +321,13 @@ int ESIchannel2board(int channel)
   {
     if(ESIarray[brd] != NULL) 
     {
-      if((i == 1) || (i == 2) || (i == 4) || (i == 7) || (i == 9))  // Rev 1 or Rev 2 or Rev 4 or Rev 7 or Rev 9
+      if(ESIisDualChanRev(i))
       {
         // 2 channels per module
         if(channel <= 2) return(brd);
         channel -= 2;
       }
-      else if((i == 3) || (i==5) || (i==6) || (i==8))               // Rev 3 or 5 or 6 or 8
+      else if(ESIisRelayRev(i))
       {
         // 1 channel per module
         if(channel <= 1) return(brd);
@@ -414,7 +428,7 @@ void UpdateESIdialog(void)
   int b,c;
   DialogBoxEntry *de;
   
-  if((esidata->Rev == 1) || (esidata->Rev == 2) || (esidata->Rev == 4) || (esidata->Rev == 7) || (esidata->Rev == 9))
+  if(ESIisDualChanRev(esidata->Rev))
   {
     de = GetDialogEntries(ESIentries, "Voltage");
     b = ESIchannel2board(ESIchannel);
@@ -439,7 +453,7 @@ void UpdateESIdialog(void)
     de[0].Xpos = 8;
     de[1].Type = D_FLOAT;
   }
-  if((esidata->Rev == 3) || (esidata->Rev == 5) || (esidata->Rev == 6) || (esidata->Rev == 8))
+  if(ESIisRelayRev(esidata->Rev))
   {
     de = GetDialogEntries(ESIentriesR3, "Voltage");
     b = ESIchannel2board(ESIchannel);
@@ -539,38 +553,6 @@ void ESIgateChange(void)
 {
   esi.EnableGatting[ESIchannel-1] = esidata->EnableGatting[ESIchannel-1] = ESIgate;
   ESIgateChangeProcess(ESIgate,ESIchannel);
-  return;
-
-  if(ESIgate) 
-  {
-    LEDoverride  = true;
-    pinMode(SCL1,INPUT);
-    pinMode(SDA1,INPUT);
-    pinMode(LEVCHANGE,INPUT);
-    Wire1.begin();
-    Wire1.setClock(Wire1DefaultSpeed);
-    attachInterrupt(digitalPinToInterrupt(LEVCHANGE), ESILevelDetISR, RISING);
-    ESILevelDetISR();
-  }
-  else
-  {
-    // If channel is enabled that make sure relay is on
-    if(esich.Enable)
-    {
-      SelectBoard(SelectedESIboard);
-      if(ESIchannel == 1) HVPOS_ON;
-      else HVNEG_ON;
-    }
-  }
-  // If any channels are enabled then keep LED in override mode.
-  for(int brd=0;brd<1;brd++)
-  {
-    for(int ch=0;ch<2;ch++)
-    {
-      if(ESIarray[brd]->EnableGatting[ch]) return;
-    }
-  }
-  LEDoverride  = false;
 }
 
 // Called after the user selects a channel
@@ -627,7 +609,7 @@ void SaveESIsettings(void)
   bool Success = true;
   
   *esidata = esi;
-  if((esidata->Rev == 1) || (esidata->Rev == 2) || (esidata->Rev == 4) || (esidata->Rev == 7) || (esidata->Rev == 9)) esidata->ESIchan[(ESIchannel-1)&1] = esich;
+  if(ESIisDualChanRev(esidata->Rev)) esidata->ESIchan[(ESIchannel-1)&1] = esich;
   if(ESIarray[0] != NULL)
   {
     SelectBoard(0);
@@ -682,7 +664,7 @@ void RestoreESIsettings(bool NoDisplay)
   }
   SelectBoard(SelectedESIboard);
   esi = *esidata;
-  if((esidata->Rev == 1) || (esidata->Rev == 2) || (esidata->Rev == 4) || (esidata->Rev == 7) || (esidata->Rev == 0)) esich = esi.ESIchan[(ESIchannel-1)&1];
+  if(ESIisDualChanRev(esidata->Rev)) esich = esi.ESIchan[(ESIchannel-1)&1];
   if(NoDisplay) return;
   if(Corrupted) DisplayMessage("Corrupted EEPROM data!",2000);
   else if(!Success)  DisplayMessage("Unable to Restore!",2000);
@@ -709,7 +691,7 @@ void ESI_init(int8_t Board, int8_t addr)
     RestoreESIsettings(true);
     *esidata = esi;        // Copy back into the configuration data structure array
   }
-  if((esidata->Rev == 3) || (esidata->Rev == 5) || (esidata->Rev == 6) || (esidata->Rev == 8))
+  if(ESIisRelayRev(esidata->Rev))
   {
     ESIdialog.Entry = ESIentriesR3;
   }
@@ -752,7 +734,7 @@ void ESI_init(int8_t Board, int8_t addr)
     esi   = *esidata;
     esich = esidata->ESIchan[0];
   }
-  if((esidata->Rev == 3) || (esidata->Rev == 5) || (esidata->Rev == 6) || (esidata->Rev == 8))
+  if(ESIisRelayRev(esidata->Rev))
   {
     NumberOfESIchannels++;
     ESIentriesR3[0].Max = NumberOfESIchannels;
@@ -784,16 +766,16 @@ void ESI_ADC_Control(void)
     {
       if(ReadDIO(esiadc[i].enable)==1)
       {
-        if((ESIarray[b]->Rev == 3) || (ESIarray[b]->Rev == 5) || (ESIarray[b]->Rev == 6) || (ESIarray[b]->Rev == 8))  ESIarray[b]->Enable = true;
+        if(ESIisRelayRev(ESIarray[b]->Rev))  ESIarray[b]->Enable = true;
         else ESIarray[b]->ESIchan[i&1].Enable = true;
       }
       else
       {
-        if((ESIarray[b]->Rev == 3) || (ESIarray[b]->Rev == 5) || (ESIarray[b]->Rev == 6) || (ESIarray[b]->Rev == 8))  ESIarray[b]->Enable = false;
+        if(ESIisRelayRev(ESIarray[b]->Rev))  ESIarray[b]->Enable = false;
         else ESIarray[b]->ESIchan[i&1].Enable = false;
       }
     }
-    if((ESIarray[b]->Rev == 3) || (ESIarray[b]->Rev == 5) || (ESIarray[b]->Rev == 6) || (ESIarray[b]->Rev == 8))  enabled = ESIarray[b]->Enable;
+    if(ESIisRelayRev(ESIarray[b]->Rev))  enabled = ESIarray[b]->Enable;
     else enabled = ESIarray[b]->ESIchan[i&1].Enable;
     if((ESIarray[b] != NULL) && (enabled == true) && (esiadc[i].adc != -1))
     {
@@ -802,7 +784,7 @@ void ESI_ADC_Control(void)
       for(int j=0;j<10;j++) counts += analogRead(esiadc[i].adc);
       voltage = (int)(counts/10 * esiadc[i].m + esiadc[i].b);
       // Now set the voltage setpoint
-      if((ESIarray[b]->Rev == 3) || (ESIarray[b]->Rev == 5) || (ESIarray[b]->Rev == 6) || (ESIarray[b]->Rev == 8))
+      if(ESIisRelayRev(ESIarray[b]->Rev))
       {
         ESIarray[b]->VoltageSetpoint = voltage;
       }
@@ -836,12 +818,12 @@ void ESI_loop(void)
     {
       if(ESIchannel2board(ESIchannelLoaded) != -1)
       {
-        if((ESIarray[SelectedESIboard]->Rev == 1) || (ESIarray[SelectedESIboard]->Rev == 2) || (ESIarray[SelectedESIboard]->Rev == 4) || (ESIarray[SelectedESIboard]->Rev == 7) || (ESIarray[SelectedESIboard]->Rev == 9))
+        if(ESIisDualChanRev(ESIarray[SelectedESIboard]->Rev))
         {
           *ESIarray[ESIchannel2board(ESIchannelLoaded)] = esi;
           ESIarray[ESIchannel2board(ESIchannelLoaded)]->ESIchan[(ESIchannelLoaded-1)&1] = esich;
         }
-        else if((ESIarray[SelectedESIboard]->Rev == 3) || (ESIarray[SelectedESIboard]->Rev == 5) || (ESIarray[SelectedESIboard]->Rev == 6) || (ESIarray[SelectedESIboard]->Rev == 8))
+        else if(ESIisRelayRev(ESIarray[SelectedESIboard]->Rev))
         {
           *ESIarray[ESIchannel2board(ESIchannelLoaded)] = esi;
         }
@@ -851,7 +833,7 @@ void ESI_loop(void)
   }
   // If this is a rev 3 or 5 or 6 or 8 module then setup the individual power supply module data 
   // structures
-  if((ESIarray[SelectedESIboard]->Rev == 3) || (ESIarray[SelectedESIboard]->Rev == 5) || (ESIarray[SelectedESIboard]->Rev == 6) || (ESIarray[SelectedESIboard]->Rev == 8))
+  if(ESIisRelayRev(ESIarray[SelectedESIboard]->Rev))
   {
     for(b=0;b<MAXESI;b++)
     {
@@ -1182,7 +1164,7 @@ void ESI_loop(void)
     if((abs(ReadbackV[b][0]) > MaxESIvoltage) && (ESIarray[b]->ESIchan[0].Enable)) MaxESIvoltage = abs(ReadbackV[b][0]);
     if((abs(ReadbackV[b][1]) > MaxESIvoltage) && (ESIarray[b]->ESIchan[1].Enable)) MaxESIvoltage = abs(ReadbackV[b][1]);
   }
-  if((ESIarray[SelectedESIboard]->Rev == 1) || (ESIarray[SelectedESIboard]->Rev == 2) || (ESIarray[SelectedESIboard]->Rev == 4) || (ESIarray[SelectedESIboard]->Rev == 7) || (ESIarray[SelectedESIboard]->Rev == 9))
+  if(ESIisDualChanRev(ESIarray[SelectedESIboard]->Rev))
   {
     if(ESIchannel2board(ESIchannelLoaded) != -1)
     {
@@ -1190,7 +1172,7 @@ void ESI_loop(void)
       esich = ESIarray[ESIchannel2board(ESIchannelLoaded)]->ESIchan[(ESIchannelLoaded-1)&1];    
     }
   }
-  else if((ESIarray[SelectedESIboard]->Rev == 3) || (ESIarray[SelectedESIboard]->Rev == 5) || (ESIarray[SelectedESIboard]->Rev == 6) || (ESIarray[SelectedESIboard]->Rev == 8))
+  else if(ESIisRelayRev(ESIarray[SelectedESIboard]->Rev))
   {
     if(ESIchannel2board(ESIchannelLoaded) != -1) esi = *ESIarray[ESIchannel2board(ESIchannelLoaded)];
   }
@@ -1227,7 +1209,7 @@ bool ValidESIvalue(int chan, float value)
     SendNAK;
     return false;
   }
-  if((ESIarray[ESIchannel2board(chan)]->Rev == 3) || (ESIarray[ESIchannel2board(chan)]->Rev == 5) || (ESIarray[ESIchannel2board(chan)]->Rev == 6) || (ESIarray[ESIchannel2board(chan)]->Rev == 8))
+  if(ESIisRelayRev(ESIarray[ESIchannel2board(chan)]->Rev))
   {
     if((ESIarray[ESIchannel2board(chan)]->ESIchan[0].VoltageLimit < value) || (ESIarray[ESIchannel2board(chan)]->ESIchan[1].VoltageLimit > value))
     {
@@ -1268,7 +1250,7 @@ void SetESIchannel(char *Chan, char *Value)
   sscanf(Value,"%f",&value);
   if(!ValidESIchannel(chan)) return;
   if(!ValidESIvalue(chan,value)) return;
-  if((ESIarray[ESIchannel2board(chan)]->Rev == 3) || (ESIarray[ESIchannel2board(chan)]->Rev == 5) || (ESIarray[ESIchannel2board(chan)]->Rev == 6) || (ESIarray[ESIchannel2board(chan)]->Rev == 8))
+  if(ESIisRelayRev(ESIarray[ESIchannel2board(chan)]->Rev))
   {
     ESIarray[ESIchannel2board(chan)]->VoltageSetpoint = value;
     SendACK;
@@ -1284,7 +1266,7 @@ void GetESIchannel(int chan)
   if(!ValidESIchannel(chan)) return;
   SendACKonly;
   if(SerialMute) return;
-  if((ESIarray[ESIchannel2board(chan)]->Rev == 3) || (ESIarray[ESIchannel2board(chan)]->Rev == 5) || (ESIarray[ESIchannel2board(chan)]->Rev == 6) || (ESIarray[ESIchannel2board(chan)]->Rev == 8)) serial->println(ESIarray[ESIchannel2board(chan)]->VoltageSetpoint);
+  if(ESIisRelayRev(ESIarray[ESIchannel2board(chan)]->Rev)) serial->println(ESIarray[ESIchannel2board(chan)]->VoltageSetpoint);
   else serial->println(ESIarray[ESIchannel2board(chan)]->ESIchan[(chan-1)&1].VoltageSetpoint);
 }
 
@@ -1294,7 +1276,7 @@ void GetESIchannelV(int chan)
   if(!ValidESIchannel(chan)) return;
   SendACKonly;
   if(SerialMute) return;
-  if((ESIarray[ESIchannel2board(chan)]->Rev == 3) || (ESIarray[ESIchannel2board(chan)]->Rev == 5) || (ESIarray[ESIchannel2board(chan)]->Rev == 6) || (ESIarray[ESIchannel2board(chan)]->Rev == 8)) serial->println(ReadbackV[ESIchannel2board(chan)][0]);
+  if(ESIisRelayRev(ESIarray[ESIchannel2board(chan)]->Rev)) serial->println(ReadbackV[ESIchannel2board(chan)][0]);
   else serial->println(ReadbackV[ESIchannel2board(chan)][(chan-1)&1]);
   //if(!SerialMute) serial->println(ReadbackV[ESIchannel2board(chan)][(chan-1)&1]);
 }
@@ -1306,7 +1288,7 @@ void GetESIchannelI(int chan)
   if(ESIarray[ESIchannel2board(chan)]->Rev == 8) BADARG;
   SendACKonly;
   if(SerialMute) return;
-  if((ESIarray[ESIchannel2board(chan)]->Rev == 3) || (ESIarray[ESIchannel2board(chan)]->Rev == 5) || (ESIarray[ESIchannel2board(chan)]->Rev == 6)) serial->println(Imonitor[ESIchannel2board(chan)]);
+  if(ESIisRelayRev(ESIarray[ESIchannel2board(chan)]->Rev)) serial->println(Imonitor[ESIchannel2board(chan)]);
   else serial->println(ReadbackI[ESIchannel2board(chan)][(chan-1)&1]);
 }
 
@@ -1316,7 +1298,7 @@ void GetESIchannelMax(int chan)
   if(!ValidESIchannel(chan)) return;
   SendACKonly;
   if(SerialMute) return;
-  if((ESIarray[ESIchannel2board(chan)]->Rev == 3) || (ESIarray[ESIchannel2board(chan)]->Rev == 5) || (ESIarray[ESIchannel2board(chan)]->Rev == 6) || (ESIarray[ESIchannel2board(chan)]->Rev == 8)) serial->println(ESIarray[ESIchannel2board(chan)]->ESIchan[0].VoltageLimit);
+  if(ESIisRelayRev(ESIarray[ESIchannel2board(chan)]->Rev)) serial->println(ESIarray[ESIchannel2board(chan)]->ESIchan[0].VoltageLimit);
   else serial->println(ESIarray[ESIchannel2board(chan)]->ESIchan[(chan-1)&1].VoltageLimit);
 }
 
@@ -1326,14 +1308,14 @@ void GetESIchannelMin(int chan)
   if(!ValidESIchannel(chan)) return;
   SendACKonly;
   if(SerialMute) return;
-  if((ESIarray[ESIchannel2board(chan)]->Rev == 3) || (ESIarray[ESIchannel2board(chan)]->Rev == 5) || (ESIarray[ESIchannel2board(chan)]->Rev == 6) || (ESIarray[ESIchannel2board(chan)]->Rev == 8)) serial->println(ESIarray[ESIchannel2board(chan)]->ESIchan[1].VoltageLimit);
+  if(ESIisRelayRev(ESIarray[ESIchannel2board(chan)]->Rev)) serial->println(ESIarray[ESIchannel2board(chan)]->ESIchan[1].VoltageLimit);
   else serial->println(0);
 }
 
 void SetESIchannelEnable(int chan)
 {
   if(!ValidESIchannel(chan)) return;
-  if((ESIarray[ESIchannel2board(chan)]->Rev == 3) || (ESIarray[ESIchannel2board(chan)]->Rev == 5) || (ESIarray[ESIchannel2board(chan)]->Rev == 6) || (ESIarray[ESIchannel2board(chan)]->Rev == 8))  ESIarray[ESIchannel2board(chan)]->Enable = true;
+  if(ESIisRelayRev(ESIarray[ESIchannel2board(chan)]->Rev))  ESIarray[ESIchannel2board(chan)]->Enable = true;
   else ESIarray[ESIchannel2board(chan)]->ESIchan[(chan-1)&1].Enable = true;
   SendACK;  
 }
@@ -1341,7 +1323,7 @@ void SetESIchannelEnable(int chan)
 void SetESIchannelDisable(int chan)
 {
   if(!ValidESIchannel(chan)) return;
-  if((ESIarray[ESIchannel2board(chan)]->Rev == 3) || (ESIarray[ESIchannel2board(chan)]->Rev == 5) || (ESIarray[ESIchannel2board(chan)]->Rev == 6) || (ESIarray[ESIchannel2board(chan)]->Rev == 8))  ESIarray[ESIchannel2board(chan)]->Enable = false;
+  if(ESIisRelayRev(ESIarray[ESIchannel2board(chan)]->Rev))  ESIarray[ESIchannel2board(chan)]->Enable = false;
   else ESIarray[ESIchannel2board(chan)]->ESIchan[(chan-1)&1].Enable = false;
   SendACK;  
 }
@@ -1351,7 +1333,7 @@ void GetESIstatus(int chan)
   if(!ValidESIchannel(chan)) return;
   SendACKonly;
   if(SerialMute) return;
-  if((ESIarray[ESIchannel2board(chan)]->Rev == 3) || (ESIarray[ESIchannel2board(chan)]->Rev == 5) || (ESIarray[ESIchannel2board(chan)]->Rev == 6) || (ESIarray[ESIchannel2board(chan)]->Rev == 8))
+  if(ESIisRelayRev(ESIarray[ESIchannel2board(chan)]->Rev))
   {
     if(ESIarray[ESIchannel2board(chan)]->Enable) serial->println("ON");
     else serial->println("OFF");
