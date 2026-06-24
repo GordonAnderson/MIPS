@@ -800,7 +800,7 @@ void ESI_ADC_Control(void)
       // Read the ADC raw counts and apply calibration
       counts = 0;
       for(int j=0;j<10;j++) counts += analogRead(esiadc[i].adc);
-      voltage = counts/10 * esiadc[i].m + esiadc[i].b;
+      voltage = (int)(counts/10 * esiadc[i].m + esiadc[i].b);
       // Now set the voltage setpoint
       if((ESIarray[b]->Rev == 3) || (ESIarray[b]->Rev == 5) || (ESIarray[b]->Rev == 6) || (ESIarray[b]->Rev == 8))
       {

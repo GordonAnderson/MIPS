@@ -247,6 +247,9 @@ void initHVPSui(void)
     HVPSDialogEntriesPage1[i * 2 + 1].Type = D_OFF;
     HVPSDialogEntriesActualVoltages[i].Type = D_OFF;
   }
+  // Set number of channels for calibration ui options
+  HVPSDialogEntriesPage2[0].Max = NumberOfHVPSchannels;
+  HVPSDialogEntriesPage2[1].Max = NumberOfHVPSchannels;
 }
 
 // Calibrate the channel defined by HVPSCalChannel (1 thru n). Performs the following setup
@@ -382,6 +385,11 @@ void RestoreHVPSSettings(bool NoDisplay)
   else DisplayMessage("Parameters Restored!",2000);  
 }
 
+// HVPS_init initializes the specified HVPS board by allocating its data and state objects, assigning the 
+// TWI address, selecting the board, loading default revision-dependent settings, clearing the receive 
+// buffer state, and preparing the hardware by writing to the DAC and restoring EEPROM settings on normal 
+// startup. It also sets up the HVPS command/menu/thread infrastructure the first time a channel is 
+// initialized, updates the active board and channel count, and finishes by initializing the HVPS UI.
 void HVPS_init(int8_t Board, int8_t addr)
 {
   int i;
@@ -432,7 +440,7 @@ void HVPS_init(int8_t Board, int8_t addr)
 }
 
 // Move this function to the hardware file...
-// This function send the DAC counts to the selected DAC channel.
+// This function sends the DAC counts to the selected DAC channel.
 // Device TWI addresses
 // A0 low:   0x48
 // A0 high:  0x4A
@@ -461,7 +469,9 @@ void DAC7678(uint8_t addr, uint8_t chan, uint16_t counts)
   ReleaseTWI();
 }
 
-// Returns board number for the HVPS channel number, 0 thru 7
+// HVPSgetBoard returns the board index for a specified HVPS logical channel number by scanning up to four HVPS 
+// data structures and counting their channels until it finds a match. It returns the matching board index or -1 
+// if the requested channel is not present, with the intended channel range being 0 through 7.
 int HVPSgetBoard(int chan)
 {
   int i,j,ch=0;
@@ -527,7 +537,7 @@ void HVPS_ADC_Control(void)
       // Read the ADC raw counts and apply calibration
       counts = 0;
       for(int j=0;j<10;j++) counts += analogRead(hvpsadc[i].adc);
-      voltage = counts/10 * hvpsadc[i].m + hvpsadc[i].b;
+      voltage = (int)(counts/10 * hvpsadc[i].m + hvpsadc[i].b);
       // Now set the voltage setpoint
       HVPSarray[b]->HVPSCH[c].Voltage = voltage;
     }
@@ -692,6 +702,10 @@ int TestChannel(int chan)
   return j;
 }
 
+// SetHVPSvoltage sets the voltage for a specified HVPS channel by validating the channel, translating 
+// it to the internal channel index, and writing the provided value to the corresponding HVPSCH[].Voltage 
+// field. If the channel test fails (the TestChannel call returns a negative value), the function exits 
+// early; otherwise, it also sends an acknowledgment.
 void SetHVPSvoltage(int chan, int value)
 {
   int b,c;

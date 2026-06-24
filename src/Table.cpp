@@ -1777,6 +1777,9 @@ void ClockSstop(void)
    Counter=0;
 }
 
+// SetupNextEntry is the core table-driven execution step for the system: it configures the next timing window by 
+// setting the timer compare values, then walks the current table entry across all channels to apply DAC, trigger, 
+// RF, ARB, DIO, and loop/branch operations while advancing or stopping nested table execution as needed.
 inline void SetupNextEntry(void)
 {
   static Pio *pioTrig = g_APinDescription[TRGOUT].pPort;
@@ -2400,6 +2403,10 @@ int FindCloseMZ(float mz)
   return(mzindex);
 }
 
+// ADCtableTriggerISR is an ADC-triggered interrupt handler that only acts when table mode is enabled, the table 
+// is ready, and retrigger conditions allow it; otherwise it exits. It converts the ADC input into a target value, 
+// finds the closest table entry, computes open/close timing counts within configured limits, updates the associated
+// timing objects when present, and always sets the software table-start flag.
 void ADCtableTriggerISR(int adcVal)
 {
   if(TableMode != TBL) return;
