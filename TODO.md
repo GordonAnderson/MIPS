@@ -1,7 +1,7 @@
 # MIPS Project Roadmap
 
 ## Bugs
-- [ ] RF driver 1 channel 2 PWM fre is 83KHz, not 50KHz
+- [ ] RF driver 1 channel 2 PWM freq is 83KHz, not 50KHz
 - [ ] Check RF driver 2
 - [ ] ESI.cpp:621 `SaveESIsettings` writes board 1's EEPROM but sets `ESIarray[0]->Size` instead of `ESIarray[1]->Size` (copy-paste from the board-0 branch above it)
 - [ ] ESI.cpp:872 `ESI_loop` has an author-flagged suspect comparison: `if(Setpoints[b][0] != 0)` — comment says "should be >= 0, not sure?" — needs verification against intended SetpointsR3 behavior

@@ -1296,6 +1296,10 @@ bool SerialNavigation(char c)
   return false;
 }
 
+// The SerialWD function monitors the availability of data on the USB serial port 
+// and resets the communication power if no data has been received within a specified 
+// watchdog timeout period. It utilizes a static variable to track the last time data 
+// was received and calls SerialPortReset() if the timeout condition is met.
 void SerialWD(void)
 {
   static ulong lastcharT;
@@ -1307,7 +1311,7 @@ void SerialWD(void)
   }
   if (SerialWatchDog <= 0) return;
   if (((millis() - lastcharT) / (ulong)1000) < (ulong)SerialWatchDog) return;
-  // If here rest the comm power
+  // If here rest the comm power, watchdog timeout. 
   SerialPortReset();
   lastcharT = millis();
 }

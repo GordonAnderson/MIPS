@@ -299,7 +299,11 @@ void Connect(void)
   DismissMessage();
 }
 
-// This function is called at powerup to test for and initiaize the WiFi interface.
+// The WiFi_init function initializes the WiFi interface at power-up by checking the 
+// configuration settings, setting up the appropriate serial port, and attempting to 
+// connect to a WiFi network or set up an access point based on the defined SSID. 
+// It also configures a thread for handling WiFi operations and adds a menu entry 
+// for the WiFi module in the main application.
 void WiFi_init(void)
 {
   String res;
@@ -361,7 +365,9 @@ void WiFi_loop(void)
  * Serial command proccessing routines.
  */
 
-// Returns true if WiFi is connected and send a NAK
+// The isConnected function checks if the WiFi status is "CONNECTED" and, if so, 
+// sets an error code and sends a NAK (Negative Acknowledgment), returning true. 
+// If the WiFi is not connected, it returns false
 bool isConnected(void)
 {
   if(strcmp(WFS,"CONNECTED")==0)
@@ -373,6 +379,10 @@ bool isConnected(void)
   return false;
 }
 
+// The SetHost function sets the host address for a Wi-Fi connection by copying the 
+// provided host string into the wifidata.Host variable, but only if the system is 
+// not currently connected. After updating the host, it sends an acknowledgment 
+// signal.
 void SetHost(char *host)
 {
   if(isConnected()) return;
@@ -380,6 +390,10 @@ void SetHost(char *host)
   SendACK;
 }
 
+// The SetSSID function sets the SSID (Service Set Identifier) for a Wi-Fi connection, 
+// copying the provided ssid string into the wifidata.ssid variable only if the device 
+// is not currently connected. After updating the SSID, it sends an acknowledgment 
+// signal.
 void SetSSID(char *ssid)
 {
   if(isConnected()) return;
@@ -387,6 +401,10 @@ void SetSSID(char *ssid)
   SendACK;
 }
 
+// The SetPassword function sets the password for a Wi-Fi data structure, clearing 
+// it if the input is "none" and copying the provided password into the structure 
+// otherwise. It also checks if the system is connected before proceeding with the 
+// password update.
 void SetPassword(char *pswd)
 {
   if(isConnected()) return;
