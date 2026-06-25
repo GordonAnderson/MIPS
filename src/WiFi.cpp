@@ -5,16 +5,12 @@
  * acts as a WiFi to serial repeater and is connected to the Due serial port. The serial communications speed is 115200 baud.
  * When connected to a network you can use telnet to connect to MIPS and issue any of the MIPS commands.
  *
- * Currently the only way to set the parameters is to use the host interface on the native USB connection.
+ * Adafruit HUZZAH ESP8266 Breakout, Product ID: 2471
  * 
- * To do list:
- *  1.) Add disconnect function, done
- *  2.) Only allow changes to parameters when disconnected
- *  3.) Fix the restore to disconnect then restore and connect if enabled
- *  4.) Add serial commands, some added
+ * Parameters are set using the host interface on the native USB connection.
  *
  * Gordon Anderson
- * November 28, 2015
+ * Created, November 28, 2015
  *
  */
 #include <Arduino.h>
@@ -133,6 +129,11 @@ void RestorWiFiSettings(void)
   RestorWiFiSettings(true);
 }
 
+// The RestorWiFiSettings function restores Wi-Fi configuration settings from a 
+// file named "wifi.cfg" on an SD card, provided that the device is not currently 
+// connected to a Wi-Fi network and the SD card is present. If successful, 
+// it updates the global Wi-Fi data structure and displays a message indicating 
+// the restoration status.
 void RestorWiFiSettings(bool Display)
 {
   File file;
@@ -176,7 +177,10 @@ void RestorWiFiSettings(bool Display)
   return;
 }
 
-// Break any existing WiFi connections
+// The Disconnect function is responsible for disconnecting a Wi-Fi connection by 
+// sending a series of commands to a WiFiSerial interface, flushing the output, 
+// and reading the status response. It also resets the Wi-Fi data and clears the 
+// IP address stored in wifidata.
 void Disconnect(void)
 {
   String res;
@@ -200,7 +204,11 @@ void Disconnect(void)
   strcpy(wifidata.IP,"");
 }
 
-// The function will place the system in Access Point mode and allow connection to the interface
+// The AccessPoint function sets up a Wi-Fi access point by sending configuration 
+// data such as the host name, SSID, and password to a serial interface, and retrieves 
+// the IP address assigned to the access point. It also manages the serial 
+// communication by flushing and reading available data to ensure proper setup 
+// and operation.
 void AccessPoint(void)
 {
   String res;
@@ -241,7 +249,11 @@ void AccessPoint(void)
   DismissMessage();
 }
 
-// This function tries to connect to the wireless network. Any current connection is first terminated.
+// The Connect function attempts to establish a connection to a wireless network by 
+// first disconnecting any existing connection, sending the host name, SSID, and 
+// password to the WiFi module, and then checking for a successful connection 
+// status. If successful, it retrieves the IP address; otherwise, it clears the IP 
+// information and updates the connection status.
 void Connect(void)
 {
   int i;
@@ -308,13 +320,7 @@ void WiFi_init(void)
 {
   String res;
 
-//SaveWiFiSettings();
   RestorWiFiSettings(false);
-//  if(!wifidata.Enable) return;   // Exit if disabled
-
-//MIPSconfigData.UseWiFi=true;
-//wifidata.SerialPort = 1;
-//if(MIPSconfigData.UseWiFi) && (wifidata.SerialPort==0)
 
   if(!MIPSconfigData.UseWiFi) return;
   // Setup ther serial port.
@@ -341,7 +347,6 @@ void WiFi_init(void)
   {
     DisplayMessage("WiFi setup ERROR!", 2000);
   }
-//  RestorWiFiSettings(false);
   // If found and a SSID is defined try to connect and setup the interface, only if enabled
   if (wifidata.WFstartMode == WS_CONNECT) if (strlen(wifidata.ssid) > 0) Connect();
   if (wifidata.WFstartMode == WS_AP) if (strlen(wifidata.ssid) > 0) AccessPoint();
@@ -356,6 +361,11 @@ void WiFi_init(void)
   control.add(&WiFiThread);
 }
 
+// The WiFi_loop function is responsible for managing the Wi-Fi interface in an 
+// application, specifically refreshing all dialog entries in the WiFiDialog if 
+// the current active dialog entry is WiFiEntriesPage1. This function is likely 
+// called repeatedly in a loop to ensure the user interface remains responsive 
+// and up-to-date with the current Wi-Fi status.
 void WiFi_loop(void)
 {
   if (ActiveDialog->Entry == WiFiEntriesPage1) RefreshAllDialogEntries(&WiFiDialog);
