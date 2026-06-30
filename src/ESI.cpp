@@ -1354,7 +1354,16 @@ void SetESImodulePos(int module, int value)
   if(ESIarray[module-1] == NULL) BADARG;
   ESIarray[module-1]->ESIchan[0].MaxVoltage = value;
   // Adjust the calibration gain
-  if(ESIarray[module-1]->Rev == 5) ESIarray[module-1]->ESIchan[0].DCctrl.m = 25000/value;
+  if(ESIarray[module-1]->Rev == 5) 
+  {
+    ESIarray[module-1]->ESIchan[0].DCctrl.m = 25000/value;
+    if(value==0)
+    {
+      // Force the current readback to zero
+      ESIarray[module-1]->ESIchan[0].DCImon.m = 10000000;
+      ESIarray[module-1]->ESIchan[0].DCImon.b = 0;
+    }
+  }
   else ESIarray[module-1]->ESIchan[0].DCctrl.m = 65535/value;
   // For rev 6 set the current readback gains
   if((ESIarray[module-1]->Rev == 6)||(ESIarray[module-1]->Rev == 8)||(ESIarray[module-1]->Rev == 7))
