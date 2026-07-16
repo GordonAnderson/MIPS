@@ -864,8 +864,8 @@ void WriteEEPROMbyte(void)
 void Debug(int function)
 {
   SelectBoard(0);
-  Set_18bitDAC(0, 11, function);
-  Set_18bitDAC(0, 12, function);
+  Set_18bitDAC(0, 9, function);
+  Set_18bitDAC(0, 10, function);
 }
 
 // These functions will automatically set the TWI address variables for the selected modules.

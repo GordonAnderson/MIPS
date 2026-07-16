@@ -473,6 +473,14 @@ void SetRangeLow(int brd, bool Send)
    if(Send) SendFRAcpldCommand(RFAarray[brd]->CPLDspi, RFACPLDimage[brd]);  
 }
 
+// Channels 11, and 12 are the DC bias poles
+// In the CPLD decoding the address lines
+// - P1 = 5, 11 is the internal shift register bit
+// - P2 = 6, 12 is the internal shift register bit
+//
+// - RFD = 1, 9 is the internal shift register bit
+// - RFSP = 2, 10 is the internal shift register bit
+// This DAC is 18 bit, 0 to 5V output
 void Set_18bitDAC(int brd, int DACchannel, int value)
 {
   static bool init=true;
