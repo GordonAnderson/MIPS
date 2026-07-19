@@ -1,6 +1,6 @@
 # MIPS - Modular Intelligent Power System
 
-Firmware for the MIPS controller, developed by GAA Custom Electronics, LLC. MIPS is a modular instrument controller platform designed for mass spectrometry and ion processing applications. It runs on an Arduino Due (Atmel SAM3X8E, 84MHz ARM Cortex-M3) and is built with PlatformIO.
+Firmware for the MIPS controller, developed by GAA Custom Electronics, LLC. MIPS is a modular, intelligent power source platform designed specifically for mass spectrometry and ion processing applications. The firmware targets the Arduino Due (Atmel SAM3X8E, 84MHz ARM Cortex-M3) and is built using the PlatformIO ecosystem.
 
 ## Overview
 
