@@ -360,12 +360,14 @@ void setRFADAC(int brd, int channel, float value, float gc)
       if(channel == RFAdacSETPOINT) ch = RFAcpldCS_RFSP;
       if(channel == RFAdacDRIVE)    ch = RFAcpldCS_RFD;
       // Here for 18 bit DAC mode
+      int cnts;
       if((channel == RFAdacSETPOINT) && ((RFACPLDimage[brd] & (1<<RFAcpldRANGE))) == 0)
       {
          Set_18bitDAC(brd,ch,Value2Counts(value,&RFAarray[brd]->DACchansLR,gc,262143));
          return;
       }
-      Set_18bitDAC(brd,ch,Value2Counts(value,&RFAarray[brd]->DACchans[channel],gc,262143));
+      Set_18bitDAC(brd,ch,cnts=Value2Counts(value,&RFAarray[brd]->DACchans[channel],gc,262143));
+      serial->println(cnts);
       return;
    }
    if((channel == RFAdacSETPOINT) && ((RFACPLDimage[brd] & (1<<RFAcpldRANGE))) == 0)
@@ -1952,4 +1954,5 @@ void setRFArev3(int module)
   // Negative HV readback
   RFAarray[b]->ADCresDCCtrl[2].m = -100;
   RFAarray[b]->ADCresDCCtrl[2].b = 65535;
+  SendACK;
 }
