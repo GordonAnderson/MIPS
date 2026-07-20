@@ -1035,3 +1035,5 @@ RF amp / quad auto tune
   GRFATHP           Return the auto tune max drive mode level
   SRFATSWR          If TRUE auto tune uses SWR on second phase
   GRFATSWR          Returns the auto tune SWR second tune phase flag
+Configutation commands
+  SRFAREV3          Set selected module to rev 3, adjust initial calibration parameters

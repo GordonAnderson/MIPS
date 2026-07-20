@@ -164,23 +164,23 @@ float Counts2Value(int Counts, ADCchan *AC, float gc)
   return (Counts - AC->b) / (AC->m *gc);
 }
 
-int Value2Counts(float Value, DACchan *DC, float gc)
+int Value2Counts(float Value, DACchan *DC, float gc, int limit)
 {
   int counts;
 
   counts = (Value * DC->m *gc) + DC->b;
   if (counts < 0) counts = 0;
-  if (counts > 65535) counts = 65535;
+  if (counts > limit) counts = limit;
   return (counts);
 }
 
-int Value2Counts(float Value, ADCchan *AC, float gc)
+int Value2Counts(float Value, ADCchan *AC, float gc, int limit)
 {
   int counts;
 
   counts = (Value * AC->m * gc) + AC->b;
   if (counts < 0) counts = 0;
-  if (counts > 65535) counts = 65535;
+  if (counts > limit) counts = limit;
   return (counts);
 }
 

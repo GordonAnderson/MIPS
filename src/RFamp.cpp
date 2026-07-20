@@ -11,6 +11,12 @@
 //   the DC module as well as the quad module.
 //   Set the .Rev value to 3 to signal this 3.0 system is in use.
 //   All commands moved from Serial.ccp to this module and registered during init.
+//   Remaining updates needed:
+//    - Perform initial setup via command, need to implement
+//    - Write calibration function for pole voltages and readbacks
+//    - Write calibration function for pole HV supplies readbacks
+//    - Add commands to read readbacks
+//    - Note! power on controls the HV supplies
 //
 //  Some facts reguarding Q voltages
 //  - DC is a fixed ratio of RF voltage, 11.916 times less that Vp-p for max res
@@ -334,12 +340,41 @@ const Commands  RFAMPCmdArray[] = {
   {"GRFATHP", CMDint, 0, (char *)&quadAThighP},              // Return the auto tune max drive mode level
   {"SRFATSWR", CMDbool, 1, (char *)&quadATuseSWR},           // If TRUE auto tune uses SWR on second phase
   {"GRFATSWR", CMDbool, 0, (char *)&quadATuseSWR},           // Returns the auto tune SWR second tune phase flag
+// Configutation commands
+  {"SRFAREV3", CMDfunction, 1, (char *)setRFArev3},          // Set selected module to rev 3, adjust initial calibration parameters
 // End of table marker
   {0},
 };
 
 CommandList RFAMPCmdList = { (Commands *)RFAMPCmdArray, NULL };
 
+// The setRFADAC function configures a digital-to-analog converter (DAC) for a specified board and channel, 
+// converting a given float value to counts based on the DAC's characteristics and settings. It handles both 
+// 18-bit DAC mode and standard operations, utilizing different methods (Set_18bitDAC and AD5625) depending 
+// on the board revision and channel type.
+void setRFADAC(int brd, int channel, float value, float gc)
+{
+   if(RFAarray[brd]->Rev == 3)
+   {
+      int ch = channel;
+      if(channel == RFAdacSETPOINT) ch = RFAcpldCS_RFSP;
+      if(channel == RFAdacDRIVE)    ch = RFAcpldCS_RFD;
+      // Here for 18 bit DAC mode
+      if((channel == RFAdacSETPOINT) && ((RFACPLDimage[brd] & (1<<RFAcpldRANGE))) == 0)
+      {
+         Set_18bitDAC(brd,ch,Value2Counts(value,&RFAarray[brd]->DACchansLR,gc,262143));
+         return;
+      }
+      Set_18bitDAC(brd,ch,Value2Counts(value,&RFAarray[brd]->DACchans[channel],gc,262143));
+      return;
+   }
+   if((channel == RFAdacSETPOINT) && ((RFACPLDimage[brd] & (1<<RFAcpldRANGE))) == 0)
+   {
+      AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(value,&RFAarray[brd]->DACchansLR,gc),3);
+      return;
+   }
+   AD5625(RFAarray[brd]->DACadr,channel,Value2Counts(value,&RFAarray[brd]->DACchans[channel],gc),3);
+}
 
 void StartAutoTune(void)
 {
@@ -486,10 +521,10 @@ void Set_18bitDAC(int brd, int DACchannel, int value)
   static bool init=true;
   // Lower CS
   SendFRAcpldCommand(RFAarray[brd]->CPLDspi, RFACPLDimage[brd] | (1 << DACchannel));
-  if(DACchannel == RFAcpldCS_RFD) SetAddress(RFAcpldADD_RFD);
+  if(DACchannel == RFAcpldCS_RFD)       SetAddress(RFAcpldADD_RFD);
   else if(DACchannel == RFAcpldCS_RFSP) SetAddress(RFAcpldADD_RFSP);
-  else if(DACchannel == RFAcpldCS_P1) SetAddress(RFAcpldADD_P1);
-  else if(DACchannel == RFAcpldCS_P2) SetAddress(RFAcpldADD_P2);
+  else if(DACchannel == RFAcpldCS_P1)   SetAddress(RFAcpldADD_P1);
+  else if(DACchannel == RFAcpldCS_P2)   SetAddress(RFAcpldADD_P2);
   // Send Data
   if(init)
   {
@@ -780,6 +815,16 @@ void RFA_init(int8_t Board, int8_t addr)
 
 void SetPoleBias(int brd, float value)
 {
+   if(RFAarray[brd]->Rev == 3)
+   {
+     float rdc = RFAarray[brd]->ResolvingDC;
+     if(!ResolvingDCenable) rdc = 0;
+     if(!RFAarray[brd]->Enabled) rdc = value = 0;
+     // Rev 3 used 18 bit DAC
+     Set_18bitDAC(brd, RFAcpldCS_P1, Value2Counts( rdc + value,&RFAarray[brd]->DACresDCCtrl[0],1.0,262143));
+     Set_18bitDAC(brd, RFAcpldCS_P2, Value2Counts(-rdc + value,&RFAarray[brd]->DACresDCCtrl[1],1.0,262143));
+     return;
+   }
    // Set the PoleBias value
    int bd = DCbiasCH2Brd(RFAarray[brd]->DCBchan-1);
    if(bd != -1)
@@ -802,6 +847,16 @@ void SetPoleBias(int brd, float value)
 // force the hardware to update when called, if true.
 void SetResolvingDC(int brd, float value, bool now = false)
 {
+   if(RFAarray[brd]->Rev == 3)
+   {
+     // Rev 3 used 18 bit DAC
+     float bias = RFAarray[brd]->PoleBias;
+     if(!ResolvingDCenable) value = 0;
+     if(!RFAarray[brd]->Enabled) bias = value = 0;
+     Set_18bitDAC(brd, RFAcpldCS_P1, Value2Counts( value + bias,&RFAarray[brd]->DACresDCCtrl[0],1.0,262143));
+     Set_18bitDAC(brd, RFAcpldCS_P2, Value2Counts(-value + bias,&RFAarray[brd]->DACresDCCtrl[1],1.0,262143));
+     return;
+   }
    // Set the ResolvingDC value
    int bd = DCbiasCH2Brd(RFAarray[brd]->DCBchan-1);
    if(bd != -1)
@@ -865,11 +920,10 @@ void RFA_loop(void)
         SetDDSfrequency(RFAarray[brd]->DDSspi, RFAarray[brd]->Freq,false);
         // Here if enabled so set the drive and SetPoint levels
         // .. Set drive       
-        AD5625(RFAarray[brd]->DACadr,RFAdacDRIVE,Value2Counts(RFAarray[brd]->Drive,&RFAarray[brd]->DACchans[RFAdacDRIVE]),3);
+        setRFADAC(brd, RFAdacDRIVE,RFAarray[brd]->Drive, 1.0);
         // .. Set the setpoint
         SelectRange(brd, RFAarray[brd]->SetPoint);
-        if((RFACPLDimage[brd] & (1<<RFAcpldRANGE)) != 0) AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[brd]->SetPoint,&RFAarray[brd]->DACchans[RFAdacSETPOINT],gc),3);
-        else AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[brd]->SetPoint,&RFAarray[brd]->DACchansLR,gc),3);
+        setRFADAC(brd, RFAdacSETPOINT,RFAarray[brd]->SetPoint, gc);
         // .. Set the pole bias and resolving DC
         SetPoleBias(brd,RFAarray[brd]->PoleBias);
         SetResolvingDC(brd,RFAarray[brd]->ResolvingDC);
@@ -877,8 +931,8 @@ void RFA_loop(void)
       else
       {
         // Here if disabled, set drive and setpoint outputs to 0, also set pole bias and resolving DC to 0
-        AD5625(RFAarray[brd]->DACadr,RFAdacDRIVE,Value2Counts(0,&RFAarray[brd]->DACchans[RFAdacDRIVE]),3);
-        AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(0,&RFAarray[brd]->DACchans[RFAdacSETPOINT]),3);
+        setRFADAC(brd, RFAdacDRIVE,0, 1.0);
+        setRFADAC(brd, RFAdacSETPOINT,0, 1.0);
         SetPoleBias(brd,0);
         SetResolvingDC(brd,0);
         SetDDSfrequency(RFAarray[brd]->DDSspi, RFAarray[brd]->Freq,true);
@@ -904,7 +958,7 @@ void RFA_loop(void)
     if((RFAarray[brd]->Drive != RFAstates[brd]->Drive) || RFAupdate)
     {
       // Set the drive level if enabled
-      if(RFAarray[brd]->Enabled) AD5625(RFAarray[brd]->DACadr,RFAdacDRIVE,Value2Counts(RFAarray[brd]->Drive,&RFAarray[brd]->DACchans[RFAdacDRIVE]),3);
+      if(RFAarray[brd]->Enabled) setRFADAC(brd, RFAdacDRIVE,RFAarray[brd]->Drive, 1.0);
       RFAstates[brd]->Drive = RFAarray[brd]->Drive;
     }
     if((RFAarray[brd]->SetPoint != RFAstates[brd]->SetPoint) || RFAupdate)
@@ -913,11 +967,7 @@ void RFA_loop(void)
       if(RFAarray[brd]->Enabled) 
       {
         SelectRange(brd, RFAarray[brd]->SetPoint);
-        if((RFACPLDimage[brd] & (1<<RFAcpldRANGE)) != 0)
-        {
-           AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[brd]->SetPoint,&RFAarray[brd]->DACchans[RFAdacSETPOINT],gc),3);
-        }
-        else AD5625(RFAarray[brd]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[brd]->SetPoint,&RFAarray[brd]->DACchansLR,gc),3);
+        setRFADAC(brd, RFAdacSETPOINT,RFAarray[brd]->SetPoint, gc);
       }
       RFAstates[brd]->SetPoint = RFAarray[brd]->SetPoint;
     }
@@ -1417,11 +1467,7 @@ void RFAupdateQUAD(int Module)
     else gc = 1.0;
     SelectBoard(b);
     SelectRange(b, RFAarray[b]->SetPoint);
-    if((RFACPLDimage[b] & (1<<RFAcpldRANGE)) != 0)
-    {
-      AD5625(RFAarray[b]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[b]->SetPoint,&RFAarray[b]->DACchans[RFAdacSETPOINT],gc),3);
-    }
-    else AD5625(RFAarray[b]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[b]->SetPoint,&RFAarray[b]->DACchansLR,gc),3);
+    setRFADAC(b, RFAdacSETPOINT,RFAarray[b]->SetPoint, gc);
   }
   SendACK;
 }
@@ -1474,11 +1520,7 @@ void RFAacquire(void)
       else gc = 1.0;
       SelectBoard(b);
       SelectRange(b, RFAarray[b]->SetPoint);
-      if((RFACPLDimage[b] & (1<<RFAcpldRANGE)) != 0)
-      {
-        AD5625(RFAarray[b]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[b]->SetPoint,&RFAarray[b]->DACchans[RFAdacSETPOINT],gc),3);
-      }
-      else AD5625(RFAarray[b]->DACadr,RFAdacSETPOINT,Value2Counts(RFAarray[b]->SetPoint,&RFAarray[b]->DACchansLR,gc),3);
+      setRFADAC(b, RFAdacSETPOINT,RFAarray[b]->SetPoint, gc);
     }
     // Update the resolving DC now
     RFAarray[b]->ResolvingDC += delta;
@@ -1878,4 +1920,36 @@ void setQuadATR(int module)
   quadTuneBrd     = b;
   quadTuneReport  = true;
   SendACK;
+}
+
+// Set RFA board to revision 3 and configure DAC and ADC gains accordingly
+void setRFArev3(int module)
+{
+  int b;
+
+  if((b = RFAmodule2board(module)) == -1) return;
+  RFAarray[b]->Rev = 3;
+  // Set drive and setpoint DAC gains
+  RFAarray[b]->DACchans[0].m = 2600;
+  RFAarray[b]->DACchans[0].b = 0;
+  RFAarray[b]->DACchans[1].m = 13.88;
+  RFAarray[b]->DACchans[1].b = 0;
+  // Set low range DAC gains
+  RFAarray[b]->DACchansLR.m = 13.88;
+  RFAarray[b]->DACchansLR.b = 0;
+  // Set initial DC pole bias gains and addresses
+  RFAarray[b]->rbBoard = b;   // Assume board addresses equals this module
+  RFAarray[b]->rbADDR = 0x24;
+  // 18 bit DAC gains for drive and setpoint
+  RFAarray[b]->DACresDCCtrl[0].m = RFAarray[b]->DACresDCCtrl[1].m = 200;
+  RFAarray[b]->DACresDCCtrl[0].b = RFAarray[b]->DACresDCCtrl[1].b = 131000;
+  // 12 bit ADC pole supply readbacks
+  RFAarray[b]->ADCresDCCtrl[0].m = RFAarray[b]->ADCresDCCtrl[1].m = 50;
+  RFAarray[b]->ADCresDCCtrl[0].b = RFAarray[b]->ADCresDCCtrl[1].b = 32000;
+  // Positive HV readback
+  RFAarray[b]->ADCresDCCtrl[2].m = 100;
+  RFAarray[b]->ADCresDCCtrl[2].b = 0;
+  // Negative HV readback
+  RFAarray[b]->ADCresDCCtrl[2].m = -100;
+  RFAarray[b]->ADCresDCCtrl[2].b = 65535;
 }
