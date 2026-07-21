@@ -342,6 +342,7 @@ const Commands  RFAMPCmdArray[] = {
   {"GRFATSWR", CMDbool, 0, (char *)&quadATuseSWR},           // Returns the auto tune SWR second tune phase flag
 // Configutation commands
   {"SRFAREV3", CMDfunction, 1, (char *)setRFArev3},          // Set selected module to rev 3, adjust initial calibration parameters
+  {"CALRFAPS", CMDfunction, 1, (char *)calRFApoleSupplies},  // Calibrates the Rev 3 pole power supplies
 // End of table marker
   {0},
 };
@@ -1954,5 +1955,75 @@ void setRFArev3(int module)
   // Negative HV readback
   RFAarray[b]->ADCresDCCtrl[2].m = -100;
   RFAarray[b]->ADCresDCCtrl[2].b = 65535;
+  for(int i=0;i<4;i++) RFAarray[b]->ADCresDCCtrl[i].Chan = i;
+  SendACK;
+}
+
+// The calRFApoleSupplies function calibrates the pole supplies for a specified module by measuring voltages, 
+// adjusting digital-to-analog converters (DACs), and calculating calibration parameters based on user input 
+// and readback values from analog-to-digital converters (ADCs). It ensures proper board selection and handles 
+// high voltage power supply operations while providing serial output for monitoring the calibration process.
+void calRFApoleSupplies(int module)
+{
+  int b;
+  #define   CNTS_P1 131000
+  #define   CNTS_P2 200000
+
+  if((b = RFAmodule2board(module)) == -1) return;
+  if(RFAarray[b]->Rev != 3) BADARG;
+  // Turn on the HV power supply
+  digitalWrite(PWR_ON,LOW);
+  for(int i=0;i<2;i++)
+  {
+    SelectBoard(b);
+    serial->print("Calibrating Pole "); serial->println(i+1);
+    // Set zero point and ask for actual value
+    if(i==0) Set_18bitDAC(b, RFAcpldCS_P1, CNTS_P1);
+    if(i==1) Set_18bitDAC(b, RFAcpldCS_P2, CNTS_P1);
+    float V1 = UserInputFloat("Enter measured pole voltage : ", NULL);
+    SelectBoard(RFAarray[b]->rbBoard);
+    int Vadc1 = AD7994(RFAarray[b]->rbADDR, RFAarray[b]->ADCresDCCtrl[i].Chan, 20);
+    // Set mid scan and ask of actual value
+    SelectBoard(b);
+    if(i==0) Set_18bitDAC(b, RFAcpldCS_P1, CNTS_P2);
+    if(i==1) Set_18bitDAC(b, RFAcpldCS_P2, CNTS_P2);
+    float V2 = UserInputFloat("Enter measured pole voltage : ", NULL);
+    SelectBoard(RFAarray[b]->rbBoard);
+    int Vadc2 = AD7994(RFAarray[b]->rbADDR, RFAarray[b]->ADCresDCCtrl[i].Chan, 20);
+    // Generate calibration parameters
+    // count = value * m + b
+    RFAarray[b]->ADCresDCCtrl[i].m = (Vadc2 - Vadc1) / (V2 - V1);
+    RFAarray[b]->ADCresDCCtrl[i].b = Vadc2 - V2 * RFAarray[b]->ADCresDCCtrl[i].m;
+    serial->print("ADC m = "); serial->print(RFAarray[b]->ADCresDCCtrl[i].m);
+    serial->print(" b = "); serial->println(RFAarray[b]->ADCresDCCtrl[i].b);
+    RFAarray[b]->DACresDCCtrl[i].m = (CNTS_P2 - CNTS_P1) / (V2 - V1);
+    RFAarray[b]->DACresDCCtrl[i].b = CNTS_P2 - V2 * RFAarray[b]->DACresDCCtrl[i].m;
+    serial->print("DAC m = "); serial->print(RFAarray[b]->DACresDCCtrl[i].m);
+    serial->print(" b = "); serial->println(RFAarray[b]->DACresDCCtrl[i].b);
+  }
+  // Cal HV supply readbacks
+  // .. Read power on voltages
+  SelectBoard(b);
+  float VP1 = UserInputFloat("Enter measured HV+ voltage : ", NULL);
+  int VP1adc = AD7994(RFAarray[b]->rbADDR, RFAarray[b]->ADCresDCCtrl[DCmonHVP].Chan, 20);
+  float VN1 = UserInputFloat("Enter measured HV+ voltage : ", NULL);
+  int VN1adc = AD7994(RFAarray[b]->rbADDR, RFAarray[b]->ADCresDCCtrl[DCmonHVN].Chan, 20);
+  // .. Read power off voltages
+  digitalWrite(PWR_ON,HIGH);
+  float VP2 = UserInputFloat("Enter measured HV+ voltage : ", NULL);
+  int VP2adc = AD7994(RFAarray[b]->rbADDR, RFAarray[b]->ADCresDCCtrl[DCmonHVP].Chan, 20);
+  float VN2 = UserInputFloat("Enter measured HV+ voltage : ", NULL);
+  int VN2adc = AD7994(RFAarray[b]->rbADDR, RFAarray[b]->ADCresDCCtrl[DCmonHVN].Chan, 20);
+  // Calculate the calibration parameters
+  RFAarray[b]->ADCresDCCtrl[DCmonHVP].m = (VP1adc - VP2adc) / (VP1 - VP2);
+  RFAarray[b]->ADCresDCCtrl[DCmonHVP].b = VP2adc - VP2 * RFAarray[b]->ADCresDCCtrl[DCmonHVP].m;
+  serial->print("HV+ ADC m = "); serial->print(RFAarray[b]->ADCresDCCtrl[DCmonHVP].m);
+  serial->print(" b = "); serial->println(RFAarray[b]->ADCresDCCtrl[DCmonHVP].b);
+
+  RFAarray[b]->ADCresDCCtrl[DCmonHVN].m = (VN1adc - VN2adc) / (VN1 - VN2);
+  RFAarray[b]->ADCresDCCtrl[DCmonHVN].b = VN2adc - VN2 * RFAarray[b]->ADCresDCCtrl[DCmonHVN].m;
+  serial->print("HV- ADC m = "); serial->print(RFAarray[b]->ADCresDCCtrl[DCmonHVN].m);
+  serial->print(" b = "); serial->println(RFAarray[b]->ADCresDCCtrl[DCmonHVN].b);
+
   SendACK;
 }

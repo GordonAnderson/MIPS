@@ -218,5 +218,6 @@ void setQuadATR(int module);
 
 void Set_18bitDAC(int brd, int DACchannel, int value);
 void setRFArev3(int module);
+void calRFApoleSupplies(int module);
 
 #endif
