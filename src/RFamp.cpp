@@ -12,9 +12,9 @@
 //   Set the .Rev value to 3 to signal this 3.0 system is in use.
 //   All commands moved from Serial.ccp to this module and registered during init.
 //   Remaining updates needed:
-//    - Perform initial setup via command, need to implement
-//    - Write calibration function for pole voltages and readbacks
-//    - Write calibration function for pole HV supplies readbacks
+//    - Perform initial setup via command, done
+//    - Write calibration function for pole voltages and readbacks, done
+//    - Write calibration function for pole HV supplies readbacks, done
 //    - Add commands to read readbacks
 //    - Note! power on controls the HV supplies
 //
@@ -1983,10 +1983,6 @@ void calRFApoleSupplies(int module)
     float V1 = UserInputFloat("Enter measured pole voltage : ", NULL);
     SelectBoard(RFAarray[b]->rbBoard);
     int Vadc1 = AD7994(RFAarray[b]->rbADDR, RFAarray[b]->ADCresDCCtrl[i].Chan, 20);
-    serial->println(RFAarray[b]->rbBoard);
-    serial->println(RFAarray[b]->rbADDR);
-    serial->println(RFAarray[b]->ADCresDCCtrl[i].Chan);
-    serial->println(Vadc1);
     // Set mid scan and ask of actual value
     SelectBoard(b);
     if(i==0) Set_18bitDAC(b, RFAcpldCS_P1, CNTS_P2);
@@ -2000,10 +1996,15 @@ void calRFApoleSupplies(int module)
     RFAarray[b]->ADCresDCCtrl[i].b = Vadc2 - V2 * RFAarray[b]->ADCresDCCtrl[i].m;
     serial->print("ADC m = "); serial->print(RFAarray[b]->ADCresDCCtrl[i].m);
     serial->print(" b = "); serial->println(RFAarray[b]->ADCresDCCtrl[i].b);
+
     RFAarray[b]->DACresDCCtrl[i].m = (CNTS_P2 - CNTS_P1) / (V2 - V1);
     RFAarray[b]->DACresDCCtrl[i].b = CNTS_P2 - V2 * RFAarray[b]->DACresDCCtrl[i].m;
     serial->print("DAC m = "); serial->print(RFAarray[b]->DACresDCCtrl[i].m);
     serial->print(" b = "); serial->println(RFAarray[b]->DACresDCCtrl[i].b);
+
+    SelectBoard(b);
+    if(i==0) Set_18bitDAC(b, RFAcpldCS_P1, serial->println(RFAarray[b]->DACresDCCtrl[i].b);
+    if(i==1) Set_18bitDAC(b, RFAcpldCS_P2, serial->println(RFAarray[b]->DACresDCCtrl[i].b);
   }
   // Cal HV supply readbacks
   // .. Read power on voltages
@@ -2024,10 +2025,6 @@ void calRFApoleSupplies(int module)
   serial->print("HV+ ADC m = "); serial->print(RFAarray[b]->ADCresDCCtrl[DCmonHVP].m);
   serial->print(" b = "); serial->println(RFAarray[b]->ADCresDCCtrl[DCmonHVP].b);
 
-  serial->println(VN1);
-  serial->println(VN2);
-  serial->println(VN1adc);
-  serial->println(VN2adc);
   RFAarray[b]->ADCresDCCtrl[DCmonHVN].m = (VN1adc - VN2adc) / (VN1 - VN2);
   RFAarray[b]->ADCresDCCtrl[DCmonHVN].b = VN2adc - VN2 * RFAarray[b]->ADCresDCCtrl[DCmonHVN].m;
   serial->print("HV- ADC m = "); serial->print(RFAarray[b]->ADCresDCCtrl[DCmonHVN].m);
