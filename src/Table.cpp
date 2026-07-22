@@ -1207,7 +1207,7 @@ int ParseEntry(int Count, char *TK)
             if(TK[0] == ';') return PEEndTables;
             return PENewTable;
         }
-        else if(((TK[0] >= 'A') && (TK[0] <= 'P')) || (TK[0] == 'r') || (TK[0] == 's') || (TK[0] == 't') || (TK[0] == 'b') || (TK[0] == 'c') || (TK[0] == 'd') || (TK[0] == 'p') || (TK[0] == 'a') || (TK[0] == '>') || (TK[0] == '<') || (TK[0] == '='))
+        else if(((TK[0] >= 'A') && (TK[0] <= 'P')) || (TK[0] == 'r') || (TK[0] == 's') || (TK[0] == 't') || (TK[0] == 'u') || (TK[0] == 'b') || (TK[0] == 'c') || (TK[0] == 'd') || (TK[0] == 'p') || (TK[0] == 'a') || (TK[0] == '>') || (TK[0] == '<') || (TK[0] == '='))
         {
             // DIO channel number
             TE->Chan = TK[0];
@@ -1893,10 +1893,15 @@ SetupNextEntryAgain2:
                 //serial->println("!");
                 return;
             }
+            if(Tentry[i].Chan == 'u')
+            {
+                if(Tentry[i].Value == '0') tableBasedRamping = false;
+                if(Tentry[i].Value == '1') tableBasedRamping = true;
+            }
             // If Chan is 0 to 31 its a DC bias output so send to DAC
             // It take 3.5 uS to send one channel via SPI, the dead time between channels is 6uS,
             // The 6uS is the time around this inner channel loop
-            if((Tentry[i].Chan >= 0) && (Tentry[i].Chan <= 31))
+            else if((Tentry[i].Chan >= 0) && (Tentry[i].Chan <= 31))
             {
               AtomicBlock< Atomic_RestoreState > a_Block;
               // See if the SPI address is correct, if not update

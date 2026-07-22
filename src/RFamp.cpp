@@ -2003,8 +2003,8 @@ void calRFApoleSupplies(int module)
     serial->print(" b = "); serial->println(RFAarray[b]->DACresDCCtrl[i].b);
 
     SelectBoard(b);
-    if(i==0) Set_18bitDAC(b, RFAcpldCS_P1, serial->println(RFAarray[b]->DACresDCCtrl[i].b);
-    if(i==1) Set_18bitDAC(b, RFAcpldCS_P2, serial->println(RFAarray[b]->DACresDCCtrl[i].b);
+    if(i==0) Set_18bitDAC(b, RFAcpldCS_P1, RFAarray[b]->DACresDCCtrl[i].b);
+    if(i==1) Set_18bitDAC(b, RFAcpldCS_P2, RFAarray[b]->DACresDCCtrl[i].b);
   }
   // Cal HV supply readbacks
   // .. Read power on voltages
