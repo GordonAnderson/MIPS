@@ -21,7 +21,6 @@ Last reviewed: <DATE>
 | DueFlashStorage | MIT | `MIT` | licence (MIT).txt |
 | MIPStimer | Public domain | — | based on DueTimer (public domain); MIPS additions by Gordon Anderson |
 | ArduinoThread | MIT | `MIT` | Ivan Seidel — upstream MIT (see note) |
-| RTCDue | <VERIFY> | <VERIFY> | MarkusLange/RTCDue — see note |
 | DIhandler | MIT | `MIT` | GAA Custom Electronics, LLC — in-house |
 | SerialBuffer | MIT | `MIT` | GAA Custom Electronics, LLC — in-house |
 | WireServer | MIT | `MIT` | GAA Custom Electronics, LLC — in-house |
@@ -38,13 +37,6 @@ project (Ivan Seidel) is MIT-licensed; the upstream LICENSE has been added to
 the local copy. Confirm the local copy matches the upstream MIT project before
 relying on this.
 
-**RTCDue** is a third-party library (repository: `MarkusLange/RTCDue`) that
-shipped without a license file in the bundled copy. Its license MUST be
-verified against the upstream repository before distribution. If the upstream
-project has no license, it is "all rights reserved" by default and cannot be
-redistributed — in that case, obtain permission from the author or replace the
-library. Update this row once verified.
-
 **MIPStimer** derives from DueTimer, which was released into the public domain.
 The MIPS-specific additions are by Gordon Anderson and are contributed under the
 same terms as the MIPS firmware (MIT).
@@ -57,5 +49,5 @@ project. An MIT header has been added to each.
 
 All libraries above are permissive (MIT, BSD, Apache 2.0) or public domain, and
 are compatible with distributing the combined MIPS firmware under the MIT
-License — with two items to close: (1) confirm the ArduinoThread local copy
-matches upstream MIT, and (2) verify the RTCDue upstream license.
+License — with one item to close: confirm the ArduinoThread local copy matches
+upstream MIT.
