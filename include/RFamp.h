@@ -165,7 +165,8 @@ extern int  quadAThighP;
 extern int  quadATmaxStep;
 extern int  quadATminF;
 extern int  quadATmaxF;
-extern bool quadATuseSWR;  
+extern bool quadATuseSWR;
+extern int  quadATstepDelay;  
 
 // Prototypes
 void RFA_init(int8_t Board, int8_t addr);
@@ -184,6 +185,10 @@ void RFAsetRes(char *Module, char *value);
 void RFAgetRes(int Module);
 void RFAupdateQUAD(int Module);
 void RFAacquire(void);
+// Shared per point primitive used by both the host driven scan (RFAACQ) and the
+// firmware resident scan. Sets m/z and applies the resolving DC delta; does not
+// acquire or delay.
+void RFAsetScanPoint(int brd, float mz, float delta);
 void RFAsetGain(char *Module, char *value);
 void RFAreturnGain(int Module);
 void RFampNumber(void);

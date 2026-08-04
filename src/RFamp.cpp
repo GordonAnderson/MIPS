@@ -156,6 +156,18 @@ int  quadAThighP     = 25;
 int  quadATmaxStep   = 20000;
 int  quadATminF      = 400000;
 int  quadATmaxF      = 1500000;
+// Loop passes to wait after each frequency step before reading the RF level. The loop
+// runs at 10Hz so this is in units of 100mS.
+//
+// This used to be hard coded to 20 (2 seconds). That was not an RF settling
+// requirement, it was waiting out the level readback IIR filter (Filter = 0.05 at
+// 10Hz, time constant about 2 seconds). quadAutoTune presets RFVPpp/RFVNpp to -1,
+// which makes the readback code take the next sample unfiltered, so the filter does
+// not have to be waited out at all. Real tank settling is Q/(pi*f), microseconds.
+//
+// Lower values allow proportionally finer frequency steps for the same total tune
+// time, which is what a high Q tank needs; see the note at quadAutoTune().
+int  quadATstepDelay = 5;
 enum quadATstate
 {
   QUAD_AT_IDLE,
@@ -340,6 +352,10 @@ const Commands  RFAMPCmdArray[] = {
   {"GRFATMAXF", CMDint, 0, (char *)&quadATmaxF},             // Return auto tune stop frequency
   {"SRFATHP", CMDint, 1, (char *)&quadAThighP},              // Set the auto tune max drive mode level
   {"GRFATHP", CMDint, 0, (char *)&quadAThighP},              // Return the auto tune max drive mode level
+  {"SRFATSTEP", CMDint, 1, (char *)&quadATmaxStep},           // Set auto tune coarse frequency step, Hz
+  {"GRFATSTEP", CMDint, 0, (char *)&quadATmaxStep},           // Return auto tune coarse frequency step, Hz
+  {"SRFATDLY", CMDint, 1, (char *)&quadATstepDelay},          // Set auto tune per step settling delay, 100mS units
+  {"GRFATDLY", CMDint, 0, (char *)&quadATstepDelay},          // Return auto tune per step settling delay, 100mS units
   {"SRFATSWR", CMDbool, 1, (char *)&quadATuseSWR},           // If TRUE auto tune uses SWR on second phase
   {"GRFATSWR", CMDbool, 0, (char *)&quadATuseSWR},           // Returns the auto tune SWR second tune phase flag
 // Configutation commands
@@ -1535,10 +1551,41 @@ void RFAupdateQUAD(int Module)
 //  6.) Trigger the digitizer to start
 //  7.) Return the previous vector sum read in step 1
 // It is assumed that the digitizer has been configured when this function is called.
+// Set the quadrupole to the requested m/z with the given resolving DC offset applied.
+// Does not acquire and does not delay; the caller owns settling and acquisition.
+//
+// This is the shared per-point primitive. Both the host driven scan (RFAACQ) and the
+// firmware resident scan call it, so the two scan paths cannot diverge.
+//
+// Note on ordering: QUADupdate() recalculates ResolvingDC from the m/z value, so the
+// delta below is applied to the freshly computed value. The += reads as accumulation
+// but is effectively "computed value plus delta" on every call.
+void RFAsetScanPoint(int brd, float mz, float delta)
+{
+  // Set mz and calculate parameters
+  RFAarray[brd]->mz = mz;
+  QUADupdate(brd);
+  // Update RF setpoint
+  if(RFAarray[brd]->Enabled)
+  {
+    // Calculate the gain compensation factor based on the calibration frequency and the
+    // current operating frequency.
+    float gc = RFAgainComp(brd);
+
+    SelectBoard(brd);
+    SelectRange(brd, RFAarray[brd]->SetPoint);
+    setRFADAC(brd, RFAdacSETPOINT,RFAarray[brd]->SetPoint, gc);
+  }
+  // Update the resolving DC now
+  RFAarray[brd]->ResolvingDC += delta;
+  SetResolvingDC(brd, RFAarray[brd]->ResolvingDC, true);
+}
+
 void RFAacquire(void)
 {
-  int   module,dwell,b,sum;
-  float mz,delta,gc;
+  int   module,dwell,b;
+  int   sum = 0;
+  float mz,delta;
 
   while(true)
   {
@@ -1549,25 +1596,12 @@ void RFAacquire(void)
     if(!valueFromCommandLine(&dwell,0,1000)) break;
     if((b = RFAmodule2board(module)) == -1) return;
     SendACKonly;
-    // Read the digitizer vector sum
+    // Read the digitizer vector sum. sum is preset to 0 because ADCfindSum leaves it
+    // untouched when no vector has been recorded yet or the acquire timed out; the
+    // first call of a scan always takes that path.
     ADCfindSum(&sum);
-    // Set mz and calculate parameters
-    RFAarray[b]->mz = mz;
-    QUADupdate(b);
-    // Update RF setpoint
-    if(RFAarray[b]->Enabled) 
-    {
-      // Calculate the gain compensation factor based on the calibration frequency and the current operating
-      // frequency.
-      gc = RFAgainComp(b);
-
-      SelectBoard(b);
-      SelectRange(b, RFAarray[b]->SetPoint);
-      setRFADAC(b, RFAdacSETPOINT,RFAarray[b]->SetPoint, gc);
-    }
-    // Update the resolving DC now
-    RFAarray[b]->ResolvingDC += delta;
-    SetResolvingDC(b, RFAarray[b]->ResolvingDC, true);
+    // Set the quadrupole for this point
+    RFAsetScanPoint(b, mz, delta);
     // Wait for settings to stabalize
     if(dwell > 0) delay(dwell);
     // Trigger the ADC
@@ -1833,11 +1867,29 @@ void RFAgetCompG(int Module)
 //  - Increase drive and minimize SWR, this step can be changed to maximizing voltage
 //    using a flag set through the user interface
 // This function does not block, called from the main loop (10 times a sec)
+// Auto tune the quad tank circuit by sweeping frequency and tracking the peak RF level
+// (and then SWR). The search is coarse-to-fine: TuneStep starts at quadATmaxStep and is
+// divided by 10 after each peak is bracketed, until it reaches 500Hz or less.
+//
+// LIMITATION, high Q tanks. The coarse sweep samples on a grid of quadATmaxStep spacing
+// starting from (quadATmaxF + quadATminF)/2. If the resonance bandwidth (f/Q) is smaller
+// than that spacing, the peak can fall between grid points and never be seen; the tune
+// then converges on whatever noise peak was highest, usually near the start frequency,
+// and used to report success. For example a 703kHz resonance with the default 400k to
+// 1500k range and 20kHz step is sampled at 710kHz and 690kHz, both well off peak at
+// Q > 100.
+//
+// Mitigations, all settable from the host:
+//   SRFATMINF / SRFATMAXF   narrow the search around the expected frequency
+//   SRFATSTEP               reduce the coarse step
+//   SRFATDLY                reduce the per step delay so a finer step stays affordable
+//
+// Tune time is roughly (range / step) * 2 * quadATstepDelay * 100mS for the coarse pass.
 void quadAutoTune(int brd, bool report)
 {
    static int         TuneStep;
    static float       Max, Current, Last;
-   static int         FreqMax, Freq;
+   static int         FreqMax, Freq, StartFreq;
    static int         NumDown;
    static quadATstate state;
    static int         qdly = 0;
@@ -1849,6 +1901,7 @@ void quadAutoTune(int brd, bool report)
       RFAarray[brd]->Mode    = true;
       RFAarray[brd]->Drive   = 10;
       Freq = RFAarray[brd]->Freq = (quadATmaxF + quadATminF)/2;
+      StartFreq = Freq;
       RFAarray[brd]->Enabled = true;
       TuneStep = quadATmaxStep;
       state = QUAD_AT_DWN;
@@ -1887,8 +1940,12 @@ void quadAutoTune(int brd, bool report)
             RFAarray[brd]->Freq = Freq;
             NumDown = 0;
           }
-          if(Current <= (Last + 1)) NumDown++;
-          qdly = 20;
+          // NOTE: a second, unguarded "if(Current <= (Last + 1)) NumDown++;" used to
+          // sit here. It had no (TuneStep < quadATmaxStep) guard, so during the fine
+          // sweeps NumDown climbed by 2 per pass and the downward search gave up after
+          // 3 declining steps instead of QUAD_AT_MAX_DWN (5), while the upward search
+          // still used 5. That asymmetry biased the result high in frequency.
+          qdly = quadATstepDelay;
           break;
        case QUAD_AT_UP:
        case QUAD_AT_UP_SWR:
@@ -1929,7 +1986,23 @@ void quadAutoTune(int brd, bool report)
               if(report && !SerialMute)
               {
                 serial->print("Auto tune complete, frequency = ");
-                serial->println(Freq);
+                serial->print(Freq);
+                serial->print(", final peak metric = ");
+                serial->println(Max);
+                // Sanity checks. A tune that converges on noise rather than the tank
+                // resonance previously reported success and gave no indication that
+                // anything was wrong.
+                if((Freq <= quadATminF) || (Freq >= quadATmaxF))
+                {
+                  serial->println("WARNING: tune stopped at a search range limit, the peak was likely not found.");
+                }
+                else if(((Freq - StartFreq) < quadATmaxStep) && ((StartFreq - Freq) < quadATmaxStep))
+                {
+                  serial->println("WARNING: tune converged within one coarse step of the search start frequency,");
+                  serial->println("         the peak may not have been found. If the tank Q is high the coarse");
+                  serial->println("         step can straddle the resonance. Narrow SRFATMINF/SRFATMAXF around");
+                  serial->println("         the expected frequency, or reduce SRFATSTEP.");
+                }
               }
               DismissMessage();
               return;
@@ -1938,7 +2011,7 @@ void quadAutoTune(int brd, bool report)
             state = QUAD_AT_DWN;
             NumDown = 0;
           }
-          qdly = 20;
+          qdly = quadATstepDelay;
           break;
        default:
           break;
