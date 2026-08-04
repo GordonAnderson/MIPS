@@ -166,7 +166,9 @@ extern int  quadATmaxStep;
 extern int  quadATminF;
 extern int  quadATmaxF;
 extern bool quadATuseSWR;
-extern int  quadATstepDelay;  
+extern int  quadATstepDelay;
+extern int  quadATstartDelay;
+extern int  quadATfineDelay;
 
 // Prototypes
 void RFA_init(int8_t Board, int8_t addr);
