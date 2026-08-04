@@ -14,6 +14,16 @@
 #include "Hardware.h"
 #include "Serial.h"
 #include "Errors.h"
+#include <stddef.h>
+
+// Number of bytes the CRC covers: everything up to but NOT including the CRC field.
+//
+// This must be offsetof(), not sizeof(record) - sizeof(CRC). QUADcalRecord has two bytes of
+// trailing padding after CRC, so the subtraction gives 134 rather than 132 and includes the
+// CRC field's own bytes in the checksum. At save time memset has zeroed them, so the CRC is
+// computed over zeros; on read back those bytes hold the stored CRC, the recomputed value
+// differs, and verification fails every single time.
+#define QUADcalCRCLEN  offsetof(QUADcalRecord, CRC)
 
 // Allocated at init time, and only for Rev 3 modules. A NULL entry means either the
 // module is not Rev 3 or no QUAD module is present on that board, so the calibration
@@ -179,11 +189,26 @@ void QUADcalSave(int Module)
     rec.Measured[i] = QUADcalTable[b]->Measured[i];
     rec.Delta[i]    = QUADcalTable[b]->Delta[i];
   }
-  rec.CRC = QUADcalCRC((uint8_t *)&rec, sizeof(QUADcalRecord) - sizeof(uint16_t));
+  rec.CRC = QUADcalCRC((uint8_t *)&rec, QUADcalCRCLEN);
+  // The module EEPROMs share TWI addresses between the two board slots; the hardware board
+  // select line is what disambiguates them. Without this the write lands on whichever board
+  // happens to be selected. Same requirement as SaveRFAsettings/RestoreRFAsettings.
+  SelectBoard(b);
   if(WriteEEPROM(&rec, RFAarray[b]->EEPROMadr, QUADcalEEPROMOFFSET, sizeof(QUADcalRecord)) == 0)
   {
-    SendACK;
-    return;
+    // Read back and verify. WriteEEPROM returns success as long as the device ACKs, which
+    // it will do even when the data does not land where intended, so an ACK from the write
+    // alone is not evidence that anything was stored.
+    QUADcalRecord chk;
+    if(ReadEEPROM(&chk, RFAarray[b]->EEPROMadr, QUADcalEEPROMOFFSET, sizeof(QUADcalRecord)) == 0)
+    {
+      if((chk.Signature == QUADcalSIG) &&
+         (chk.CRC == QUADcalCRC((uint8_t *)&chk, QUADcalCRCLEN)))
+      {
+        SendACK;
+        return;
+      }
+    }
   }
   SetErrorCode(ERR_EEPROMWRITE);
   SendNAK;
@@ -196,11 +221,13 @@ static bool QUADcalLoad(int b)
   QUADcalRecord rec;
   uint16_t      crc;
 
+  // Board select is required before any module EEPROM access, see QUADcalSave
+  SelectBoard(b);
   if(ReadEEPROM(&rec, RFAarray[b]->EEPROMadr, QUADcalEEPROMOFFSET, sizeof(QUADcalRecord)) != 0) return false;
   if(rec.Signature != QUADcalSIG) return false;
   if(rec.Size != (int16_t)sizeof(QUADcalRecord)) return false;
   if(rec.Version != QUADcalVERSION) return false;
-  crc = QUADcalCRC((uint8_t *)&rec, sizeof(QUADcalRecord) - sizeof(uint16_t));
+  crc = QUADcalCRC((uint8_t *)&rec, QUADcalCRCLEN);
   if(crc != rec.CRC) return false;
   // Range check what came out of EEPROM before trusting it
   if((rec.NumPoints < 0) || (rec.NumPoints > QUADcalMAX)) return false;
