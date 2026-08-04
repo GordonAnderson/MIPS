@@ -29,8 +29,8 @@
 #include "Filament.h"
 #include "WiFi.h"
 #include "ethernet.h"
-#include "arb.h"
-#include "adcdrv.h"
+#include "ARB.h"
+#include "ADCdrv.h"
 #include "TWIext.h"
 #include <ThreadController.h>
 #include "Variants.h"

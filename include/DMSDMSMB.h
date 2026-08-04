@@ -1,6 +1,6 @@
 #ifndef DMSDMSMB_h
 #define DMSDMSMB_h
-#include "hardware.h"
+#include "Hardware.h"
 
 #if DMSDMSMB
 #define SIGNATURE  0xAA55A5A5

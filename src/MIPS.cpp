@@ -1,6 +1,6 @@
 #include <DueFlashStorage.h>
 #include "SD.h"
-#include "utility/Sd2card.h"
+#include "utility/Sd2Card.h"
 #include "SPI.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_ILI9340.h"

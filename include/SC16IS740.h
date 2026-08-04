@@ -4,7 +4,7 @@
 #if FAIMSFBcode
 
 #include "Arduino.h"
-#include <WIRE.h>
+#include <Wire.h>
 
 #define  RHR				0x00
 #define  THR				0x00

@@ -26,7 +26,7 @@
 
 #define DCBtripsESI
 
-#include "errors.h"
+#include "Errors.h"
 #include "DIO.h"
 #include "Hardware.h"
 #include "TWIext.h"

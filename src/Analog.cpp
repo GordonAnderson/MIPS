@@ -20,12 +20,12 @@
 #include <Thread.h>
 #include <ThreadController.h>
 #include <Adafruit_ADS1015.h>
-#include "wire.h"
+#include "Wire.h"
 #include "SD.h"
 #include "string.h"
 #include "Serial.h"
 #include "Analog.h"
-#include "dialog.h"
+#include "Dialog.h"
 #include "DCbias.h"
 #include "RFdriver.h"
 #include "Variants.h"

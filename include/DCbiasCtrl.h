@@ -3,7 +3,7 @@
 
 #if DCBanalog
 
-#include "DCBias.h"
+#include "DCbias.h"
 
 #define TCA9534add    0x21    // DIO TWI base address
 

@@ -470,12 +470,18 @@ void ADCrbRead(int start, int num)
 bool ADCacquireWait(void)
 {
   if((ADCclock->getStatus() & TC_SR_CLKSTA) == 0) return true;
-  // Calculate the number of 50uS time units in the acquire
-  int units = (ADCrate * 20000) / ADCnumsamples;
+  // Calculate the number of 50uS time units in the acquire, plus 1mS of margin.
+  //   acquire time in seconds        = ADCnumsamples / ADCrate
+  //   acquire time in 50uS units      = (ADCnumsamples * 20000) / ADCrate
+  // The previous expression had the ratio inverted, which produced a 40 second
+  // timeout at the default 5000 samples / 200kHz.
+  int units = ((int64_t)ADCnumsamples * 20000) / ADCrate + 20;
   for(int i=0;i<units;i++)
   {
     delayMicroseconds(50);
     if((ADCclock->getStatus() & TC_SR_CLKSTA) == 0) return true;
+    // Pet the watchdog; a long acquire can otherwise outlast the 4 second interval
+    if((i & 0x3FF) == 0x3FF) WDT_Restart(WDT);
   }
   // if here we timed out
   return false;
@@ -485,12 +491,14 @@ bool ADCacquireWait(void)
 // NAK is returned if the vector has not been alocated or the number of recorded
 // vectors is 0. 
 // If the ADCclock is running then an acquire is in progress and this routine will wait.
-// Returns -1 on timeout
+// Returns false on timeout or if no vector has been recorded
 bool ADCfindSum(int *sum)
 {
   if(ADCbuffer == NULL) return false;
   if(ADCvectorNum <= 0) return false;
-  if(!ADCacquireWait()) return(-1);
+  // A timeout must report failure. Returning -1 from a bool function yields true,
+  // so the caller would sum whatever stale data was left in the buffer.
+  if(!ADCacquireWait()) return false;
   *sum = 0;
   for(int i=0;i<ADCnumsamples;i++) *sum += ADCbuffer[i];
   return true;

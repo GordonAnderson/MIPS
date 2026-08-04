@@ -991,7 +991,9 @@ General RFamp and QUAD commands
   SRFALEV           Sets the RF output voltage setpoint
   GRFALEV           Returns the RF output voltage setpoint
   GRFAVPPA          Returns the RF output A actual level
-  GFRAVPPB          Returns the RF output B actual level
+  GRFAVPPB          Returns the RF output B actual level
+  GFRAVPPB          Legacy misspelling of GRFAVPPB, retained for
+                    compatibility. Use GRFAVPPB in new host code.
   GRFAPWR           Returns the RF amp RF forward pwr
   SRFARNG           Sets the QUAD RF maximum RF level
   GRFARNG           Returns the QUAD RF maximum RF level

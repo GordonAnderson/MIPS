@@ -48,6 +48,12 @@
                                       // Pin 11 on EXT1 connectes to CPLD pin 30,
                                       // called CPLD_CLEA but not used
 
+// 18 bit DAC (AD5680) full scale count. The AD5680 24 bit frame is:
+//   DB23:DB22 = don't care, DB21:DB20 = PD1:PD0, DB19:DB2 = data, DB1:DB0 = don't care
+// A count outside 0..RFAdac18BITMAX shifts into the power down bits and disables the
+// DAC output, so counts must be clamped, not allowed to wrap.
+#define RFAdac18BITMAX     262143
+
 // ADC input channels
 #define RFAadcDCV             0
 #define RFAadcDCI             1
@@ -57,6 +63,11 @@
 #define RFAadcSWR             5
 #define RFAadcRFLA            6
 #define RFAadcRFLB            7
+
+// The low range ADC calibration array ADCchansLR[] holds only the two RF level
+// channels. Index it as ADCchansLR[chan - RFAadcLR_BASE] so the mapping survives
+// any future renumbering of the RFAadc* channel defines.
+#define RFAadcLR_BASE      RFAadcRFLA
 
 // DAC output channels
 #define RFAdacDRIVE           0

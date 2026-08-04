@@ -85,12 +85,12 @@
 #include <Thread.h>
 #include <ThreadController.h>
 #include <stdarg.h>
-#include "wire.h"
+#include "Wire.h"
 #include "SD.h"
 #include "string.h"
 #include "Serial.h"
 #include "Filament.h"
-#include "dialog.h"
+#include "Dialog.h"
 #include "Variants.h"
 
 extern Menu MainMenu;
