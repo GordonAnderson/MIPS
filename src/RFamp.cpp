@@ -78,6 +78,7 @@
 //
 #include <Arduino.h>
 #include "RFamp.h"
+#include "QUADscan.h"
 #include "Variants.h"
 #include "Hardware.h"
 #include "Table.h"
@@ -852,6 +853,7 @@ void RFA_init(int8_t Board, int8_t addr)
   {
     // Add the commands to the command processor
     AddToCommandList(&RFAMPCmdList);
+    AddToCommandList(&QUADscanCmdList);
     pinMode(RFAstrobe, OUTPUT);
     digitalWrite(RFAstrobe, LOW);
     SelectedRFAboard = Board;
@@ -876,6 +878,9 @@ void RFA_init(int8_t Board, int8_t addr)
   SendFRAcpldCommand(RFAarray[Board]->CPLDspi, RFACPLDimage[Board]);
   RFAstates[Board]->CPLDimage = RFACPLDimage[Board];
   SelectBoard(SelectedRFAboard);
+  // Load the mass calibration table. Rev 3 only; QUADcalInit zeros the working copy and
+  // returns quietly if the module is not Rev 3 or has never been calibrated.
+  QUADcalInit(Board);
 }
 
 // Write both quad pole DACs from the current PoleBias and ResolvingDC settings.
