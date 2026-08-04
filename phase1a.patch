@@ -1,0 +1,157 @@
+diff --git a/include/RFamp.h b/include/RFamp.h
+index 4d271d3..6035ef9 100644
+--- a/include/RFamp.h
++++ b/include/RFamp.h
+@@ -166,7 +166,9 @@ extern int  quadATmaxStep;
+ extern int  quadATminF;
+ extern int  quadATmaxF;
+ extern bool quadATuseSWR;
+-extern int  quadATstepDelay;  
++extern int  quadATstepDelay;
++extern int  quadATstartDelay;
++extern int  quadATfineDelay;
+ 
+ // Prototypes
+ void RFA_init(int8_t Board, int8_t addr);
+diff --git a/src/RFamp.cpp b/src/RFamp.cpp
+index d70334e..691220d 100644
+--- a/src/RFamp.cpp
++++ b/src/RFamp.cpp
+@@ -168,6 +168,16 @@ int  quadATmaxF      = 1500000;
+ // Lower values allow proportionally finer frequency steps for the same total tune
+ // time, which is what a high Q tank needs; see the note at quadAutoTune().
+ int  quadATstepDelay = 5;
++// Delay before the sweep starts, and after the drive level is changed, in 100mS units.
++// This one is NOT a filter artifact: it has to cover the RF level actually decaying.
++// If the module was already tuned and driving a high output, the level at the start
++// frequency reads high for a while after the frequency jumps off resonance. Max is set
++// from that stale reading, nothing later beats it, and the tune converges on the start
++// frequency. 4 seconds; increase if a tune started from a high output state still fails.
++int  quadATstartDelay = 40;
++// Per step delay for the fine passes (TuneStep <= 500). The fine sweeps resolve small
++// level differences, so they get more settling time than the coarse sweep.
++int  quadATfineDelay = 10;
+ enum quadATstate
+ {
+   QUAD_AT_IDLE,
+@@ -354,6 +364,10 @@ const Commands  RFAMPCmdArray[] = {
+   {"GRFATHP", CMDint, 0, (char *)&quadAThighP},              // Return the auto tune max drive mode level
+   {"SRFATSTEP", CMDint, 1, (char *)&quadATmaxStep},           // Set auto tune coarse frequency step, Hz
+   {"GRFATSTEP", CMDint, 0, (char *)&quadATmaxStep},           // Return auto tune coarse frequency step, Hz
++  {"SRFATSTARTDLY", CMDint, 1, (char *)&quadATstartDelay},    // Set auto tune sweep start delay, 100mS units
++  {"GRFATSTARTDLY", CMDint, 0, (char *)&quadATstartDelay},    // Return auto tune sweep start delay, 100mS units
++  {"SRFATFINEDLY", CMDint, 1, (char *)&quadATfineDelay},      // Set auto tune fine pass per step delay, 100mS units
++  {"GRFATFINEDLY", CMDint, 0, (char *)&quadATfineDelay},      // Return auto tune fine pass per step delay, 100mS units
+   {"SRFATDLY", CMDint, 1, (char *)&quadATstepDelay},          // Set auto tune per step settling delay, 100mS units
+   {"GRFATDLY", CMDint, 0, (char *)&quadATstepDelay},          // Return auto tune per step settling delay, 100mS units
+   {"SRFATSWR", CMDbool, 1, (char *)&quadATuseSWR},           // If TRUE auto tune uses SWR on second phase
+@@ -1891,6 +1905,7 @@ void quadAutoTune(int brd, bool report)
+    static float       Max, Current, Last;
+    static int         FreqMax, Freq, StartFreq;
+    static int         NumDown;
++   static bool        skipFirst = false;
+    static quadATstate state;
+    static int         qdly = 0;
+ 
+@@ -1908,7 +1923,8 @@ void quadAutoTune(int brd, bool report)
+       Last = Max = 0;
+       quadTuneRequest = false;
+       quadTuning = true;
+-      qdly = 20;
++      qdly = quadATstartDelay;
++      skipFirst = true;
+       DisplayMessage("Tune in process");
+       return;
+    }
+@@ -1921,6 +1937,18 @@ void quadAutoTune(int brd, bool report)
+       {
+          if((state == QUAD_AT_UP_SWR) || (state == QUAD_AT_DWN_SWR)) Current = 100 - RFAstates[brd]->SWR;
+       }
++      if(skipFirst)
++      {
++         // Discard the first reading of a sweep without updating Max or changing the
++         // frequency, then take another after a further settling delay. If the module
++         // was already tuned and driving a high output, this first reading can still be
++         // decaying; letting it set Max would peg FreqMax at the start frequency and
++         // nothing measured later would beat it. Belt and braces with quadATstartDelay.
++         skipFirst = false;
++         Last = Current;
++         qdly = quadATstepDelay;
++         return;
++      }
+       switch (state)
+       {
+         case QUAD_AT_DWN:
+@@ -1945,7 +1973,7 @@ void quadAutoTune(int brd, bool report)
+           // sweeps NumDown climbed by 2 per pass and the downward search gave up after
+           // 3 declining steps instead of QUAD_AT_MAX_DWN (5), while the upward search
+           // still used 5. That asymmetry biased the result high in frequency.
+-          qdly = quadATstepDelay;
++          qdly = (TuneStep <= 500) ? quadATfineDelay : quadATstepDelay;
+           break;
+        case QUAD_AT_UP:
+        case QUAD_AT_UP_SWR:
+@@ -1979,30 +2007,39 @@ void quadAutoTune(int brd, bool report)
+                 Last = Max = 0;
+                 state = QUAD_AT_DWN_SWR;
+                 TuneStep = 500;
+-                qdly = 40;
++                qdly = quadATstartDelay;
++                skipFirst = true;
+                 break;
+               }
+               quadTuning = false;
++              // Sanity checks. Deliberately NOT gated on 'report': a tune that converged
++              // on something other than the tank resonance is a failure, and a failure
++              // indication must not be optional. Only SerialMute suppresses it.
++              bool suspect = false;
++              if((Freq <= quadATminF) || (Freq >= quadATmaxF)) suspect = true;
++              if(((Freq - StartFreq) < quadATmaxStep) && ((StartFreq - Freq) < quadATmaxStep)) suspect = true;
++              if(suspect)
++              {
++                DisplayMessage("Tune suspect!", 2000);
++                if(!SerialMute)
++                {
++                  serial->print("WARNING: auto tune result is suspect, frequency = ");
++                  serial->print(Freq);
++                  serial->print(", peak metric = ");
++                  serial->println(Max);
++                  serial->println("         The tune stopped at a search range limit or within one coarse step");
++                  serial->println("         of the start frequency, so the peak was probably never seen.");
++                  serial->println("         If the module was already tuned and driving a high output, increase");
++                  serial->println("         SRFATSTARTDLY so the RF level decays before the sweep begins.");
++                  serial->println("         If the tank Q is high, narrow SRFATMINF/SRFATMAXF or reduce SRFATSTEP.");
++                }
++              }
+               if(report && !SerialMute)
+               {
+                 serial->print("Auto tune complete, frequency = ");
+                 serial->print(Freq);
+                 serial->print(", final peak metric = ");
+                 serial->println(Max);
+-                // Sanity checks. A tune that converges on noise rather than the tank
+-                // resonance previously reported success and gave no indication that
+-                // anything was wrong.
+-                if((Freq <= quadATminF) || (Freq >= quadATmaxF))
+-                {
+-                  serial->println("WARNING: tune stopped at a search range limit, the peak was likely not found.");
+-                }
+-                else if(((Freq - StartFreq) < quadATmaxStep) && ((StartFreq - Freq) < quadATmaxStep))
+-                {
+-                  serial->println("WARNING: tune converged within one coarse step of the search start frequency,");
+-                  serial->println("         the peak may not have been found. If the tank Q is high the coarse");
+-                  serial->println("         step can straddle the resonance. Narrow SRFATMINF/SRFATMAXF around");
+-                  serial->println("         the expected frequency, or reduce SRFATSTEP.");
+-                }
+               }
+               DismissMessage();
+               return;
+@@ -2011,7 +2048,7 @@ void quadAutoTune(int brd, bool report)
+             state = QUAD_AT_DWN;
+             NumDown = 0;
+           }
+-          qdly = quadATstepDelay;
++          qdly = (TuneStep <= 500) ? quadATfineDelay : quadATstepDelay;
+           break;
+        default:
+           break;

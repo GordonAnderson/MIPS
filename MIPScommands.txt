@@ -1035,6 +1035,14 @@ RF amp / quad auto tune
   GRFATMAXF         Return auto tune stop frequency
   SRFATHP           Set the auto tune max drive mode level
   GRFATHP           Return the auto tune max drive mode level
+  SRFATSTEP         Set auto tune coarse frequency step, Hz
+  GRFATSTEP         Return auto tune coarse frequency step, Hz
+  SRFATSTARTDLY     Set auto tune sweep start delay, 100mS units
+  GRFATSTARTDLY     Return auto tune sweep start delay, 100mS units
+  SRFATFINEDLY      Set auto tune fine pass per step delay, 100mS units
+  GRFATFINEDLY      Return auto tune fine pass per step delay, 100mS units
+  SRFATDLY          Set auto tune per step settling delay, 100mS units
+  GRFATDLY          Return auto tune per step settling delay, 100mS units
   SRFATSWR          If TRUE auto tune uses SWR on second phase
   GRFATSWR          Returns the auto tune SWR second tune phase flag
 Configutation commands
