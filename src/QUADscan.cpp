@@ -592,30 +592,64 @@ void QUADscanStatus(int Module)
 
 // Command table
 Commands QUADscanCmdArray[] = {
+// Start of command block
+//
+// QUAD mass calibration table commands. Rev 3 QUAD modules only; all of these
+// NAK with error 2 on a Rev 1 or Rev 2 module. Module is 1 or 2.
+//
   {"SQCENA",  CMDfunctionStr, 2, (char *)QUADcalSetEnable},   // Set the QUAD mass cal table enable, module,TRUE|FALSE
   {"GQCENA",  CMDfunction, 1, (char *)QUADcalGetEnable},      // Return the QUAD mass cal table enable flag
-  {"SQCNUM",  CMDfunction, 2, (char *)QUADcalSetNum},         // Set number of cal points, module,num. 0 clears the table
+  {"SQCNUM",  CMDfunction, 2, (char *)QUADcalSetNum},         // Set number of cal points, module,num. Range 0 to 10,
+                                                             // 0 clears the table
   {"GQCNUM",  CMDfunction, 1, (char *)QUADcalGetNum},         // Return number of cal points
-  {"SQCPNT",  CMDfunctionLine, 0, (char *)QUADcalSetPoint},   // Set a cal row, module,index,actual,measured,delta
-  {"GQCPNT",  CMDfunction, 2, (char *)QUADcalGetPoint},       // Return a cal row, module,index
-  {"RQCAL",   CMDfunction, 1, (char *)QUADcalReport},         // Report the whole cal table
-  {"SAVEQCAL",   CMDfunction, 1, (char *)QUADcalSave},        // Save the cal table to the module EEPROM
+  {"SQCPNT",  CMDfunctionLine, 0, (char *)QUADcalSetPoint},   // Set a cal row, module,index,actual,measured,delta.
+                                                             // Index is 1 based, 1 to 10. Actual and measured are m/z,
+                                                             // 1 to 100000. Delta is the resolving DC offset in volts,
+                                                             // -100 to 100. Actual must stay strictly ascending with
+                                                             // index or the command NAKs
+  {"GQCPNT",  CMDfunction, 2, (char *)QUADcalGetPoint},       // Return a cal row, module,index. Returns
+                                                             // actual,measured,delta
+  {"RQCAL",   CMDfunction, 1, (char *)QUADcalReport},         // Report the whole cal table in readable form
+  {"SAVEQCAL",   CMDfunction, 1, (char *)QUADcalSave},        // Save the cal table to the module EEPROM. The table is
+                                                             // not included in the SAVE command
   {"RESTOREQCAL",CMDfunction, 1, (char *)QUADcalRestore},     // Restore the cal table from the module EEPROM
-// Scan commands
-  {"SQSSTRT", CMDfunctionStr, 2, (char *)QUADscanSetStart},   // Set the scan start m/z, module,mz
+//
+// QUAD scan commands. The scan parameters below are RAM only and are not saved by SAVE or
+// SAVEQCAL; they return to their defaults on reset.
+//
+  {"SQSSTRT", CMDfunctionStr, 2, (char *)QUADscanSetStart},   // Set the scan start m/z, module,mz. Range 1 to 100000,
+                                                             // default 50
   {"GQSSTRT", CMDfunction, 1, (char *)QUADscanGetStart},      // Return the scan start m/z
-  {"SQSSTOP", CMDfunctionStr, 2, (char *)QUADscanSetStop},    // Set the scan stop m/z, module,mz
+  {"SQSSTOP", CMDfunctionStr, 2, (char *)QUADscanSetStop},    // Set the scan stop m/z, module,mz. Range 1 to 100000,
+                                                             // default 500
   {"GQSSTOP", CMDfunction, 1, (char *)QUADscanGetStop},       // Return the scan stop m/z
-  {"SQSSTEP", CMDfunctionStr, 2, (char *)QUADscanSetStep},    // Set the scan step size in m/z, module,step
+  {"SQSSTEP", CMDfunctionStr, 2, (char *)QUADscanSetStep},    // Set the scan step size in m/z, module,step. Range
+                                                             // -10000 to 10000 excluding 0, default 1. The sign must
+                                                             // move start towards stop, so a descending scan needs a
+                                                             // negative step
   {"GQSSTEP", CMDfunction, 1, (char *)QUADscanGetStep},       // Return the scan step size
-  {"SQSDWELL",CMDfunction, 2, (char *)QUADscanSetDwell},      // Set the per point settle time, module,mS
-  {"GQSDWELL",CMDfunction, 1, (char *)QUADscanGetDwell},      // Return the per point settle time
-  {"SQSNUM",  CMDfunction, 2, (char *)QUADscanSetNumScans},   // Set the number of scans, module,num
+  {"SQSDWELL",CMDfunction, 2, (char *)QUADscanSetDwell},      // Set the per point settle time, module,mS. Range 0 to
+                                                             // 1000, default 2. This is the settling window before
+                                                             // acquisition starts, and the streaming of the previous
+                                                             // point happens inside it. Total time per point is the
+                                                             // dwell plus the ADC acquisition time
+  {"GQSDWELL",CMDfunction, 1, (char *)QUADscanGetDwell},      // Return the per point settle time in mS
+  {"SQSNUM",  CMDfunction, 2, (char *)QUADscanSetNumScans},   // Set the number of scans, module,num. Range 1 to 10000,
+                                                             // default 1
   {"GQSNUM",  CMDfunction, 1, (char *)QUADscanGetNumScans},   // Return the number of scans
-  {"SQSTRIG", CMDfunctionStr, 2, (char *)QUADscanSetTrig},    // Drive TRGOUT during a scan, module,TRUE|FALSE
+  {"SQSTRIG", CMDfunctionStr, 2, (char *)QUADscanSetTrig},    // Drive TRGOUT during a scan, module,TRUE|FALSE.
+                                                             // Default FALSE. Intended for scope verification of the
+                                                             // per point timing
   {"GQSTRIG", CMDfunction, 1, (char *)QUADscanGetTrig},       // Return the TRGOUT during scan flag
-  {"QSCANSTAT",CMDfunction, 1, (char *)QUADscanStatus},       // Report the scan parameters without scanning
-  {"QSCAN",   CMDfunction, 1, (char *)QUADscanGo},            // Run the scan, streams binary data. ESC aborts
+  {"QSCANSTAT",CMDfunction, 1, (char *)QUADscanStatus},       // Report the scan parameters, the global ADC settings the
+                                                             // scan will use, the computed point count and estimated
+                                                             // scan time, and what the cal table does at the scan
+                                                             // endpoints. Run this before QSCAN
+  {"QSCAN",   CMDfunction, 1, (char *)QUADscanGo},            // Run the scan and stream the result as binary. This
+                                                             // command blocks: no other command is processed until the
+                                                             // scan finishes. Send ESC, 0x1B, to abort. See the QUAD
+                                                             // scan section of the manual for the stream format
+// End of table marker
   {0},
 };
 
