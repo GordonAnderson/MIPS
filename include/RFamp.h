@@ -159,7 +159,8 @@ typedef struct
 
 extern      RFAdata  *RFAarray[2];
 extern int  NumberOfRFAchannels;
-extern bool ResolvingDCenable; 
+extern bool ResolvingDCenable;
+extern bool RFAupdate;          // Set true to force the loop to resync all hardware
 
 extern int  quadAThighP;
 extern int  quadATmaxStep;

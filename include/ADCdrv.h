@@ -19,6 +19,8 @@ void ReportADCchange(void);
 void  ADCprep(void);
 void  ADCsoftTrigger(void);
 void  ADCabort(void);
+void  ADCstop(void);          // Silent teardown, no ACK/NAK. Used by the QUAD scan.
+int   ADCrbSetup(void);       // Returns 0 on success, else an error code
 void  ADCread(int chan);
 void  ADCreportAverage(void);
 void  ADRsetGain(int chan, int gain);

@@ -85,7 +85,30 @@ typedef struct
 } QUADcalRecord;
 
 // Allocated at init time and only for Rev 3 modules; NULL otherwise. See QUADcalInit.
+// Scan parameters. RAM only, not persisted: the EEPROM record region has only 8 bytes
+// spare (368..503 used of 368..511) and these need 24, so persisting them would require
+// relocating or shrinking the calibration record. Defaults are applied at init.
+typedef struct
+{
+  float StartMZ;
+  float StopMZ;
+  float StepMZ;
+  int   Dwell;                 // Settle time per point, mS
+  int   NumScans;              // Scans per QSCAN command
+  bool  TrigOutEna;            // Drive TRGOUT during the scan for timing verification
+} QUADscanParms;
+
+#define QUADscanMAXPOINTS   500
+
+// Streaming frame markers. Same convention as ADCtrigger in ADCdrv.cpp so the host parser
+// pattern is familiar.
+#define QUADscanHDR         0xAA
+#define QUADscanTRAILER     0xEA      // Normal completion
+#define QUADscanABORTED     0xEB      // Scan was aborted
+#define QUADscanABORTCHAR   0x1B      // ESC on the serial port aborts a running scan
+
 extern QUADcal *QUADcalTable[2];
+extern QUADscanParms *QUADscanP[2];
 extern CommandList QUADscanCmdList;
 
 // Prototypes
@@ -111,5 +134,21 @@ void QUADcalGetPoint(int Module, int index);
 void QUADcalReport(int Module);
 void QUADcalSave(int Module);
 void QUADcalRestore(int Module);
+
+// Scan engine
+void QUADscanSetStart(char *Module, char *value);
+void QUADscanGetStart(int Module);
+void QUADscanSetStop(char *Module, char *value);
+void QUADscanGetStop(int Module);
+void QUADscanSetStep(char *Module, char *value);
+void QUADscanGetStep(int Module);
+void QUADscanSetDwell(int Module, int value);
+void QUADscanGetDwell(int Module);
+void QUADscanSetNumScans(int Module, int value);
+void QUADscanGetNumScans(int Module);
+void QUADscanSetTrig(char *Module, char *value);
+void QUADscanGetTrig(int Module);
+void QUADscanStatus(int Module);
+void QUADscanGo(int Module);
 
 #endif

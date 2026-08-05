@@ -14,6 +14,7 @@
 #include "Hardware.h"
 #include "Serial.h"
 #include "Errors.h"
+#include "ADCdrv.h"
 #include <stddef.h>
 
 // Number of bytes the CRC covers: everything up to but NOT including the CRC field.
@@ -24,6 +25,10 @@
 // computed over zeros; on read back those bytes hold the stored CRC, the recomputed value
 // differs, and verification fails every single time.
 #define QUADcalCRCLEN  offsetof(QUADcalRecord, CRC)
+
+// Defined later in the scan engine section, used before their definitions
+static void QUADscanParmsInit(int brd);
+static int  QUADscanPointCount(int b);
 
 // Allocated at init time, and only for Rev 3 modules. A NULL entry means either the
 // module is not Rev 3 or no QUAD module is present on that board, so the calibration
@@ -266,6 +271,7 @@ void QUADcalInit(int brd)
   if(QUADcalTable[brd] == NULL) QUADcalTable[brd] = new QUADcal;
   if(QUADcalTable[brd] == NULL) return;
   memset(QUADcalTable[brd], 0, sizeof(QUADcal));
+  QUADscanParmsInit(brd);
   // A module that has never been calibrated simply has no record; that is not an error
   QUADcalLoad(brd);
 }
@@ -400,6 +406,156 @@ void QUADcalReport(int Module)
   }
 }
 
+
+// ---------------------------------------------------------------------------------------
+// Scan parameter commands
+// ---------------------------------------------------------------------------------------
+
+static bool QUADscanFloatArg(char *value, float *f, float ll, float ul)
+{
+  String token = value;
+  float  v = token.toFloat();
+
+  if((v < ll) || (v > ul)) return false;
+  *f = v;
+  return true;
+}
+
+void QUADscanSetStart(char *Module, char *value)
+{
+  int b;
+  if((b = QUADcalBoardStr(Module)) == -1) return;
+  if(!QUADscanFloatArg(value, &QUADscanP[b]->StartMZ, 1, 100000)) BADARG;
+  SendACK;
+}
+void QUADscanGetStart(int Module)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  serial->println(QUADscanP[b]->StartMZ,4);
+}
+void QUADscanSetStop(char *Module, char *value)
+{
+  int b;
+  if((b = QUADcalBoardStr(Module)) == -1) return;
+  if(!QUADscanFloatArg(value, &QUADscanP[b]->StopMZ, 1, 100000)) BADARG;
+  SendACK;
+}
+void QUADscanGetStop(int Module)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  serial->println(QUADscanP[b]->StopMZ,4);
+}
+void QUADscanSetStep(char *Module, char *value)
+{
+  int b;
+  if((b = QUADcalBoardStr(Module)) == -1) return;
+  if(!QUADscanFloatArg(value, &QUADscanP[b]->StepMZ, -10000, 10000)) BADARG;
+  if(QUADscanP[b]->StepMZ == 0) BADARG;
+  SendACK;
+}
+void QUADscanGetStep(int Module)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  serial->println(QUADscanP[b]->StepMZ,4);
+}
+void QUADscanSetDwell(int Module, int value)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  if((value < 0) || (value > 1000)) BADARG;
+  QUADscanP[b]->Dwell = value;
+  SendACK;
+}
+void QUADscanGetDwell(int Module)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  serial->println(QUADscanP[b]->Dwell);
+}
+void QUADscanSetNumScans(int Module, int value)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  if((value < 1) || (value > 10000)) BADARG;
+  QUADscanP[b]->NumScans = value;
+  SendACK;
+}
+void QUADscanGetNumScans(int Module)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  serial->println(QUADscanP[b]->NumScans);
+}
+void QUADscanSetTrig(char *Module, char *value)
+{
+  int    b;
+  String token;
+  if((b = QUADcalBoardStr(Module)) == -1) return;
+  token = value;
+  if(token == "TRUE") QUADscanP[b]->TrigOutEna = true;
+  else if(token == "FALSE") QUADscanP[b]->TrigOutEna = false;
+  else BADARG;
+  SendACK;
+}
+void QUADscanGetTrig(int Module)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  if(QUADscanP[b]->TrigOutEna) serial->println("TRUE");
+  else serial->println("FALSE");
+}
+
+// Reports everything the scan will use, including the ADC settings. Those are global and
+// are set by commands outside this module, so a user who changed ADCnumsamples for some
+// other purpose would otherwise get a silently different acquisition time per point.
+void QUADscanStatus(int Module)
+{
+  int b,n;
+
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  n = QUADscanPointCount(b);
+  serial->print("QUAD scan, module "); serial->println(Module);
+  serial->print("  Start m/z      "); serial->println(QUADscanP[b]->StartMZ,4);
+  serial->print("  Stop m/z       "); serial->println(QUADscanP[b]->StopMZ,4);
+  serial->print("  Step m/z       "); serial->println(QUADscanP[b]->StepMZ,4);
+  serial->print("  Dwell, mS      "); serial->println(QUADscanP[b]->Dwell);
+  serial->print("  Num scans      "); serial->println(QUADscanP[b]->NumScans);
+  serial->print("  Trigger output ");
+  if(QUADscanP[b]->TrigOutEna) serial->println("TRUE"); else serial->println("FALSE");
+  serial->print("  Points         ");
+  if(n == -1) serial->println("INVALID, check start/stop/step");
+  else if(n > QUADscanMAXPOINTS) { serial->print(n); serial->print(" EXCEEDS LIMIT OF "); serial->println(QUADscanMAXPOINTS); }
+  else serial->println(n);
+  serial->println("  ADC settings are global, set with the ADC commands:");
+  serial->print("  ADC channel    "); serial->println(ADCchannel);
+  serial->print("  ADC samples    "); serial->println(ADCnumsamples);
+  serial->print("  ADC rate, Hz   "); serial->println(ADCrate);
+  if(ADCrate > 0)
+  {
+    float acq = (float)ADCnumsamples * 1000.0 / (float)ADCrate;   // mS per point
+    serial->print("  Acquire, mS    "); serial->println(acq,3);
+    if(n > 0)
+    {
+      serial->print("  Est scan, S    ");
+      serial->println(((acq + QUADscanP[b]->Dwell) * n * QUADscanP[b]->NumScans) / 1000.0,2);
+    }
+  }
+  serial->print("  Cal table      ");
+  if((QUADcalTable[b]->Enabled) && (QUADcalTable[b]->NumPoints > 0))
+     serial->println("enabled, NOT applied until phase 4");
+  else serial->println("disabled");
+}
+
 // Command table
 Commands QUADscanCmdArray[] = {
   {"SQCENA",  CMDfunctionStr, 2, (char *)QUADcalSetEnable},   // Set the QUAD mass cal table enable, module,TRUE|FALSE
@@ -411,7 +567,184 @@ Commands QUADscanCmdArray[] = {
   {"RQCAL",   CMDfunction, 1, (char *)QUADcalReport},         // Report the whole cal table
   {"SAVEQCAL",   CMDfunction, 1, (char *)QUADcalSave},        // Save the cal table to the module EEPROM
   {"RESTOREQCAL",CMDfunction, 1, (char *)QUADcalRestore},     // Restore the cal table from the module EEPROM
+// Scan commands
+  {"SQSSTRT", CMDfunctionStr, 2, (char *)QUADscanSetStart},   // Set the scan start m/z, module,mz
+  {"GQSSTRT", CMDfunction, 1, (char *)QUADscanGetStart},      // Return the scan start m/z
+  {"SQSSTOP", CMDfunctionStr, 2, (char *)QUADscanSetStop},    // Set the scan stop m/z, module,mz
+  {"GQSSTOP", CMDfunction, 1, (char *)QUADscanGetStop},       // Return the scan stop m/z
+  {"SQSSTEP", CMDfunctionStr, 2, (char *)QUADscanSetStep},    // Set the scan step size in m/z, module,step
+  {"GQSSTEP", CMDfunction, 1, (char *)QUADscanGetStep},       // Return the scan step size
+  {"SQSDWELL",CMDfunction, 2, (char *)QUADscanSetDwell},      // Set the per point settle time, module,mS
+  {"GQSDWELL",CMDfunction, 1, (char *)QUADscanGetDwell},      // Return the per point settle time
+  {"SQSNUM",  CMDfunction, 2, (char *)QUADscanSetNumScans},   // Set the number of scans, module,num
+  {"GQSNUM",  CMDfunction, 1, (char *)QUADscanGetNumScans},   // Return the number of scans
+  {"SQSTRIG", CMDfunctionStr, 2, (char *)QUADscanSetTrig},    // Drive TRGOUT during a scan, module,TRUE|FALSE
+  {"GQSTRIG", CMDfunction, 1, (char *)QUADscanGetTrig},       // Return the TRGOUT during scan flag
+  {"QSCANSTAT",CMDfunction, 1, (char *)QUADscanStatus},       // Report the scan parameters without scanning
+  {"QSCAN",   CMDfunction, 1, (char *)QUADscanGo},            // Run the scan, streams binary data. ESC aborts
   {0},
 };
 
 CommandList QUADscanCmdList = { (Commands *)QUADscanCmdArray, NULL };
+
+// =======================================================================================
+// Scan engine
+//
+// The scan blocks. RFA_loop does not run for its duration, which removes any possibility
+// of the 10Hz loop's change detection fighting the scan's own DAC writes. In exchange the
+// loop must pet the watchdog itself and poll for the abort character, since the command
+// processor is not running either.
+//
+// Per point timing is deterministic because the USB write for point N-1 is overlapped with
+// the physical settling of point N. This is the same pipelining idea already used by the
+// host driven RFAACQ path, moved inside the firmware.
+// =======================================================================================
+
+QUADscanParms *QUADscanP[2] = {NULL,NULL};
+
+// Allocated alongside the calibration table, Rev 3 only. Called from QUADcalInit.
+static void QUADscanParmsInit(int brd)
+{
+  if(QUADscanP[brd] == NULL) QUADscanP[brd] = new QUADscanParms;
+  if(QUADscanP[brd] == NULL) return;
+  QUADscanP[brd]->StartMZ    = 50;
+  QUADscanP[brd]->StopMZ     = 500;
+  QUADscanP[brd]->StepMZ     = 1;
+  QUADscanP[brd]->Dwell      = 2;
+  QUADscanP[brd]->NumScans   = 1;
+  QUADscanP[brd]->TrigOutEna = false;
+}
+
+// Acquire one spectrum point. Returns false on ADC timeout or failure; the caller aborts
+// the scan rather than emitting a bad point.
+static bool QUADscanAcquire(int *sum)
+{
+  if(!ADCrbTrigger()) return false;
+  return ADCfindSum(sum);
+}
+
+static void QUADscanSendHeader(int numPoints, int scanNum, bool last)
+{
+  serial->write(0x55); serial->write(0x55); serial->write(0x55); serial->write(0x55);
+  serial->write(QUADscanHDR);
+  serial->write((byte)( numPoints        & 0xFF));
+  serial->write((byte)((numPoints >>  8) & 0xFF));
+  serial->write((byte)((numPoints >> 16) & 0xFF));
+  serial->write((byte)( scanNum       & 0xFF));
+  serial->write((byte)((scanNum >> 8) & 0xFF));
+  serial->write(last ? 0xFF : 0x00);
+}
+
+static void QUADscanSendTrailer(bool aborted)
+{
+  serial->write(0xAE); serial->write(0xAE); serial->write(0xAE); serial->write(0xAE);
+  serial->write(aborted ? QUADscanABORTED : QUADscanTRAILER);
+}
+
+// Fixed width, little endian. Fixed width matters: variable length ASCII would make the
+// per point write time depend on the magnitude of the value, reintroducing exactly the
+// timing jitter this feature exists to remove.
+//
+// The raw sum is sent rather than an average. Averaging ADCnumsamples samples buys
+// resolution beyond the ADC's 12 bits; returning a 12 bit average would discard it. The
+// host knows ADCnumsamples and can divide if it wants to.
+static void QUADscanSendPoint(int sum)
+{
+  serial->write((byte)( (uint32_t)sum        & 0xFF));
+  serial->write((byte)(((uint32_t)sum >>  8) & 0xFF));
+  serial->write((byte)(((uint32_t)sum >> 16) & 0xFF));
+  serial->write((byte)(((uint32_t)sum >> 24) & 0xFF));
+}
+
+static bool QUADscanAbortRequested(void)
+{
+  while(serial->available())
+  {
+    if(serial->read() == QUADscanABORTCHAR) return true;
+  }
+  return false;
+}
+
+// Compute the point count for the current parameters, or -1 if they are not valid.
+static int QUADscanPointCount(int b)
+{
+  QUADscanParms *sp = QUADscanP[b];
+  float span;
+  int   n;
+
+  if(sp == NULL) return -1;
+  if(sp->StepMZ == 0) return -1;
+  span = sp->StopMZ - sp->StartMZ;
+  if(span == 0) return 1;
+  // The step must move from start towards stop
+  if((span > 0) && (sp->StepMZ < 0)) return -1;
+  if((span < 0) && (sp->StepMZ > 0)) return -1;
+  n = (int)(span / sp->StepMZ) + 1;
+  if(n < 1) return -1;
+  return n;
+}
+
+void QUADscanGo(int Module)
+{
+  int   b,numPoints,sum = 0,err;
+  bool  aborted = false;
+  QUADscanParms *sp;
+
+  if((b = QUADcalBoard(Module)) == -1) return;
+  sp = QUADscanP[b];
+  if(sp == NULL) BADARG;
+  // Validate everything before any frame header is emitted, so the host never sees a
+  // truncated or headerless stream.
+  if(!RFAarray[b]->Enabled) BADARG;
+  if(!MIPSconfigData.PowerEnable) BADARG;
+  if((numPoints = QUADscanPointCount(b)) == -1) BADARG;
+  if(numPoints > QUADscanMAXPOINTS) BADARG;
+  if(!QUADcalRangeOK(b, sp->StartMZ, sp->StopMZ)) BADARG;
+  if(sp->NumScans < 1) BADARG;
+  // Claim the ADC. ADCvectors must cover every point of every scan: ADC_Handler tears the
+  // ADC down and calls ReleaseADC once ADCvectorNum reaches it, so leaving it at the
+  // default of 1 would dismantle the ADC after the very first spectrum point.
+  ADCvectors = (numPoints * sp->NumScans) + 2;
+  if((err = ADCrbSetup()) != 0)
+  {
+    SetErrorCode(err);
+    SendNAK;
+    return;
+  }
+  SendACKonly;
+  DisplayMessage("Scanning");
+  for(int scan = 0; (scan < sp->NumScans) && !aborted; scan++)
+  {
+    QUADscanSendHeader(numPoints, scan, (scan == (sp->NumScans - 1)));
+    // Prime the pipeline: set the first point and acquire it before the loop, so that
+    // inside the loop the USB write for the previous point overlaps this point's settling.
+    RFAsetScanPoint(b, sp->StartMZ, 0);
+    if(sp->TrigOutEna) SetTRGOUT;
+    if(sp->Dwell > 0) delay(sp->Dwell);
+    if(!QUADscanAcquire(&sum)) { aborted = true; break; }
+    if(sp->TrigOutEna) ResetTRGOUT;
+    for(int i = 1; i < numPoints; i++)
+    {
+      WDT_Restart(WDT);
+      if(QUADscanAbortRequested()) { aborted = true; break; }
+      uint32_t t0 = micros();
+      if(sp->TrigOutEna) SetTRGOUT;
+      // Set this point, which starts the physical settling
+      RFAsetScanPoint(b, sp->StartMZ + (float)i * sp->StepMZ, 0);
+      // Stream the previous point while this one settles
+      QUADscanSendPoint(sum);
+      // Wait out whatever is left of the dwell
+      while((micros() - t0) < (uint32_t)(sp->Dwell * 1000)) ;
+      if(!QUADscanAcquire(&sum)) { aborted = true; break; }
+      if(sp->TrigOutEna) ResetTRGOUT;
+    }
+    if(!aborted) QUADscanSendPoint(sum);      // The final point of this scan
+    QUADscanSendTrailer(aborted);
+  }
+  if(sp->TrigOutEna) ResetTRGOUT;
+  ADCstop();
+  DismissMessage();
+  // The scan moved m/z, the setpoint and the pole DACs. Let the loop resynchronise from
+  // the module structure rather than leaving the hardware wherever the scan finished.
+  RFAupdate = true;
+}

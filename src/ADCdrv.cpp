@@ -563,6 +563,16 @@ void ADCabort(void)
     SendNAK;
     return;    
   }
+  ADCstop();
+  SendACK;
+}
+
+// Silent teardown, no ACK or NAK. Extracted from ADCabort so callers that are in the
+// middle of a binary data stream (the QUAD scan) can release the ADC without injecting
+// protocol characters into the stream.
+void ADCstop(void)
+{
+  if(!ADCready) return;
   ADCready = false;
   ADCvectorNum = 0;
   ADCsamples = 0;
@@ -579,7 +589,6 @@ void ADCabort(void)
   analogReadResolution(12);
   analogRead(ADC0);
   ReleaseADC();
-  SendACK;
 }
 
 // This host command sets up the ADC change monitor function
