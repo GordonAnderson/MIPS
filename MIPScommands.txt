@@ -976,6 +976,62 @@ HV module commands
   GHVPSNCAL         Reports a negative channel slope and offset DAC parameters
   SHVPSNCAL         Sets a negative channel slope and offset DAC parameters
 
+QUAD mass calibration table commands. Rev 3 QUAD modules only; all of these
+NAK with error 2 on a Rev 1 or Rev 2 module. Module is 1 or 2.
+
+  SQCENA            Set the QUAD mass cal table enable, module,TRUE|FALSE
+  GQCENA            Return the QUAD mass cal table enable flag
+  SQCNUM            Set number of cal points, module,num. Range 0 to 10,
+                    0 clears the table
+  GQCNUM            Return number of cal points
+  SQCPNT            Set a cal row, module,index,actual,measured,delta.
+                    Index is 1 based, 1 to 10. Actual and measured are m/z,
+                    1 to 100000. Delta is the resolving DC offset in volts,
+                    -100 to 100. Actual must stay strictly ascending with
+                    index or the command NAKs
+  GQCPNT            Return a cal row, module,index. Returns
+                    actual,measured,delta
+  RQCAL             Report the whole cal table in readable form
+  SAVEQCAL          Save the cal table to the module EEPROM. The table is
+                    not included in the SAVE command
+  RESTOREQCAL       Restore the cal table from the module EEPROM
+
+QUAD scan commands. The scan parameters below are RAM only and are not saved by SAVE or
+SAVEQCAL; they return to their defaults on reset.
+
+  SQSSTRT           Set the scan start m/z, module,mz. Range 1 to 100000,
+                    default 50
+  GQSSTRT           Return the scan start m/z
+  SQSSTOP           Set the scan stop m/z, module,mz. Range 1 to 100000,
+                    default 500
+  GQSSTOP           Return the scan stop m/z
+  SQSSTEP           Set the scan step size in m/z, module,step. Range
+                    -10000 to 10000 excluding 0, default 1. The sign must
+                    move start towards stop, so a descending scan needs a
+                    negative step
+  GQSSTEP           Return the scan step size
+  SQSDWELL          Set the per point settle time, module,mS. Range 0 to
+                    1000, default 2. This is the settling window before
+                    acquisition starts, and the streaming of the previous
+                    point happens inside it. Total time per point is the
+                    dwell plus the ADC acquisition time
+  GQSDWELL          Return the per point settle time in mS
+  SQSNUM            Set the number of scans, module,num. Range 1 to 10000,
+                    default 1
+  GQSNUM            Return the number of scans
+  SQSTRIG           Drive TRGOUT during a scan, module,TRUE|FALSE.
+                    Default FALSE. Intended for scope verification of the
+                    per point timing
+  GQSTRIG           Return the TRGOUT during scan flag
+  QSCANSTAT         Report the scan parameters, the global ADC settings the
+                    scan will use, the computed point count and estimated
+                    scan time, and what the cal table does at the scan
+                    endpoints. Run this before QSCAN
+  QSCAN             Run the scan and stream the result as binary. This
+                    command blocks: no other command is processed until the
+                    scan finishes. Send ESC, 0x1B, to abort. See the QUAD
+                    scan section of the manual for the stream format
+
 General RFamp and QUAD commands
 
   SRFAENA           Sets the RF system enable mode, ON or OFF
@@ -1043,6 +1099,11 @@ RF amp / quad auto tune
   GRFATFINEDLY      Return auto tune fine pass per step delay, 100mS units
   SRFATDLY          Set auto tune per step settling delay, 100mS units
   GRFATDLY          Return auto tune per step settling delay, 100mS units
+  SRFARNGHYST       Set level detector range switch hysteresis, as a
+                    fraction of RangeThreshold. Range switches up at
+                    RangeThreshold and back down at this fraction of it.
+                    Valid range 0 to 1, default 0.90. Not saved
+  GRFARNGHYST       Return the range switch hysteresis fraction
   SRFATSWR          If TRUE auto tune uses SWR on second phase
   GRFATSWR          Returns the auto tune SWR second tune phase flag
 Configutation commands

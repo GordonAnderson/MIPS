@@ -179,6 +179,28 @@ int  quadATstartDelay = 40;
 // Per step delay for the fine passes (TuneStep <= 500). The fine sweeps resolve small
 // level differences, so they get more settling time than the coarse sweep.
 int  quadATfineDelay = 10;
+// Fraction of RangeThreshold at which the level detector range switches back down.
+// SelectRange was a bare comparison against RangeThreshold, so a setpoint sitting near
+// the threshold switched range on every pass of the 10Hz loop. Each switch changes both
+// the readback calibration and the setpoint DAC calibration, so the chatter was visible
+// in the reported level and, in closed loop, in the actual output.
+//
+// Switching up happens at RangeThreshold and back down at RFArangeHyst * RangeThreshold,
+// so the setpoint has to move by (1 - RFArangeHyst) of the threshold to reverse a switch.
+// System wide rather than per module, matching the auto tune parameters, and like them it
+// is not saved: it returns to the value below after a reset.
+float RFArangeHyst = 0.90;
+// Board whose detector range is held by an active calibration page, -1 for none.
+//
+// The calibration pages select the range explicitly: LowRangeCalPrep sets low,
+// HighRangeCalPrep sets high. Nothing held it there. RFdrvCalPrep zeroes SetPoint at the
+// start of every calibration point, so in closed loop the 10Hz loop immediately called
+// SelectRange(brd, 0) and dropped the hardware back to low range. The readback
+// calibration never saw this because it is done in open loop, where SelectRange returns
+// early on Mode, but the setpoint DAC calibration has to be done closed loop, where it
+// does not. The high range setpoint DAC was therefore being calibrated with the range
+// line low, so setRFADAC was writing through DACchansLR the whole time.
+int RFArangeHoldBrd = -1;
 enum quadATstate
 {
   QUAD_AT_IDLE,
@@ -371,6 +393,11 @@ const Commands  RFAMPCmdArray[] = {
   {"GRFATFINEDLY", CMDint, 0, (char *)&quadATfineDelay},      // Return auto tune fine pass per step delay, 100mS units
   {"SRFATDLY", CMDint, 1, (char *)&quadATstepDelay},          // Set auto tune per step settling delay, 100mS units
   {"GRFATDLY", CMDint, 0, (char *)&quadATstepDelay},          // Return auto tune per step settling delay, 100mS units
+  {"SRFARNGHYST", CMDfloat, 1, (char *)&RFArangeHyst},       // Set level detector range switch hysteresis, as a
+                                                            // fraction of RangeThreshold. Range switches up at
+                                                            // RangeThreshold and back down at this fraction of it.
+                                                            // Valid range 0 to 1, default 0.90. Not saved
+  {"GRFARNGHYST", CMDfloat, 0, (char *)&RFArangeHyst},       // Return the range switch hysteresis fraction
   {"SRFATSWR", CMDbool, 1, (char *)&quadATuseSWR},           // If TRUE auto tune uses SWR on second phase
   {"GRFATSWR", CMDbool, 0, (char *)&quadATuseSWR},           // Returns the auto tune SWR second tune phase flag
 // Configutation commands
@@ -433,18 +460,26 @@ void UpdateLowRangeMenu(void)
 
 void LowRangeCalPrep(void)
 {
+  RFArangeHoldBrd = SelectedRFAboard;
   SetRangeLow(SelectedRFAboard);
   // Set the UI range message text
 //  sprintf(RFcalP1," %4.0f V", rfad.RangeThreshold * .25);
   sprintf(RFcalP1," %4.0f V", 20.0);
-  sprintf(RFcalP2," %4.0f V", rfad.RangeThreshold * .75);
+  // Calibrate the low range at RangeThreshold, not at 0.75 of it. RangeThreshold is where
+  // the low range hands over to the high range, and the high range is calibrated at the
+  // same level, so both fits pass through this one physical point and meet there.
+  sprintf(RFcalP2," %4.0f V", rfad.RangeThreshold);
 }
 
 void HighRangeCalPrep(void)
 {
+  RFArangeHoldBrd = SelectedRFAboard;
   SetRangeHigh(SelectedRFAboard);
   // Set the UI range message text
-  sprintf(RFcalP1," %4.0f V", rfad.FullScale * .25);
+  // Lower high range point is RangeThreshold, shared with the low range calibration.
+  // Previously 0.25 of full scale, which left the high range extrapolating below its
+  // lowest calibration point over the whole region where it is actually used.
+  sprintf(RFcalP1," %4.0f V", rfad.RangeThreshold);
   sprintf(RFcalP2," %4.0f V", rfad.FullScale * .75);
 }
 
@@ -476,19 +511,34 @@ void RFspP1readLR(void) { SelectBoard(SelectedRFAboard); SP1LR = rfad.SetPoint; 
 void RFspP2readLR(void) { SelectBoard(SelectedRFAboard); SP2LR = rfad.SetPoint; SP2VLR = GetAverageVLR(); CaledFlag |= 2048; }
 void RFampCalibrate(void)
 {
+  // The calibration pages are done with the range; hand it back to SelectRange.
+  RFArangeHoldBrd = -1;
+  RFAupdate       = true;
   RFAD->Drive = rfad.Drive = 0;
   RFAD->SetPoint = rfad.SetPoint = 0;
 
   if((CaledFlag & 0x03) == 0x03)
   {
-     RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLA].m = (float)(VpP2adc - VpP1adc) / (RFAD->FullScale * 0.5);
-     RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLA].b = (float)VpP1adc - (RFAD->FullScale * 0.25) * RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLA].m;
+     // High range spans RangeThreshold to 0.75 * FullScale. The lower point is shared
+     // with the low range calibration so the two ranges agree at the crossover.
+     if((RFAD->FullScale * 0.75 - RFAD->RangeThreshold) > 0.0)
+     {
+       RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLA].m = (float)(VpP2adc - VpP1adc) / (RFAD->FullScale * 0.75 - RFAD->RangeThreshold);
+       RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLA].b = (float)VpP1adc - RFAD->RangeThreshold * RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLA].m;
+     }
+     else DisplayMessage("Bad range thres!");
      CaledFlag &= ~0x03;
   }
   if((CaledFlag & 0x0C) == 0x0C)
   {
-     RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLB].m = (float)(VnP2adc - VnP1adc) / (RFAD->FullScale * 0.5);
-     RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLB].b = (float)VnP1adc - (RFAD->FullScale * 0.25) * RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLB].m;
+     // High range spans RangeThreshold to 0.75 * FullScale. The lower point is shared
+     // with the low range calibration so the two ranges agree at the crossover.
+     if((RFAD->FullScale * 0.75 - RFAD->RangeThreshold) > 0.0)
+     {
+       RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLB].m = (float)(VnP2adc - VnP1adc) / (RFAD->FullScale * 0.75 - RFAD->RangeThreshold);
+       RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLB].b = (float)VnP1adc - RFAD->RangeThreshold * RFAarray[SelectedRFAboard]->ADCchans[RFAadcRFLB].m;
+     }
+     else DisplayMessage("Bad range thres!");
      CaledFlag &= ~0x0C;
   }
   if((CaledFlag & 0x30) == 0x30)
@@ -504,15 +554,29 @@ void RFampCalibrate(void)
   if((CaledFlag & 0xC0) == 0xC0)
   {
 
-     RFAarray[SelectedRFAboard]->ADCchansLR[RFAadcRFLA-RFAadcLR_BASE].m = (float)(VpP2adcLR - VpP1adcLR) / (RFAD->RangeThreshold * 0.75 - 20.0);
-     RFAarray[SelectedRFAboard]->ADCchansLR[RFAadcRFLA-RFAadcLR_BASE].b = (float)VpP2adcLR - (RFAD->RangeThreshold * 0.75) * RFAarray[SelectedRFAboard]->ADCchansLR[RFAadcRFLA-RFAadcLR_BASE].m;
+     // Low range spans 20V to RangeThreshold. The upper point is shared with the high
+     // range calibration; the fit is anchored on it so the crossover is the one level
+     // both ranges reproduce exactly.
+     if((RFAD->RangeThreshold - 20.0) > 0.0)
+     {
+       RFAarray[SelectedRFAboard]->ADCchansLR[RFAadcRFLA-RFAadcLR_BASE].m = (float)(VpP2adcLR - VpP1adcLR) / (RFAD->RangeThreshold - 20.0);
+       RFAarray[SelectedRFAboard]->ADCchansLR[RFAadcRFLA-RFAadcLR_BASE].b = (float)VpP2adcLR - RFAD->RangeThreshold * RFAarray[SelectedRFAboard]->ADCchansLR[RFAadcRFLA-RFAadcLR_BASE].m;
+     }
+     else DisplayMessage("Bad range thres!");
      CaledFlag &= ~0xC0;
   }
   if((CaledFlag & 0x300) == 0x300)
   {
 
-     RFAarray[SelectedRFAboard]->ADCchansLR[RFAadcRFLB-RFAadcLR_BASE].m = (float)(VnP2adcLR - VnP1adcLR) / (RFAD->RangeThreshold * 0.75 - 20.0);
-     RFAarray[SelectedRFAboard]->ADCchansLR[RFAadcRFLB-RFAadcLR_BASE].b = (float)VnP2adcLR - (RFAD->RangeThreshold * 0.75) * RFAarray[SelectedRFAboard]->ADCchansLR[RFAadcRFLB-RFAadcLR_BASE].m;
+     // Low range spans 20V to RangeThreshold. The upper point is shared with the high
+     // range calibration; the fit is anchored on it so the crossover is the one level
+     // both ranges reproduce exactly.
+     if((RFAD->RangeThreshold - 20.0) > 0.0)
+     {
+       RFAarray[SelectedRFAboard]->ADCchansLR[RFAadcRFLB-RFAadcLR_BASE].m = (float)(VnP2adcLR - VnP1adcLR) / (RFAD->RangeThreshold - 20.0);
+       RFAarray[SelectedRFAboard]->ADCchansLR[RFAadcRFLB-RFAadcLR_BASE].b = (float)VnP2adcLR - RFAD->RangeThreshold * RFAarray[SelectedRFAboard]->ADCchansLR[RFAadcRFLB-RFAadcLR_BASE].m;
+     }
+     else DisplayMessage("Bad range thres!");
      CaledFlag &= ~0x300;
   }
   if((CaledFlag & 0xC00) == 0xC00)
@@ -524,6 +588,15 @@ void RFampCalibrate(void)
      RFAarray[SelectedRFAboard]->DACchansLR.b = (float)c1 - SP1VLR * RFAarray[SelectedRFAboard]->DACchansLR.m;
      CaledFlag &= ~0xC00;
   }
+  // Push the new coefficients into the dialog copy.
+  //
+  // RFampCalibrate writes into *RFAD, but rfad still holds the coefficients from before
+  // the calibration, and RFA_loop starts with "if(RFAdialog.Changed) *RFAD = rfad;".
+  // rfad is a full RFAdata, so that assignment carries ADCchans, ADCchansLR, DACchans and
+  // DACchansLR with it: the next edit of any entry while the RF dialog is up would put the
+  // old calibration straight back over the new one, with no indication anything had
+  // happened. Resynchronise here so the two copies agree.
+  rfad = *RFAD;
 }
 
 bool isRangeHigh(int brd)
@@ -605,10 +678,28 @@ void Set_18bitDAC(int brd, int DACchannel, int value)
 // If the system is disable or in open loop mode this function will take no action.
 void SelectRange(int brd, float Setpoint)
 {
+  // A calibration page owns the range while it is up; see RFArangeHoldBrd.
+  if(brd == RFArangeHoldBrd) return;
   if(!RFAarray[brd]->AutoRangeEna) return;
+  // Mode is true for open loop, and the open loop path pins the range high, so this
+  // only ever runs in closed loop.
   if((!RFAarray[brd]->Enabled) || (RFAarray[brd]->Mode)) return;
-  if(Setpoint > RFAarray[brd]->RangeThreshold) SetRangeHigh(brd, false);
-  else SetRangeLow(brd, false);
+  float thr = RFAarray[brd]->RangeThreshold;
+  // A hysteresis outside (0,1) leaves no dead band: at exactly 1.0 the switch down
+  // threshold equals the switch up threshold, which is the chatter this exists to
+  // prevent. Fall back rather than act on it.
+  float h = RFArangeHyst;
+  if((h <= 0.0) || (h >= 1.0)) h = 0.90;
+  // isRangeHigh reads the CPLD image, which is the actual current range, so the decision
+  // is made from where the hardware is rather than from where the setpoint was last pass.
+  if(!isRangeHigh(brd))
+  {
+    if(Setpoint > thr) SetRangeHigh(brd, false);
+  }
+  else
+  {
+    if(Setpoint < (thr * h)) SetRangeLow(brd, false);
+  }
 }
 
 // Set the QUADupdate flag to cause QUAD parameters to be recalcualted and update
@@ -985,6 +1076,18 @@ void RFA_loop(void)
     {
       *RFAD = rfad;
       RFAdialog.Changed = false;
+    }
+  }
+  // Release the calibration range hold whenever neither calibration page is on screen.
+  // Doing it here rather than only in the exit callbacks means no navigation path can
+  // leave auto ranging switched off for the rest of the session.
+  if(RFArangeHoldBrd != -1)
+  {
+    if((ActiveDialog != &RFAdialog) ||
+       ((ActiveDialog->Entry != RFAdialogEntriesCal) && (ActiveDialog->Entry != RFAdialogEntriesCal2)))
+    {
+      RFArangeHoldBrd = -1;
+      RFAupdate       = true;
     }
   }
   // Process all modules in system
