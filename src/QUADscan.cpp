@@ -552,8 +552,42 @@ void QUADscanStatus(int Module)
   }
   serial->print("  Cal table      ");
   if((QUADcalTable[b]->Enabled) && (QUADcalTable[b]->NumPoints > 0))
-     serial->println("enabled, NOT applied until phase 4");
+  {
+    serial->print("enabled, "); serial->print(QUADcalTable[b]->NumPoints); serial->println(" points");
+    serial->print("  Cal m/z range  ");
+    serial->print(QUADcalTable[b]->Actual[0],2); serial->print(" to ");
+    serial->println(QUADcalTable[b]->Actual[QUADcalTable[b]->NumPoints-1],2);
+    // Show what the table does at the scan endpoints, so a wrong table is visible before
+    // a scan is run rather than after the spectrum comes out shifted.
+    float c1,d1,c2,d2;
+    QUADcalApply(b, QUADscanP[b]->StartMZ, &c1, &d1);
+    QUADcalApply(b, QUADscanP[b]->StopMZ,  &c2, &d2);
+    // Show the requested value alongside the commanded one, so extrapolation outside the
+    // table is obvious rather than something the operator has to work out.
+    serial->print("  Start  "); serial->print(QUADscanP[b]->StartMZ,2);
+    serial->print(" -> cmd "); serial->print(c1,3);
+    serial->print(", delta "); serial->print(d1,4);
+    if((QUADscanP[b]->StartMZ < QUADcalTable[b]->Actual[0]) ||
+       (QUADscanP[b]->StartMZ > QUADcalTable[b]->Actual[QUADcalTable[b]->NumPoints-1]))
+         serial->println("  (extrapolated)");
+    else serial->println("");
+    serial->print("  Stop   "); serial->print(QUADscanP[b]->StopMZ,2);
+    serial->print(" -> cmd "); serial->print(c2,3);
+    serial->print(", delta "); serial->print(d2,4);
+    if((QUADscanP[b]->StopMZ < QUADcalTable[b]->Actual[0]) ||
+       (QUADscanP[b]->StopMZ > QUADcalTable[b]->Actual[QUADcalTable[b]->NumPoints-1]))
+         serial->println("  (extrapolated)");
+    else serial->println("");
+    if(!QUADcalRangeOK(b, QUADscanP[b]->StartMZ, QUADscanP[b]->StopMZ))
+      serial->println("  WARNING: scan range too far outside the cal table, QSCAN will reject");
+  }
   else serial->println("disabled");
+  // State that QSCAN requires. A scan will not run without these and the status report is
+  // where that should be visible, not in a GERR round trip after a failed QSCAN.
+  serial->print("  Module enabled ");
+  if(RFAarray[b]->Enabled) serial->println("TRUE"); else serial->println("FALSE  <- QSCAN will reject");
+  serial->print("  Main power     ");
+  if(MIPSconfigData.PowerEnable) serial->println("ON"); else serial->println("OFF    <- QSCAN will reject");
 }
 
 // Command table
@@ -656,13 +690,21 @@ static void QUADscanSendPoint(int sum)
   serial->write((byte)(((uint32_t)sum >> 24) & 0xFF));
 }
 
+// Poll for the abort character. The command processor is not running during a scan, so
+// anything else that arrives is pushed into the normal input ring buffer to be handled
+// after the scan. Discarding it, as an earlier version did, silently ate any command typed
+// while a scan was running.
 static bool QUADscanAbortRequested(void)
 {
+  bool abort = false;
+
   while(serial->available())
   {
-    if(serial->read() == QUADscanABORTCHAR) return true;
+    char c = serial->read();
+    if(c == QUADscanABORTCHAR) abort = true;
+    else PutCh(c);
   }
-  return false;
+  return abort;
 }
 
 // Compute the point count for the current parameters, or -1 if they are not valid.
@@ -687,6 +729,7 @@ static int QUADscanPointCount(int b)
 void QUADscanGo(int Module)
 {
   int   b,numPoints,sum = 0,err;
+  float cmdMZ,delta;
   bool  aborted = false;
   QUADscanParms *sp;
 
@@ -695,12 +738,17 @@ void QUADscanGo(int Module)
   if(sp == NULL) BADARG;
   // Validate everything before any frame header is emitted, so the host never sees a
   // truncated or headerless stream.
-  if(!RFAarray[b]->Enabled) BADARG;
-  if(!MIPSconfigData.PowerEnable) BADARG;
-  if((numPoints = QUADscanPointCount(b)) == -1) BADARG;
-  if(numPoints > QUADscanMAXPOINTS) BADARG;
-  if(!QUADcalRangeOK(b, sp->StartMZ, sp->StopMZ)) BADARG;
-  if(sp->NumScans < 1) BADARG;
+  // Distinct error codes so a failed QSCAN explains itself through GERR rather than
+  // collapsing six different conditions into one BADARG.
+  if(!RFAarray[b]->Enabled)       { SetErrorCode(ERR_QUADNOTENABLED);    SendNAK; return; }
+  if(!MIPSconfigData.PowerEnable) { SetErrorCode(ERR_QUADPOWEROFF);      SendNAK; return; }
+  if((numPoints = QUADscanPointCount(b)) == -1)
+                                  { SetErrorCode(ERR_QUADBADRANGE);      SendNAK; return; }
+  if(numPoints > QUADscanMAXPOINTS)
+                                  { SetErrorCode(ERR_QUADTOOMANYPOINTS); SendNAK; return; }
+  if(!QUADcalRangeOK(b, sp->StartMZ, sp->StopMZ))
+                                  { SetErrorCode(ERR_QUADOUTSIDECAL);    SendNAK; return; }
+  if(sp->NumScans < 1)            { SetErrorCode(ERR_QUADBADRANGE);      SendNAK; return; }
   // Claim the ADC. ADCvectors must cover every point of every scan: ADC_Handler tears the
   // ADC down and calls ReleaseADC once ADCvectorNum reaches it, so leaving it at the
   // default of 1 would dismantle the ADC after the very first spectrum point.
@@ -718,7 +766,8 @@ void QUADscanGo(int Module)
     QUADscanSendHeader(numPoints, scan, (scan == (sp->NumScans - 1)));
     // Prime the pipeline: set the first point and acquire it before the loop, so that
     // inside the loop the USB write for the previous point overlaps this point's settling.
-    RFAsetScanPoint(b, sp->StartMZ, 0);
+    QUADcalApply(b, sp->StartMZ, &cmdMZ, &delta);
+    RFAsetScanPoint(b, cmdMZ, delta);
     if(sp->TrigOutEna) SetTRGOUT;
     if(sp->Dwell > 0) delay(sp->Dwell);
     if(!QUADscanAcquire(&sum)) { aborted = true; break; }
@@ -729,8 +778,12 @@ void QUADscanGo(int Module)
       if(QUADscanAbortRequested()) { aborted = true; break; }
       uint32_t t0 = micros();
       if(sp->TrigOutEna) SetTRGOUT;
-      // Set this point, which starts the physical settling
-      RFAsetScanPoint(b, sp->StartMZ + (float)i * sp->StepMZ, 0);
+      // Set this point, which starts the physical settling. The calibration table maps the
+      // requested (true) m/z to the m/z that must be commanded, and supplies the resolving
+      // DC offset for that mass. With the table disabled or empty this is a pass through:
+      // cmdMZ = requested, delta = 0.
+      QUADcalApply(b, sp->StartMZ + (float)i * sp->StepMZ, &cmdMZ, &delta);
+      RFAsetScanPoint(b, cmdMZ, delta);
       // Stream the previous point while this one settles
       QUADscanSendPoint(sum);
       // Wait out whatever is left of the dwell

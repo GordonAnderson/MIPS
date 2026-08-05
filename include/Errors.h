@@ -84,4 +84,10 @@ extern int ErrorCode;
 #define ERR_ADCNOTAVALIABLE         124     // ADC interface in use and not available at this time
 #define ERR_ADCALREARYSETUP         125     // ADC interface is already setup
 #define ERR_ADCNOTSETUP             126     // ADC interface is not setup
+// QUAD scan errors
+#define ERR_QUADNOTENABLED          127     // QUAD scan, RF module is not enabled
+#define ERR_QUADPOWEROFF            128     // QUAD scan, main power is off
+#define ERR_QUADBADRANGE            129     // QUAD scan, start/stop/step do not define a valid scan
+#define ERR_QUADTOOMANYPOINTS       130     // QUAD scan, point count exceeds QUADscanMAXPOINTS
+#define ERR_QUADOUTSIDECAL          131     // QUAD scan, range too far outside the calibration table
 #endif
