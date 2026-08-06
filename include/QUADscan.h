@@ -98,7 +98,7 @@ typedef struct
   bool  TrigOutEna;            // Drive TRGOUT during the scan for timing verification
 } QUADscanParms;
 
-#define QUADscanMAXPOINTS   500
+#define QUADscanMAXPOINTS   2000
 
 // Streaming frame markers. Same convention as ADCtrigger in ADCdrv.cpp so the host parser
 // pattern is familiar.
