@@ -863,12 +863,8 @@ void WriteEEPROMbyte(void)
 
 void Debug(int function)
 {
-   SelectBoard(0);
-  int Vadc1 = AD7994(0x24, function);
-  serial->println(Vadc1);
-  //SelectBoard(0);
-  //Set_18bitDAC(0, 9, function);
-  //Set_18bitDAC(0, 10, function);
+  Serial3.begin(115200);
+  Serial3.println("GVER");
 }
 
 // These functions will automatically set the TWI address variables for the selected modules.
