@@ -45,6 +45,9 @@
 extern ThreadController control;
 
 Stream *serial = &SerialUSB;
+Stream *redirect = NULL;
+char   redirectPort = 0;
+
 bool SerialMute = false;
 
 // Variables used for Macro recording
@@ -187,6 +190,10 @@ const Commands  CmdArray[] = 	{
   {"DEBUG", CMDfunction, 1, (char *)Debug},                       // Debug function, as needed
   {"STRPLVL", CMDfloat, 1, (char *)&MIPSconfigData.VerrorThreshold},// Set the DCbias power supply readback error trip point in percentage of FS
   {"GTRPLVL", CMDfloat, 0, (char *)&MIPSconfigData.VerrorThreshold},// Returns the DCbias power supply readback error trip point in percentage of FS
+// Serial port redirection commands
+  {"SREDIRECT", CMDfunction, 2, (char *)serialRedirect},       // Redirects all serial traffic to selected port, port, baud
+  {"SRADDRESS", CMDfunction, 2, (char *)serialAddress},        // Allows commands to have serial port prefix, port, baud
+  {"SRCLOSE", CMDfunction, 0, (char *)serialRedriectClose},    // Close serial redirection
 // TWI commands
   {"TWIRESET", CMDfunction, 0, (char *)TWIreset},              // Resets the TWI interface
   {"TWIERROR",  CMDint, 0, (char *)&TWIfails},                 // Reports the numner of detected TWI failures 
@@ -779,6 +786,87 @@ Commands *FindCommand(char *Cmd2Find)
   }
   return NULL;
 }
+
+// Serial port redirection commands
+
+// The serialRedirect function initializes a specified serial port (0 to 3) with a given 
+// baud rate, allowing for communication through the selected port. If an invalid port 
+// is provided, it triggers a BADARG error, while also resetting the redirectPort and 
+// sending an acknowledgment signal.
+void serialRedirect(int port, int baud)
+{
+   switch(port)
+   {
+     case 0:
+       Serial.begin(baud);
+       redirect = &Serial;
+       break;
+     case 1:
+       Serial1.begin(baud);
+       redirect = &Serial1;
+       break;
+     case 2:
+       Serial2.begin(baud);
+       redirect = &Serial2;
+       break;
+     case 3:
+       Serial3.begin(baud);
+       redirect = &Serial3;
+       break;
+     default:
+       BADARG;
+   }
+   redirectPort = 0;
+   SendACK;
+}
+
+// The serialAddress function initializes a specified serial port with a given baud rate. 
+// It supports multiple ports (0 to 3) and redirects the output to the corresponding 
+// serial object, while handling invalid port arguments with a BADARG directive.
+void serialAddress(int port, int baud)
+{
+   switch(port)
+   {
+     case 0:
+       Serial.begin(baud);
+       redirect = &Serial;
+       redirectPort = '0';
+       break;
+     case 1:
+       Serial1.begin(baud);
+       redirect = &Serial1;
+       redirectPort = '1';
+       break;
+     case 2:
+       Serial2.begin(baud);
+       redirect = &Serial2;
+       redirectPort = '2';
+       break;
+     case 3:
+       Serial3.begin(baud);
+       redirect = &Serial3;
+       redirectPort = '3';
+       break;
+     default:
+       BADARG;
+   }
+   SendACK;
+}
+
+// The serialRedriectClose function is designed to close a serial redirect by setting 
+// the redirect pointer to NULL and resetting the redirectPort to 0, effectively 
+// terminating the redirection. After these operations, it sends an acknowledgment 
+// signal, indicated by SendACK
+void serialRedriectClose(void)
+{
+   if(redirect != NULL)
+   {
+     redirect = NULL;
+     redirectPort = 0;
+   }
+   SendACK;
+}
+
 
 // Reads a byte from the select EEPROM
 // Expect the following args in the ring buffer
@@ -2361,6 +2449,17 @@ void PutCh(char ch)
 {
   if((int)ch == 255) return;  // Never put a null in the buffer!
   RB_Put(&RB, ch);
+}
+
+char GetCh(void)
+{
+  return(RB_Get(&RB));
+}
+
+char PeekCh(void)
+{
+  if (RB.Count == 0) return(0xFF);
+  return(RB.Buffer[RB.Head]);
 }
 
 //

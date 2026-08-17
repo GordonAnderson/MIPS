@@ -1175,6 +1175,9 @@
 //      1.) Added power supply voltage seting commands for HVPS
 //      2.) Added support to control the HVPS voltage setpoint from a ADC channel
 //      3.) Added ESI ADC voltage control capability
+//      4.) Added support for new QUAD system with 18bit dacs and internal scanning
+//  1.264, August 17, 2026
+//      1.) Added serial port redirection capability
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

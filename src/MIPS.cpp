@@ -188,7 +188,7 @@ uint32_t BrightTime = 0;
 #define HVPSinterfacev ""
 #endif
 
-const char Version[] PROGMEM = "Version 1.263" DCBswitchCodev DCBanalogv DCBcurrentv FAIMSFBvf FAIMSvf HOFAIMSvf HVPSv DMSDMSMBv HVPSinterfacev ",June 20,2026";
+const char Version[] PROGMEM = "Version 1.264" DCBswitchCodev DCBanalogv DCBcurrentv FAIMSFBvf FAIMSvf HOFAIMSvf HVPSv DMSDMSMBv HVPSinterfacev ",June 20,2026";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController(); 
@@ -1318,10 +1318,20 @@ void SerialWD(void)
 
 void ReadAllSerial(void)
 {
+  static int numESC = 0;
+
   WDT_Restart(WDT);
   SerialWD();
+  // Send any received redirected serial traffic
+  if(redirect != NULL) while(redirect->available() > 0) 
+  { 
+     char c = redirect->read();
+     if(c == ESC) numESC++;
+     else numESC = 0;
+     if(numESC==3) redirect = NULL;
+     else serial->write(c);
+  }
   // Put serial received characters in the input ring buffer
-  //if(SerialUSB.dtr()) while (SerialUSB.available() > 0)  // Mike's app does not set DTR! maybe make this an options and default to not needed
   while (SerialUSB.available() > 0)
   {
     ResetFilamentSerialWD();
@@ -1332,7 +1342,8 @@ void ReadAllSerial(void)
       Serial1.write(c);
       Serial1.flush();
     }
-    if (!SerialNavigation(c)) PutCh(c);
+    if ((redirect != NULL) && (redirectPort == 0)) redirect->write(c);
+    else if (!SerialNavigation(c)) PutCh(c);
   }
 #ifdef EnableSerial
   if ((!MIPSconfigData.UseWiFi) || (wifidata.SerialPort != 0))
@@ -1371,6 +1382,22 @@ void ProcessSerial(void)
   // If there is a command in the input ring buffer, process it!
   while (RB_Commands(&RB) > 0) // Process until flag that there is nothing to do
   {
+    if((redirect!=NULL)&&(redirectPort!=0))
+    {
+       if(PeekCh() == redirectPort)
+       {
+         char c = GetCh();
+         while(true)
+         {
+           c = GetCh();
+           if(c==0xFF) break;
+           redirect->write(c);
+           if(c==';')  break;
+           if(c=='\n') break;
+         }
+         continue;
+       }
+    }
     while (ProcessCommand() == 0); // WDT_Restart(WDT);
   }
   SerialUSB.flush();     // Added 9/2/2017

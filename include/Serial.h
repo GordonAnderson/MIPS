@@ -20,7 +20,9 @@
 
 
 extern Stream *serial;
-//extern MIPSstream *serial;
+
+extern Stream *redirect;
+extern char redirectPort;
 
 extern bool SerialMute;
 
@@ -55,10 +57,11 @@ extern const char *SelectedACKonlyString;
 // The serial receiver uses Xon and Xoff to control input data from the source
 #define XON   0x11
 #define XOFF  0x13
-#undef EOF
+#undef  EOF
 #define EOF   0x1A
 #define ACK   0x06
 #define NAK   0x15
+#define ESC   0x1B
 
 typedef struct
 {
@@ -157,6 +160,8 @@ char RB_Get(Ring_Buffer *);
 char RB_Next(Ring_Buffer *);
 int  RB_Commands(Ring_Buffer *);
 void PutCh(char ch);
+char GetCh(void);
+char PeekCh(void);
 int  GetLine(Ring_Buffer *rb,char *cbuf,int maxlen);
 void MacroRecord(char *filename);
 void MacroStop(void);
@@ -207,6 +212,9 @@ void TWIaddSet(char *module);
 void TWIscan(int board);
 void TWI1scan(void);
 void Dump(void);
+void serialRedirect(int port, int baud);
+void serialAddress(int port, int baud);
+void serialRedriectClose(void);
 
 void AddToCommandList(CommandList *ncl);
 

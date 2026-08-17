@@ -98,6 +98,10 @@ General commands
   DEBUG             Debug function, as needed
   STRPLVL           Set the DCbias power supply readback error trip point in percentage of FS
   GTRPLVL           Returns the DCbias power supply readback error trip point in percentage of FS
+Serial port redirection commands
+  SREDIRECT         Redirects all serial traffic to selected port, port, baud
+  SRADDRESS         Allows commands to have serial port prefix, port, baud
+  SRCLOSE           Close serial redirection
 TWI commands
   TWIRESET          Resets the TWI interface
   TWIERROR          Reports the numner of detected TWI failures
