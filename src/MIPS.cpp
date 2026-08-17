@@ -1326,10 +1326,7 @@ void ReadAllSerial(void)
   if(redirect != NULL) while(redirect->available() > 0) 
   { 
      char c = redirect->read();
-     if(c == ESC) numESC++;
-     else numESC = 0;
-     if(numESC==3) redirect = NULL;
-     else serial->write(c);
+     serial->write(c);
   }
   // Put serial received characters in the input ring buffer
   while (SerialUSB.available() > 0)
@@ -1342,7 +1339,13 @@ void ReadAllSerial(void)
       Serial1.write(c);
       Serial1.flush();
     }
-    if ((redirect != NULL) && (redirectPort == 0)) redirect->write(c);
+    if ((redirect != NULL) && (redirectPort == 0)) 
+    {
+      if(c == ESC) numESC++;
+      else numESC = 0;
+      if(numESC==3) redirect = NULL;
+      else redirect->write(c);
+    }
     else if (!SerialNavigation(c)) PutCh(c);
   }
 #ifdef EnableSerial

@@ -810,6 +810,7 @@ void serialRedirect(int port, int baud)
        redirect = &Serial2;
        break;
      case 3:
+       pinMode(PWR_ON,INPUT);
        Serial3.begin(baud);
        redirect = &Serial3;
        break;
@@ -843,6 +844,7 @@ void serialAddress(int port, int baud)
        redirectPort = '2';
        break;
      case 3:
+       pinMode(PWR_ON,INPUT);
        Serial3.begin(baud);
        redirect = &Serial3;
        redirectPort = '3';
@@ -951,6 +953,7 @@ void WriteEEPROMbyte(void)
 
 void Debug(int function)
 {
+  pinMode(15,INPUT);
   Serial3.begin(115200);
   Serial3.println("GVER");
 }
