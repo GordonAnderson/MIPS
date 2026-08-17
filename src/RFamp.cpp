@@ -969,8 +969,9 @@ void RFA_init(int8_t Board, int8_t addr)
   SendFRAcpldCommand(RFAarray[Board]->CPLDspi, RFACPLDimage[Board]);
   RFAstates[Board]->CPLDimage = RFACPLDimage[Board];
   SelectBoard(SelectedRFAboard);
-  // Load the mass calibration table. Rev 3 only; QUADcalInit zeros the working copy and
-  // returns quietly if the module is not Rev 3 or has never been calibrated.
+  // Load the mass calibration table and QUAD scan parameters, any revision. QUADcalInit
+  // zeros the working copy and loads the EEPROM record, or leaves it zeroed if the module
+  // has never been calibrated.
   QUADcalInit(Board);
 }
 
@@ -1059,6 +1060,18 @@ void SetResolvingDC(int brd, float value, bool now = false)
      }
      DelayMonitoring();
    }
+}
+
+// Rev 3 drives resolving DC through its own on board 18 bit DACs, always present. Rev 1/2
+// route it through an external DC bias board channel (DCBchan), which the operator has to
+// configure with SRFADCCH; if that channel does not resolve to a present board,
+// SetResolvingDC's bd==-1 branch quietly does nothing. QUADscanGo calls this first so a
+// missing DCBchan on a Rev 1/2 module produces an upfront NAK instead of a scan that runs
+// to completion having never moved resolving DC.
+bool RFAresolvingDCReady(int brd)
+{
+   if(RFAarray[brd]->Rev == 3) return true;
+   return DCbiasCH2Brd(RFAarray[brd]->DCBchan - 1) != -1;
 }
 
 // This is the RF amp processing loop, called by the task scheduler 10 times

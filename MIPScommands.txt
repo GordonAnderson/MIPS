@@ -980,8 +980,8 @@ HV module commands
   GHVPSNCAL         Reports a negative channel slope and offset DAC parameters
   SHVPSNCAL         Sets a negative channel slope and offset DAC parameters
 
-QUAD mass calibration table commands. Rev 3 QUAD modules only; all of these
-NAK with error 2 on a Rev 1 or Rev 2 module. Module is 1 or 2.
+QUAD mass calibration table commands. Work on any QUAD module revision; all of these
+NAK with error 2 if no QUAD module is present on the selected board. Module is 1 or 2.
 
   SQCENA            Set the QUAD mass cal table enable, module,TRUE|FALSE
   GQCENA            Return the QUAD mass cal table enable flag

@@ -192,6 +192,12 @@ void RFAacquire(void);
 // firmware resident scan. Sets m/z and applies the resolving DC delta; does not
 // acquire or delay.
 void RFAsetScanPoint(int brd, float mz, float delta);
+
+// True if the hardware path resolving DC actually depends on is ready to be driven: for
+// Rev 3 this is always true (on board 18 bit DACs), for Rev 1/2 it requires DCBchan to
+// resolve to a present DC bias board. QUADscanGo uses this to reject a scan up front rather
+// than silently running one that never moves resolving DC.
+bool RFAresolvingDCReady(int brd);
 void RFAsetGain(char *Module, char *value);
 void RFAreturnGain(int Module);
 void RFampNumber(void);

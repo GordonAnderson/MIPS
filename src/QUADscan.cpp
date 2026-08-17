@@ -2,7 +2,7 @@
 // QUADscan
 //
 // Firmware resident m/z scan support for the RF QUAD module, and the mass calibration
-// table the scan applies. Rev 3 modules only.
+// table the scan applies. Works on any module revision; see the note in QUADscan.h.
 //
 // Phase 2 implements the calibration table: structure, interpolation, host commands, and
 // persistence in a separate EEPROM region. The scan engine itself follows in Phase 3.
@@ -30,10 +30,10 @@
 static void QUADscanParmsInit(int brd);
 static int  QUADscanPointCount(int b);
 
-// Allocated at init time, and only for Rev 3 modules. A NULL entry means either the
-// module is not Rev 3 or no QUAD module is present on that board, so the calibration
-// table costs 8 bytes of BSS rather than 248 on a system that does not use it. This
-// follows the same pattern as RFAarray/RFAstates in RFamp.cpp.
+// Allocated at init time for any board that has an RF QUAD module present. A NULL entry
+// means no module is present on that board, so the calibration table costs 8 bytes of BSS
+// rather than 248 on a system that does not use it. This follows the same pattern as
+// RFAarray/RFAstates in RFamp.cpp.
 QUADcal *QUADcalTable[2] = {NULL,NULL};
 
 // Compile time guards. The failure mode this prevents is a calibration that quietly stops
@@ -67,15 +67,14 @@ static uint16_t QUADcalCRC(const uint8_t *data, int len)
   return crc;
 }
 
-// Returns the board index for a module number, or -1 with the NAK already sent. Also
-// rejects any module that is not Rev 3, since the whole feature is Rev 3 only.
+// Returns the board index for a module number, or -1 with the NAK already sent.
 static int QUADcalBoard(int Module)
 {
   int b;
 
   if((b = RFAmodule2board(Module)) == -1) return -1;
-  // A NULL table means the module is not Rev 3, or allocation failed at init. Either way
-  // the calibration commands are not available for it.
+  // A NULL table means no QUAD module is present on this board, or allocation failed at
+  // init. Either way the calibration and scan commands are not available for it.
   if(QUADcalTable[b] == NULL)
   {
     SetErrorCode(ERR_BADARG);
@@ -265,9 +264,8 @@ void QUADcalInit(int brd)
 {
   if((brd < 0) || (brd > 1)) return;
   if(RFAarray[brd] == NULL) return;
-  // Rev 3 only. Nothing is allocated for other revisions, so a system with no Rev 3 QUAD
-  // module carries only the two NULL pointers.
-  if(RFAarray[brd]->Rev != 3) return;
+  // Any revision: the calibration table and scan parameters are m/z arithmetic only, with
+  // no dependency on which DAC hardware RFAsetScanPoint ends up driving for this module.
   if(QUADcalTable[brd] == NULL) QUADcalTable[brd] = new QUADcal;
   if(QUADcalTable[brd] == NULL) return;
   memset(QUADcalTable[brd], 0, sizeof(QUADcal));
@@ -588,14 +586,20 @@ void QUADscanStatus(int Module)
   if(RFAarray[b]->Enabled) serial->println("TRUE"); else serial->println("FALSE  <- QSCAN will reject");
   serial->print("  Main power     ");
   if(MIPSconfigData.PowerEnable) serial->println("ON"); else serial->println("OFF    <- QSCAN will reject");
+  // Rev 3 always passes this; Rev 1/2 needs DCBchan (SRFADCCH) pointed at a present DC
+  // bias board or resolving DC never moves during the scan.
+  serial->print("  Resolving DC   ");
+  if(RFAarray[b]->Rev == 3) serial->println("on board, rev 3");
+  else if(RFAresolvingDCReady(b)) { serial->print("DC bias chan "); serial->println(RFAarray[b]->DCBchan); }
+  else serial->println("NOT CONFIGURED  <- QSCAN will reject, set with SRFADCCH");
 }
 
 // Command table
 Commands QUADscanCmdArray[] = {
 // Start of command block
 //
-// QUAD mass calibration table commands. Rev 3 QUAD modules only; all of these
-// NAK with error 2 on a Rev 1 or Rev 2 module. Module is 1 or 2.
+// QUAD mass calibration table commands. Work on any QUAD module revision; all of these
+// NAK with error 2 if no QUAD module is present on the selected board. Module is 1 or 2.
 //
   {"SQCENA",  CMDfunctionStr, 2, (char *)QUADcalSetEnable},   // Set the QUAD mass cal table enable, module,TRUE|FALSE
   {"GQCENA",  CMDfunction, 1, (char *)QUADcalGetEnable},      // Return the QUAD mass cal table enable flag
@@ -670,7 +674,7 @@ CommandList QUADscanCmdList = { (Commands *)QUADscanCmdArray, NULL };
 
 QUADscanParms *QUADscanP[2] = {NULL,NULL};
 
-// Allocated alongside the calibration table, Rev 3 only. Called from QUADcalInit.
+// Allocated alongside the calibration table, for any present module. Called from QUADcalInit.
 static void QUADscanParmsInit(int brd)
 {
   if(QUADscanP[brd] == NULL) QUADscanP[brd] = new QUADscanParms;
@@ -776,6 +780,9 @@ void QUADscanGo(int Module)
   // collapsing six different conditions into one BADARG.
   if(!RFAarray[b]->Enabled)       { SetErrorCode(ERR_QUADNOTENABLED);    SendNAK; return; }
   if(!MIPSconfigData.PowerEnable) { SetErrorCode(ERR_QUADPOWEROFF);      SendNAK; return; }
+  // Rev 3 always passes; Rev 1/2 routes resolving DC through DCBchan and would otherwise
+  // silently run the whole scan without ever moving it, see RFAresolvingDCReady.
+  if(!RFAresolvingDCReady(b))     { SetErrorCode(ERR_QUADNODCBCHAN);     SendNAK; return; }
   if((numPoints = QUADscanPointCount(b)) == -1)
                                   { SetErrorCode(ERR_QUADBADRANGE);      SendNAK; return; }
   if(numPoints > QUADscanMAXPOINTS)

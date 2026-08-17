@@ -8,8 +8,13 @@
 // QUADscan supports the firmware resident m/z scan for the RF QUAD module, and the mass
 // calibration table that scan applies.
 //
-// Everything in this module is Rev 3 only. Rev 1 and Rev 2 modules reject all of these
-// commands; see the EEPROM note below for why that matters.
+// Works on any revision. The calibration table and scan parameters are pure m/z arithmetic
+// with no dependency on which DAC hardware actually drives the quad, and RFAsetScanPoint
+// already dispatches to the right hardware path per module (see setRFADAC/SetResolvingDC
+// in RFamp.cpp). The one Rev specific requirement is that a Rev 1/2 module needs its
+// resolving DC bias channel (DCBchan, set with SRFADCCH) configured before QSCAN will run;
+// see RFAresolvingDCReady. Rev 3 has no such requirement, its resolving DC DACs are on
+// board. See the EEPROM note below for why the calibration table lives outside RFAdata.
 //
 // Mass calibration
 // ----------------
@@ -84,7 +89,7 @@ typedef struct
   uint16_t CRC;                       // CRC16 over everything above
 } QUADcalRecord;
 
-// Allocated at init time and only for Rev 3 modules; NULL otherwise. See QUADcalInit.
+// Allocated at init time for any present RF QUAD module; NULL otherwise. See QUADcalInit.
 // Scan parameters. RAM only, not persisted: the EEPROM record region has only 8 bytes
 // spare (368..503 used of 368..511) and these need 24, so persisting them would require
 // relocating or shrinking the calibration record. Defaults are applied at init.
@@ -114,7 +119,7 @@ extern CommandList QUADscanCmdList;
 // Prototypes
 
 // Called from RFA_init for each board. Zeros the working copy and loads the EEPROM record
-// if the module is Rev 3 and a valid record is present.
+// if a valid record is present.
 void QUADcalInit(int brd);
 
 // Apply the calibration table. Returns the m/z to command and the resolving DC offset.
