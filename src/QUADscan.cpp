@@ -845,6 +845,13 @@ void QUADscanGo(int Module)
   }
   if(sp->TrigOutEna) ResetTRGOUT;
   ADCstop();
+  // Park back at the scan's start m/z rather than leaving the module sitting at whatever
+  // point the scan happened to finish on. Besides being the sane idle state, this also
+  // bounds the settling jump the next scan's priming step has to make: without it, that
+  // jump is whatever gap is left between this scan's last point and the next scan's
+  // StartMZ, which showed up as noise on the first point or two of the following scan.
+  QUADcalApply(b, sp->StartMZ, &cmdMZ, &delta);
+  RFAsetScanPoint(b, cmdMZ, delta);
   DismissMessage();
   // The scan moved m/z, the setpoint and the pole DACs. Let the loop resynchronise from
   // the module structure rather than leaving the hardware wherever the scan finished.
