@@ -57,6 +57,8 @@ Purpose: confirm the `QUADscanGo` refactor (splitting the point loop into
 - [ ] Byte stream (header/points/trailer) matches prior behavior.
 - [ ] Per-point timing on the scope matches `SQSDWELL` as before, no new jitter.
 - [ ] `SQSTRIG TRUE` still pulses `TRGOUT` once per point exactly as before.
+- [ ] After the scan completes, the module has moved back to `StartMZ` (`GRFAMZ`/front
+      panel or equivalent) rather than sitting at `StopMZ` where the scan finished.
 
 ### 3.3 Start-of-scan pulse
 
@@ -85,6 +87,8 @@ Purpose: confirm the `QUADscanGo` refactor (splitting the point loop into
       time added — total time per point should be *shorter* than the ADC-enabled case).
 - [ ] `GQSADCENA 1` reports `FALSE`; `GQSFRAME 1` reports `FRAME`.
 - [ ] `QSCANSTAT 1` shows `ADC acquire FALSE` and the frame line as `FRAME`.
+- [ ] After the scan completes, the module has moved back to `StartMZ`, same as the
+      ADC-enabled case (this step runs unconditionally, not gated on `SQSADCENA`).
 
 ### 3.5 ADC disabled, NONE mode
 
@@ -96,6 +100,8 @@ Purpose: confirm the `QUADscanGo` refactor (splitting the point loop into
 - [ ] `ESC` (0x1B) sent mid-scan still aborts cleanly (watchdog/abort-poll path is
       unaffected by the ADC-disabled branch).
 - [ ] `QSCANSTAT 1` shows the frame line as `NONE`.
+- [ ] After the scan completes, the module has moved back to `StartMZ`, confirming the
+      park-back step still runs even with nothing streamed during the scan.
 
 ### 3.6 Re-enable and confirm clean return to normal mode
 
@@ -114,6 +120,12 @@ Purpose: confirm the `QUADscanGo` refactor (splitting the point loop into
   TRUE`, `TRGOUT` is left high until the end-of-scan safety reset — this is unchanged
   from the original code, but worth confirming the refactor preserved it (scope `TRGOUT`
   across a deliberately provoked timeout if practical).
+- **Park-back was merged in from a separate commit.** The "return to `StartMZ` after the
+  scan" behavior (`a787478`, "Quad scan initial delay added") landed on `origin/master`
+  from another machine while this work was in progress, and had to be manually reconciled
+  with the `QUADscanGo` refactor during a rebase. It was moved out from under the old
+  `ADCstop();` call and now runs unconditionally after `if(sp->AcqEna) ADCstop();`, so it
+  fires for both ADC-enabled and ADC-disabled scans — see the 3.2/3.4/3.5 checks above.
 
 ---
 
