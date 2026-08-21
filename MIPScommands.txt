@@ -1027,6 +1027,25 @@ SAVEQCAL; they return to their defaults on reset.
                     Default FALSE. Intended for scope verification of the
                     per point timing
   GQSTRIG           Return the TRGOUT during scan flag
+  SQSSTPIN          Output pulsed once at the start of every scan,
+                    module,chan. Chan is A thru P, or NA to disable.
+                    Default NA. Fixed brief pulse, see
+                    QUADscanSTARTPULSEuS in QUADscan.cpp
+  GQSSTPIN          Return the start-of-scan pulse output channel
+  SQSADCENA         Use the MIPS ADC to acquire and stream each
+                    point, module,TRUE|FALSE. Default TRUE. FALSE
+                    steps through m/z on the dwell timer only and
+                    never touches the ADC, for a scan driven by an
+                    external DAQ system synced off SQSSTPIN/SQSTRIG.
+                    See SQSFRAME for what, if anything, still streams
+  GQSADCENA         Return the ADC acquire enable flag
+  SQSFRAME          When SQSADCENA is FALSE, module,FRAME|NONE
+                    selects whether the header/trailer framing is
+                    still streamed with no point payload (FRAME,
+                    default) or nothing is streamed at all (NONE).
+                    Ignored, framing is always sent, when SQSADCENA
+                    is TRUE
+  GQSFRAME          Return the no-acquire framing mode
   QSCANSTAT         Report the scan parameters, the global ADC settings the
                     scan will use, the computed point count and estimated
                     scan time, and what the cal table does at the scan

@@ -511,6 +511,70 @@ void QUADscanGetTrig(int Module)
   if(QUADscanP[b]->TrigOutEna) serial->println("TRUE");
   else serial->println("FALSE");
 }
+// Chan is 'A' thru 'P', matching SetOutput/ClearOutput in Hardware.cpp, or "NA" to disable.
+// Validated directly rather than through the DOlist/FindInList front panel helpers in
+// Dialog.cpp, so this file does not have to pull in the menu/display headers for one field.
+void QUADscanSetStartPin(char *Module, char *value)
+{
+  int    b;
+  String token;
+  if((b = QUADcalBoardStr(Module)) == -1) return;
+  token = value;
+  if(token == "NA") strcpy(QUADscanP[b]->StartPin, "NA");
+  else if((value[0] >= 'A') && (value[0] <= 'P') && (value[1] == 0))
+  {
+    QUADscanP[b]->StartPin[0] = value[0];
+    QUADscanP[b]->StartPin[1] = 0;
+  }
+  else BADARG;
+  SendACK;
+}
+void QUADscanGetStartPin(int Module)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  serial->println(QUADscanP[b]->StartPin);
+}
+void QUADscanSetAcqEna(char *Module, char *value)
+{
+  int    b;
+  String token;
+  if((b = QUADcalBoardStr(Module)) == -1) return;
+  token = value;
+  if(token == "TRUE") QUADscanP[b]->AcqEna = true;
+  else if(token == "FALSE") QUADscanP[b]->AcqEna = false;
+  else BADARG;
+  SendACK;
+}
+void QUADscanGetAcqEna(int Module)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  if(QUADscanP[b]->AcqEna) serial->println("TRUE");
+  else serial->println("FALSE");
+}
+// Only takes effect when AcqEna is FALSE; framing is always sent when the ADC is in use.
+void QUADscanSetFrame(char *Module, char *value)
+{
+  int    b;
+  String token;
+  if((b = QUADcalBoardStr(Module)) == -1) return;
+  token = value;
+  if(token == "FRAME") QUADscanP[b]->FrameOnNoAcq = true;
+  else if(token == "NONE") QUADscanP[b]->FrameOnNoAcq = false;
+  else BADARG;
+  SendACK;
+}
+void QUADscanGetFrame(int Module)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  if(QUADscanP[b]->FrameOnNoAcq) serial->println("FRAME");
+  else serial->println("NONE");
+}
 
 // Reports everything the scan will use, including the ADC settings. Those are global and
 // are set by commands outside this module, so a user who changed ADCnumsamples for some
@@ -530,6 +594,15 @@ void QUADscanStatus(int Module)
   serial->print("  Num scans      "); serial->println(QUADscanP[b]->NumScans);
   serial->print("  Trigger output ");
   if(QUADscanP[b]->TrigOutEna) serial->println("TRUE"); else serial->println("FALSE");
+  serial->print("  Start pin      "); serial->println(QUADscanP[b]->StartPin);
+  serial->print("  ADC acquire    ");
+  if(QUADscanP[b]->AcqEna) serial->println("TRUE");
+  else
+  {
+    serial->println("FALSE  <- external DAQ mode, MIPS ADC not used");
+    serial->print("  Frame on no acq ");
+    if(QUADscanP[b]->FrameOnNoAcq) serial->println("FRAME"); else serial->println("NONE");
+  }
   serial->print("  Points         ");
   if(n == -1) serial->println("INVALID, check start/stop/step");
   else if(n > QUADscanMAXPOINTS) { serial->print(n); serial->print(" EXCEEDS LIMIT OF "); serial->println(QUADscanMAXPOINTS); }
@@ -645,6 +718,25 @@ Commands QUADscanCmdArray[] = {
                                                              // Default FALSE. Intended for scope verification of the
                                                              // per point timing
   {"GQSTRIG", CMDfunction, 1, (char *)QUADscanGetTrig},       // Return the TRGOUT during scan flag
+  {"SQSSTPIN",CMDfunctionStr, 2, (char *)QUADscanSetStartPin},// Output pulsed once at the start of every scan,
+                                                             // module,chan. Chan is A thru P, or NA to disable.
+                                                             // Default NA. Fixed brief pulse, see
+                                                             // QUADscanSTARTPULSEuS in QUADscan.cpp
+  {"GQSSTPIN",CMDfunction, 1, (char *)QUADscanGetStartPin},   // Return the start-of-scan pulse output channel
+  {"SQSADCENA",CMDfunctionStr, 2, (char *)QUADscanSetAcqEna}, // Use the MIPS ADC to acquire and stream each
+                                                             // point, module,TRUE|FALSE. Default TRUE. FALSE
+                                                             // steps through m/z on the dwell timer only and
+                                                             // never touches the ADC, for a scan driven by an
+                                                             // external DAQ system synced off SQSSTPIN/SQSTRIG.
+                                                             // See SQSFRAME for what, if anything, still streams
+  {"GQSADCENA",CMDfunction, 1, (char *)QUADscanGetAcqEna},    // Return the ADC acquire enable flag
+  {"SQSFRAME",CMDfunctionStr, 2, (char *)QUADscanSetFrame},   // When SQSADCENA is FALSE, module,FRAME|NONE
+                                                             // selects whether the header/trailer framing is
+                                                             // still streamed with no point payload (FRAME,
+                                                             // default) or nothing is streamed at all (NONE).
+                                                             // Ignored, framing is always sent, when SQSADCENA
+                                                             // is TRUE
+  {"GQSFRAME",CMDfunction, 1, (char *)QUADscanGetFrame},      // Return the no-acquire framing mode
   {"QSCANSTAT",CMDfunction, 1, (char *)QUADscanStatus},       // Report the scan parameters, the global ADC settings the
                                                              // scan will use, the computed point count and estimated
                                                              // scan time, and what the cal table does at the scan
@@ -685,6 +777,9 @@ static void QUADscanParmsInit(int brd)
   QUADscanP[brd]->Dwell      = 2;
   QUADscanP[brd]->NumScans   = 1;
   QUADscanP[brd]->TrigOutEna = false;
+  QUADscanP[brd]->AcqEna     = true;
+  QUADscanP[brd]->FrameOnNoAcq = true;
+  strcpy(QUADscanP[brd]->StartPin, "NA");
 }
 
 // Acquire one spectrum point. Returns false on ADC timeout or failure; the caller aborts
@@ -764,10 +859,88 @@ static int QUADscanPointCount(int b)
   return n;
 }
 
+// Fixed width, brief pulse on the user selected output channel, once at the start of every
+// scan. "NA" (the default) disables it. Unlike TRGOUT this goes through SetOutput, a full
+// SPI transaction (see Hardware.cpp), so it is deliberately only called once per scan and
+// not once per point the way the SQSTRIG pulse is.
+#define QUADscanSTARTPULSEuS   200
+
+static void QUADscanStartPulse(QUADscanParms *sp)
+{
+  if(sp->StartPin[0] == 'N') return;   // "NA"
+  SetOutput(sp->StartPin[0], HIGH);
+  delayMicroseconds(QUADscanSTARTPULSEuS);
+  SetOutput(sp->StartPin[0], LOW);
+}
+
+// Runs one scan's worth of points through the MIPS ADC, exactly as QUADscanGo always has.
+// Returns false if the scan should be treated as aborted; the caller still sends a trailer
+// either way, see the note on the priming acquisition below.
+static bool QUADscanRunScanADC(int b, QUADscanParms *sp, int numPoints)
+{
+  float cmdMZ,delta;
+  int   sum = 0;
+
+  // Prime the pipeline: set the first point and acquire it before the loop, so that inside
+  // the loop the USB write for the previous point overlaps this point's settling.
+  QUADcalApply(b, sp->StartMZ, &cmdMZ, &delta);
+  RFAsetScanPoint(b, cmdMZ, delta);
+  if(sp->TrigOutEna) SetTRGOUT;
+  if(sp->Dwell > 0) delay(sp->Dwell);
+  // A failed priming acquisition must not skip the trailer. This used to break straight out
+  // of the scan loop, past the trailer send in the caller, so an ADC timeout on the very
+  // first point of a scan left the host holding a header, no points, and nothing to
+  // terminate on: neither the promised byte count nor a trailer ever arrived and only a host
+  // side idle timeout recovered it. The caller always sends a trailer regardless of what this
+  // returns.
+  if(!QUADscanAcquire(&sum)) return false;
+  if(sp->TrigOutEna) ResetTRGOUT;
+  for(int i = 1; i < numPoints; i++)
+  {
+    WDT_Restart(WDT);
+    if(QUADscanAbortRequested()) return false;
+    uint32_t t0 = micros();
+    if(sp->TrigOutEna) SetTRGOUT;
+    // Set this point, which starts the physical settling. The calibration table maps the
+    // requested (true) m/z to the m/z that must be commanded, and supplies the resolving DC
+    // offset for that mass. With the table disabled or empty this is a pass through: cmdMZ =
+    // requested, delta = 0.
+    QUADcalApply(b, sp->StartMZ + (float)i * sp->StepMZ, &cmdMZ, &delta);
+    RFAsetScanPoint(b, cmdMZ, delta);
+    // Stream the previous point while this one settles
+    QUADscanSendPoint(sum);
+    // Wait out whatever is left of the dwell
+    while((micros() - t0) < (uint32_t)(sp->Dwell * 1000)) ;
+    if(!QUADscanAcquire(&sum)) return false;
+    if(sp->TrigOutEna) ResetTRGOUT;
+  }
+  QUADscanSendPoint(sum);      // The final point of this scan
+  return true;
+}
+
+// Runs one scan's worth of points with no ADC involvement at all: just step through m/z on
+// the dwell timer, driving whichever pulses are enabled, for an external DAQ system to
+// capture against. No pipelining needed since there is no acquisition to overlap with.
+static bool QUADscanRunScanNoADC(int b, QUADscanParms *sp, int numPoints)
+{
+  float cmdMZ,delta;
+
+  for(int i = 0; i < numPoints; i++)
+  {
+    WDT_Restart(WDT);
+    if(QUADscanAbortRequested()) return false;
+    QUADcalApply(b, sp->StartMZ + (float)i * sp->StepMZ, &cmdMZ, &delta);
+    RFAsetScanPoint(b, cmdMZ, delta);
+    if(sp->TrigOutEna) SetTRGOUT;
+    if(sp->Dwell > 0) delay(sp->Dwell);
+    if(sp->TrigOutEna) ResetTRGOUT;
+  }
+  return true;
+}
+
 void QUADscanGo(int Module)
 {
-  int   b,numPoints,sum = 0,err;
-  float cmdMZ,delta;
+  int   b,numPoints,err;
   bool  aborted = false;
   QUADscanParms *sp;
 
@@ -790,68 +963,47 @@ void QUADscanGo(int Module)
   if(!QUADcalRangeOK(b, sp->StartMZ, sp->StopMZ))
                                   { SetErrorCode(ERR_QUADOUTSIDECAL);    SendNAK; return; }
   if(sp->NumScans < 1)            { SetErrorCode(ERR_QUADBADRANGE);      SendNAK; return; }
-  // Claim the ADC. ADCvectors must cover every point of every scan: ADC_Handler tears the
-  // ADC down and calls ReleaseADC once ADCvectorNum reaches it, so leaving it at the
-  // default of 1 would dismantle the ADC after the very first spectrum point.
-  ADCvectors = (numPoints * sp->NumScans) + 2;
-  if((err = ADCrbSetup()) != 0)
+  // Claim the ADC, unless this scan is stepping through m/z for an external DAQ system
+  // instead of acquiring with the MIPS ADC. ADCvectors must cover every point of every scan:
+  // ADC_Handler tears the ADC down and calls ReleaseADC once ADCvectorNum reaches it, so
+  // leaving it at the default of 1 would dismantle the ADC after the very first spectrum
+  // point.
+  if(sp->AcqEna)
   {
-    SetErrorCode(err);
-    SendNAK;
-    return;
+    ADCvectors = (numPoints * sp->NumScans) + 2;
+    if((err = ADCrbSetup()) != 0)
+    {
+      SetErrorCode(err);
+      SendNAK;
+      return;
+    }
   }
   SendACKonly;
   DisplayMessage("Scanning");
+  // With the ADC disabled, FrameOnNoAcq decides whether the header/trailer framing still
+  // runs with no point payload, for host bookkeeping, or nothing is streamed at all.
+  bool sendFrame = sp->AcqEna || sp->FrameOnNoAcq;
   for(int scan = 0; (scan < sp->NumScans) && !aborted; scan++)
   {
-    QUADscanSendHeader(numPoints, scan, (scan == (sp->NumScans - 1)));
-    // Prime the pipeline: set the first point and acquire it before the loop, so that
-    // inside the loop the USB write for the previous point overlaps this point's settling.
-    QUADcalApply(b, sp->StartMZ, &cmdMZ, &delta);
-    RFAsetScanPoint(b, cmdMZ, delta);
-    if(sp->TrigOutEna) SetTRGOUT;
-    if(sp->Dwell > 0) delay(sp->Dwell);
-    // A failed priming acquisition must not skip the trailer. This used to break straight
-    // out of the scan loop, past QUADscanSendTrailer below, so an ADC timeout on the very
-    // first point of a scan left the host holding a header, no points, and nothing to
-    // terminate on: neither the promised byte count nor a trailer ever arrived and only a
-    // host side idle timeout recovered it. Every header now gets a trailer.
-    if(!QUADscanAcquire(&sum)) aborted = true;
-    if(!aborted)
-    {
-      if(sp->TrigOutEna) ResetTRGOUT;
-      for(int i = 1; i < numPoints; i++)
-      {
-        WDT_Restart(WDT);
-        if(QUADscanAbortRequested()) { aborted = true; break; }
-        uint32_t t0 = micros();
-        if(sp->TrigOutEna) SetTRGOUT;
-        // Set this point, which starts the physical settling. The calibration table maps the
-        // requested (true) m/z to the m/z that must be commanded, and supplies the resolving
-        // DC offset for that mass. With the table disabled or empty this is a pass through:
-        // cmdMZ = requested, delta = 0.
-        QUADcalApply(b, sp->StartMZ + (float)i * sp->StepMZ, &cmdMZ, &delta);
-        RFAsetScanPoint(b, cmdMZ, delta);
-        // Stream the previous point while this one settles
-        QUADscanSendPoint(sum);
-        // Wait out whatever is left of the dwell
-        while((micros() - t0) < (uint32_t)(sp->Dwell * 1000)) ;
-        if(!QUADscanAcquire(&sum)) { aborted = true; break; }
-        if(sp->TrigOutEna) ResetTRGOUT;
-      }
-      if(!aborted) QUADscanSendPoint(sum);      // The final point of this scan
-    }
-    QUADscanSendTrailer(aborted);
+    if(sendFrame) QUADscanSendHeader(numPoints, scan, (scan == (sp->NumScans - 1)));
+    QUADscanStartPulse(sp);      // once per scan, before the first point moves
+    if(sp->AcqEna) aborted = !QUADscanRunScanADC(b, sp, numPoints);
+    else            aborted = !QUADscanRunScanNoADC(b, sp, numPoints);
+    if(sendFrame) QUADscanSendTrailer(aborted);
   }
   if(sp->TrigOutEna) ResetTRGOUT;
-  ADCstop();
+  if(sp->AcqEna) ADCstop();
   // Park back at the scan's start m/z rather than leaving the module sitting at whatever
   // point the scan happened to finish on. Besides being the sane idle state, this also
   // bounds the settling jump the next scan's priming step has to make: without it, that
   // jump is whatever gap is left between this scan's last point and the next scan's
   // StartMZ, which showed up as noise on the first point or two of the following scan.
-  QUADcalApply(b, sp->StartMZ, &cmdMZ, &delta);
-  RFAsetScanPoint(b, cmdMZ, delta);
+  // Applies whether or not the ADC was used - the module still moved through m/z either way.
+  {
+    float cmdMZ,delta;
+    QUADcalApply(b, sp->StartMZ, &cmdMZ, &delta);
+    RFAsetScanPoint(b, cmdMZ, delta);
+  }
   DismissMessage();
   // The scan moved m/z, the setpoint and the pole DACs. Let the loop resynchronise from
   // the module structure rather than leaving the hardware wherever the scan finished.

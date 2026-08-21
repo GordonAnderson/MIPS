@@ -101,6 +101,19 @@ typedef struct
   int   Dwell;                 // Settle time per point, mS
   int   NumScans;              // Scans per QSCAN command
   bool  TrigOutEna;            // Drive TRGOUT during the scan for timing verification
+  char  StartPin[3];           // Output pulsed once at the start of every scan, 'A' thru
+                                // 'P'. "NA" disables it (the default). For an external DAQ
+                                // system that needs a sync edge per spectrum, not per point.
+  bool  AcqEna;                 // Use the MIPS ADC to acquire and stream each point.
+                                // Default TRUE, the original behavior. FALSE steps through
+                                // m/z on the dwell timer only and never touches the ADC, for
+                                // a scan driven entirely by an external DAQ system synced
+                                // off StartPin / TrigOutEna. See FrameOnNoAcq for what, if
+                                // anything, still gets streamed in that case.
+  bool  FrameOnNoAcq;           // Only meaningful when AcqEna is FALSE. TRUE (default)
+                                // still streams the header/trailer per scan, with no point
+                                // payload, so the host retains scan start/end bookkeeping.
+                                // FALSE streams nothing at all during the scan.
 } QUADscanParms;
 
 #define QUADscanMAXPOINTS   2000
@@ -153,6 +166,12 @@ void QUADscanSetNumScans(int Module, int value);
 void QUADscanGetNumScans(int Module);
 void QUADscanSetTrig(char *Module, char *value);
 void QUADscanGetTrig(int Module);
+void QUADscanSetStartPin(char *Module, char *value);
+void QUADscanGetStartPin(int Module);
+void QUADscanSetAcqEna(char *Module, char *value);
+void QUADscanGetAcqEna(int Module);
+void QUADscanSetFrame(char *Module, char *value);
+void QUADscanGetFrame(int Module);
 void QUADscanStatus(int Module);
 void QUADscanGo(int Module);
 
