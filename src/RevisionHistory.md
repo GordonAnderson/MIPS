@@ -1178,6 +1178,33 @@
 //      4.) Added support for new QUAD system with 18bit dacs and internal scanning
 //  1.264, August 17, 2026
 //      1.) Added serial port redirection capability
+//  1.265, August 27, 2026
+//      1.) Fixed a memory corruption bug that hit any system using extended addressing of
+//          model 2 RFdriver modules, that is any system with more than two RFdriver modules.
+//          DIh, the RF gate handler array, was dimensioned [2][2] but RFdriver_init indexes
+//          it by board index, and extended addressing gives board indexes of 2 and 3. Init
+//          of the third module wrote two pointers past the end of the array, landing on
+//          MaxRFVoltage and NumberOfRFChannels. With NumberOfRFChannels holding a heap
+//          pointer the module loop iterated hundreds of millions of times issuing TWI
+//          transactions, which presented as missing RFdriver modules, TWI errors and a
+//          system that could not talk to its modules. This is the same latent bug as in
+//          the Arduino build, where the stray writes happened to land on harmless
+//          variables. DIh is now MAXRF deep.
+//      2.) RFdriver channel indexed items were limited to 4 channels and now cover all 8
+//          that extended addressing allows. RFqueuedValues, used to set drive and level
+//          from the pulse sequence generator, was 4 entries deep, and the RFreportAll
+//          command only reported the first 4 channels.
+//      3.) ProcessRFdrive was missing an else, so a queued value from the pulse sequence
+//          generator set both the voltage setpoint and the drive level. The queued value is
+//          now applied as a setpoint in AUTO mode and as a drive level in MANUAL mode.
+//      4.) ProcessRFdrive now discards requests for channels that are not populated.
+//          BoardFromSelectedChannel returns -1 in that case and the index was used unchecked.
+//      5.) RFcontrol now skips empty board slots and model 2 boards. It is a model 1 only
+//          function but assumed both board slots held model 1 boards. An empty slot gave a
+//          NULL dereference, and a model 2 board in a mixed system had its drive ramped to
+//          MaxDrive because the model 1 readback arrays are never filled for model 2 boards.
+//      6.) Updated the RFdriver.cpp header comments to cover the two module models, mixed
+//          model systems, board index versus board select line, and extended addressing.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

@@ -11,15 +11,56 @@ extern int  encValue;
 //
 // RFdriver
 //
-// This file supports the RF driver board on the MIPS system. Two RF driver boards can be installed
-// in one MIPS system. Each RF driver can drive 2 high Q heads so a single MIPS system can drive
-// 4 high Q heads.
+// This file supports the RF driver board on the MIPS system. Each RF driver drives 2 high Q
+// heads. Up to MAXRF (4) RF driver boards are supported, so a fully loaded system can drive
+// 8 high Q heads.
 //
 // Each drive channel has independent RF frequency and drive level controls. This driver monitors
-// the RF hrad voltage and current and calcualtes total power. Limits can be programmed by the user
-// tyo limit power and also limit drive level.
+// the RF head voltage and current and calculates total power. Limits can be programmed by the
+// user to limit power and also limit drive level.
 //
 // Auto tune and re-tune features are present to help setup and adjustments as system warms up.
+//
+// Two module models are supported and they can be mixed in one system:
+//
+//  Model 1 - The original RF driver. MIPS does all the work: the clock generator is programmed
+//            over TWI, the drive level is set with a MIPS PWM output, and the RF+/RF- and drive
+//            V/I monitors are read through the module's ADC. All the closed loop control, auto
+//            tune, gating and arc detection logic lives in MIPS. Serviced by
+//            RFdriver_loop_model1() and RFcontrol().
+//  Model 2 - A smart module with its own processor. MIPS only exchanges setpoints and readbacks
+//            with it over TWI using the TWI_RF_* command set, and the module runs its own
+//            control loop, auto tune and gating. Detected in RFdriver_init() by a TWItest at
+//            RFdrvCMDadd(EEPROM address) and flagged in RFdriverModel2[]. Serviced by
+//            RFdriver_loop_model2().
+//
+// Board indexing and extended addressing
+//
+// A board index is 0 thru MAXRF-1 and it is NOT the same thing as the MIPS board select line.
+// The board select line is derived from the index with (index & 1), so index 0 and 2 both live
+// on select A and index 1 and 3 both live on select B. Modules sharing a select line are
+// distinguished by their EEPROM/TWI address.
+//
+//  Model 1 - Limited to indexes 0 and 1, one module per select line. RFdriver_init() rejects a
+//            second model 1 module on an already populated select line.
+//  Model 2 - Supports extended addressing. When a second model 2 module is found on a select
+//            line that is already populated, RFdriver_init() bumps the index by 2, giving
+//            indexes 2 and 3. This is how a system gets more than 4 RF channels.
+//
+// Consequences to be aware of when touching this file:
+//
+//  1.) rfddarray[] can be sparse. With two model 2 modules both on select A the populated
+//      indexes are 0 and 2 while 1 and 3 are NULL. Never assume index 1 exists, and never
+//      loop boards 0..1 and dereference RFDDarray[] without a NULL test.
+//  2.) Channel number and board index are not interchangeable. Always map with
+//      BoardFromSelectedChannel(), which skips the NULL entries. It returns -1 when the
+//      channel is not populated, so test the result before using it as an index. Note that it
+//      takes an int8_t, so passing a larger value silently truncates.
+//  3.) Anything indexed by board index must be dimensioned MAXRF, not 2. DIh[], RFstate[] and
+//      RFrb[] are board indexed. RFpVpps[], RFnVpps[] and Powers[] are still [2][2] and are
+//      only safe because model 1 boards can never land above index 1.
+//  4.) Anything indexed by channel must be dimensioned MAXRF*2, not 4. RFqueuedValues[] and
+//      the RFreportAll() loop are channel indexed.
 //
 // The RF heads are driven with a square wave and this RF drive controls the supply voltage to the driving
 // FET(s) in the RF head. This adjusts the maximum RF voltage. The RF driver supports two modes of operation.
@@ -119,7 +160,11 @@ float RFarcDrv = 0;
 float RFarcV = 0;
 
 bool  RFgatingOff = false;
-DIhandler *DIh[2][2];
+// DIh is indexed by board, and with extended addressing (model 2 modules) the board
+// index can be 0 thru MAXRF-1, not just 0/1. This array must be MAXRF deep or
+// RFdriver_init will write past its end and corrupt the globals that follow it.
+DIhandler *DIh[MAXRF][2];
+// Only used by model 1 boards, these always land at board index 0 or 1.
 void (*GateTriggerISRs[2][2])(void) = {RF_A1_ISR, RF_A2_ISR, RF_B1_ISR, RF_B2_ISR};
 float gatedDrive[4] = {0,0,0,0};
 
@@ -382,25 +427,40 @@ void SelectChannel(void)
   if (ActiveDialog == &RFdriverDialog) DialogBoxDisplay(&RFdriverDialog);
 }
 
-// The following two functions support setting the RF drive or level fron the pulse
-// sequence generator. UpdateRFdrive saves the requesed setting and ProcessRFdrive 
+// The following two functions support setting the RF drive or level from the pulse
+// sequence generator. UpdateRFdrive saves the requested setting and ProcessRFdrive
 // applies the requested value.
-float RFqueuedValues[4] = {-1,-1,-1,-1};
+// One queue entry per RF channel in the system, MAXRF boards x 2 channels. This
+// covers the extended addressing case where a system can have 8 RF channels. The
+// initializer list length must match MAXRF*2, a queued value of -1 means "nothing
+// pending" so the array cannot be left zero filled.
+float RFqueuedValues[MAXRF*2] = {-1,-1,-1,-1,-1,-1,-1,-1};
 void UpdateRFdrive(int chan, float value)
 {
-  if((chan >=0) && (chan <= 3)) RFqueuedValues[chan] = value;
+  if((chan >= 0) && (chan < MAXRF*2)) RFqueuedValues[chan] = value;
 }
 void ProcessRFdrive(void)
 {
-  for(int chan=0; chan<4; chan++)
+  for(int chan=0; chan<MAXRF*2; chan++)
   {
      if(RFqueuedValues[chan] < 0) continue;
      int b = BoardFromSelectedChannel(chan);
+     // Channel is queued but not populated in this system, discard the request. Without
+     // this test b is -1 and RFDDarray[b] is a wild pointer.
+     if(b < 0)
+     {
+       RFqueuedValues[chan] = -1;
+       continue;
+     }
+     // The queued value is interpreted using the channel's mode. In AUTO mode it is a RF
+     // output voltage setpoint and the control loop takes it from there. In MANUAL mode it
+     // is a drive level in percent and it is applied directly.
      if(RFDDarray[b]->RFCD[chan & 1].RFmode == RF_AUTO) RFDDarray[b]->RFCD[chan & 1].Setpoint = RFqueuedValues[chan];
+     else
      {
         if(RFdriverModel2[b])
         {
-          // Net yet implemented
+          // Not yet implemented
         }
         else
         {
@@ -513,7 +573,15 @@ void RFdriver_init(int8_t Board, int8_t addr)
 }
 
 // This function checks the power limits and performs control functions.
-// This function is only valid for model 1 drivers.
+// This function is only valid for model 1 drivers. Model 1 boards can only ever land at
+// board index 0 or 1, hence the loop limit of 2, but neither slot is guaranteed to hold a
+// model 1 board:
+//  - The slot can be empty. A single model 1 board can be jumpered to select B, and a model 1
+//    board on select A pushes a model 2 module to index 2, leaving index 1 NULL.
+//  - The slot can hold a model 2 board in a mixed system. RFpVpps[], RFnVpps[] and Powers[]
+//    are only written by RFdriver_loop_model1() and stay 0 for a model 2 board, so running
+//    the control loop on one would ramp its drive to MaxDrive against a measured RF of 0.
+// So test both conditions before touching a slot.
 void RFcontrol(void)
 {
   int board, chan;
@@ -522,6 +590,8 @@ void RFcontrol(void)
   // Check the power and reduce the drive level if power is over its limit
   for (board = 0; board < 2; board++)
   {
+    if(rfddarray[board] == NULL) continue;
+    if(RFdriverModel2[board]) continue;
     for (chan = 0; chan < 2; chan++)
     {
       if (Powers[board][chan] > RFDDarray[board]->RFCD[chan].MaxPower) RFDDarray[board]->RFCD[chan].DriveLevel -= 0.1;
@@ -1513,7 +1583,9 @@ void RFreportAll(void)
 
   if (SerialMute) return;
   SendACKonly;
-  for(i=1;i<=4;i++)
+  // Walk every possible channel, MAXRF boards x 2 channels. IsChannelValid stops
+  // us at NumberOfRFChannels so systems with fewer boards report fewer channels.
+  for(i=1;i<=MAXRF*2;i++)
   {
     if (!IsChannelValid(i,false)) break;
     brd = BoardFromSelectedChannel(i - 1);
