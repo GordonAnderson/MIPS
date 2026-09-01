@@ -2271,8 +2271,31 @@ int ProcessCommand(void)
     lstrptr[lstrindex++] = ch;
     if(lstrindex >= lstrmax) lstrindex = lstrmax - 1;
     if((lstrindex+1) < lstrmax) lstrptr[lstrindex + 1] = 0;  // Keeps the string null terminated as it builds, added 01/11/23
-    else lstrptr[lstrmax - 1] = 0;   
+    else lstrptr[lstrmax - 1] = 0;
     return(0);
+  }
+  // SRADDRESS port-prefix redirection. Checked only in PCcmd, i.e. only when we are about
+  // to start a brand new command, never mid-argument-list. This used to live in ProcessSerial
+  // as a check made once per call, ahead of a "while(ProcessCommand()==0)" drain loop that
+  // does not stop at command boundaries - so whenever more than one complete command was
+  // already queued, only the first one in that batch ever got peeked for the address prefix
+  // and every other queued command bypassed the redirect decision entirely, regardless of its
+  // own leading character. Doing the check here instead ties it directly to the same state
+  // machine that owns command-boundary tracking, so it runs exactly once per command, for
+  // every command, and can never fire while an argument token is expected.
+  if((state == PCcmd) && (redirect != NULL) && (redirectPort != 0) && (PeekCh() == redirectPort))
+  {
+    GetCh();      // consume and discard the address prefix itself, it is not forwarded
+    char c;
+    while(true)
+    {
+      c = GetCh();
+      if(c == 0xFF) return(-1);   // rest of the line has not arrived yet, try again later
+      redirect->write(c);
+      if(c == ';')  break;
+      if(c == '\n') break;
+    }
+    return(0);    // still in PCcmd, ready for whatever command comes next
   }
   Token = GetToken(false);
   if (Token == NULL) return (-1);
