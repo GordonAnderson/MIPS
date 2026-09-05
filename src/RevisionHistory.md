@@ -1205,6 +1205,23 @@
 //          MaxDrive because the model 1 readback arrays are never filled for model 2 boards.
 //      6.) Updated the RFdriver.cpp header comments to cover the two module models, mixed
 //          model systems, board index versus board select line, and extended addressing.
+//  1.266, September 1, 2026
+//      1.) Added external DAQ support to the QUAD scan (QSCAN):
+//          - SQSSTPIN/GQSSTPIN, a brief pulse on a user selected digital output (A thru P,
+//            NA to disable), fired once at the start of every scan.
+//          - SQSADCENA/GQSADCENA, disables the MIPS ADC during a scan entirely so it just
+//            steps through m/z on the dwell timer for an external system to acquire against.
+//          - SQSFRAME/GQSFRAME, when the ADC is disabled, selects whether the header/trailer
+//            framing is still streamed for host bookkeeping (FRAME) or nothing is streamed
+//            at all (NONE).
+//          - The module now parks back at the scan's StartMZ when a scan completes, whether
+//            or not the ADC was used, instead of sitting wherever the scan happened to finish.
+//      2.) Fixed the SRADDRESS port-prefix redirect only being checked against the first
+//          command in a batch when more than one complete command was already queued in the
+//          serial ring buffer; every other queued command silently bypassed the redirect
+//          decision and always ran locally. The check now lives in the command parser's own
+//          state machine, tied to its command-boundary tracking, so it runs once per command
+//          for every command, and can never fire while an argument token is expected.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

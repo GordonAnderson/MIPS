@@ -188,7 +188,7 @@ uint32_t BrightTime = 0;
 #define HVPSinterfacev ""
 #endif
 
-const char Version[] PROGMEM = "Version 1.265" DCBswitchCodev DCBanalogv DCBcurrentv FAIMSFBvf FAIMSvf HOFAIMSvf HVPSv DMSDMSMBv HVPSinterfacev ",Aug 27,2026";
+const char Version[] PROGMEM = "Version 1.266" DCBswitchCodev DCBanalogv DCBcurrentv FAIMSFBvf FAIMSvf HOFAIMSvf HVPSv DMSDMSMBv HVPSinterfacev ",Sept 1,2026";
 
 // ThreadController that will control all threads
 ThreadController control = ThreadController(); 
@@ -1385,22 +1385,8 @@ void ProcessSerial(void)
   // If there is a command in the input ring buffer, process it!
   while (RB_Commands(&RB) > 0) // Process until flag that there is nothing to do
   {
-    if((redirect!=NULL)&&(redirectPort!=0))
-    {
-       if(PeekCh() == redirectPort)
-       {
-         char c = GetCh();
-         while(true)
-         {
-           c = GetCh();
-           if(c==0xFF) break;
-           redirect->write(c);
-           if(c==';')  break;
-           if(c=='\n') break;
-         }
-         continue;
-       }
-    }
+    // SRADDRESS port-prefix redirection is handled inside ProcessCommand itself now, checked
+    // once per command boundary rather than once per call here - see the comment there.
     while (ProcessCommand() == 0); // WDT_Restart(WDT);
   }
   SerialUSB.flush();     // Added 9/2/2017
