@@ -14,3 +14,4 @@ firmware
 
 # Claude Code
 .claude
+.vscode/extensions.json
