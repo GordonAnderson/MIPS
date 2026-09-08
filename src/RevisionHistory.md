@@ -1222,6 +1222,9 @@
 //          decision and always ran locally. The check now lives in the command parser's own
 //          state machine, tied to its command-boundary tracking, so it runs once per command
 //          for every command, and can never fire while an argument token is expected.
+//  1.267, September 1, 2026
+//      1.) Set the TWI lines and 49 (GRDPWR) to outputs and LOW when power is off. This keeps
+//          DC from being injected in to modules.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

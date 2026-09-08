@@ -579,6 +579,15 @@ void Reset_IOpins(void)
 //  pinMode(ADDR2, INPUT);
   pinMode(LDAC, INPUT);
   pinMode(SCL, INPUT);
+  
+  // Force the control line low to prevent any outputs from being active.
+  pinMode(TWI_SCL, OUTPUT);
+  pinMode(TWI_SDA, OUTPUT);
+  pinMode(49, OUTPUT);
+  digitalWrite(TWI_SCL, LOW);
+  digitalWrite(TWI_SDA, LOW);
+  digitalWrite(49, LOW);
+
   pinMode(BRDSEL, INPUT);
   pinMode(SPI_CS, INPUT);
   // Set the PWM outputs inactive, this is 5,6,7,8
