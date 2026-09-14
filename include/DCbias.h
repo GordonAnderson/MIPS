@@ -127,6 +127,10 @@ void SetApplyDCbiasProfile(int num);
 void SetDCbiasProfileFromCurrent(int num);
 void StopProfileToggle(void);
 void SetDCbiasProfileToggle(void);
+void SetDCbiasProfileChanMask(char *mask);
+void GetDCbiasProfileChanMask(void);
+void SetDCbiasProfileChanEnable(char *channel, char *value);
+void GetDCbiasProfileChanEnable(int ch);
 
 void SetDCbiasPena(char *state);
 void SetDCbiasPtrigger(char *src);

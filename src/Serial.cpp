@@ -337,6 +337,10 @@ const Commands  CmdArray[] = 	{
   {"CDCBPRO", CMDfunction, 1, (char *)SetDCbiasProfileFromCurrent},   // Copy the current DC bias values to the select profile
   {"TDCBPRO", CMDfunctionLine, 0, (char *)SetDCbiasProfileToggle},    // Enables toggling between two profiles with user defined dwell time, mS
   {"TDCBSTP", CMDfunction, 0, (char *)StopProfileToggle},             // Stop the profile toggling
+  {"SPROCHMSK", CMDfunctionStr, 1, (char *)SetDCbiasProfileChanMask}, // Set the profile channel mask, value in hex
+  {"GPROCHMSK", CMDfunction, 0, (char *)GetDCbiasProfileChanMask},    // Returns the profile channel mask, in hex
+  {"SPROCHEN", CMDfunctionStr, 2, (char *)SetDCbiasProfileChanEnable},// Enable/disable one channel in the profile mask, TRUE or FALSE
+  {"GPROCHEN", CMDfunction, 1, (char *)GetDCbiasProfileChanEnable},   // Returns TRUE or FALSE for one channel in the profile mask
 // DC bias list functions, supports DMA high speed transfer
   {"DSTATE", CMDfunctionLine, 0, (char *)DefineState},                // Define a state, name,ch,val....
   {"SSTATE", CMDfunctionStr, 1, (char *)SetState},                    // Sets the DCbias channels to the values defined in named state

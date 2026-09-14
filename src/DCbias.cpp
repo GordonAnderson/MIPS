@@ -13,9 +13,19 @@
 //  TDCBPRO,p1,p1,dwell           // Toggle between profile p1 and p2, dwell at each profile
 //                                // for dwell millisec
 //  TDCBSTP                       // Stops the toggling
+// September 2026. Added a system wide profile channel mask. This allows a profile apply
+// (ADCBPRO, TDCBPRO, and the toggle trigger/level ISRs) to be limited to a user selected
+// subset of the DCbias channels rather than always driving every channel. The mask defaults
+// to all channels enabled so default behavior, apply to all channels, is unchanged unless
+// the mask is explicitly set. Note SDCBPRO/GDCBPRO/CDCBPRO still define/report every channel's
+// value, the mask only controls which of those values get written to hardware on apply.
+//  SPROCHMSK,mask                // Set the profile channel mask, value in hex
+//  GPROCHMSK                     // Returns the profile channel mask, in hex
+//  SPROCHEN,chan,val             // Enable/disable one channel in the profile mask, TRUE or FALSE
+//  GPROCHEN,chan                 // Returns TRUE or FALSE for one channel in the profile mask
 // Additional commands
 //  SDCBALL,ch1,ch2,ch3....       // Set all DC bias channels
-//  SDCBOFFENA,chan,val           // Sets the offsetable flag TRUE or FALSE    
+//  SDCBOFFENA,chan,val           // Sets the offsetable flag TRUE or FALSE
 //
 // Add support for up to 4 DCbias modules in one MIPS system, required the following updates:
 //  - Create rev 2 DC bias board templates with new addresses
@@ -82,6 +92,10 @@ bool      DCbiasProfileApplied = false;
 int       Profile1,Profile2,CurrentProfile;
 int       ProfileDwell;
 DIhandler *ProfileTrig=NULL;
+// System wide channel mask applied whenever a profile is applied, one bit per global
+// DCbias channel, set bit = channel is updated on profile apply. Defaults to all channels
+// enabled so the default behavior, apply to every channel, is unchanged.
+uint32_t  DCbiasProfileChanMask = 0xFFFFFFFF;
 
 // Filter time constant is:
 // TC in seconds = 1/(sample rate is samples per sec * filter value) * 2 * pi
@@ -1746,6 +1760,10 @@ void GetDCbiasProfile(int num)
 //
 // This function is assumed to be called with the needed profile buffers allocated,
 // if not it exits without action.
+//
+// The system wide DCbiasProfileChanMask limits which channels are actually written
+// when the profile is applied, one bit per channel, set = update. This defaults to
+// all channels enabled so this does not change default behavior.
 void ApplyDCbiasProfile(int num)
 {
    // If profile pointer is NULL then exit
@@ -1754,6 +1772,8 @@ void ApplyDCbiasProfile(int num)
    num--;
    for(int ch = 0; ch < NumberOfDCChannels; ch++)
    {
+      // Skip this channel if it is not selected in the profile channel mask
+      if((DCbiasProfileChanMask & (1UL << ch)) == 0) continue;
       // Update the DAC
       DCbiasDACupdate(ch, DCbiasValue2Counts(ch, DCbiasProfiles[num][ch]));
       // Update the display
@@ -1908,6 +1928,51 @@ void StopProfileToggle(void)
   TMR_Profiles.stop();
   detachInterrupt(LT);
   SendACK;
+}
+
+// Sets the system wide profile channel mask, in hex. This mask is checked every time a
+// profile is applied, ADCBPRO, TDCBPRO toggling, and the R/L trigger ISRs, and limits the
+// update to the channels with their bit set. Default at power up is all channels enabled,
+// 0xFFFFFFFF.
+void SetDCbiasProfileChanMask(char *mask)
+{
+  DCbiasProfileChanMask = strtoul(mask, NULL, 16);
+  SendACK;
+}
+
+// Returns the current profile channel mask, in hex.
+void GetDCbiasProfileChanMask(void)
+{
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(DCbiasProfileChanMask, HEX);
+}
+
+// Enables or disables a single channel in the profile channel mask. chan is 1 based.
+void SetDCbiasProfileChanEnable(char *channel, char *value)
+{
+  String token;
+  int    ch;
+
+  token = channel;
+  ch = token.toInt() - 1;
+  if((ch < 0) || (ch > 31)) BADARG;
+  token = value;
+  if(token == "TRUE") DCbiasProfileChanMask |= (1UL << ch);
+  else if(token == "FALSE") DCbiasProfileChanMask &= ~(1UL << ch);
+  else BADARG;
+  SendACK;
+}
+
+// Returns TRUE or FALSE for the requested channel's state in the profile channel mask.
+// chan is 1 based.
+void GetDCbiasProfileChanEnable(int ch)
+{
+  if((ch < 1) || (ch > 32)) BADARG;
+  SendACKonly;
+  if(SerialMute) return;
+  if((DCbiasProfileChanMask & (1UL << (ch-1))) != 0) serial->println("TRUE");
+  else serial->println("FALSE");
 }
 
 //

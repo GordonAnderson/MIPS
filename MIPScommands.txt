@@ -244,6 +244,10 @@ DC bias module profile commands
   CDCBPRO           Copy the current DC bias values to the select profile
   TDCBPRO           Enables toggling between two profiles with user defined dwell time, mS
   TDCBSTP           Stop the profile toggling
+  SPROCHMSK         Set the profile channel mask, value in hex
+  GPROCHMSK         Returns the profile channel mask, in hex
+  SPROCHEN          Enable/disable one channel in the profile mask, TRUE or FALSE
+  GPROCHEN          Returns TRUE or FALSE for one channel in the profile mask
 DC bias list functions, supports DMA high speed transfer
   DSTATE            Define a state, name,ch,val....
   SSTATE            Sets the DCbias channels to the values defined in named state

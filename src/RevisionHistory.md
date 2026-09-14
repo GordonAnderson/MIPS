@@ -1225,6 +1225,13 @@
 //  1.267, September 1, 2026
 //      1.) Set the TWI lines and 49 (GRDPWR) to outputs and LOW when power is off. This keeps
 //          DC from being injected in to modules.
+//  1.268, September 14, 2026
+//      1.) Added a system wide DCbias profile channel mask. Voltage profiles (SDCBPRO / ADCBPRO /
+//          TDCBPRO) previously always applied to every DCbias channel in the system; the mask lets
+//          a profile apply be limited to a user selected subset of channels. The mask defaults to
+//          all channels enabled so default behavior is unchanged unless the mask is set. New
+//          commands: SPROCHMSK/GPROCHMSK (set/get the whole mask, hex) and SPROCHEN/GPROCHEN
+//          (enable/disable one channel).
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)
