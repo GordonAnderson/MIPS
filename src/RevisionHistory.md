@@ -1232,6 +1232,17 @@
 //          all channels enabled so default behavior is unchanged unless the mask is set. New
 //          commands: SPROCHMSK/GPROCHMSK (set/get the whole mask, hex) and SPROCHEN/GPROCHEN
 //          (enable/disable one channel).
+//      2.) Fixed a bug that left the display blank/black, with no "power is off" message, when
+//          main power dropped on a system with a DCbiasCtrl module installed, even though the
+//          controller stayed alive and responsive over USB. TLC3578IDW() in DCbiasCtrl.cpp was
+//          the only SPI device driver in the codebase calling SPI.setBitOrder()/setDataMode()/
+//          transfer16() without a channel argument, which silently targets BOARD_SPI_DEFAULT_SS,
+//          the same SPI channel used by the TFT display driver. The display's low level write
+//          code never re-asserts its required SPI_MODE0, it just trusts the mode tft.begin() set,
+//          so once DCbiasCtrl's periodic ADC polling parked that shared channel in SPI_MODE2 every
+//          later screen draw, including the power loss message, went out corrupted. Fixed by
+//          routing DCbiasCtrl's SPI calls through its own SPI_CS channel, matching every other
+//          SPI device driver (DAC, RFamp, FPGA, etc) in the codebase.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

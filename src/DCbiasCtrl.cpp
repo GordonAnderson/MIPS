@@ -191,12 +191,18 @@ int TLC3578IDW(uint8_t spiADD, int cmd)
   SetAddress(spiADD);
   {
     AtomicBlock< Atomic_RestoreState > a_Block;
-    SPI.setBitOrder(MSBFIRST);
-    SPI.setDataMode(SPI_MODE1);
+    // Use the shared SPI_CS channel, like every other SPI device driver in this codebase
+    // (DAC, RFamp, FPGA, etc). The bare, pin-less overloads used here previously default to
+    // BOARD_SPI_DEFAULT_SS, which is the same SPI channel the TFT display driver uses and
+    // never resets on its own, so this was silently leaving the display's SPI channel parked
+    // in SPI_MODE2 and corrupting subsequent screen draws, most visibly the blank/black
+    // screen seen when main power drops and the "power is off" message is drawn.
+    SPI.setBitOrder(SPI_CS, MSBFIRST);
+    SPI.setDataMode(SPI_CS, SPI_MODE1);
     digitalWrite(ADC_CS,LOW);
-    res = SPI.transfer16((uint16_t)(cmd & 0xFFFF));
-    digitalWrite(ADC_CS,HIGH); 
-    SPI.setDataMode(SPI_MODE2);
+    res = SPI.transfer16(SPI_CS, (uint16_t)(cmd & 0xFFFF));
+    digitalWrite(ADC_CS,HIGH);
+    SPI.setDataMode(SPI_CS, SPI_MODE2);
   }
   SetAddress(0);
   return res & 0xFFFC; 

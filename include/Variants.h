@@ -19,8 +19,8 @@
 #define HOFAIMcode      false    // appends h to version
 #define HVPScode        false    // appends v to version
 #define DMSDMSMB        false    // appends d to version
-#define DCBanalog       false    // appends a to version
-#define DCBcurrent      false    // appends c to version
+#define DCBanalog       true    // appends a to version
+#define DCBcurrent      true    // appends c to version
 #define DCBswitchCode   false    // appends s to version
 #define HVPSinterface   false    // appends i to version
 

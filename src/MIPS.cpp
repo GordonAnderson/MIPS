@@ -1099,11 +1099,6 @@ void MIPSsystemLoop(void)
   if (ReadVin() < 10.0)
   {
     tft.disableDisplay(false);
-    // Set all control lines to input, this will keep the systems from sourcing power to
-    // the modules through driven outputs.
-    FilamentShutdown();
-    ClearDOshiftRegs();
-    Reset_IOpins();
     // Display a message on the screen that MIPS power is off.
     tft.fillScreen(ILI9340_BLACK);
     tft.setRotation(1);
@@ -1120,6 +1115,13 @@ void MIPSsystemLoop(void)
     // Dim the display, we could be like this for a long time!
     if (MIPSconfigData.EnetUseTWI) analogWrite(BACKLIGHT, 0);
     else analogWrite(BACKLIGHT, 400);
+    delay(100);
+    // Set all control lines to input, this will keep the systems from sourcing power to
+    // the modules through driven outputs. Moved these commands to affter the diplay
+    // update.
+    FilamentShutdown();
+    ClearDOshiftRegs();
+    Reset_IOpins();
     // Wait for power to appear and then reset the system.
     CmdList = {(Commands *)OffCmdArray, NULL};
     while (ReadVin() < 10.0)

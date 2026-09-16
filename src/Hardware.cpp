@@ -579,6 +579,14 @@ void Reset_IOpins(void)
 //  pinMode(ADDR2, INPUT);
   pinMode(LDAC, INPUT);
   pinMode(SCL, INPUT);
+  // Added this commands to try an address a power loss issue when using
+  // the DCB control module. This did not help. The display blanks but does
+  // not print the default message.
+  pinMode(2,INPUT);
+  pinMode(MOSI,OUTPUT);
+  digitalWrite(MOSI, LOW);
+  pinMode(SCK,OUTPUT);
+  digitalWrite(SCK, LOW);
   
   // Force the control line low to prevent any outputs from being active.
   pinMode(TWI_SCL, OUTPUT);
