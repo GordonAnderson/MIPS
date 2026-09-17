@@ -113,6 +113,7 @@ void  DCbiasReportAllValues(void);
 void  DCbiasDelta(char *Value);
 void  DCbiasOffsetable(char *schan, char *state);
 void  DCbiasUseOneOffset(char *state);
+void  SetDCbiasOffsetExclude(char *board, char *state);
 void  DCbiasOffsetReadback(char *state);
 void  SetDCbiasADCtwiADD(int module, int add);
 void  SetDCbiasDACtwiADD(int module, int add);

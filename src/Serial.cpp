@@ -299,6 +299,7 @@ const Commands  CmdArray[] = 	{
   {"SDCBDELTA", CMDfunctionStr, 1, (char *)DCbiasDelta},              // Set all DC bias channels by a delta value
   {"SDCBCHNS", CMDfunction, 2, (char *)DCbiasSetNumBoardChans},       // Sets the number of channels on a DCbias board. Used for setup only.
   {"SDCBONEOFF", CMDfunctionStr, 1, (char *)DCbiasUseOneOffset},      // TRUE to enable use of one offset
+  {"SDCBOFFEXCL", CMDfunctionStr, 2, (char *)SetDCbiasOffsetExclude}, // Exclude/include board,TRUE|FALSE from offset sharing
   {"DCBOFFRBENA", CMDfunctionStr, 1, (char *)DCbiasOffsetReadback},   // TRUE to enable use of offset readback
   {"SDCBOFFENA", CMDfunctionStr, 2, (char *)DCbiasOffsetable},        // Set the DC bias channels offsetable flag, setup command
   {"SDCBTEST", CMDbool, 1, (char *)&DCbiasTestEnable},                // Set to FALSE to disable readback testing

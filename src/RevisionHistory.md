@@ -1243,6 +1243,25 @@
 //          later screen draw, including the power loss message, went out corrupted. Fixed by
 //          routing DCbiasCtrl's SPI calls through its own SPI_CS channel, matching every other
 //          SPI device driver (DAC, RFamp, FPGA, etc) in the codebase.
+//      3.) Added extra resolution to the DCbias AD5593 offset DAC using a coarse (channel 0,
+//          100 ohm series resistor) + fine (channel 5, 1500 ohm series resistor) channel pair
+//          summed at the offset amplifier, same technique used on the FAIMSrect4.x hardware.
+//          The 15:1 resistor ratio exactly matches the 4 bit (0-15) split used to reclaim the
+//          low bits of the offset channel's 16 bit virtual DAC count that were previously
+//          discarded, so this is a genuine ~16x resolution improvement, not an approximation.
+//          Applied to all four runtime offset DAC writes plus the interactive and serial offset
+//          calibration routines, which now drive both channels in lock step, see WriteOffsetDAC()
+//          and WriteOffsetDACcal() in DCbias.cpp. No new EEPROM fields, channel 5 is hardcoded
+//          and boards without the resistor mod are unaffected.
+//      4.) Fixed a crash risk in the UseOneOffset (offset sharing across boards) polling loop
+//          code, it indexed the 4 entry DCbDarray[] with a loop variable left over from an
+//          unrelated loop a few lines above (typically 8), reading out of bounds and
+//          dereferencing whatever garbage pointer that produced. Also added SDCBOFFEXCL,
+//          board,TRUE|FALSE to exclude (or re-include) a specific board from offset sharing,
+//          there was previously no command able to do this, only a debug memory poke could
+//          write the needed value. Excluding a board also enables sharing for the other boards
+//          in one step. See the September 2026 offset sharing notes above for the full command
+//          set and the offset readback "highest addressed board" behavior.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

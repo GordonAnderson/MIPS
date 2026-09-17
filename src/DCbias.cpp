@@ -27,6 +27,43 @@
 //  SDCBALL,ch1,ch2,ch3....       // Set all DC bias channels
 //  SDCBOFFENA,chan,val           // Sets the offsetable flag TRUE or FALSE
 //
+// September 2026. Offset sharing across boards, UseOneOffset. Each board has its own DCoffset
+// (float VoltageSetpoint plus a DAC channel), normally applied only to that board's own 8
+// channels. UseOneOffset lets one board's offset setpoint be mirrored to other boards, for
+// systems where several boards physically share one offset amplifier module.
+//  - UseOneOffset is a bool field in DCbiasData, but is read two different ways in this file:
+//    as a plain bool (any nonzero value means sharing is enabled, checked via board 0's copy
+//    only, DCbDarray[0]->UseOneOffset) and as an int compared to the literal 2 (this specific
+//    board is excluded from sharing, keeps its own independent offset). Both checks read the
+//    same byte on board 0, so writing 2 there both enables sharing and excludes board 0 in one
+//    step.
+//  SDCBONEOFF,TRUE|FALSE         // Sets board 0's UseOneOffset to plain TRUE(1)/FALSE(0), the
+//                                // global sharing switch. Note this alone cannot exclude any
+//                                // board, including board 0, from sharing.
+//  SDCBOFFEXCL,board,TRUE|FALSE // Sets a board's UseOneOffset to the literal byte value 2
+//                                // (TRUE) or 0 (FALSE), written directly since a plain "= 2"
+//                                // assignment to a bool field converts to 1, not 2. Excluding
+//                                // board 0 this way also enables sharing for the other boards,
+//                                // so SDCBONEOFF is not needed alongside it.
+//  - Once sharing is enabled, setting any non excluded board's offset with SDCBOF propagates
+//    the same value to every other non excluded board, see DCbiasSetFloat(). The polling loop
+//    also re-propagates the currently selected board's offset every cycle to cover offset
+//    changes made from the front panel dialog, see the UseOneOffset block near the top of
+//    DCbias_loop().
+//  - Offset readback: DCBOFFRBENA,TRUE|FALSE (DCbiasOffsetReadback(), board 0's OffsetReadback
+//    field, same one-board-controls-all-boards convention as UseOneOffset) enables using a
+//    single board's offset monitor ADC reading, instead of each board's own setpoint, as the
+//    offset correction applied to every participating board's channel 1 readback. Which board's
+//    ADC is used is NOT separately selectable, it is always "lastModule", computed each polling
+//    loop pass as the highest addressed board that is not excluded (UseOneOffset != 2). There is
+//    no command to choose a different source board. If DCBOFFRBENA is left FALSE (the default)
+//    each board instead uses its own DCoffset.VoltageSetpoint for this correction, which is
+//    accurate as long as sharing keeps the participating boards' setpoints numerically in sync,
+//    and does not depend on which board's ADC hardware is actually wired up. Because of the
+//    highest-addressed-board rule, systems that want to use offset readback with sharing enabled
+//    should wire/use the real offset amplifier and monitor ADC on the highest addressed
+//    participating board, not on the lowest one.
+//
 // Add support for up to 4 DCbias modules in one MIPS system, required the following updates:
 //  - Create rev 2 DC bias board templates with new addresses
 //  - Dynamically allocate data array space
@@ -84,6 +121,11 @@ void RestoreDCbiasSettings(bool NoDisplay);
 void SetPowerSource(void);
 void DCbias_loop(void);
 void AddMainMenuEntry(MenuEntry *me);
+
+// AD5593 channel used as the fine resolution channel for the offset DAC, see WriteOffsetDAC
+#define   DCoffsetFineChan  5
+void WriteOffsetDAC(int8_t addr, int cnts);
+void WriteOffsetDACcal(uint8_t addr, uint8_t chan, uint16_t cnts);
 
 // DC bias profiles
 #define   NumProfiles 10
@@ -448,6 +490,9 @@ void DCbiasOffsetCal(void)
     CC.ADCpointer = &AD5593readADC;
     CC.ADCaddr=DCbDarray[b]->DACadr;
     CC.ADCreadback=&DCbDarray[b]->DCoffset.DCmon;;
+    // Drive the course and fine offset DAC channels in lock step while calibrating, this
+    // keeps DCoffset.DCctrl's m/b fit consistent with how WriteOffsetDAC drives them at runtime
+    CC.DACpointer = &WriteOffsetDACcal;
   }
   // Define this channels name
   if(CalChannel <= 8) sprintf(Name," Offset for channel 1-8");
@@ -622,7 +667,7 @@ void SetOffsetOffset(int brd, float fval)
   float V = DCbDarray[brd]->DCoffset.VoltageSetpoint + DCbDarray[brd]->OffsetOffset;
   if(V > DCbDarray[brd]->MaxVoltage) V = DCbDarray[brd]->MaxVoltage;
   if(V < DCbDarray[brd]->MinVoltage) V = DCbDarray[brd]->MinVoltage;
-  if((DCbDarray[brd]->DACadr & 0xFE) == 0x10) AD5593writeDAC(DCbDarray[brd]->DACadr,DCbDarray[brd]->DCoffset.DCctrl.Chan,Value2Counts(V,&DCbDarray[brd]->DCoffset.DCctrl));
+  if((DCbDarray[brd]->DACadr & 0xFE) == 0x10) WriteOffsetDAC(DCbDarray[brd]->DACadr,Value2Counts(V,&DCbDarray[brd]->DCoffset.DCctrl));
   else AD5625(DCbDarray[brd]->DACadr,DCbDarray[brd]->DCoffset.DCctrl.Chan,Value2Counts(V,&DCbDarray[brd]->DCoffset.DCctrl),3);
   if(b != brd) SelectBoard(b);
   ReleaseTWI();
@@ -658,13 +703,14 @@ void SetChannelOffset(int brd, float fval)
   ReleaseTWI();
 }
 
-// Init the AD5593 (Analog and digital IO chip) for the DCbias module. The following 
+// Init the AD5593 (Analog and digital IO chip) for the DCbias module. The following
 // setup requirements:
-// CH0 = DAC out, offset control
+// CH0 = DAC out, offset control, course, 100 ohm series resistor to the amplifier
 // CH1 = ADC in, offset readback
 // CH2 = ADC in, positive HV
 // CH3 = ADC in, negative HV
 // CH4 = ADC in, 3.3V logic supply
+// CH5 = DAC out, offset control, fine, 1500 ohm series resistor to the amplifier
 // External 2.5V reference with 0 to 2.5V range
 // No pullups
 void DCbiasAD5593init(int8_t addr)
@@ -676,14 +722,45 @@ void DCbiasAD5593init(int8_t addr)
    else AD5593write(addr, 11, 0x0000);     // Set ext reference
    // Set LDAC mode
    AD5593write(addr, 7, 0x0000);
-   // Set DAC outputs channels
-   AD5593write(addr, 5, 0x0001);
-   // Init DAC channel 0 to mid range
+   // Set DAC outputs channels, CH0 offset course, CH5 offset fine
+   AD5593write(addr, 5, 0x0021);
+   // Init DAC channels 0 and 5 to mid range
    AD5593writeDAC(addr, 0, 32767);
+   AD5593writeDAC(addr, DCoffsetFineChan, 32767);
    // Set ADC input channels
    AD5593write(addr, 4, 0x001E);
    // Turn off all pulldowns
-   AD5593write(addr, 6, 0x0000);   
+   AD5593write(addr, 6, 0x0000);
+}
+
+// The DCbias offset DAC is a AD5593 channel driven with extra resolution using a coarse
+// (CH0, 100 ohm series resistor) + fine (CH5, 1500 ohm series resistor) channel pair summed
+// at the offset amplifier's input. Value2Counts() for the offset channel already produces a
+// 16 bit virtual count, 12 bits go to the AD5593's real DAC resolution (AD5593writeDAC shifts
+// right 4 bits internally) and the low 4 bits are normally discarded. Since the fine channel's
+// series resistor is exactly 15x the course channel's, one fine channel LSB contributes exactly
+// 1/15th of a course channel LSB at the summing junction, letting the low 4 bits (0-15) of the
+// virtual count be reclaimed as interpolation between course DAC codes instead of being thrown
+// away. This is the same technique used on the FAIMSrect4.x hardware. If the low 4 bits are
+// already 0 both channels are written the same value, in lock step.
+void WriteOffsetDAC(int8_t addr, int cnts)
+{
+  int cnts_fine = cnts;
+  if((cnts & 0x0F) != 0)
+  {
+    cnts += 0x10;
+    cnts_fine -= (0x0F - (cnts & 0x0F)) << 4;
+  }
+  AD5593writeDAC(addr, 0, cnts);
+  AD5593writeDAC(addr, DCoffsetFineChan, cnts_fine);
+}
+
+// DACpointer callback signature wrapper for WriteOffsetDAC so it can be hooked into
+// ChannelCalibrate() via CC.DACpointer, used by DCbiasOffsetCal() to keep the course and fine
+// offset channels in lock step while interactively calibrating.
+void WriteOffsetDACcal(uint8_t addr, uint8_t chan, uint16_t cnts)
+{
+  WriteOffsetDAC(addr, cnts);
 }
 
 // This function is called at powerup to initiaize the DC bias board(s).
@@ -813,15 +890,21 @@ void DCbias_loop(void)
     *DCbD = dcbd;
   #endif
   memcpy(&tempInt, &DCbDarray[SelectedDCBoard]->UseOneOffset, sizeof(int));
-  if(tempInt != 2)  
+  if(tempInt != 2)
   {
-     if(DCbDarray[0]->UseOneOffset) 
-       if(DCbDarray[i] != 0)
-       {
-         memcpy(&tempInt, &DCbDarray[i]->UseOneOffset, sizeof(int));
-         if(tempInt != 2)
-            DCbDarray[i]->DCoffset.VoltageSetpoint = DCbDarray[SelectedDCBoard]->DCoffset.VoltageSetpoint;    
-       }
+     if(DCbDarray[0]->UseOneOffset)
+       // Propagate the selected board's offset to every other participating board. This used
+       // to index DCbDarray with i left over from the unrelated channel loop above (as large as
+       // NumChannels, typically 8), reading past the end of the 4 entry DCbDarray array and
+       // dereferencing whatever garbage pointer that produced. Loop over the real board range
+       // instead, matching the propagation already done correctly in DCbiasSetFloat().
+       for(int j=0; j<MAXDCbiasMODULES; j++)
+         if(DCbDarray[j] != NULL)
+         {
+           memcpy(&tempInt, &DCbDarray[j]->UseOneOffset, sizeof(int));
+           if(tempInt != 2)
+              DCbDarray[j]->DCoffset.VoltageSetpoint = DCbDarray[SelectedDCBoard]->DCoffset.VoltageSetpoint;
+         }
   }
   MaxDCbiasVoltage = 0;
   Verror = 0;
@@ -848,7 +931,7 @@ void DCbias_loop(void)
           V = DCbDarray[b]->DCoffset.VoltageSetpoint * Mult + DCbDarray[b]->OffsetOffset * Mult;
           if(V > DCbDarray[b]->MaxVoltage) V = DCbDarray[b]->MaxVoltage;
           if(V < DCbDarray[b]->MinVoltage) V = DCbDarray[b]->MinVoltage;
-          if((DCbDarray[b]->DACadr & 0xFE) == 0x10) AD5593writeDAC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(V,&DCbDarray[b]->DCoffset.DCctrl));
+          if((DCbDarray[b]->DACadr & 0xFE) == 0x10) WriteOffsetDAC(DCbDarray[b]->DACadr,Value2Counts(V,&DCbDarray[b]->DCoffset.DCctrl));
           else AD5625(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(V,&DCbDarray[b]->DCoffset.DCctrl),3);
         }
       }
@@ -856,8 +939,8 @@ void DCbias_loop(void)
       {
         // Set to zero if power is off
         DCbiasStates[b]->DCbiasO = 0;
-        if((DCbDarray[b]->DACadr & 0xFE) == 0x10) AD5593writeDAC(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCoffset.DCctrl));
-        else AD5625(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCoffset.DCctrl),3);      
+        if((DCbDarray[b]->DACadr & 0xFE) == 0x10) WriteOffsetDAC(DCbDarray[b]->DACadr,Value2Counts(0,&DCbDarray[b]->DCoffset.DCctrl));
+        else AD5625(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCoffset.DCctrl),3);
       }
       // Update all output channels. SPI interface for speed
       if(DCbiasUpdate) DelayMonitoring();
@@ -1583,7 +1666,31 @@ void  DCbiasUseOneOffset(char *state)
     return;
   }
   SetErrorCode(ERR_BADARG);
-  SendNAK;  
+  SendNAK;
+}
+
+// Excludes (or re-includes) one board from offset sharing. UseOneOffset is checked two ways
+// elsewhere in this file: as a plain bool (any nonzero value enables sharing, this is what
+// DCbiasUseOneOffset()/SDCBONEOFF sets on board 0) and as an int compared to 2 (this board is
+// excluded from the shared offset regardless of the global switch). Since both checks read the
+// same board 0 byte, setting board 0's own flag to 2 turns sharing on and excludes board 0 in
+// one step, no separate SDCBONEOFF call needed. There was previously no command able to write
+// the value 2 anywhere.
+void SetDCbiasOffsetExclude(char *board, char *state)
+{
+  String sboard;
+  int    b;
+
+  sboard = board;
+  b = sboard.toInt();
+  if((b < 0) || (b > 3) || (DCbDarray[b] == NULL)) BADARG;
+  // UseOneOffset is declared bool, a plain "= 2" assignment would go through C++'s int-to-bool
+  // conversion and silently become 1, not 2, defeating the exclude check everywhere else in this
+  // file that compares this field to the literal int 2. Write the raw byte instead.
+  if(strcmp(state,"TRUE") == 0) *(uint8_t *)&DCbDarray[b]->UseOneOffset = 2;
+  else if(strcmp(state,"FALSE") == 0) *(uint8_t *)&DCbDarray[b]->UseOneOffset = 0;
+  else BADARG;
+  SendACK;
 }
 
 void  DCbiasOffsetReadback(char *state)
@@ -2593,6 +2700,9 @@ bool CalDCbiasOffset(int channel)
     CC.ADCpointer = &AD5593readADC;
     CC.ADCaddr=DCbDarray[b]->DACadr;
     CC.ADCreadback=&DCbDarray[b]->DCoffset.DCmon;;
+    // Drive the course and fine offset DAC channels in lock step while calibrating, this
+    // keeps DCoffset.DCctrl's m/b fit consistent with how WriteOffsetDAC drives them at runtime
+    CC.DACpointer = &WriteOffsetDACcal;
   }
   // Define this channels name
   if(channel <= 8) sprintf(Name,"Offset for channel 1-8");

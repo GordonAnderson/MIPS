@@ -207,6 +207,7 @@ DC bias module commands
   SDCBDELTA         Set all DC bias channels by a delta value
   SDCBCHNS          Sets the number of channels on a DCbias board. Used for setup only.
   SDCBONEOFF        TRUE to enable use of one offset
+  SDCBOFFEXCL       Exclude/include board,TRUE|FALSE from offset sharing
   DCBOFFRBENA       TRUE to enable use of offset readback
   SDCBOFFENA        Set the DC bias channels offsetable flag, setup command
   SDCBTEST          Set to FALSE to disable readback testing
