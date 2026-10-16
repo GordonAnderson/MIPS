@@ -697,6 +697,148 @@ void getTWIspeed(int ch)
   else serial->println(Wire1DefaultSpeed);
 }
 
+//
+// TWIreadLine
+//
+// Reads a reply line from a TWI slave and stops the bus transaction as soon as the line terminator
+// is seen, so the transaction takes only as long as the reply. Wire.requestFrom() cannot do this, it
+// must be told the byte count up front and clocks every byte requested (32 bytes is about 3.3mS at
+// 100KHz even if the reply is just "\n"). This function drives the SAM3X TWI hardware directly using
+// the same twi.c calls that Wire.requestFrom() uses, but decides on the fly when to send STOP.
+//
+// Arguments:
+//   twi    - WIRE_INTERFACE (Wire, TWI1) or WIRE1_INTERFACE (Wire1, TWI0). The port must already be
+//            configured as master, i.e. WireX.begin() has been called.
+//   addr   - 7 bit slave address
+//   buf    - receives the reply, always null terminated
+//   maxlen - size of buf. At most min(maxlen-1, TWI_RL_MAXBYTES) reply bytes are stored
+//
+// Returns:
+//   >0  number of bytes stored in buf. A complete reply ends with '\n'. If the count is
+//       min(maxlen-1,TWI_RL_MAXBYTES) with no '\n' the reply was truncated.
+//    0  slave ACKed its address but had nothing queued (first byte was 0xFF). Slave replies never
+//       start with 0xFF; an idle slave pads with 0xFF. Caller should wait a bit and poll again.
+//   -1  address NAK (no device), or a byte timed out (stuck slave / clock stretch). The bus is
+//       released with a STOP before returning.
+//
+// Notes:
+//   - STOP is written after the byte that ends the reply has been read. The hardware sends STOP
+//     at the end of the byte in flight, so one extra byte may be clocked and is discarded. The
+//     drain loop handles zero, one or more extra bytes (if an ISR delayed the STOP write).
+//   - The TWI status register is cleared on read, so all status bits are accumulated in 'sr'.
+//   - This function does not take the TWI lock (AcquireTWI) or select a board; the caller does.
+//   - Not ISR safe, same as the Arduino Wire library.
+//
+// UPDATE AND TEST PLAN
+//   Status: written, NOT yet called. TWI1scmd() (Serial.cpp) and TWIscmd() still use requestFrom(32).
+//
+//   Before using:
+//    1. Confirm the project does not override Wire.cpp / twi.c (build uses -Wl,--allow-multiple-definition).
+//    2. Check no ISR or timer callback calls Wire1 code. Wire (TWI1) ISR use is protected by
+//       AcquireTWI/ReleaseTWI/TWIqueue, Wire1 has no such protection. Files using Wire1: ARB, DCbias,
+//       DCBcurrent, FAIMSfb, DMSDMSMB, Hardware, ESI, HVPSinterface, Table, ethernet, Serial.
+//    3. Baseline: add temporary micros() timing to TWI1scmd (send start, first '\n' received) and
+//       record times for a few commands, including an unused address (expect ~250mS timeout).
+//    4. Add an endTransmission() != 0 check to TWI1scmd, reply "?\n" and return, so a missing
+//       device fails in ~1mS instead of 250mS. Independent of this function.
+//
+//   Bench tests (logic analyzer or scope on SDA1/SCL1, Wire1 = pins 70/71):
+//    a. Slave that replies "\n": expect START, addr+R, ~2-3 bytes, NACK, STOP. Note whether the
+//       hardware clocks an extra byte after the '\n' (it may NAK the '\n' byte itself).
+//    b. Slave that replies a 20 byte string + '\n': same, stop right after the '\n'.
+//    c. Slave not ready (all 0xFF): returns 0 after 2 bytes at most.
+//    d. Address with no device: returns -1, bus idle (SDA/SCL high) afterwards. Verify the bus is
+//       released without needing the STOP that the NAK path waits on; if not, add TWI_Stop().
+//    e. Reply longer than 31 bytes with no '\n': truncated at the cap, STOP sent, bus released.
+//    f. Slave that stretches the clock longer than TWI_RL_BYTE_TIMEOUT_US: returns -1 and bus recovers.
+//    g. 400KHz (STWI) and 100KHz. At 400KHz the STOP write window is ~22uS per byte; check with
+//       interrupts active (ADC DMA, timers) that the extra-byte count stays small.
+//
+//   Integration:
+//    1. TWI1scmd(): replace the requestFrom(32) loop with TWIreadLine(WIRE1_INTERFACE,...) retrying
+//       on 0 (with ~1mS delay) until the existing 250mS limit; send buf to host; -1 -> "?\n".
+//    2. Compare timings against the baseline from step 3.
+//    3. TWIscmd(): same change with WIRE_INTERFACE, keeping SelectBoard/AcquireTWI/ReleaseTWI.
+//    4. Update MIPScommands.txt only if the command behaviour (error replies) changes.
+//
+#define TWI_RL_MAXBYTES        32
+#define TWI_RL_BYTE_TIMEOUT_US 5000
+
+int TWIreadLine(Twi *twi, uint8_t addr, char *buf, int maxlen)
+{
+  uint32_t sr = 0;
+  int      n = 0;
+  int      cap;
+  int      result;
+  bool     stopSent = false;
+  uint8_t  b;
+  uint32_t t0;
+
+  if((buf == NULL) || (maxlen < 2)) return -1;
+  buf[0] = 0;
+  cap = maxlen - 1;
+  if(cap > TWI_RL_MAXBYTES) cap = TWI_RL_MAXBYTES;
+  result = -1;
+
+  TWI_StartRead(twi, addr, 0, 0);
+  t0 = micros();
+  while(true)
+  {
+    sr |= twi->TWI_SR;
+    if(sr & TWI_SR_RXRDY)
+    {
+      b = TWI_ReadByte(twi);
+      sr &= ~TWI_SR_RXRDY;
+      t0 = micros();
+      if(stopSent) continue;          // extra byte clocked before STOP took effect, discard it
+      buf[n++] = (char)b;
+      buf[n] = 0;
+      if((n == 1) && (b == 0xFF))     // Slave has nothing queued
+      {
+        n = 0;
+        buf[0] = 0;
+        result = 0;
+        TWI_Stop(twi);
+        stopSent = true;
+      }
+      else if((b == '\n') || (n >= cap))
+      {
+        result = n;
+        TWI_Stop(twi);
+        stopSent = true;
+      }
+      continue;
+    }
+    if(stopSent)
+    {
+      // Wait for the transfer to complete, extra bytes were discarded above
+      if(sr & TWI_SR_TXCOMP) return result;
+    }
+    else if(sr & TWI_SR_NACK)
+    {
+      // Address NAK, no device. Wait for the hardware to finish and release the bus.
+      t0 = micros();
+      while(!(twi->TWI_SR & TWI_SR_TXCOMP))
+      {
+        if((micros() - t0) > TWI_RL_BYTE_TIMEOUT_US) break;
+      }
+      buf[0] = 0;
+      return -1;
+    }
+    if((micros() - t0) > TWI_RL_BYTE_TIMEOUT_US)
+    {
+      // Timeout, release the bus and report failure
+      if(!stopSent) TWI_Stop(twi);
+      t0 = micros();
+      while(!(twi->TWI_SR & TWI_SR_TXCOMP))
+      {
+        if((micros() - t0) > TWI_RL_BYTE_TIMEOUT_US) break;
+      }
+      return (stopSent) ? result : -1;
+    }
+  }
+}
+
 // The following codes support the GTWI and STWI commands
 //
 // Add generic TWI commands allowing MIPS controller to talk to TWI attached modules or

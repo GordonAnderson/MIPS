@@ -104,6 +104,8 @@ bool TWIread8bitUnsigned(uint8_t add, int board,int cmd, int *value);
 bool TWIreadBlock(uint8_t add, int board,int cmd, void *ptr, int numbytes);
 bool TWIreadBlock(uint8_t add, int board,int ch, int cmd, void *ptr, int numbytes);
 
+int  TWIreadLine(Twi *twi, uint8_t addr, char *buf, int maxlen);
+
 void setTWIspeed(int ch, int speed);
 void getTWIspeed(int ch);
 
