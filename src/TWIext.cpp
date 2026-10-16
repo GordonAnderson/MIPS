@@ -913,8 +913,8 @@ void stwi(char *cmdString, char *value)
     wire = &Wire;
     // Select the board address
     if((buffer[0]&0xF0) == 0x00) SelectBoard(0);
-    if((buffer[0]&0xF0) == 0x10) SelectBoard(1);
-    else BADARG; 
+    else if((buffer[0]&0xF0) == 0x10) SelectBoard(1);
+    else BADARG;
   }
   else if((buffer[0]&0x0F) == 1) wire = &Wire1;
   else BADARG;
@@ -980,7 +980,7 @@ void stwi(char *cmdString, char *value)
 void gtwi(char *cmdString)
 {
   int byteCount = (strlen(cmdString) + 1) / 2;
-  uint8_t buffer[byteCount],bptr[4];
+  uint8_t buffer[byteCount],bptr[16];   // The read count is a 4 bit field, up to 15 bytes
   TwoWire *wire;
 
   hexStringToBytes(cmdString, buffer);
@@ -990,8 +990,8 @@ void gtwi(char *cmdString)
     wire = &Wire;
     // Select the board address
     if((buffer[0]&0xF0) == 0x00) SelectBoard(0);
-    if((buffer[0]&0xF0) == 0x10) SelectBoard(1);
-    else BADARG; 
+    else if((buffer[0]&0xF0) == 0x10) SelectBoard(1);
+    else BADARG;
   }
   else if((buffer[0]&0x0F) == 1) wire = &Wire1;
   else BADARG;
@@ -1010,7 +1010,8 @@ void gtwi(char *cmdString)
   // Read from device
   wire->requestFrom(buffer[1], (uint8_t)num);
   int i = 0;
-  while (wire->available()) bptr[i++] = wire->read();
+  memset(bptr, 0, sizeof(bptr));
+  while (wire->available() && (i < (int)sizeof(bptr))) bptr[i++] = wire->read();
   // Use the type value to print the data read from the device
   if((buffer[byteCount-1] & 0x0F) == 1)  // bool
   {
