@@ -1311,6 +1311,8 @@ void TWIscmd(void)
 // for a response for up to 250mS. After a \n is received this function will exit. The
 // the received characters are sent to the selected host port.
 // On call it is assumed the full command line is in the input buffer.
+#define TWI1CMD_POLL_US 200   // Pause between polls while the slave has no reply queued yet
+
 void TWI1scmd(void)
 {
   char        *Token;
@@ -1351,19 +1353,32 @@ void TWI1scmd(void)
       Wire1.write(ch);
       if(ch == '\n') break;
     }
-    Wire1.endTransmission();
-    // Read reply and send to host
+    // No ACK from the device, report a NAK now rather than waiting for a reply that will not come
+    if(Wire1.endTransmission() != 0)
+    {
+      serial->println("?");
+      return;
+    }
+    // Read reply and send to host. TWIreadLine stops the bus transaction at the \n so each poll
+    // only lasts as long as the reply. It returns 0 if the slave has not queued its reply yet.
     unsigned long tm = millis();
+    char          rbuf[34];
     while(true)
     {
-      int j = Wire1.requestFrom((int)addr, 32);
+      int j = TWIreadLine(WIRE1_INTERFACE, addr, rbuf, sizeof(rbuf));
+      if(j < 0)
+      {
+        serial->println("?");
+        return;
+      }
       for(int i=0;i<j;i++)
       {
-        ch = Wire1.read();
+        ch = rbuf[i];
         if(ch != 0xFF) serial->write(ch);
         if(ch == '\n') return;
       }
       if((tm+250) < millis()) break;
+      if(j == 0) delayMicroseconds(TWI1CMD_POLL_US);
     }
   }
 }
