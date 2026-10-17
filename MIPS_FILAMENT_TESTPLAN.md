@@ -304,8 +304,9 @@ Only on a Rev 4 filament module. This procedure energizes the filament supply an
       "100 pass" stage takes about 10 s. The system does not watchdog reset.
 - [ ] **9.4.5 Complete the procedure** through the emission current calibration. "Filament calibration
       finished!" appears.
-- [ ] **9.4.6 Settings are not left in the calibration state.** `GFLI,1`, `GFLSV,1` and the Mode match 9.4.3, not
-      0 A, 3.0 V and IVctrl. The filament is **off** afterwards.
+- [ ] **9.4.6 Settings are not left in the calibration state.** `GFLI,1` and `GFLSV,1` match 9.4.3, not 0 A and
+      3.0 V. The Mode is **IVctrl** afterwards (the production mode, set deliberately at the end whatever it was
+      before) and page 2 shows `IVctrl`. The filament is **off** afterwards.
 - [ ] **9.4.7 Persisted.** Power cycle. The restored `GFLI`, `GFLSV`, mode and the new calibration (reported
       voltages/currents agree with a meter) are what was saved.
 - [ ] **9.4.8 Known leftover.** DC bias channel 8 is left at 0 V by the procedure (see the handoff). Note

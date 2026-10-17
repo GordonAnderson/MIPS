@@ -1566,7 +1566,6 @@ static void FilamentCalPasses(int passes)
 void CalibrateFilament(void)
 {
   int   b;
-  int   origMode;
   float origI,origV;
 
   if(FDarray[0].Rev !=4)
@@ -1585,7 +1584,6 @@ void CalibrateFilament(void)
   serial->println("Configuring system...");
   // The procedure changes the operating parameters. Remember them so the user's settings, and not the
   // transient calibration values, are what get saved at the end.
-  origMode = FDarray[0].FCD[0].Mode;
   origI    = FDarray[0].FCD[0].CurrentSetpoint;
   origV    = FDarray[0].FCD[0].FilamentVoltage;
   FDarray[0].FCD[0].Mode = FmodeI;
@@ -1633,8 +1631,10 @@ void CalibrateFilament(void)
   FDarray[0].Ecurrent.b = (float)ZeroCounts;
   AD5668(DCbDarray[b]->DACspi,DCbDarray[b]->DCCD[7].DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCCD[7].DCctrl),3);
   // Put the operating parameters back before saving, so the calibration values are not saved as the
-  // user's settings, and refresh the dialog copy and the mode text from them.
-  FDarray[0].FCD[0].Mode           = origMode;
+  // user's settings, and refresh the dialog copy and the mode text from them. IV mode is the production
+  // mode for this module and the intended end point of the procedure, so the mode is set to it rather than
+  // restored to whatever it was before.
+  FDarray[0].FCD[0].Mode           = FmodeIV;
   FDarray[0].FCD[0].CurrentSetpoint = origI;
   FDarray[0].FCD[0].FilamentVoltage = origV;
   SelectFilamentChannel();

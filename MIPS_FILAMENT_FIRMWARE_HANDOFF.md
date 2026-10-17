@@ -150,11 +150,11 @@ All in `src/Filament.cpp`. Build tested only.
    per pass instead of once per channel, so a two channel board responds about half as fast as before.
 4. **`CalibrateFilament` (finding 11).** Checks for a DC bias module before turning anything on and uses the
    board it found; the 100-pass waits go through `FilamentCalPasses()`, which calls `Filament_loop()` every
-   100 mS with a watchdog restart; the operating mode, current setpoint and voltage are remembered and
+   100 mS with a watchdog restart; the current setpoint and voltage are remembered and
    restored (then `SelectFilamentChannel()` refreshes the dialog copy and mode text) before
-   `SaveFilamentSettings()`; the filament is left off. **The old code forced `FmodeIV` at the end.** That may
-   have been deliberate (the e-msion production mode). The new code restores whatever mode the unit had; set
-   `FmodeIV` explicitly if IV is the intended result.
+   `SaveFilamentSettings()`; the filament is left off. The operating mode is set to `FmodeIV` at the end, not
+   restored: IV is the production mode for this module and the intended end point of the procedure (confirmed
+   by Gordon, October 17, 2026).
 
 ---
 
@@ -196,7 +196,6 @@ ever needs to grow past 256 bytes, check `WriteEEPROM`'s 16 byte page behaviour 
 | **Bench test of everything in section 3** | The test plan. Highest priority; none of it has run on hardware. |
 | `iSense` belongs to board 0 | The bias current block and `GFLSRES`/`SFLSRES` use `FDarray[0].iSense`. With the only filament board in slot 1 the sense resistor cannot be set. |
 | `CalibrateFilament` leaves DC bias channel 8 at 0 | The emission current step sets `DCbDarray[b]->DCCD[7].VoltageSetpoint = 0` and writes the DAC, then never restores the user's bias setpoint. Not changed because the DCbias module may not rewrite the DAC from the variable unless it changes. |
-| `CalibrateFilament` mode at the end | See section 3a item 4: the old code forced `FmodeIV`, the new code restores the original mode. Confirm which is wanted. |
 | Serial calibration helpers | `CalFilSupplyV`, `CalFilV`, `CalFilI` use `SelectBoard(0)` while the `FD` macro follows the selected board. Fine for a single Rev 4 board in slot 0. |
 | Turn-off is ramp limited | Disable and the serial watchdog timeout both ramp down at the configured rate. For a safety shutdown consider forcing power off when the watchdog fires, or ramping faster for a disable. Not changed. |
 | No guard for -1 | `Channel2Index` / `BoardFromSelectedFilamentChannel` can return -1 and callers index arrays with it. No reachable path found today because `NumberOfFilamentChannels` limits the channel, but a second `Filament_init` for the same board would double it. |
