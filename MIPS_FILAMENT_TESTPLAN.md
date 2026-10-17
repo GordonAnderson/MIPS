@@ -1,7 +1,11 @@
 # MIPS filament module — lab test plan
 
-Bench plan for the filament fixes in commit `5dc8f71` ("Filament: fix ramp-rate freeze, shutdown,
-startup glitch, Rev 2 sync and EEPROM restore"). Written October 17, 2026. Background and the reasons
+Bench plan for the filament fixes in two sets of commits. Written October 17, 2026.
+
+- **First set, Parts 1–8:** `5dc8f71` ("Filament: fix ramp-rate freeze, shutdown, startup glitch, Rev 2 sync
+  and EEPROM restore").
+- **Second set, Part 9:** the commit titled "Filament: guard bias current, fix reporting channel, emission
+  display and CalibrateFilament" (find it with `git log --oneline -- src/Filament.cpp`). Background and the reasons
 behind each change are in [`MIPS_FILAMENT_FIRMWARE_HANDOFF.md`](MIPS_FILAMENT_FIRMWARE_HANDOFF.md).
 
 **Status:** builds under PlatformIO, **not yet run on hardware.** Everything below is unverified.
@@ -24,7 +28,8 @@ Run in this order. Parts 1–3 are the safety items and should pass before anyth
 | 6 | 5 | Cycling status command | Any | Low risk |
 | 7 | 6 | Rev 2+ parameter sync | Rev 2 or 3 board | Revert `FilamentSyncChannels` calls |
 | 8 | 7 | EEPROM restore size handling | Any, uses `WEEPROM` | Revert `RestorFilamentSettings` |
-| 9 | 8 | Regression of normal operation | Any | Find which part above broke it |
+| 9 | 9 | Second set: bias guard, reporting, emission display, `CALFIL` | Rev 1, 2+, 4; DCbias module for 9.1 and 9.4 | Revert the item, they are independent |
+| 10 | 8 | Regression of normal operation (run last) | Any | Find which part above broke it |
 
 Revision matrix. Only some tests apply to each module revision; mark the ones you have.
 
@@ -234,6 +239,80 @@ Anything not touched should behave as before. Spot check on each revision you ha
 
 ---
 
+## Part 9 — Second set of fixes
+
+Four independent changes. Each can be tested and reverted on its own.
+
+### 9.1 Bias current guard (DCbias channel 8 current sense)
+
+The bug: with a non-zero sense resistor and no DC bias module the loop dereferenced a NULL pointer.
+
+- [ ] **9.1.1 No DC bias module.** On a system with a filament board and **no** DC bias module, `SFLSRES,10000`
+      then enable the filament and leave it running for a minute. No reset, no hang. `GFLECUR` returns a
+      number (0 or stale), not an error. `SFLSRES,0` afterwards.
+- [ ] **9.1.2 With a DC bias module** (Rev 1 or 2 with the sense resistor wired as designed). `SFLSRES,<value>`
+      and compare the Bias I reading and `GFLECUR` with what you saw before this change. Same value, same
+      response when you change the DC bias channel 8 setpoint.
+- [ ] **9.1.3 Power off.** With the sense resistor set, turn main power off and on. No lock-up in the
+      filament loop while the DC bias module is unpowered.
+
+### 9.2 Reporting threads (`RFLPARMS`)
+
+The bug: `FIL1`/`FIL2` always read structure index 0/1. On a Rev 2+ board the live structure follows the
+current direction, so with REV selected they reported the idle channel (zeros).
+
+- [ ] **9.2.1 Rev 1.** `RFLPARMS,1,1` (every second). Lines look like `FIL1,<current>,<voltage>,<power>`
+      and match `GFLAI,1`, `GFLV,1`, `GFLPWR,1`. Repeat for channels 2, 3, 4 on the boards present. Stop with
+      `RFLPARMS,<ch>,0`.
+- [ ] **9.2.2 Rev 2 or 3, FWD.** Enable at a small current. `RFLPARMS,1,1` matches `GFLAI,1` / `GFLV,1` /
+      `GFLPWR,1`.
+- [ ] **9.2.3 Rev 2 or 3, REV.** Disable, `SFLDIR,1,REV`, enable. The report is **non zero** and matches the
+      `G...` commands. Before the fix it printed zeros in this direction.
+- [ ] **9.2.4 Direction change while reporting.** With reporting running, disable, switch direction, enable.
+      The reported values follow the live channel.
+- [ ] **9.2.5 No filament board.** A channel number above the installed count is refused by the command
+      (unchanged).
+
+### 9.3 Emission current display (Rev 3 and Rev 4)
+
+The bug: the one-per-board emission ADC reading was filtered into the single displayed value once per
+channel for every channel on every board, so it blended boards and doubled the filter on a two channel
+board.
+
+- [ ] **9.3.1 One board.** With the filament running and a known emission current, "Bias I, uA" and `GFLECUR`
+      agree with an external meter as well as before the change.
+- [ ] **9.3.2 Response time.** Step the emission current. The reading settles in about 2 s per time
+      constant (filter 0.05 per 100 mS pass), where a two channel board used to settle in about 1 s. This is
+      expected; note the observed value.
+- [ ] **9.3.3 Two boards** (if you have them). Select channel 1, then channel 2: the display shows each
+      board's own emission current, not a blend.
+- [ ] **9.3.4 Rev 1 / Rev 2 with a sense resistor** (the DC bias path) is unchanged. Rev 4 with `iSense` = 0
+      shows only the emission reading.
+
+### 9.4 `CALFIL` (Rev 4 calibration procedure)
+
+Only on a Rev 4 filament module. This procedure energizes the filament supply and drives DC bias channel 8;
+**use a dummy load** and read the prompts.
+
+- [ ] **9.4.1 Refuses without a DC bias module.** On a Rev 4 system with no DC bias module, `CALFIL` prints
+      "Can't proceed, no DC bias module..." **immediately**, before any output is turned on. The filament stays
+      off, nothing was changed.
+- [ ] **9.4.2 Wrong revision.** On a Rev 1/2/3 board `CALFIL` still prints "Can't proceed, wrong hardware rev!".
+- [ ] **9.4.3 Record the operating settings first** (`GFLI,1`, `GFLSV,1`, `GFLRT,1` and the Mode on page 2).
+- [ ] **9.4.4 Real time ramps.** Run `CALFIL`. The supply voltage now rises in 0.1 V steps over about 3 s
+      (scope or DMM on the filament supply), where it used to jump to the value almost instantly. Each
+      "100 pass" stage takes about 10 s. The system does not watchdog reset.
+- [ ] **9.4.5 Complete the procedure** through the emission current calibration. "Filament calibration
+      finished!" appears.
+- [ ] **9.4.6 Settings are not left in the calibration state.** `GFLI,1`, `GFLSV,1` and the Mode match 9.4.3, not
+      0 A, 3.0 V and IVctrl. The filament is **off** afterwards.
+- [ ] **9.4.7 Persisted.** Power cycle. The restored `GFLI`, `GFLSV`, mode and the new calibration (reported
+      voltages/currents agree with a meter) are what was saved.
+- [ ] **9.4.8 Known leftover.** DC bias channel 8 is left at 0 V by the procedure (see the handoff). Note
+      whether you need to set it again afterwards.
+
+---
+
 ## Sign-off
 
 | Part | Rev tested | Result | Date | Notes |
@@ -246,6 +325,10 @@ Anything not touched should behave as before. Spot check on each revision you ha
 | 5 Cycling status | | | | |
 | 6 Rev 2+ sync | | | | |
 | 7 EEPROM restore | | | | EEPROM put back? |
+| 9.1 Bias current guard | | | | |
+| 9.2 Reporting threads | | | | |
+| 9.3 Emission display | | | | |
+| 9.4 `CALFIL` | | | | |
 | 8 Regression | | | | |
 
 Record anything unexpected in the handoff's open items table with the commit from `git log -1`.

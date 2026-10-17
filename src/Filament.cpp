@@ -155,6 +155,7 @@ float Fvoltages[2][2];
 float FcurrentsUF[2][2];    // Unfiltered filament current, used for control loop
 float Fcurrents[2][2];
 float Fpowers[2][2];
+float EmissionI[2];         // Filtered emission current per board, Rev 3 and 4. The ADC channel is per board
 // These are the actively displayed values
 float FsupplyV;
 float Fvoltage;
@@ -832,21 +833,28 @@ void Filament_loop(void)
   // This will not work with rev 4 and the sense resistance should be zero for rev 4
   if((FDarray[0].iSense != 0) && IsPowerON())
   {
+    // Channel 8 of the DC bias system carries the filament bias. Use the first DC bias board that is
+    // present. With none installed there is nothing to read; a stored sense resistor value (or one
+    // restored from an old EEPROM image) must not take a NULL pointer dereference in this loop.
     if(DCbDarray[0] != NULL) b = 0;
-    else b = 1;
-    SelectBoard(b);
-    // Read and average the ADC value for the current monitor
-    int SenseADC =  AD7998(DCbDarray[b]->ADCadr, 7, 50);
-    float BiasV = Counts2Value(SenseADC,&DCbDarray[b]->DCCD[7].DCmon) + DCbDarray[b]->DCoffset.VoltageSetpoint;
-    if(DCbDarray[b]->DCCD[7].VoltageSetpoint != LastVoltage)
+    else if(DCbDarray[1] != NULL) b = 1;
+    else b = -1;
+    if(b >= 0)
     {
-      LastVoltage = DCbDarray[b]->DCCD[7].VoltageSetpoint;
-      BiasCurrent = ((DCbDarray[b]->DCCD[7].VoltageSetpoint - BiasV) / float(FDarray[0].iSense)) * 1000000.0;
-    }
-    else
-    {
-      float BCfilter = 0.05;
-      BiasCurrent = BCfilter * (((DCbDarray[b]->DCCD[7].VoltageSetpoint - BiasV) / float(FDarray[0].iSense)) * 1000000.0) + (1-BCfilter) * BiasCurrent;
+      SelectBoard(b);
+      // Read and average the ADC value for the current monitor
+      int SenseADC =  AD7998(DCbDarray[b]->ADCadr, 7, 50);
+      float BiasV = Counts2Value(SenseADC,&DCbDarray[b]->DCCD[7].DCmon) + DCbDarray[b]->DCoffset.VoltageSetpoint;
+      if(DCbDarray[b]->DCCD[7].VoltageSetpoint != LastVoltage)
+      {
+        LastVoltage = DCbDarray[b]->DCCD[7].VoltageSetpoint;
+        BiasCurrent = ((DCbDarray[b]->DCCD[7].VoltageSetpoint - BiasV) / float(FDarray[0].iSense)) * 1000000.0;
+      }
+      else
+      {
+        float BCfilter = 0.05;
+        BiasCurrent = BCfilter * (((DCbDarray[b]->DCCD[7].VoltageSetpoint - BiasV) / float(FDarray[0].iSense)) * 1000000.0) + (1-BCfilter) * BiasCurrent;
+      }
     }
   }
   // Loop through all the filament channels and output all the control parmaeters and update
@@ -917,12 +925,15 @@ void Filament_loop(void)
         // Read and filter all the readback and monitor values
         if (adcStatus == 0)
         {
-          // If this is rev 3 or 4 then read the emission current per channel
-          if((FDarray[b].Rev == 3) || (FDarray[b].Rev == 4))
+          // If this is rev 3 or 4 then read the emission current. It is one ADC channel per board, so filter
+          // it once per board per pass (c == 0), into that board's own value. It used to be filtered into
+          // the single displayed BiasCurrent once per channel, which blended every channel and board and
+          // applied the filter twice per pass on a two channel board.
+          if(((FDarray[b].Rev == 3) || (FDarray[b].Rev == 4)) && (c == 0))
           {
              float BCfilter = 0.05;
              float Ei = Counts2Value(ADCvals[FDarray[b].Ecurrent.Chan], &FDarray[b].Ecurrent);
-             BiasCurrent = BCfilter * Ei + (1-BCfilter) * BiasCurrent;    
+             EmissionI[b] = BCfilter * Ei + (1-BCfilter) * EmissionI[b];
           }
           // Filament supply voltage
           FsupplyVsUF[b][c] = Counts2Value(ADCvals[FDarray[b].FCD[c].DCfsuplyMon.Chan], &FDarray[b].FCD[c].DCfsuplyMon);
@@ -947,6 +958,9 @@ void Filament_loop(void)
   Fvoltage = Fvoltages[SelectedFilamentBoard][Channel2Index(SelectedFilamentChan)];
   Fcurrent = Fcurrents[SelectedFilamentBoard][Channel2Index(SelectedFilamentChan)];
   Fpower = Fpowers[SelectedFilamentBoard][Channel2Index(SelectedFilamentChan)];
+  // Rev 3 and 4 display the emission current of the board that is selected
+  if((SelectedFilamentBoard >= 0) && ((FDarray[SelectedFilamentBoard].Rev == 3) || (FDarray[SelectedFilamentBoard].Rev == 4)))
+    BiasCurrent = EmissionI[SelectedFilamentBoard];
   // Update the display if needed....
   if (ActiveDialog->Entry == FilamentEntriesPage1) RefreshAllDialogEntries(ActiveDialog);
   if (ActiveDialog->Entry == FilamentCycleEntries) RefreshAllDialogEntries(ActiveDialog);
@@ -1368,54 +1382,29 @@ void SetFilamentStatus(char *chan, char *Status)
 
 // Set filament reporting function. This command will start a task running at the rate defined.
 // If the rate is set to 0 the reporting is stopped.
-void Filament_1_Report(void)
+// Reports one channel as "FILn,current,voltage,power". chan is the 0 based channel. The board and the
+// index into the per channel arrays come from the same functions the rest of the module uses, so a Rev 2
+// or later board reports the live structure, which depends on the current direction (Channel2Index),
+// and not a fixed index.
+static void FilamentReport(int chan)
 {
-  int b;
+  int b = BoardFromSelectedFilamentChannel(chan);
+  int c = Channel2Index(chan);
 
-  b=BoardFromSelectedFilamentChannel(0);
-  serial->print("FIL1,");
-  serial->print(Fcurrents[b][0]);
+  if((b < 0) || (c < 0)) return;
+  serial->print("FIL");
+  serial->print(chan + 1);
   serial->print(",");
-  serial->print(Fvoltages[b][0]);
+  serial->print(Fcurrents[b][c]);
   serial->print(",");
-  serial->println(Fpowers[b][0]);
+  serial->print(Fvoltages[b][c]);
+  serial->print(",");
+  serial->println(Fpowers[b][c]);
 }
-void Filament_2_Report(void)
-{
-  int b;
-
-  b=BoardFromSelectedFilamentChannel(1);
-  serial->print("FIL2,");
-  serial->print(Fcurrents[b][1]);
-  serial->print(",");
-  serial->print(Fvoltages[b][1]);
-  serial->print(",");
-  serial->println(Fpowers[b][1]);
-}
-void Filament_3_Report(void)
-{
-  int b;
-
-  b=BoardFromSelectedFilamentChannel(2);
-  serial->print("FIL3,");
-  serial->print(Fcurrents[b][0]);
-  serial->print(",");
-  serial->print(Fvoltages[b][0]);
-  serial->print(",");
-  serial->println(Fpowers[b][0]);
-}
-void Filament_4_Report(void)
-{
-  int b;
-
-  b=BoardFromSelectedFilamentChannel(3);
-  serial->print("FIL4,");
-  serial->print(Fcurrents[b][1]);
-  serial->print(",");
-  serial->print(Fvoltages[b][1]);
-  serial->print(",");
-  serial->println(Fpowers[b][1]);
-}
+void Filament_1_Report(void) { FilamentReport(0); }
+void Filament_2_Report(void) { FilamentReport(1); }
+void Filament_3_Report(void) { FilamentReport(2); }
+void Filament_4_Report(void) { FilamentReport(3); }
 
 void SetFilamentReporting(int channel, int period)
 {
@@ -1561,21 +1550,50 @@ void CalFilI(float p1, float p2)
   FD.FCD[Channel2Index(0)] = FCD;
 }
 
+// Run the filament loop the given number of passes, 100 mS apart. Filament_loop assumes it is called 10
+// times a second (the ramp step is RampRate / 10 per pass), so calling it back to back made the ramps
+// complete in no time at all, stepping the supply voltage instantly.
+static void FilamentCalPasses(int passes)
+{
+  for(int i=0;i<passes;i++)
+  {
+    Filament_loop();
+    WDT_Restart(WDT);
+    delay(100);
+  }
+}
+
 void CalibrateFilament(void)
 {
+  int   b;
+  int   origMode;
+  float origI,origV;
+
   if(FDarray[0].Rev !=4)
   {
     serial->println("Can't proceed, wrong hardware rev!");
     return;
   }
+  // The emission current calibration drives DC bias channel 8. Check it is there now, before anything
+  // is turned on, rather than dereferencing a NULL pointer at the end of the procedure.
+  if(((b = DCbiasCH2Brd(7)) < 0) || (DCbDarray[b] == NULL))
+  {
+    serial->println("Can't proceed, no DC bias module for the emission current calibration!");
+    return;
+  }
   serial->println("Filament module calibration procedure.");
   serial->println("Configuring system...");
+  // The procedure changes the operating parameters. Remember them so the user's settings, and not the
+  // transient calibration values, are what get saved at the end.
+  origMode = FDarray[0].FCD[0].Mode;
+  origI    = FDarray[0].FCD[0].CurrentSetpoint;
+  origV    = FDarray[0].FCD[0].FilamentVoltage;
   FDarray[0].FCD[0].Mode = FmodeI;
   Filament_loop();
   FDarray[0].FCD[0].FilamentPwr = true;
   FDarray[0].FCD[0].CurrentSetpoint = 0.0;
   FDarray[0].FCD[0].FilamentVoltage = 0.0;
-  for(int i=0;i<100;i++) Filament_loop();
+  FilamentCalPasses(100);
   // Calibrate filament voltage
   serial->println("Measure voltage from TP_FIL_GND to TP_FIL-");
   CalFilV();
@@ -1583,17 +1601,15 @@ void CalibrateFilament(void)
   serial->println("Measure voltage from TP_FIL_GND to TP_FIL+");
   CalFilSupplyV();
   FDarray[0].FCD[0].FilamentVoltage = 3.0;
-  for(int i=0;i<100;i++) Filament_loop();
+  FilamentCalPasses(100);
   // Calibrate filament current
   serial->println("Measure filament current, use 10A range");
   CalFilI(.1,5);
   CalFilI(.05,5);
   CalFilI(.05,5);
-  // Reset all the filament channel parameters.
-  FDarray[0].FCD[0].Mode = FmodeIV;
-  Filament_loop();
+  // Turn the filament off and let it ramp down. It is left off even if it was on before the procedure.
   FDarray[0].FCD[0].FilamentPwr = false;
-  for(int i=0;i<100;i++) Filament_loop();
+  FilamentCalPasses(100);
   // calibrate the emision current
   // Set the filament bias channel to 0 volts
   // then read the emision ADC channel, this is 0 uA
@@ -1601,8 +1617,7 @@ void CalibrateFilament(void)
   serial->println("Install 100k 0.1% resistor from filament out to ground.");
   UserInput("Press enter when ready...");
   serial->println("\n");
-  int b = DCbiasCH2Brd(7);
-  DCbDarray[DCbiasCH2Brd(7)]->DCCD[7].VoltageSetpoint = 0;
+  DCbDarray[b]->DCCD[7].VoltageSetpoint = 0;
   AD5668(DCbDarray[b]->DACspi,DCbDarray[b]->DCCD[7].DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCCD[7].DCctrl),3);
   delay(250);
   int ZeroCounts = AD5593readADC(FDarray[0].ADCadr, FDarray[0].Ecurrent.Chan,100);
@@ -1617,6 +1632,12 @@ void CalibrateFilament(void)
   FDarray[0].Ecurrent.m = ((float)FSCounts - (float)ZeroCounts) / 100;
   FDarray[0].Ecurrent.b = (float)ZeroCounts;
   AD5668(DCbDarray[b]->DACspi,DCbDarray[b]->DCCD[7].DCctrl.Chan,Value2Counts(0,&DCbDarray[b]->DCCD[7].DCctrl),3);
+  // Put the operating parameters back before saving, so the calibration values are not saved as the
+  // user's settings, and refresh the dialog copy and the mode text from them.
+  FDarray[0].FCD[0].Mode           = origMode;
+  FDarray[0].FCD[0].CurrentSetpoint = origI;
+  FDarray[0].FCD[0].FilamentVoltage = origV;
+  SelectFilamentChannel();
   // Finished
   SaveFilamentSettings();
   serial->println("Filament calibration finished!");

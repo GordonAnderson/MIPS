@@ -6,7 +6,8 @@ roadmap for the fixes below) and [`MIPS_QUAD_FIRMWARE_HANDOFF.md`](MIPS_QUAD_FIR
 conventions, QUAD and TWI work).
 
 **Repo:** https://github.com/GordonAnderson/MIPS, branch `master`.
-**Fix commit:** `5dc8f71`. **Firmware version string is still `1.268`**, so builds with and without the
+**Fix commits:** `5dc8f71` (first set, section 3) and the commit titled "Filament: guard bias current, fix
+reporting channel, emission display and CalibrateFilament" (second set, section 3a). **Firmware version string is still `1.268`**, so builds with and without the
 fixes look the same; identify a build with `git log -1`.
 
 **Nothing in section 3 has run on hardware.** It builds clean under PlatformIO and was reviewed by reading.
@@ -93,14 +94,14 @@ Status of each:
 | 1 | Ramp rate 0 froze the setpoint; a running filament could not be turned off | **Fixed** |
 | 2 | `FilamentShutdown` wrote AD5625 commands to a Rev 4, ignored absent boards | **Fixed** (see severity note) |
 | 3 | Enable output driven ON at startup until the first loop pass | **Fixed** |
-| 4 | NULL dereference in the bias current block with `iSense` set and no DCbias module | Open |
+| 4 | NULL dereference in the bias current block with `iSense` set and no DCbias module | **Fixed** (second set) |
 | 5 | `FmodeChange` wrote both channels' mode on every revision | **Fixed** |
 | 6 | `SetFilamentStatus` off by one | **Fixed** |
 | 7 | Rev 2+ shared parameters not kept in sync | **Fixed** |
 | 8 | `RestorFilamentSettings` ignored the stored structure size | **Fixed** |
-| 9 | Emission current display mixes all channels and boards | Open |
-| 10 | Reporting threads use fixed channel indices | Open |
-| 11 | `CalibrateFilament` unchecked pointer, bypassed ramp, saves transient state | Open |
+| 9 | Emission current display mixes all channels and boards | **Fixed** (second set) |
+| 10 | Reporting threads use fixed channel indices | **Fixed** (second set) |
+| 11 | `CalibrateFilament` unchecked pointer, bypassed ramp, saves transient state | **Fixed** (second set), one leftover in section 5 |
 | 12 | Smaller items, listed in section 5 | Open |
 
 **Severity note on finding 2.** `FilamentShutdown` runs from the power-off handler in `MIPS.cpp`, which is
@@ -132,6 +133,28 @@ All in `src/Filament.cpp`.
    the name to match, requires stored `Size >= offsetof(FilamentData, FCyl)` (204), `Rev` 1 to 4 and
    `NumChannels` 1 to 2, copies `min(Size, sizeof)` bytes over a copy of the **current** `FD`, then sets
    `Size = sizeof` and keeps `EEPROMadr`.
+
+### 3a. Second set
+
+All in `src/Filament.cpp`. Build tested only.
+
+1. **Bias current block (finding 4).** The DC bias board is chosen as `DCbDarray[0]`, else `DCbDarray[1]`, else
+   none, and the whole read-and-filter step is skipped when there is none. Board 0's `iSense` is still the
+   one used, to match the `GFLSRES`/`SFLSRES` commands, which point at `FDarray[0].iSense`.
+2. **Reporting threads (finding 10).** The four copies are now wrappers around `FilamentReport(chan)`, which
+   takes the board from `BoardFromSelectedFilamentChannel(chan)` and the index from `Channel2Index(chan)`
+   and prints nothing if either is -1. Rev 1 output is identical to before.
+3. **Emission current display (finding 9).** New `EmissionI[2]`, one filtered value per board, updated once per
+   board per pass (`c == 0`). After the channel loops, `BiasCurrent` is set from the selected board's value
+   for Rev 3 and 4. The DC bias sense path for other revisions is untouched. The filter is now applied once
+   per pass instead of once per channel, so a two channel board responds about half as fast as before.
+4. **`CalibrateFilament` (finding 11).** Checks for a DC bias module before turning anything on and uses the
+   board it found; the 100-pass waits go through `FilamentCalPasses()`, which calls `Filament_loop()` every
+   100 mS with a watchdog restart; the operating mode, current setpoint and voltage are remembered and
+   restored (then `SelectFilamentChannel()` refreshes the dialog copy and mode text) before
+   `SaveFilamentSettings()`; the filament is left off. **The old code forced `FmodeIV` at the end.** That may
+   have been deliberate (the e-msion production mode). The new code restores whatever mode the unit had; set
+   `FmodeIV` explicitly if IV is the intended result.
 
 ---
 
@@ -171,10 +194,10 @@ ever needs to grow past 256 bytes, check `WriteEEPROM`'s 16 byte page behaviour 
 | Item | Notes |
 |---|---|
 | **Bench test of everything in section 3** | The test plan. Highest priority; none of it has run on hardware. |
-| Finding 4: bias current NULL dereference | `if(DCbDarray[0] != NULL) b = 0; else b = 1;` then `DCbDarray[b]->ADCadr` with neither present crashes. Also uses board 0's `iSense` even when only a slot 1 board exists. |
-| Finding 9: emission current mixing | `BiasCurrent` is filtered from every channel and board in the loop, not the selected one. Two boards of Rev 3/4 blend. |
-| Finding 10: reporting threads | `Filament_1_Report`/`_2_Report` read `[b][0]`/`[b][1]`. For Rev 2+ the live index depends on `Idir`, so with REV selected they report the idle channel. Use `Channel2Index`. |
-| Finding 11: `CalibrateFilament` | `DCbDarray[DCbiasCH2Brd(7)]` used unchecked; runs `Filament_loop()` 100 times back to back so the ramp is bypassed; leaves `FilamentVoltage` at 3.0 and mode `FmodeIV` then saves them. The serial calibration helpers use `SelectBoard(0)` while `FD` follows the selected board. |
+| `iSense` belongs to board 0 | The bias current block and `GFLSRES`/`SFLSRES` use `FDarray[0].iSense`. With the only filament board in slot 1 the sense resistor cannot be set. |
+| `CalibrateFilament` leaves DC bias channel 8 at 0 | The emission current step sets `DCbDarray[b]->DCCD[7].VoltageSetpoint = 0` and writes the DAC, then never restores the user's bias setpoint. Not changed because the DCbias module may not rewrite the DAC from the variable unless it changes. |
+| `CalibrateFilament` mode at the end | See section 3a item 4: the old code forced `FmodeIV`, the new code restores the original mode. Confirm which is wanted. |
+| Serial calibration helpers | `CalFilSupplyV`, `CalFilV`, `CalFilI` use `SelectBoard(0)` while the `FD` macro follows the selected board. Fine for a single Rev 4 board in slot 0. |
 | Turn-off is ramp limited | Disable and the serial watchdog timeout both ramp down at the configured rate. For a safety shutdown consider forcing power off when the watchdog fires, or ramping faster for a disable. Not changed. |
 | No guard for -1 | `Channel2Index` / `BoardFromSelectedFilamentChannel` can return -1 and callers index arrays with it. No reachable path found today because `NumberOfFilamentChannels` limits the channel, but a second `Filament_init` for the same board would double it. |
 | IV mode constants | The dead band is centred on 0.8 V (`abs(Fvoltages - 0.8) > 0.1`) but the correction aims at 0.75 V. Probably harmless; confirm the intended set point. |
