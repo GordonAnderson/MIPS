@@ -4,6 +4,7 @@ Bench plan for the filament fixes in two sets of commits. Written October 17, 20
 
 - **First set, Parts 1–8:** `5dc8f71` ("Filament: fix ramp-rate freeze, shutdown, startup glitch, Rev 2 sync
   and EEPROM restore").
+- **Fourth set, Part 11:** the commit titled "Move the filament host commands into the filament module".
 - **Third set, Part 10:** the commit titled "Filament: fix Rev 1 channel selection overrun, add index guards
   and finish the cleanups".
 - **Second set, Part 9:** the commit titled "Filament: guard bias current, fix reporting channel, emission
@@ -32,7 +33,8 @@ Run in this order. Parts 1–3 are the safety items and should pass before anyth
 | 8 | 7 | EEPROM restore size handling | Any, uses `WEEPROM` | Revert `RestorFilamentSettings` |
 | 9 | 9 | Second set: bias guard, reporting, emission display, `CALFIL` | Rev 1, 2+, 4; DCbias module for 9.1 and 9.4 | Revert the item, they are independent |
 | 10 | 10 | Third set: Rev 1 channel selection, cycling, `GFLENAR`, IV mode | Rev 1 two board system for 10.1 | Revert the item |
-| 11 | 8 | Regression of normal operation (run last) | Any | Find which part above broke it |
+| 11 | 11 | Filament commands registered by the module | Any system, with and without a filament board | Revert the commit |
+| 12 | 8 | Regression of normal operation (run last) | Any | Find which part above broke it |
 
 Revision matrix. Only some tests apply to each module revision; mark the ones you have.
 
@@ -369,6 +371,32 @@ the old test (ramp equals point 2 exactly) never succeeded, so the cycle stalled
 
 ---
 
+## Part 11 — Commands registered by the module
+
+The 28 filament host commands moved from the main table in Serial.cpp into a `const` table in Filament.cpp,
+registered by the first `Filament_init`. The command set is unchanged (962 commands before and after, checked
+from the generated `MIPScommands.txt`).
+
+- [ ] **11.1 No filament module installed.** Each of `GFLI,1`, `GFLENA,1`, `SFLRT,1,0.1`, `GFLSRES`, `SFLSWD,TRUE`
+      and `CALFIL` is refused as an unknown command, and `GERR` reports **1** (`ERR_BADCMD`). They used to
+      report 2 (`ERR_BADARG`). Nothing else on the system changes, and the other commands you already
+      tested still respond.
+- [ ] **11.2 Filament module installed.** All of the commands in the filament section of `MIPScommands.txt`
+      respond as before: `GFLENA`/`SFLENA`, `GFLI`/`SFLI`, `GFLAI`, `GFLSV`/`SFLSV`, `GFLASV`, `GFLV`, `GFLPWR`,
+      `GFLRT`/`SFLRT`, `GFLDIR`/`SFLDIR`, `GFLP1`/`SFLP1`, `GFLP2`/`SFLP2`, `GFLCY`/`SFLCY`, `GFLENAR`/`SFLENAR`,
+      `RFLPARMS`, `GFLSRES`/`SFLSRES`, `GFLECUR`, `SFLSWD`, `CALFIL`.
+- [ ] **11.3 Two boards.** The commands are registered once, not twice: with two filament boards installed
+      `GFLI,1` and `GFLI,3` both answer and nothing is duplicated or looped.
+- [ ] **11.4 The pointer commands still work.** `SFLSRES,1000` then `GFLSRES` returns 1000;
+      `SFLSWD,TRUE` then `SFLSWD,FALSE` are accepted. These point at `FDarray[0].iSense` and `FLserialWD`.
+- [ ] **11.5 Power-off command set.** With main power off the reduced command set still answers (`GVER`,
+      `ISPWR`, `GNAME`, `RESET`, `POWER`) and the filament commands are not available. After power returns the
+      system restarts and the filament commands work again.
+- [ ] **11.6 Host software.** If the host application probes for a filament module by sending a filament
+      command, check how it reacts to error 1 instead of 2.
+
+---
+
 ## Sign-off
 
 | Part | Rev tested | Result | Date | Notes |
@@ -390,6 +418,7 @@ the old test (ramp equals point 2 exactly) never succeeded, so the cycle stalled
 | 10.3 Cycling after trim | | | | |
 | 10.4 `GFLENAR` | | | | |
 | 10.5 IV mode | | | | |
+| 11 Commands registered by module | | | | with and without a board |
 | 8 Regression | | | | |
 
 Record anything unexpected in the handoff's open items table with the commit from `git log -1`.

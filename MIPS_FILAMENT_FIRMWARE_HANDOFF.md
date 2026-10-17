@@ -9,7 +9,8 @@ conventions, QUAD and TWI work).
 **Fix commits:** `5dc8f71` (first set, section 3) and the commit titled "Filament: guard bias current, fix
 reporting channel, emission display and CalibrateFilament" (second set, section 3a), then the commit
 titled "Filament: fix Rev 1 channel selection overrun, add index guards and finish the cleanups" (third
-set, section 3b). **Firmware version string is still `1.268`**, so builds with and without the
+set, section 3b), then the commit titled "Move the filament host commands into the filament module"
+(section 3c). **Firmware version string is still `1.268`**, so builds with and without the
 fixes look the same; identify a build with `git log -1`.
 
 **Nothing in section 3 has run on hardware.** It builds clean under PlatformIO and was reviewed by reading.
@@ -190,6 +191,28 @@ A mistake worth remembering from this set: a global replace of `Channel2Index(Se
 `SelIdx()` also rewrote the body of `SelIdx()` itself, making it call itself. It compiled cleanly and would
 have overflowed the stack on first use. A read of the whole diff caught it. After any scripted replace, read
 the diff, especially the definitions of the thing being substituted.
+
+### 3c. Host commands moved into the module
+
+`FilamentCmdArray` in `Filament.cpp` holds the 28 filament commands (same entries and comments that were in
+the main table in `Serial.cpp`, between `// Start of command block` and `// End of table marker`, so
+`MIPScommands.txt` is still generated from them). `FilamentCmdList` is registered with
+`AddToCommandList()` in the `NumberOfFilamentChannels == 0` block of `Filament_init`, like RFamp.
+
+- The table is `const` and is in flash (`nm`: `FilamentCmdArray` at `0x000c....`). Every entry is a function or
+  the address of a global. `SFLSRES`/`GFLSRES` still use `&FDarray[0].iSense` and `SFLSWD` uses
+  `&FLserialWD`, which is why the pointer-to-function conversion in the earlier plan was not needed: those
+  are addresses of static data, and this change was made while the data is still static.
+- **No RAM saved.** The main `CmdArray` is already in flash, so moving 28 entries out of it frees no RAM. The
+  gains are organization, 28 fewer entries scanned on every command lookup, and no filament commands on a
+  system without the module.
+- **Host-visible change:** with no filament board the commands are unknown (`GERR` = 1, `ERR_BADCMD`) instead
+  of a bad-argument NAK (2). Same as RFamp.
+- The command set is unchanged: 962 commands before and after, compared from `MIPScommands.txt`.
+- **Dynamic allocation of the data is on hold.** Decided October 17, 2026: the gain (about 1.6 KB, and about
+  0.7 KB with one board) is small next to the 16 KB freed by moving the command tables and default images out
+  of RAM, and the refactor touches the safety-relevant control loop. If it is revisited, do it after the
+  lab verification of sections 3, 3a and 3b so any fault is attributable.
 
 ---
 

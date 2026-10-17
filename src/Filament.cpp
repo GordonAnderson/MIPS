@@ -565,6 +565,48 @@ void FilamentAD5593init(int8_t addr)
    AD5593write(addr, 6, 0x0000);   
 }
 
+// Host commands for the filament module. The table lives here, not in the main command table in Serial.cpp,
+// and is registered with the command processor by the first Filament_init call, so a system without a
+// filament module carries none of these commands (they answer as unknown commands). It is const so it
+// stays in flash: every entry is a function or the address of a global, both constant expressions. Do not
+// put a (char *)pointerVariable in a table; it forces the whole table into RAM (see the QUAD handoff).
+const Commands FilamentCmdArray[] = {
+// Start of command block
+// Filament commands
+  {"GFLENA", CMDfunction, 1, (char *)GetFilamentEnable},             // Get filament ON/OFF status
+  {"SFLENA", CMDfunctionStr, 2, (char *)SetFilamentEnable},          // Set filament ON/OFF status
+  {"GFLI", CMDfunction, 1, (char *)GetFilamentCurrent},              // Get filament channel current (setpoint)
+  {"GFLAI", CMDfunction, 1, (char *)GetFilamentActualCurrent},       // Get filament channel actual current
+  {"SFLI", CMDfunctionStr, 2, (char *)SetFilamentCurrent},           // Set filament channel current
+  {"GFLSV", CMDfunction, 1, (char *)GetFilamentSupplyVoltage},       // Get filament supply voltage (setpoint)
+  {"GFLASV", CMDfunction, 1, (char *)GetFilamentActualSupplyVoltage},// Get the actual supply side voltage
+  {"SFLSV", CMDfunctionStr, 2, (char *)SetFilamentSupplyVoltage},    // Set filament supply voltage
+  {"GFLV", CMDfunction, 1, (char *)GetFilamentVoltage},              // Get filament voltage (actual)
+  {"GFLPWR", CMDfunction, 1, (char *)GetFilamentPower},              // Get filament power (actual) 
+  {"GFLRT", CMDfunction, 1, (char *)GetCurrentRampRate},             // Get filament current ramp rate in amps per second
+  {"SFLRT", CMDfunctionStr, 2, (char *)SetCurrentRampRate},          // Set filament current ramp rate in amps per second
+  {"GFLDIR", CMDfunction, 1, (char *)GetCerrentDirection},           // Get filament current direcrtion,rev 2
+  {"SFLDIR", CMDfunctionStr, 2, (char *)SetCurrentDirection},        // Set filament current direction, rev 2
+  {"GFLP1", CMDfunction, 1, (char *)GetFilamentCycleCurrent1},       // Get filament cycle current 1 (setpoint)
+  {"SFLP1", CMDfunctionStr, 2, (char *)SetFilamentCycleCurrent1},    // Set filament cycle current 1 (setpoint)
+  {"GFLP2", CMDfunction, 1, (char *)GetFilamentCycleCurrent2},       // Get filament cycle current 2 (setpoint)
+  {"SFLP2", CMDfunctionStr, 2, (char *)SetFilamentCycleCurrent2},    // Set filament cycle current 2 (setpoint)
+  {"GFLCY", CMDfunction, 1, (char *)GetFilamentCycleCount},          // Get filament cycle count
+  {"SFLCY", CMDfunctionStr, 2, (char *)SetFilamentCycleCount},       // Set filament cycle count
+  {"GFLENAR", CMDfunction, 1, (char *)GetFilamentStatus},            // Get filament cycle status: NO, INF (cycling forever, count 0), or the number of cycles remaining
+  {"SFLENAR", CMDfunctionStr, 2, (char *)SetFilamentStatus},         // Set filament cycle status, YES or NO
+  {"RFLPARMS", CMDfunction, 2, (char *)SetFilamentReporting},        // Sets a filament channel reporting rate, 0 = off. Rate is in seconds
+  {"GFLSRES", CMDint, 0, (char *)&FDarray[0].iSense},                // Returns the bias current sense resistor value
+  {"SFLSRES", CMDint, 1, (char *)&FDarray[0].iSense},                // Sets the bias current sense resistor value
+  {"GFLECUR", CMDfunction, 0, (char *)ReportBiasCurrent},            // Returns the filament emission current 
+  {"SFLSWD",  CMDbool, 1, (char *)&FLserialWD},                      // Set serial watch dog timer mode
+  {"CALFIL", CMDfunction, 0, (char *)CalibrateFilament},             // Calibration procedure for rev 4 filament module 
+// End of table marker
+  {0},
+};
+
+CommandList FilamentCmdList = { (Commands *)FilamentCmdArray, NULL };
+
 // This function is called on power up initilization. This function
 // will enable the filament driver module.
 void Filament_init(int8_t Board, int8_t addr)
@@ -627,6 +669,8 @@ void Filament_init(int8_t Board, int8_t addr)
   // Setup the menu if this is the very first call to this init function
   if (NumberOfFilamentChannels == 0)
   {
+    // Add the filament commands to the command processor, once for the first board
+    AddToCommandList(&FilamentCmdList);
     AddMainMenuEntry(&MEFilamentModule);
     if (ActiveDialog == NULL) DialogBoxDisplay(&FilamentDialog);
     // Configure Threads
