@@ -225,6 +225,33 @@ unless its `git log` says otherwise): new TWI command `0x8B TWI_READ_TRIGDATA` r
 before it increments the count, so a changed count always carries its matching sum. The electrometer
 README and TODO are updated. An older electrometer build fails the preflight read (error 133).
 
+### 2b. ADC m/z input with a digital strobe (October 2026)
+
+Build tested only, not run on hardware. The m/z for an RF amp module can come from a MIPS ADC input, applied by a
+digital input strobe. Separate file, `src/RFAmzInput.cpp` and `include/RFAmzInput.h`; `RFAdata` and the EEPROM image
+are unchanged, the settings are RAM only.
+
+- **Commands:** `SRFAMZADC,module,adc,slope,intercept` (adc 0 to 9, -1 none; m/z = counts * slope + intercept),
+  `SRFAMZSTB,module,Q..X|NA` (rising edge), getters `GRFAMZADC`, `GRFAMZSTB`, `GRFAMZSTAT`. A `const` table
+  registered by `RFAmzInput_init` (one call at the end of `RFA_init`'s module setup, after `QUADcalInit`).
+- **The ADC is read in the strobe interrupt, 4 reads averaged.** Decided with Gordon: the source holds the value for only
+  about 10 mS, and one pass of the scheduler can take longer than that (the RF amp loop alone does SPI and TWI work), so a
+  thread cannot be relied on to read it in time. The apply is done by a 10 mS thread. Cost and risk: an `analogRead` in
+  an interrupt can corrupt an `analogRead` that was in progress in the main context (ESI, HVPS and RFdriver read the ADC
+  without taking the `AcquireADC` flag); the filament and this code do take it, and the interrupt skips and counts
+  the strobe if the flag is held.
+- **Apply:** `QUADcalApply` (a pass-through when the mass calibration table is disabled), then `RFAsetScanPoint`, the same
+  primitive `QSCAN` and `RFAACQ` use, if the module is enabled; otherwise the m/z is stored and `QUADupdateFlag` set.
+  m/z must be 10 to 40000 and inside `QUADcalRangeOK`, else the strobe is ignored and counted.
+- **Not with a scan.** `QSCAN` blocks the threads, so a strobe in that time is ignored, and `QUADscanGo` calls
+  `RFAmzInputClear()` at its end so a strobe that arrived during the scan is not applied afterwards (a strobe older than
+  500 mS when the thread runs is also dropped). A host driven `RFAACQ` scan cannot be detected and must not be run together
+  with a strobe.
+- **DIhandler notes:** the handler attaches for any change and calls the user function only when the pin matches
+  `RISING`, so the edge is the physical one, before `DIinvert`. `attached()` fails if already attached, so a
+  reassignment detaches first.
+- Test plan: `MIPS_QUAD_SCAN_TESTPLAN.md` Part I.
+
 ---
 
 ## 3. Phase by phase, what shipped

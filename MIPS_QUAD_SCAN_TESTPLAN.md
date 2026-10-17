@@ -23,7 +23,8 @@ Run the parts in this order. Each part says what to do if it fails; none of them
 | 5 | F | Existing QSCAN, ADC path regression | QUAD module, scope | Shared loop broke: see F.4 |
 | 6 | D | `QSCAN` with the electrometer source | Electrometer wired to LT | `SQSSRC,1,ADC` or `SQSETRG,1,TWI` |
 | 7 | E | `RFAACQ` with the electrometer | Host script | `SQSSRC,1,ADC` |
-| 8 | G | Ion test | Mass spectrometer | See handoff section 5 |
+| 8 | I | ADC m/z input with a digital strobe | RF amp module, a signal source on a MIPS ADC input, a pulse source on a digital input | `SRFAMZSTB,<module>,NA` and `SRFAMZADC,<module>,-1,1,0` |
+| 9 | G | Ion test | Mass spectrometer | See handoff section 5 |
 
 Part F runs before D because `QUADscanAcquire` is now shared by both sources, so an ADC path that no
 longer passes F means the shared change is at fault, not the electrometer.
@@ -192,6 +193,56 @@ Uses the host script that already drives `RFAACQ` for the ADC. Add `SQSSRC,<modu
 
 ---
 
+## I. ADC m/z input with a digital strobe
+
+New capability (commit titled "RF amp: add an ADC m/z input applied by a digital strobe"): the m/z comes from an analog
+voltage on a MIPS ADC input and a digital input strobe applies it. Per module, RAM only, in `src/RFAmzInput.cpp`.
+
+`SRFAMZADC,module,adc,slope,intercept` (adc 0 to 9, -1 for none; m/z = counts * slope + intercept, 12 bit counts, 0 to
+4095 for 0 to 3.3 V at the Due pin, so a full scale of 40000 is slope 9.768 and intercept 0), `SRFAMZSTB,module,Q..X|NA`
+(rising edge, physical, before any `DIinvert`), and the getters `GRFAMZADC`, `GRFAMZSTB`, `GRFAMZSTAT`
+(requested m/z, applied m/z, applied count, rejected count, stale count, missed count).
+
+The strobe interrupt latches the ADC (4 reads averaged), because the value is only held for about 10 mS. A 10 mS
+thread then applies it: m/z must be 10 to 40000 (otherwise ignored), the mass calibration table is applied if
+enabled and the m/z must be inside the range `QSCAN` allows, and a module that is enabled is updated at once with the
+same call `QSCAN` uses. Do not use it while a scan is running. Rev 1/2 modules need `SRFADCCH` set or the commands NAK.
+
+- [ ] **I.1 Commands.** Defaults: `GRFAMZADC,1` = `-1,1.000000,0.000000`, `GRFAMZSTB,1` = `NA`, `GRFAMZSTAT,1` all zero.
+      Range checks NAK: `SRFAMZADC,1,10,1,0`, `SRFAMZSTB,1,A`, module 2 on a one module system. On a Rev 1/2 module with
+      no resolving DC channel they NAK with `GERR` = 132 (`ERR_QUADNODCBCHAN`).
+- [ ] **I.2 Setup.** A variable voltage source on the ADC input (0 to 3.3 V at the pin, your own divider), a 10 mS pulse
+      source on a digital input Q to X. `SRFAMZADC,1,<adc>,9.768,0`, `SRFAMZSTB,1,<input>`.
+- [ ] **I.3 Basic apply.** Set the voltage, pulse the strobe once. `GRFAMZ,1` shows the new m/z, the RF level, pole bias and
+      resolving DC change on the module, and `GRFAMZSTAT,1` shows `requested,applied` equal (table disabled) and applied
+      count 1. Changing the voltage **without** a strobe does nothing.
+- [ ] **I.4 The value is taken at the edge.** With a 10 mS pulse, change the voltage right after the rising edge (1 mS later).
+      The applied m/z matches the voltage **at the edge**, not the new one. Repeat with the voltage changing a few mS before
+      the edge to see where the latch point is. This is the point of reading the ADC in the interrupt.
+- [ ] **I.5 Rate.** Strobe at 10, 20 and 50 per second with a new voltage each time. Every strobe is applied (the applied
+      count equals the number sent, `rejected`, `stale` and `missed` stay 0). Note the highest rate that keeps up.
+- [ ] **I.6 Rejections.** Request an m/z below 10 and above 40000: the strobe is ignored, the module m/z does not change, the
+      rejected count goes up. With the calibration table enabled, an m/z far outside the table (further than `QSCAN`
+      allows) is also rejected.
+- [ ] **I.7 Calibration table.** Enable a table (`SQCENA`, `SQCNUM`, `SQCPNT`). A strobe commands the calibrated m/z and applies
+      its resolving DC offset: `GRFAMZ,1` is the commanded value, and the result matches a `QSCAN` point at the same m/z.
+      With the table disabled the commanded value equals the requested one.
+- [ ] **I.8 Module disabled.** `SRFAENA,1,OFF`, strobe: the m/z is stored (`GRFAMZ,1`), nothing is written to the RF output.
+      Enable the RF and the setpoint corresponds to the stored m/z.
+- [ ] **I.9 Not during a scan.** Strobe repeatedly while a `QSCAN` runs: the scan is undisturbed, and **no strobe is applied
+      during or after it** (the module ends parked at the scan start m/z). With a `QSCAN` that uses the MIPS ADC the
+      `missed` count goes up because the digitizer owns the ADC.
+- [ ] **I.10 Interactions.** `SRFAMZ` and the front panel m/z still work; the next strobe overrides them. `SRFAMZSTB,1,NA`
+      stops the strobe. `SRFAMZADC,1,-1,1,0` stops the latch. Re-running either command with new values takes effect
+      immediately.
+- [ ] **I.11 Two modules.** Different ADC channels and strobe inputs for modules 1 and 2 act independently.
+- [ ] **I.12 Other timing.** With the strobe running at 50 per second, other time critical outputs are unaffected (the
+      strobe interrupt reads the ADC, a few tens of microseconds). Check a scan trigger, a compressor trigger or an ARB
+      output on a scope if you use them.
+- [ ] **I.13 Power cycle.** The settings are gone (RAM only). They must be sent again.
+
+---
+
 ## G. Ion test
 
 The standing acceptance test from the handoff (section 5, "Ion testing"). With the electrometer source it
@@ -210,6 +261,7 @@ doubles as the check that the integer sum scale and polarity are what the host e
 | F Existing QSCAN regression | | | |
 | D `QSCAN` electrometer | | | ethernet link survived? |
 | E `RFAACQ` electrometer | | | |
+| I ADC m/z input with strobe | | | | latch point seen at the edge? |
 | G Ion test | | | |
 
 Record anything unexpected in the handoff's open items table, with the commit from `git log -1`.

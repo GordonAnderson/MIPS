@@ -79,6 +79,7 @@
 #include <Arduino.h>
 #include "RFamp.h"
 #include "QUADscan.h"
+#include "RFAmzInput.h"
 #include "Variants.h"
 #include "Hardware.h"
 #include "Table.h"
@@ -973,6 +974,8 @@ void RFA_init(int8_t Board, int8_t addr)
   // zeros the working copy and loads the EEPROM record, or leaves it zeroed if the module
   // has never been calibrated.
   QUADcalInit(Board);
+  // ADC m/z input with a digital strobe, a separate module: see RFAmzInput.cpp
+  RFAmzInput_init(Board);
 }
 
 // Write both quad pole DACs from the current PoleBias and ResolvingDC settings.

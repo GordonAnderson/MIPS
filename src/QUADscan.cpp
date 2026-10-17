@@ -17,6 +17,7 @@
 #include "ADCdrv.h"
 #include "TWIext.h"
 #include "DCbias.h"
+#include "RFAmzInput.h"
 #include <stddef.h>
 
 // Number of bytes the CRC covers: everything up to but NOT including the CRC field.
@@ -1290,6 +1291,8 @@ void QUADscanGo(int Module)
     RFAsetScanPoint(b, cmdMZ, delta);
   }
   DismissMessage();
+  // A strobe from the ADC m/z input (RFAmzInput) that came in while the scan blocked the threads must not be applied now
+  RFAmzInputClear();
   // The scan moved m/z, the setpoint and the pole DACs. Let the loop resynchronise from
   // the module structure rather than leaving the hardware wherever the scan finished.
   RFAupdate = true;

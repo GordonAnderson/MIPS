@@ -1181,3 +1181,10 @@ RF amp / quad auto tune
 Configutation commands
   SRFAREV3          Set selected module to rev 3, adjust initial calibration parameters
   CALRFAPS          Calibrates the Rev 3 pole power supplies
+RF amp / QUAD m/z set from an ADC input and applied by a digital input strobe. Module is 1 or 2.
+Do not use while a scan (QSCAN or RFAACQ) is in progress. See RFAmzInput.cpp.
+  SRFAMZADC         Set the ADC input that sets the m/z, module,adc,slope,intercept. adc 0 to 9, -1 for none. m/z = counts * slope + intercept
+  GRFAMZADC         Get adc,slope,intercept for the m/z ADC input
+  SRFAMZSTB         Set the digital input that strobes the ADC m/z into the module, module,Q to X or NA. Rising edge
+  GRFAMZSTB         Get the m/z strobe digital input, Q to X or NA
+  GRFAMZSTAT        Get requested m/z,applied m/z,applied count,rejected count,stale count,missed count
