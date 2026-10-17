@@ -43,18 +43,23 @@ longer passes F means the shared change is at fault, not the electrometer.
 
 - [ ] **MIPS firmware:** build from `master` HEAD (`~/.platformio/penv/bin/pio run`) and flash. The
       version string still says 1.268, so record `git log -1 --oneline` in the notes.
-- [ ] **Electrometer firmware:** build `../IsolatedElectrometer` from its working tree or latest commit and
+      *Result: NOT verified. October 17, 2026: the lab MIPS reports Version 1.268, Sept 14, 2026 and has the TWI1CMD fail-fast code, but the build commit was not recorded and it has no RF amp module, so the QUAD parts could not be run.*
+- [x] **Electrometer firmware:** build `../IsolatedElectrometer` from its working tree or latest commit and
       flash. It **must** contain `TWI_READ_TRIGDATA` (0x8B). Check with the electrometer's own
       `GVER`, and with the TWI read in D.1 below.
-- [ ] **Wiring:** electrometer TRIGIN to MIPS **LT (pin 13)**. Electrometer on TWI1 (Wire1) at
+      *Result: Verified October 17, 2026: the electrometer was flashed with `37eb120` (the `0x8B` command and the sample rate fix), `GVER` answers, and D.1 passed.*
+- [x] **Wiring:** electrometer TRIGIN to MIPS **LT (pin 13)**. Electrometer on TWI1 (Wire1) at
       address 32 (0x20), the factory default.
+      *Result: Verified October 17, 2026: the Wire1 scan (`TWI1SCAN`) shows one device at `0x20`; 60 of 60 LT pulses (30 of a few microseconds, 30 of 1 mS, positive from LOW) triggered the electrometer, and 3 pulses during a burst were counted in `GTRIGMIS` without starting a second burst.*
 - [ ] **Instruments:** scope or logic analyzer, 3 channels if possible: LT, quad RF or the TRGOUT
       pin, and SDA1 (pin 70) or SCL1 (pin 71).
 - [ ] **Baseline numbers** to compare against (host side, 200 iteration loop, so they include the
       serial round trip): `TWI1CMD,32,RADC` was 6.64 mS before, 3.9 mS after at 100 kHz and
       2.5 mS at 400 kHz. `GTWI,0120A125` was 1.36 mS at 400 kHz. Re-measure; a different
       computer or serial path shifts these.
-- [ ] **Record the Wire1 speed:** `GTWISPEED,1`. Note it prints the variable, not the hardware clock.
+      *Result: Gordon measured, October 16 to 17, 2026: `TWI1CMD,32,RADC` 6.64 mS before, 3.9 mS after at 100 kHz, 2.5 mS at 400 kHz; `GTWI,0120A125` 1.36 mS at 400 kHz. Not re-measured on this computer.*
+- [x] **Record the Wire1 speed:** `GTWISPEED,1`. Note it prints the variable, not the hardware clock.
+      *Result: October 17, 2026: `GTWISPEED,1` = 100000.*
 
 ---
 
@@ -62,22 +67,29 @@ longer passes F means the shared change is at fault, not the electrometer.
 
 Already measured faster. This is correctness, edge cases and the bus behaviour.
 
-- [ ] **A.1 Reply content.** `TWI1CMD,32,RADC` returns the same value text as before the change. Run
+- [x] **A.1 Reply content.** `TWI1CMD,32,RADC` returns the same value text as before the change. Run
       several different commands (`GVER`, `GMODE`, a `S...` setter that returns only ACK).
+      *Result: Verified October 17, 2026 over USB: `TWI1CMD,32,GVER`, `GMODE`, `GTRIGST`, `RADC` and the setters `SSRATE,10000`, `SNUMP,100`, `SMODE,1`, `CONFIG` all returned correct replies. There is no old build to compare against.*
 - [ ] **A.2 ACK-only commands.** A setter returns promptly with its ACK, with no 250 mS wait.
+      *Result: Partly: the setters returned their ACK. How promptly was not measured (a first attempt used a flawed timing helper and was discarded).*
 - [ ] **A.3 Missing device.** `TWI1CMD,99,RADC` returns `?` immediately, not after 250 mS.
-- [ ] **A.4 Long reply.** A command whose reply is over 10 bytes (e.g. the version string) comes back
+      *Result: Partly: `TWI1CMD,99,RADC` returned `?`, the fail-fast reply (the old code said nothing). How quickly was not measured.*
+- [x] **A.4 Long reply.** A command whose reply is over 10 bytes (e.g. the version string) comes back
       complete and in order.
-- [ ] **A.5 Timing.** Run the 200 iteration loop (script below). Compare with the baseline.
+      *Result: Verified October 17, 2026: the electrometer `GVER` reply (`IsoElectrometer, version 1.0 Sept 9, 2025`, 42 characters) came back complete and in order.*
+- [x] **A.5 Timing.** Run the 200 iteration loop (script below). Compare with the baseline.
+      *Result: Measured by Gordon, October 16 to 17, 2026, with the 200 iteration loop: 6.64 mS before, 3.9 mS after at 100 kHz.*
 - [ ] **A.6 400 kHz.** `STWISPEED,1,400000`, repeat A.1 and A.5. Then **check the other Wire1
       modules still read correctly** (DCbias, DCBcurrent, FAIMSfb, level detector, ESI, whichever are
       installed). 400 kHz is global to Wire1. Restore with `STWISPEED,1,100000` if anything misreads.
+      *Result: Partly: Gordon measured 2.5 mS at 400 kHz. Not checked: that the other Wire1 modules still read correctly at 400 kHz.*
 - [ ] **A.7 Bus view (scope on SDA1/SCL1).** For a `"\n"` reply: START, address+R, a few bytes, NACK,
       STOP, with no 32 byte read. **Record whether an extra byte follows the `\n`** and note it in the
       handoff open items.
 - [ ] **A.8 Not ready.** A slave that is slow to answer returns 0 from the first poll and the loop
       retries every 200 µS until the reply arrives (within the 250 mS limit).
-- [ ] **A.9 Stuck bus.** After any failure above, `GTWI` reads still work.
+- [x] **A.9 Stuck bus.** After any failure above, `GTWI` reads still work.
+      *Result: Verified October 17, 2026: after `TWI1CMD` to the absent address 99, `TWI1CMD` and `GTWI,01208B72` still worked.*
 
 Timing loop (MIPS host script):
 
@@ -101,9 +113,11 @@ res = "Scan acquire time, ms = " + (StopT.getTime() - StartT.getTime())
       address, then the command byte(s), then one byte holding the read count in the high nibble and the
       type in the low nibble (1 bool, 2 int, 3 char, 4 byte, 5 word, 6 float).
 - [ ] **C.2 Board 1 on Wire.** `GTWI,1020...` still works.
-- [ ] **C.3 Wire1.** `GTWI,0120A125` unchanged.
-- [ ] **C.4 Long read.** A `GTWI` string asking for more than 4 bytes (high nibble of the last byte, e.g.
+- [x] **C.3 Wire1.** `GTWI,0120A125` unchanged.
+      *Result: Verified October 17, 2026: `GTWI,01208B72` (Wire1, address 0x20) reads the electrometer.*
+- [x] **C.4 Long read.** A `GTWI` string asking for more than 4 bytes (high nibble of the last byte, e.g.
       `...82`) no longer corrupts the stack: the board stays up and the next command answers.
+      *Result: Verified October 17, 2026: `GTWI,01208B72` reads 7 bytes, more than the old 4 byte buffer; the MIPS stayed up and every following command answered.*
 - [ ] **C.5 Bad board.** `GTWI,2020...` returns BADARG.
 - [ ] **C.6 `STWI`.** Same board 0 / board 1 / bad board checks with `STWI`.
 
@@ -140,11 +154,12 @@ The default `SQSETMO` of 1000 mS covers a 5000 point burst at 10000 (500 mS). Ch
 `SSRATE,10000`, about 11 mS) so the scan is quick. Then on the MIPS:
 `SQSSRC,1,ELECT`, `QSCANSTAT,1`.
 
-- [ ] **D.1 Electrometer new command.** Confirm the electrometer firmware has 0x8B: `GTWI,01208B72` (Wire1,
+- [x] **D.1 Electrometer new command.** Confirm the electrometer firmware has 0x8B: `GTWI,01208B72` (Wire1,
       address 0x20, command 0x8B, read 7 bytes, print as int) returns without NAK. `GTWI` prints only the
       first 4 of the 7 bytes as an int, so the low 24 bits are the completed count. Trigger it
       (`TWI1CMD,32,STRIG`) and read again: the count increments. The sum bytes are checked by the scan
       itself in D.5.
+      *Result: Verified October 17, 2026, 5 triggers: `TWI1CMD,32,STRIG` then `GTWI,01208B72`; the count (low 24 bits) equalled `GTRIGCNT` and sum byte 0 equalled `RSUM & 0xFF` every time (5 of 5). Sum bytes 1 to 3 are not visible through `GTWI`; the scan (D.5) checks them.*
 - [ ] **D.2 Status.** `QSCANSTAT,1` shows `Acquire source ELECT`, address 32, trigger HW, timeout 1000.
       `GQSSRC`, `GQSEADD`, `GQSETRG`, `GQSETMO` agree.
 - [ ] **D.3 Preflight failures** — each must return NAK **before any header byte** and `GERR` must report
@@ -262,14 +277,14 @@ doubles as the check that the integer sum scale and polarity are what the host e
 
 | Part | Result | Date | Notes |
 |---|---|---|---|
-| 0 Prerequisites | | | |
-| A `TWI1CMD` | | | extra byte after `\n` observed? |
-| C `GTWI` / `STWI` | | | |
-| B `TWICMD` channel 0 | | | `TWICMD_FAST` left at: |
+| 0 Prerequisites | partial | 2026-10-17 | electrometer firmware, wiring and Wire1 speed done; MIPS build commit not recorded; no scope used |
+| A `TWI1CMD` | partial | 2026-10-17 | A.1, A.4, A.5 (Gordon), A.9 done; A.2, A.3, A.6 partly; A.7, A.8 not done; extra byte after `\n` not observed (no scope) |
+| C `GTWI` / `STWI` | partial | 2026-10-17 | C.3, C.4 done; C.1, C.2, C.5, C.6 need a device on the Wire channel |
+| B `TWICMD` channel 0 | not done | | `TWICMD_FAST` left at: 1 |
 | F Existing QSCAN regression | | | |
-| D `QSCAN` electrometer | | | ethernet link survived? |
-| E `RFAACQ` electrometer | | | |
-| I ADC m/z input with strobe | | | | latch point seen at the edge? |
+| D `QSCAN` electrometer | partial | 2026-10-17 | D.1 done; D.2 onwards need an RF amp module (none installed on the lab MIPS) |
+| E `RFAACQ` electrometer | not done | | needs an RF amp module |
+| I ADC m/z input with strobe | not done | | needs an RF amp module; latch point seen at the edge? |
 | G Ion test | | | |
 
 Record anything unexpected in the handoff's open items table, with the commit from `git log -1`.

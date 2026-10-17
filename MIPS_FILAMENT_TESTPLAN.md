@@ -381,10 +381,11 @@ The 28 filament host commands moved from the main table in Serial.cpp into a `co
 registered by the first `Filament_init`. The command set is unchanged (962 commands before and after, checked
 from the generated `MIPScommands.txt`).
 
-- [ ] **11.1 No filament module installed.** Each of `GFLI,1`, `GFLENA,1`, `SFLRT,1,0.1`, `GFLSRES`, `SFLSWD,TRUE`
+- [x] **11.1 No filament module installed.** Each of `GFLI,1`, `GFLENA,1`, `SFLRT,1,0.1`, `GFLSRES`, `SFLSWD,TRUE`
       and `CALFIL` is refused as an unknown command, and `GERR` reports **1** (`ERR_BADCMD`). They used to
       report 2 (`ERR_BADARG`). Nothing else on the system changes, and the other commands you already
       tested still respond.
+      *Result: Verified October 17, 2026 on a MIPS with no filament module (`GCHAN,FIL` = 0): `GFLI,1`, `GFLENA,1`, `SFLRT,1,0.1`, `GFLSRES`, `SFLSWD,TRUE`, `CALFIL`, and the emission commands `GFLEIS,1`, `SFLEREG,1,ON`, `GFLEST,1` were each refused as unknown commands with `GERR` = 1. Other commands (`GVER`, `ISPWR`, `TWI1SCAN`, `TWI1CMD`) still answered.*
 - [ ] **11.2 Filament module installed.** All of the commands in the filament section of `MIPScommands.txt`
       respond as before: `GFLENA`/`SFLENA`, `GFLI`/`SFLI`, `GFLAI`, `GFLSV`/`SFLSV`, `GFLASV`, `GFLV`, `GFLPWR`,
       `GFLRT`/`SFLRT`, `GFLDIR`/`SFLDIR`, `GFLP1`/`SFLP1`, `GFLP2`/`SFLP2`, `GFLCY`/`SFLCY`, `GFLENAR`/`SFLENAR`,
@@ -421,21 +422,24 @@ Defaults: setpoint 0, largest setpoint 1000 uA, lowest current 0 A, gain 0.005 A
 
 ### 12.0 Host check of the control law (any computer)
 
-- [ ] `c++ -std=c++11 -O1 -Iinclude tools/FilamentEmissionSim.cpp -o /tmp/femsim && /tmp/femsim` runs and prints
+- [x] `c++ -std=c++11 -O1 -Iinclude tools/FilamentEmissionSim.cpp -o /tmp/femsim && /tmp/femsim` runs and prints
       the same table as in the handoff (cold start settles in 120 to 230 s, worst overshoot 28% only at the
       extreme plant, power hold at 5.83 W for a 6 W limit). This is the model, not your filament.
+      *Result: Verified October 17, 2026: it builds and runs and the numbers match the handoff (cold start settles in 123 to 225 s, worst overshoot 28.3%, power hold at 5.83 W on a 6 W limit, late bias table, and 6.18 W peak for the heater ADC with the 0.1 A ahead rule).*
 
 ### 12.1 Commands and refusals (no filament needed)
 
 - [ ] On a Rev 3 module, each of `SFLEIS`, `GFLEIS`, `SFLEREG`, `GFLEREG`, `GFLEST`, `SFLEIM`, `GFLEIM`, `SFLEIMN`,
       `GFLEIMN`, `SFLEGAIN`, `GFLEGAIN`, `SFLEUP`, `GFLEUP`, `SFLEDN`, `GFLEDN`, `SFLERH`, `GFLERH` answers, and a
       value read back equals the value set.
+      *Result: Not run: needs a Rev 3 filament module.*
 - [ ] `GFLEST,1` right after power up is `OFF,<measured>,<current>`. Defaults match the list above.
 - [ ] Range checks NAK: `SFLEIS,1,2000` (above the largest setpoint 1000), `SFLEIM,1,0`, `SFLEGAIN,1,1`,
       `SFLEUP,1,0`, `SFLEREG,1,MAYBE`.
 - [ ] `SFLEIM,1,100` with the setpoint at 200 lowers the setpoint to 100.
 - [ ] On a Rev 1 or Rev 2 module the commands NAK (no on-module emission measurement). With no filament module
       they are unknown commands (`GERR` = 1).
+      *Result: Partly, October 17, 2026: the no-filament-module half is verified (see 11.1: unknown commands, `GERR` = 1). The Rev 1/2 NAK needs a filament module.*
 - [ ] `SFLEREG,1,ON` is refused while filament cycling is enabled (`SFLENAR,1,YES`).
 
 ### 12.2 Measurement first (vacuum tube)
@@ -545,9 +549,9 @@ are RAM only. Use a bench supply or a potentiometer into the MIPS ADC input, wit
 | 10.3 Cycling after trim | | | | |
 | 10.4 `GFLENAR` | | | | |
 | 10.5 IV mode | | | | |
-| 11 Commands registered by module | | | | with and without a board |
-| 12.0 Host check | | | | |
-| 12.1 Commands | | | | |
+| 11 Commands registered by module | none installed | partial | 2026-10-17 | 11.1 done; 11.2 to 11.6 need a filament module |
+| 12.0 Host check | n/a (host) | pass | 2026-10-17 | numbers match the handoff |
+| 12.1 Commands | none installed | partial | 2026-10-17 | no-module refusal verified; Rev 3 checks need a module |
 | 12.2 Measurement | | | | emission reading agrees with meter? |
 | 12.3 Closed loop | | | | gain / rate hold used: |
 | 12.4 Limits and late bias | | | | peak emission on late bias: |
