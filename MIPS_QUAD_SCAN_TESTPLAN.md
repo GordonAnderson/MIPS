@@ -43,7 +43,7 @@ longer passes F means the shared change is at fault, not the electrometer.
 
 - [ ] **MIPS firmware:** build from `master` HEAD (`~/.platformio/penv/bin/pio run`) and flash. The
       version string still says 1.268, so record `git log -1 --oneline` in the notes.
-      *Result: NOT verified. October 17, 2026: the lab MIPS reports Version 1.268, Sept 14, 2026 and has the TWI1CMD fail-fast code, but the build commit was not recorded and it has no RF amp module, so the QUAD parts could not be run.*
+      *Result: NOT verified. October 17, 2026: the lab MIPS reports Version 1.268, Sept 14, 2026 and has the TWI1CMD fail-fast code, but the build commit was not recorded. Later the same day a QUAD (RF amp module 1) was connected and Parts F, D and E were run on it by serial.*
 - [x] **Electrometer firmware:** build `../IsolatedElectrometer` from its working tree or latest commit and
       flash. It **must** contain `TWI_READ_TRIGDATA` (0x8B). Check with the electrometer's own
       `GVER`, and with the TWI read in D.1 below.
@@ -160,38 +160,45 @@ The default `SQSETMO` of 1000 mS covers a 5000 point burst at 10000 (500 mS). Ch
       (`TWI1CMD,32,STRIG`) and read again: the count increments. The sum bytes are checked by the scan
       itself in D.5.
       *Result: Verified October 17, 2026, 5 triggers: `TWI1CMD,32,STRIG` then `GTWI,01208B72`; the count (low 24 bits) equalled `GTRIGCNT` and sum byte 0 equalled `RSUM & 0xFF` every time (5 of 5). Sum bytes 1 to 3 are not visible through `GTWI`; the scan (D.5) checks them.*
-- [ ] **D.2 Status.** `QSCANSTAT,1` shows `Acquire source ELECT`, address 32, trigger HW, timeout 1000.
+- [x] **D.2 Status.** `QSCANSTAT,1` shows `Acquire source ELECT`, address 32, trigger HW, timeout 1000.
       `GQSSRC`, `GQSEADD`, `GQSETRG`, `GQSETMO` agree.
-- [ ] **D.3 Preflight failures** — each must return NAK **before any header byte** and `GERR` must report
+      *Result: Verified October 17, 2026 with an RF amp module (module 1) installed.*
+- [ ] **D.3 Preflight failures** (partly done October 17, 2026: the three 133 cases below passed, each a NAK with no header byte, `GERR` 133 and the quad not moved; the not-armed and 135 cases were not run) — each must return NAK **before any header byte** and `GERR` must report
       the code. The scan must not move the quad.
-  - [ ] electrometer unplugged, or `SQSEADD,1,40` pointing at nothing: 133
-  - [ ] electrometer in mode 0 or 2 (`SMODE 0`): 133
+  - [x] electrometer unplugged, or `SQSEADD,1,40` pointing at nothing: 133 (`SQSEADD,1,40`)
+  - [x] electrometer in mode 0 or 2 (`SMODE 0`): 133 (both mode 0 and mode 2)
   - [ ] electrometer in mode 1 but not armed (right after `SMODE`, before it re-arms, if reproducible): 133
   - [ ] `SPROTOG` with the L input active, then `QSCAN` with `SQSETRG HW`: 135. Then `QSCAN` with
         `SQSETRG TWI` runs. Stop the profile toggle and 135 goes away.
-- [ ] **D.4 Timing on the scope** (LT, quad RF or `TRGOUT` with `SQSTRIG TRUE`, optionally SDA1):
+- [ ] **D.4 Timing on the scope** *(October 17, 2026: not possible on this controller, LT is not routed to the proper pin; see D.5. The TWI-trigger timing was not scoped.)* (LT, quad RF or `TRGOUT` with `SQSTRIG TRUE`, optionally SDA1):
   - [ ] one 50 µS LT pulse per point, **after** the dwell, never before the quad has settled
   - [ ] the electrometer burst falls inside the same point (the pulse starts it; nothing else does)
   - [ ] the next point's m/z change starts after the previous burst finishes, not during it
-- [ ] **D.5 Hardware trigger run.** `SQSSTRT/STOP/STEP` for about 20 points, `QSCAN,1`. Header, N points of 4
+- [ ] **D.5 Hardware trigger run.** *Result: FAILED October 17, 2026. 21 points, 5 mS dwell: header, no points, abort trailer `0xEB`, `GERR` 134. `GTRIGCNT` and `GTRIGMIS` both +0, so the electrometer saw no edge at all. The same scan with `SQSETRG,1,TWI` passes (D.7). **Cause found by Gordon with a scope, October 17, 2026: this version of the MIPS controller does not route LT (pin 13) to the proper pin, so the hardware trigger cannot work on this system.** Not a firmware fault. D.4, D.5 and D.13 need a controller with LT wired correctly; use `SQSETRG,<module>,TWI` on this one. Re-checked with the TWI trigger after the electrometer was reconnected: 2 frames of 21 points, count +42, no misses.* `SQSSTRT/STOP/STEP` for about 20 points, `QSCAN,1`. Header, N points of 4
       bytes each, trailer. Point values are sensible (a steady source gives similar sums).
-- [ ] **D.6 Electrometer counters.** `TWI1CMD,32,GTRIGCNT` equals the point count, `GTRIGMIS` is 0. A
+- [ ] **D.6 Electrometer counters.** *Result: October 17, 2026, TWI trigger only: count +21 for 21 points, +63 for 3 scans, +301 for 301 points, `GTRIGMIS` 0 every time. Hardware trigger: see D.5.* `TWI1CMD,32,GTRIGCNT` equals the point count, `GTRIGMIS` is 0. A
       non zero `GTRIGMIS` means triggers arrived mid-burst (point time is shorter than the burst).
-- [ ] **D.7 TWI trigger.** `SQSETRG,1,TWI`, repeat D.5/D.6. Same count and similar sums. Note the extra
+- [x] **D.7 TWI trigger.** `SQSETRG,1,TWI`, repeat D.5/D.6. Same count and similar sums. Note the extra
       latency (about one short TWI write) on the scope.
-- [ ] **D.8 Timeout.** Set `SNUMP` large (e.g. 5000 at 1000, a 5 s burst) and `SQSETMO,1,50`. `QSCAN` aborts with
+      *Result: Verified October 17, 2026, 21 points, count +21, `GTRIGMIS` 0, sums 343,750 to 345,008 (steady source, 100 samples at 10 kS/s). Latency not scoped.*
+- [x] **D.8 Timeout.** Set `SNUMP` large (e.g. 5000 at 1000, a 5 s burst) and `SQSETMO,1,50`. `QSCAN` aborts with
       the trailer (`0xEB`), `GERR` reports 134, and the next `QSCAN` works after restoring both.
-- [ ] **D.9 Abort.** ESC (0x1B) mid scan aborts with a trailer; a following scan runs normally.
-- [ ] **D.10 Several scans.** `SQSNUM,1,3`: three header/trailer frames. The count keeps rising.
+      *Result: Verified October 17, 2026 (TWI trigger): `0xEB` trailer, 0 points, 134, and the next scan ran 21 of 21 points. **Wait about 6 s after the `CONFIG` that sets the long burst:** arming into mode 1 runs a burst with no trigger (electrometer TODO), and a scan started during it fails the preflight with 133 instead.*
+- [x] **D.9 Abort.** ESC (0x1B) mid scan aborts with a trailer; a following scan runs normally.
+      *Result: Verified October 17, 2026 (TWI trigger): ESC after 20 of 301 points gave an `0xEB` trailer, and the next full scan returned 301 points with `0xEA`.*
+- [x] **D.10 Several scans.** `SQSNUM,1,3`: three header/trailer frames. The count keeps rising.
+      *Result: Verified October 17, 2026 (TWI trigger): three frames, scan numbers 0 to 2, last flag only on the third, count +63.*
 - [ ] **D.11 Park.** After the scan the quad is back at start m/z, and LT is LOW (scope, or the L LED is off).
-- [ ] **D.12 Compare with the MIPS ADC.** Same dwell, same source, `SQSSRC ADC` vs `ELECT`: the peaks should
+      *Result: Partly: after every scan `GRFAMZ,1` read the start m/z (200) and the RF readback returned to about 334 V. LT level not checked.*
+- [ ] **D.12 Compare with the MIPS ADC.** *Result: Partly, October 17, 2026: only the electrometer source was run over the full range, because ADC channel 0 had nothing connected. 200 to 1200 m/z, step 1, dwell 5 mS, TWI trigger, 100 sample bursts at 10 kS/s, gain 1: 1001 points in 17.6 s, count +1001, no misses. Raw sums sit near 344,800 with dips of up to about 10% (peaks appear inverted: the front end is inverting). Dips at m/z 543 to 547, 1000 to 1010 and others. A host-driven scan reading `RCUR` (electrometer polarity NEG) showed the same features as positive peaks (highest 0.82 at m/z 398, 489 to 490, 516 to 518, 543 to 546; baseline 0.27), so the sign comes right with NEG and `RCUR`. The streamed sum is raw, so sign and scale are for the host. ADC versus electrometer overlay not done.* Same dwell, same source, `SQSSRC ADC` vs `ELECT`: the peaks should
       line up in m/z. Heights differ (different front ends). Note the electrometer sum scale.
-- [ ] **D.13 Ethernet.** With the ethernet interface connected and in use, run D.5 about 20 times. **LT is the
+- [ ] **D.13 Ethernet.** *(October 17, 2026: not possible on this controller, the hardware trigger does not run; see D.5.)* With the ethernet interface connected and in use, run D.5 about 20 times. **LT is the
       ethernet config line and flashing it every 100 mS once broke the link** (RevisionHistory 1.236).
       Watch the link stays up. If it drops: use `SQSETRG,<module>,TWI` and report it.
-- [ ] **D.14 Wire1 speed.** Repeat D.5 at 100 kHz and 400 kHz and note the per point overhead; the poll is
+- [ ] **D.14 Wire1 speed.** *Result: October 17, 2026, TWI trigger, 201 points, 10 sample bursts, dwell 0: 4.98 mS per point at 100 kHz and 5.00 to 5.03 mS at 400 kHz, so the bus speed is not what sets the point time here (something else costs about 5 mS per point; not investigated). The resolving DC and pole bias read the same at 400 kHz. Restored to 100 kHz.* Repeat D.5 at 100 kHz and 400 kHz and note the per point overhead; the poll is
       a 9 byte transaction (about 1 mS and 0.25 mS respectively).
-- [ ] **D.15 ADC path untouched.** `SQSSRC,1,ADC`, `QSCAN` behaves as in Part F.
+- [x] **D.15 ADC path untouched.** *(Also: full range ADC scan, 200 to 1200 m/z step 1 dwell 5 mS, 1001 points in 6.0 s, `0xEA`, parked at 200.)* `SQSSRC,1,ADC`, `QSCAN` behaves as in Part F.
+      *Result: Verified October 17, 2026: Part F ran on the ADC source before D, and the source was set back to ADC at the end.*
 
 ---
 
@@ -200,17 +207,23 @@ The default `SQSETMO` of 1000 mS covers a 5000 point burst at 10000 (500 mS). Ch
 Uses the host script that already drives `RFAACQ` for the ADC. Add `SQSSRC,<module>,ELECT` before it and
 `SQSEINIT,<module>` once before the first point of each scan.
 
-- [ ] **E.1 Without init.** `SQSSRC,1,ELECT` then `RFAACQ,1,100,0,5` **without** `SQSEINIT`: NAK, `GERR`
+- [x] **E.1 Without init.** `SQSSRC,1,ELECT` then `RFAACQ,1,100,0,5` **without** `SQSEINIT`: NAK, `GERR`
       reports 133.
-- [ ] **E.2 First call.** After `SQSEINIT,1`, the first `RFAACQ` returns `0`.
-- [ ] **E.3 Pipeline.** Each later call returns the previous point's sum. Step `mz` and check the returned
+      *Result: Verified October 17, 2026: NAK, `GERR` 133.*
+- [x] **E.2 First call.** After `SQSEINIT,1`, the first `RFAACQ` returns `0`.
+      *Result: Verified October 17, 2026: the first call returned `0`.*
+- [x] **E.3 Pipeline.** Each later call returns the previous point's sum. Step `mz` and check the returned
       values trail the commanded points by one, the same as the ADC path.
-- [ ] **E.4 Failure marker.** Unplug the electrometer mid scan (or let it time out): the call returns `-1`.
+      *Result: Verified October 17, 2026 (TWI trigger): from the second call each returned a sum, 7 of 7 sums 344,451 to 345,020. The sums are steady so the one-point trail itself is not visible; the E.5 first-call-is-zero result shows the pipeline.*
+- [x] **E.4 Failure marker.** Unplug the electrometer mid scan (or let it time out): the call returns `-1`.
       `SQSEINIT` after reconnecting recovers.
-- [ ] **E.5 Re-init between scans.** Run two scans back to back, each with its own `SQSEINIT`. The second
+      *Result: Verified October 17, 2026: with the electrometer switched to mode 0 mid scan, the call that triggered it returned the previous valid sum, the next returned `-1` with `GERR` 134, and `SQSEINIT` after restoring mode 1 recovered (first call `0`, then a sum).*
+- [x] **E.5 Re-init between scans.** Run two scans back to back, each with its own `SQSEINIT`. The second
       scan's first call returns 0, not the last point of the first scan.
-- [ ] **E.6 Settings reset it.** Changing `SQSSRC`, `SQSEADD` or `SQSETRG` clears the initialised state; the
+      *Result: Verified October 17, 2026: after `SQSEINIT` the first call returned `0` and the second a sum.*
+- [x] **E.6 Settings reset it.** Changing `SQSSRC`, `SQSEADD` or `SQSETRG` clears the initialised state; the
       next `RFAACQ` NAKs until `SQSEINIT`.
+      *Result: Verified October 17, 2026: after `SQSEADD` and again after `SQSETRG` the next `RFAACQ` was NAKed with 133.*
 - [ ] **E.7 Overlay.** A host `RFAACQ` scan and a firmware `QSCAN` over the same range with the same cal
       table should overlay.
 
@@ -231,7 +244,7 @@ thread then applies it: m/z must be 10 to 40000 (otherwise ignored), the mass ca
 enabled and the m/z must be inside the range `QSCAN` allows, and a module that is enabled is updated at once with the
 same call `QSCAN` uses. Do not use it while a scan is running. Rev 1/2 modules need `SRFADCCH` set or the commands NAK.
 
-- [ ] **I.1 Commands.** Defaults: `GRFAMZADC,1` = `-1,1.000000,0.000000`, `GRFAMZSTB,1` = `NA`, `GRFAMZSTAT,1` all zero.
+- [ ] **I.1 Commands.** *Result: Partly, October 17, 2026: defaults match; `SRFAMZSTB,1,A` NAKs with `GERR` 2; `SRFAMZADC,1,10,1,0` and module 2 NAK but `GERR` reads 1 (ERR_BADCMD), not 2: it is a line command and the unread tokens are parsed as commands, which overwrites the error code. Cosmetic, same as ESI's `SESICTRL`. Rev 1/2 no-channel case not tried.* Defaults: `GRFAMZADC,1` = `-1,1.000000,0.000000`, `GRFAMZSTB,1` = `NA`, `GRFAMZSTAT,1` all zero.
       Range checks NAK: `SRFAMZADC,1,10,1,0`, `SRFAMZSTB,1,A`, module 2 on a one module system. On a Rev 1/2 module with
       no resolving DC channel they NAK with `GERR` = 132 (`ERR_QUADNODCBCHAN`).
 - [ ] **I.2 Setup.** A variable voltage source on the ADC input (0 to 3.3 V at the pin, your own divider), a 10 mS pulse
@@ -271,21 +284,25 @@ same call `QSCAN` uses. Do not use it while a scan is running. Rev 1/2 modules n
 The standing acceptance test from the handoff (section 5, "Ion testing"). With the electrometer source it
 doubles as the check that the integer sum scale and polarity are what the host expects.
 
+*October 17, 2026, first look with a signal on the electrometer, no mass reference: see D.12. Raw sums are inverted (dips), `RCUR` in NEG polarity is positive. The `QSCAN`/`RFAACQ` overlay and the calibrated masses are still to do.*
+
+**RF level check to m/z 1200 (October 17, 2026, Gordon approved about 1970 V):** stepped `SRFAMZ` + `RFAQUPDATE` from 500 to 1200 in steps of 100 m/z: setpoint 822 V at 500 and 1973 V at 1200, readbacks A 786 / B 767 V at 500 and A 1990 / B 1930 V at 1200 (about 1.64 V per m/z), forward power 5.4 W at 500 and 36.9 W at 1200, nothing faulted. The readback is not the setpoint at the top: A reads 1.0 to 1.5% above it. Returns to m/z 200 and about 334 / 322 V.
+
 ---
 
 ## H. Sign-off
 
 | Part | Result | Date | Notes |
 |---|---|---|---|
-| 0 Prerequisites | partial | 2026-10-17 | electrometer firmware, wiring and Wire1 speed done; MIPS build commit not recorded; no scope used |
+| 0 Prerequisites | partial | 2026-10-17 | electrometer firmware, wiring and Wire1 speed done; MIPS build commit not recorded; scope used on LT only |
 | A `TWI1CMD` | partial | 2026-10-17 | A.1, A.4, A.5 (Gordon), A.9 done; A.2, A.3, A.6 partly; A.7, A.8 not done; extra byte after `\n` not observed (no scope) |
 | C `GTWI` / `STWI` | partial | 2026-10-17 | C.3, C.4 done; C.1, C.2, C.5, C.6 need a device on the Wire channel |
 | B `TWICMD` channel 0 | not done | | `TWICMD_FAST` left at: 1 |
-| F Existing QSCAN regression | | | |
-| D `QSCAN` electrometer | partial | 2026-10-17 | D.1 done; D.2 onwards need an RF amp module (none installed on the lab MIPS) |
-| E `RFAACQ` electrometer | not done | | needs an RF amp module |
-| I ADC m/z input with strobe | not done | | needs an RF amp module; latch point seen at the edge? |
-| G Ion test | | | |
+| F Existing QSCAN regression | partial | 2026-10-17 | ADC path, start pin command, ADC off FRAME and NONE, ESC abort, re-enable all pass by serial, plus the full 200 to 1200 m/z scan (1001 points, 6.0 s); scope checks (timing, `TRGOUT`, start pulse) not done |
+| D `QSCAN` electrometer | partial | 2026-10-17 | TWI trigger passes (D.7 to D.10, D.15) and a full range electrometer scan was collected (D.12, partly); **hardware (LT) trigger cannot be tested: this controller does not route LT to the proper pin (D.5)**, so D.4 and D.13 are blocked; D.3 not-armed and 135 not done |
+| E `RFAACQ` electrometer | partial | 2026-10-17 | E.1 to E.6 pass on the TWI trigger; E.7 overlay needs ions; not run on the HW trigger |
+| I ADC m/z input with strobe | partial | 2026-10-17 | I.1 defaults and range checks only; I.2 onwards need a voltage source and a strobe pulse source |
+| G Ion test | started | 2026-10-17 | electrometer spectrum 200 to 1200 m/z collected (raw sum and `RCUR`); no overlay or calibrated mass check yet |
 
 Record anything unexpected in the handoff's open items table, with the commit from `git log -1`.
 
@@ -337,17 +354,19 @@ the frame line only appears when ADC acquire is `FALSE`).
 Purpose: confirm the `QUADscanGo` refactor (splitting the point loop into
 `QUADscanRunScanADC` / `QUADscanRunScanNoADC`) didn't disturb the already-validated path.
 
-- [ ] With defaults (`SQSADCENA` `TRUE`, `SQSSTPIN` `NA`), run the same `QSCAN` sequence
+- [x] With defaults (`SQSADCENA` `TRUE`, `SQSSTPIN` `NA`), run the same `QSCAN` sequence
       already used to validate Rev 1.
+      *Result: October 17, 2026: 200 to 500 m/z, step 5, dwell 5: header, 61 points, `0xEA` trailer. Points were all 0 (ADC channel 0 has nothing on it).*
 - [ ] Byte stream (header/points/trailer) matches prior behavior.
 - [ ] Per-point timing on the scope matches `SQSDWELL` as before, no new jitter.
 - [ ] `SQSTRIG TRUE` still pulses `TRGOUT` once per point exactly as before.
-- [ ] After the scan completes, the module has moved back to `StartMZ` (`GRFAMZ`/front
+- [x] After the scan completes, the module has moved back to `StartMZ` (`GRFAMZ`/front
       panel or equivalent) rather than sitting at `StopMZ` where the scan finished.
+      *Result: October 17, 2026: `GRFAMZ,1` = 200 and the RF readback back at about 334 V after every scan.*
 
 ### 3.3 Start-of-scan pulse
 
-- [ ] `SQSSTPIN 1,A`
+- [ ] `SQSSTPIN 1,A` *(October 17, 2026: `SQSSTPIN,1,A` accepted, `GQSSTPIN` = A, `Z` NAKed with `GERR` 2, `NA` restored, 3 scans gave 3 frames; the pulse itself was not scoped)*
 - [ ] `SQSNUM 1,3`
 - [ ] `QSCAN 1`
 - [ ] Scope channel A: one pulse (~200 µs) at the start of each of the 3 scans, none
@@ -361,7 +380,7 @@ Purpose: confirm the `QUADscanGo` refactor (splitting the point loop into
 
 ### 3.4 ADC disabled, FRAME mode
 
-- [ ] `SQSADCENA 1,FALSE`
+- [ ] `SQSADCENA 1,FALSE` *(October 17, 2026, by serial: header then trailer, 0 point bytes, `GQSADCENA` FALSE, `GQSFRAME` FRAME, `QSCANSTAT` shows both; timing and pulses not scoped)*
 - [ ] `SQSFRAME 1,FRAME`
 - [ ] `QSCAN 1`
 - [ ] Serial capture shows a header immediately followed by a trailer for each scan, with
@@ -377,7 +396,7 @@ Purpose: confirm the `QUADscanGo` refactor (splitting the point loop into
 
 ### 3.5 ADC disabled, NONE mode
 
-- [ ] `SQSFRAME 1,NONE`
+- [ ] `SQSFRAME 1,NONE` *(October 17, 2026, by serial: 1 byte only, the ACK; ESC at 1 s ended a 6 s scan, a `GVER` sent right after was answered at 1.8 s; park-back seen; scope checks not done)*
 - [ ] `QSCAN 1`
 - [ ] Nothing is written to the serial port during the scan (beyond the initial ACK) —
       confirm with a raw serial capture, not just the terminal display.
@@ -390,8 +409,9 @@ Purpose: confirm the `QUADscanGo` refactor (splitting the point loop into
 
 ### 3.6 Re-enable and confirm clean return to normal mode
 
-- [ ] `SQSADCENA 1,TRUE`
-- [ ] `QSCAN 1` streams a full spectrum again exactly as in 3.2.
+- [x] `SQSADCENA 1,TRUE`
+- [x] `QSCAN 1` streams a full spectrum again exactly as in 3.2.
+      *Result: October 17, 2026: 61 points, `0xEA`.*
 
 ---
 
