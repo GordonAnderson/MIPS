@@ -71,8 +71,12 @@ const char *ACKonlyString1 = "\x06";
 const char *ACKonlyString2 = ",\x06";
 const char *SelectedACKonlyString = ACKonlyString1;
 
-const char *OnMessage  = "ON";
-const char *OffMessage = "OFF";
+// These must be arrays, not pointers. The command tables below hold (char *)OnMessage and (char *)OffMessage:
+// an array's address is a constant, so the tables can live in flash. With "const char *OnMessage" the entry
+// copies the value of a mutable pointer variable, which is not a constant expression, so GCC initializes the
+// entry at startup and puts the whole table in RAM (.data), 9 KB for CmdArray.
+const char OnMessage[]  = "ON";
+const char OffMessage[] = "OFF";
 
 bool echoMode = false;
 

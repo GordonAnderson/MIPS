@@ -773,7 +773,7 @@ void QUADscanStatus(int Module)
 }
 
 // Command table
-Commands QUADscanCmdArray[] = {
+const Commands QUADscanCmdArray[] = {
 // Start of command block
 //
 // QUAD mass calibration table commands. Work on any QUAD module revision; all of these

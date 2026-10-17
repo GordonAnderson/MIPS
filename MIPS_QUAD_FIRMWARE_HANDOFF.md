@@ -458,6 +458,25 @@ same physical level — and has **not been done**.
   the hysteresis state machine were all extracted into small host programs and run before
   shipping. Two real defects came out of it: the hysteresis guard accepting exactly 1.0, and
   a wrong overflow figure. See the Qt handoff for the reader tests.
+- **Measure RAM with `size -A`, not the PlatformIO summary.** PlatformIO's "RAM used" counts only `.bss`.
+  Initialized data (`.relocate`) is copied into RAM at start up and is not in that figure. In October 2026
+  the summary said 25,392 bytes while the real static footprint was 69,776 bytes (68 KB of 96 KB), leaving
+  about 28 KB for heap and stack. Use
+  `~/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-size -A .pio/build/dueUSB/firmware.elf`
+  and add `.relocate` and `.bss`. `arm-none-eabi-nm -C -S` shows the biggest items; an address starting
+  `0x2007...` is RAM, `0x000c....` is flash.
+- **A `const` command table does not always land in flash.** `(char *)someVariable` in a table entry is a
+  constant only if `someVariable` is an array or function. If it is a pointer variable (`const char *Msg =
+  "x"`), the entry reads a mutable variable at start up and GCC puts the **whole table** in `.data` (RAM).
+  `OnMessage`/`OffMessage` in Serial.cpp did this and cost 9,152 bytes for `CmdArray` and 96 for
+  `OffCmdArray`; `QUADscanCmdArray` was simply not declared `const` (624 bytes). Fixed October 2026, which
+  freed 9,880 bytes of RAM (`.relocate` 44,384 to 34,504). Check a new table with
+  `arm-none-eabi-objdump -h src/<file>.cpp.o | grep CmdArray`: it should say `.rodata`, not `.data`.
+  A bisect of the table entries (compile, check the section, drop half the entries) found the culprit in
+  about ten compiles.
+- **Default module images are RAM too.** About 6.1 KB of read-only default structures in `Variants.cpp`
+  (`FILAMENT_Rev_1`, `RFA_Rev1`, the DCbias, RFdriver and Twave images...) are non-const globals. Every one is
+  only used as a copy source, and `BoardVariants[]` has no consumer, so they can be `const`. Not done yet.
 - **Prove a change is comment-only when it claims to be.** Strip comments from both revisions
   and diff — cheaper and more convincing than reading the patch.
 - **Watch for silent-success failure modes.** `WriteEEPROM` returning 0 on a bad write,
