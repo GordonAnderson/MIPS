@@ -590,8 +590,8 @@ const Commands  CmdArray[] = 	{
   {"SFLP2", CMDfunctionStr, 2, (char *)SetFilamentCycleCurrent2},    // Set filament cycle current 2 (setpoint)
   {"GFLCY", CMDfunction, 1, (char *)GetFilamentCycleCount},          // Get filament cycle count
   {"SFLCY", CMDfunctionStr, 2, (char *)SetFilamentCycleCount},       // Set filament cycle count
-  {"GFLENAR", CMDfunction, 1, (char *)GetFilamentStatus},            // Get filament cycle status, OFF, or the number of cycles remaining
-  {"SFLENAR", CMDfunctionStr, 2, (char *)SetFilamentStatus},         // Set filament cycle status, ON or OFF
+  {"GFLENAR", CMDfunction, 1, (char *)GetFilamentStatus},            // Get filament cycle status: NO, INF (cycling forever, count 0), or the number of cycles remaining
+  {"SFLENAR", CMDfunctionStr, 2, (char *)SetFilamentStatus},         // Set filament cycle status, YES or NO
   {"RFLPARMS", CMDfunction, 2, (char *)SetFilamentReporting},        // Sets a filament channel reporting rate, 0 = off. Rate is in seconds
   {"GFLSRES", CMDint, 0, (char *)&FDarray[0].iSense},                // Returns the bias current sense resistor value
   {"SFLSRES", CMDint, 1, (char *)&FDarray[0].iSense},                // Sets the bias current sense resistor value

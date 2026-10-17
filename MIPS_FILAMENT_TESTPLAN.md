@@ -4,6 +4,8 @@ Bench plan for the filament fixes in two sets of commits. Written October 17, 20
 
 - **First set, Parts 1–8:** `5dc8f71` ("Filament: fix ramp-rate freeze, shutdown, startup glitch, Rev 2 sync
   and EEPROM restore").
+- **Third set, Part 10:** the commit titled "Filament: fix Rev 1 channel selection overrun, add index guards
+  and finish the cleanups".
 - **Second set, Part 9:** the commit titled "Filament: guard bias current, fix reporting channel, emission
   display and CalibrateFilament" (find it with `git log --oneline -- src/Filament.cpp`). Background and the reasons
 behind each change are in [`MIPS_FILAMENT_FIRMWARE_HANDOFF.md`](MIPS_FILAMENT_FIRMWARE_HANDOFF.md).
@@ -29,7 +31,8 @@ Run in this order. Parts 1–3 are the safety items and should pass before anyth
 | 7 | 6 | Rev 2+ parameter sync | Rev 2 or 3 board | Revert `FilamentSyncChannels` calls |
 | 8 | 7 | EEPROM restore size handling | Any, uses `WEEPROM` | Revert `RestorFilamentSettings` |
 | 9 | 9 | Second set: bias guard, reporting, emission display, `CALFIL` | Rev 1, 2+, 4; DCbias module for 9.1 and 9.4 | Revert the item, they are independent |
-| 10 | 8 | Regression of normal operation (run last) | Any | Find which part above broke it |
+| 10 | 10 | Third set: Rev 1 channel selection, cycling, `GFLENAR`, IV mode | Rev 1 two board system for 10.1 | Revert the item |
+| 11 | 8 | Regression of normal operation (run last) | Any | Find which part above broke it |
 
 Revision matrix. Only some tests apply to each module revision; mark the ones you have.
 
@@ -314,6 +317,58 @@ Only on a Rev 4 filament module. This procedure energizes the filament supply an
 
 ---
 
+## Part 10 — Third set
+
+### 10.1 Rev 1 channel selection with two boards
+
+The bug: on a two-board Rev 1 system, selecting channel 3 or 4 in the dialog loaded data from past the end of
+the channel array and the next dialog change wrote it back over that channel. **Skip this on a one board
+system; it could not happen there.** Save the module EEPROMs first (`SAVEMOD`).
+
+- [ ] **10.1.1 Select every channel.** In the filament dialog set Channel to 1, 2, 3, 4 in turn. Each shows its
+      own Current, Voltage and Max power (set distinct values first through the serial commands:
+      `SFLI,1,0.5`, `SFLI,2,0.6`, `SFLI,3,0.7`, `SFLI,4,0.8`). No garbage values at any channel.
+- [ ] **10.1.2 Edit then re-read.** On channel 3 change the Current in the dialog to 0.9. `GFLI,3` = 0.9 and
+      `GFLI,4`, `GFLI,1`, `GFLI,2` are unchanged.
+- [ ] **10.1.3 The channel mapping survives.** After 10.1.1/10.1.2, enable channel 3 at a small current into a
+      safe load. It switches the correct output and `GFLAI,3`, `GFLV,3`, `GFLPWR,3` read plausible values.
+      Before the fix this could corrupt channel 3's pin and DAC/ADC numbers.
+- [ ] **10.1.4 Save and Restore** on both boards still returns what was saved.
+- [ ] **10.1.5 One board.** On a single board system the Channel entry stops at 2 and channels 1 and 2 behave
+      as before.
+
+### 10.2 Serial channel validation
+
+- [ ] `GFLI,0` and `GFLI,<one more than the channel count>` NAK. `SFLI,5,1` NAKs on a 4 channel system. No
+      reset or odd values after any of them.
+- [ ] `FilamentChannels` returns the number of channels present.
+
+### 10.3 Cycling after a power trim
+
+The bug: the maximum power limit lowers the setpoint by 0.1 A, after which the ramp stopped below point 2 and
+the old test (ramp equals point 2 exactly) never succeeded, so the cycle stalled.
+
+- [ ] **10.3.1 Normal cycle.** `SFLP1,1,0.2`, `SFLP2,1,0.6`, `SFLCY,1,3`, `SFLENAR,1,YES`, enable. Three cycles
+      complete, the filament returns to the saved setpoint, `GFLENAR,1` = `NO`.
+- [ ] **10.3.2 Power limited cycle.** Set the Max power on page 2 low enough that point 2 exceeds it. The
+      limiter trims the current and the cycles **still complete** (at the trimmed value) instead of hanging at
+      point 2. Note the reported current at the top of each cycle.
+- [ ] **10.3.3 Changing the setpoint mid cycle** with `SFLI` makes the cycle advance when the ramp reaches the
+      new value. Expected, not a fault.
+
+### 10.4 `GFLENAR`
+
+- [ ] Off: `GFLENAR,1` = `NO`. With `SFLCY,1,3` and cycling on: the cycles remaining, counting down.
+- [ ] With `SFLCY,1,0` and cycling on: `INF` (previously a negative number).
+- [ ] `HELP` or `MIPScommands.txt` shows the new text for `GFLENAR` and `SFLENAR` (YES/NO).
+
+### 10.5 IV mode unchanged
+
+- [ ] In `IVctrl` the voltage across the current source settles around 0.75 V and holds inside 0.7 to 0.9 V,
+      the same as before. Only names changed.
+
+---
+
 ## Sign-off
 
 | Part | Rev tested | Result | Date | Notes |
@@ -330,6 +385,11 @@ Only on a Rev 4 filament module. This procedure energizes the filament supply an
 | 9.2 Reporting threads | | | | |
 | 9.3 Emission display | | | | |
 | 9.4 `CALFIL` | | | | |
+| 10.1 Rev 1 channel selection | | | | two boards needed |
+| 10.2 Channel validation | | | | |
+| 10.3 Cycling after trim | | | | |
+| 10.4 `GFLENAR` | | | | |
+| 10.5 IV mode | | | | |
 | 8 Regression | | | | |
 
 Record anything unexpected in the handoff's open items table with the commit from `git log -1`.

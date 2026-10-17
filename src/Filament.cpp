@@ -28,8 +28,8 @@
 //    SFLP2,current   Set current point 2
 //    GFLCY           Get the number of ramp cycles
 //    SFLCY,cycles    Set the number of ramp cycles where 1 cycle is ramping from Point 1 to Point 2 and back to Point 1.
-//    GFLENAR         Returns the status of the cycling, OFF, or number of cycles remaining
-//    SFLENAR,state   Sets the cycling to ON or OFF
+//    GFLENAR         Returns the status of the cycling: NO, INF (running with 0 cycles = forever), or the number of cycles remaining
+//    SFLENAR,state   Sets the cycling to YES or NO
 //
 //  Ramping logic
 //    - Set current point 1
@@ -169,6 +169,11 @@ float BiasCurrent;
 // rate below this value (the EEPROM may hold 0) is treated as this value.
 #define MinRampRate 0.01
 
+// IV mode (FmodeIV) control constants, volts across the current source. See FilamentControl.
+#define IVbandCenter 0.8
+#define IVbandHalf   0.1
+#define IVtarget     0.75
+
 // Rev 2 and later keep every channel parameter identical in both channel structures, and the current
 // direction only selects which structure is live. Copies the shared parameters from the channel index
 // "from" to the other one. Call it after a serial command changes a shared parameter and, with "from" set
@@ -184,6 +189,15 @@ static void FilamentSyncChannels(int b, int from)
   FDarray[b].FCD[to].RampRate        = FDarray[b].FCD[from].RampRate;
   FDarray[b].FCD[to].Mode            = FDarray[b].FCD[from].Mode;
   FDarray[b].FCD[to].MaxPower        = FDarray[b].FCD[from].MaxPower;
+}
+
+// Index of the selected channel in the per channel arrays. Channel2Index returns -1 when the selection is
+// not usable; index 0 is used then so an array access always stays inside the array.
+static int SelIdx(void)
+{
+  int i = Channel2Index(SelectedFilamentChan);
+
+  return (i < 0) ? 0 : i;
 }
 
 extern DialogBoxEntry FilamentEntriesPage2[];
@@ -274,7 +288,7 @@ void CalFilamentSupplyV(void)
   CC.ADCreadback = &FCD.DCfsuplyMon;
   // Calibrate this channel
   ChannelCalibrate(&CC, Name);
-  FD.FCD[Channel2Index(SelectedFilamentChan)] = FCD;
+  FD.FCD[SelIdx()] = FCD;
 }
 
 void CalFilamentV(void)
@@ -294,7 +308,7 @@ void CalFilamentV(void)
   CC.ADCreadback = &FCD.Fvoltage;
   // Calibrate this channel
   ChannelCalibrate(&CC, Name);
-  FD.FCD[Channel2Index(SelectedFilamentChan)] = FCD;
+  FD.FCD[SelIdx()] = FCD;
 }
 
 void CalFilamentI(void)
@@ -314,7 +328,7 @@ void CalFilamentI(void)
   CC.ADCreadback = &FCD.FcurrentMon;
   // Calibrate this channel
   ChannelCalibrate(&CC, Name, 0, 5);
-  FD.FCD[Channel2Index(SelectedFilamentChan)] = FCD;
+  FD.FCD[SelIdx()] = FCD;
 }
 
 void CalEmissionI(void)
@@ -420,20 +434,18 @@ int Channel2Index(int channel)
 // Called after the user selects a channel
 void SelectFilamentChannel(void)
 {
-  if(FD.Rev >= 2)
-  {
-    SelectedFilamentChan = (Fchannel - 1);
-    SelectedFilamentBoard = BoardFromSelectedFilamentChannel(SelectedFilamentChan);
-    FCD = FD.FCD[Channel2Index(SelectedFilamentChan)];
-    FCY = FD.FCyl[Channel2Index(SelectedFilamentChan)];    
-  }
-  else
-  {
-    SelectedFilamentChan = Fchannel - 1;
-    SelectedFilamentBoard = BoardFromSelectedFilamentChannel(SelectedFilamentChan);
-    FCD = FD.FCD[Fchannel - 1];
-    FCY = FD.FCyl[Fchannel - 1];
-  }
+  int b   = BoardFromSelectedFilamentChannel(Fchannel - 1);
+  int idx = Channel2Index(Fchannel - 1);
+
+  // A channel that does not exist leaves the current selection alone. The index into FCD[] and FCyl[] is
+  // Channel2Index for every revision: for Rev 1 it is the channel within its board, 0 or 1. It used to be
+  // Fchannel - 1 for Rev 1, which read past the 2 element arrays when channel 3 or 4 (the second board) was
+  // selected and then wrote that data back over the channel's pin and DAC/ADC mapping.
+  if((b < 0) || (idx < 0)) return;
+  SelectedFilamentChan = Fchannel - 1;
+  SelectedFilamentBoard = b;
+  FCD = FD.FCD[idx];
+  FCY = FD.FCyl[idx];
   if (FCD.Mode == FmodeI) strcpy(Fmode, "Ictrl");
   else strcpy(Fmode, "IVctrl");
   // Update the display
@@ -504,8 +516,8 @@ void RestorFilamentSettings(bool NoDisplay)
       nd.Size      = sizeof(FilamentData);
       nd.EEPROMadr = FD.EEPROMadr;
       FD = nd;
-      FCD = FD.FCD[Channel2Index(SelectedFilamentChan)];
-      FCY = FD.FCyl[Channel2Index(SelectedFilamentChan)];
+      FCD = FD.FCD[SelIdx()];
+      FCY = FD.FCyl[SelIdx()];
       CurrentDir = FD.Idir;
       if (!NoDisplay) DisplayMessage("Parameters Restored!", 2000);
       SelectFilamentChannel();
@@ -660,7 +672,10 @@ void FilamentCyclying(void)
             FilamentCycleCounts[b][c] = 0;
             break;
           case FC_WAIT_PT1: // When current setpoint = point 1 then advance to point 2
-            if(CurrentSetpoints[b][c] == FDarray[b].FCyl[c].FCpoint1)
+            // Advance when the ramp has reached the commanded setpoint, which is point 1 unless the
+            // maximum power limit trimmed it. Waiting for the ramp to equal point 1 itself stalled the cycle
+            // forever after a trim, because the ramp then stops at the lower value.
+            if(CurrentSetpoints[b][c] == FDarray[b].FCD[c].CurrentSetpoint)
             {
               FDarray[b].FCD[c].CurrentSetpoint = FDarray[b].FCyl[c].FCpoint2;
               FC_State[b][c] = FC_WAIT_PT2;
@@ -675,7 +690,7 @@ void FilamentCyclying(void)
             }
             break;
           case FC_WAIT_PT2: // When current setpoint = point 2 then advance to point 1
-            if(CurrentSetpoints[b][c] == FDarray[b].FCyl[c].FCpoint2)
+            if(CurrentSetpoints[b][c] == FDarray[b].FCD[c].CurrentSetpoint)   // See WAIT_PT1
             {
               FDarray[b].FCD[c].CurrentSetpoint = FDarray[b].FCyl[c].FCpoint1;
               FC_State[b][c] = FC_WAIT_PT1;
@@ -701,8 +716,8 @@ void FilamentCyclying(void)
       }
     }
   }
-  FCD = FD.FCD[Channel2Index(SelectedFilamentChan)];
-  FCY = FD.FCyl[Channel2Index(SelectedFilamentChan)];
+  FCD = FD.FCD[SelIdx()];
+  FCY = FD.FCyl[SelIdx()];
 }
 
 // This function performs filament control and monitoring tests. The following operations are performed:
@@ -733,9 +748,12 @@ void FilamentControl(void)
           // If mode is FmodeIV then set the supply voltage as needed
           if (FDarray[b].FCD[c].Mode == FmodeIV)
           {
-            if(abs(Fvoltages[b][c] - 0.8) > 0.1)
+            // Act only when the voltage across the current source leaves the band IVbandCenter +/-
+            // IVbandHalf (0.7 to 0.9 V), then steer it to IVtarget, which sits inside the band close to its
+            // lower edge to keep the dissipation in the current source low.
+            if(abs(Fvoltages[b][c] - IVbandCenter) > IVbandHalf)
             {
-              FDarray[b].FCD[c].FilamentVoltage -= (Fvoltages[b][c] - 0.75);
+              FDarray[b].FCD[c].FilamentVoltage -= (Fvoltages[b][c] - IVtarget);
               if (FDarray[b].FCD[c].FilamentVoltage > 5) FDarray[b].FCD[c].FilamentVoltage = 5;
               if (FDarray[b].FCD[c].FilamentVoltage < 0.7) FDarray[b].FCD[c].FilamentVoltage = 0.7;
             }
@@ -744,7 +762,7 @@ void FilamentControl(void)
       }
     }
   }
-  FCD = FD.FCD[Channel2Index(SelectedFilamentChan)];
+  FCD = FD.FCD[SelIdx()];
 }
 
 void ResetFilamentSerialWD(void)
@@ -791,14 +809,17 @@ void Filament_loop(void)
   float      StepSize;
   static     float LastVoltage = -1000;
 
-  SelectedFilamentBoard = BoardFromSelectedFilamentChannel(SelectedFilamentChan);
+  // Keep the previous selection if the channel does not resolve to a board, so the control loop below
+  // still runs for the boards that are present instead of indexing FDarray[-1].
+  b = BoardFromSelectedFilamentChannel(SelectedFilamentChan);
+  if(b >= 0) SelectedFilamentBoard = b;
   SelectBoard(SelectedFilamentBoard);
   if ((ActiveDialog == &FilamentDialog) || (ActiveDialog == &FilamentCycleDialog))
   {
     if(ActiveDialog->Changed)
     {
-      FD.FCD[Channel2Index(SelectedFilamentChan)]  = FCD;    // This stores any changes back to the selected channels data structure
-      FD.FCyl[Channel2Index(SelectedFilamentChan)] = FCY;
+      FD.FCD[SelIdx()]  = FCD;    // This stores any changes back to the selected channels data structure
+      FD.FCyl[SelIdx()] = FCY;
       // If this is rev 2 or greater then set the channel parameters to the same values
       if(FD.Rev >= 2)
       {
@@ -954,10 +975,10 @@ void Filament_loop(void)
     }
   }
   // Update the display variables for voltage and power
-  FsupplyV = FsupplyVs[SelectedFilamentBoard][Channel2Index(SelectedFilamentChan)];
-  Fvoltage = Fvoltages[SelectedFilamentBoard][Channel2Index(SelectedFilamentChan)];
-  Fcurrent = Fcurrents[SelectedFilamentBoard][Channel2Index(SelectedFilamentChan)];
-  Fpower = Fpowers[SelectedFilamentBoard][Channel2Index(SelectedFilamentChan)];
+  FsupplyV = FsupplyVs[SelectedFilamentBoard][SelIdx()];
+  Fvoltage = Fvoltages[SelectedFilamentBoard][SelIdx()];
+  Fcurrent = Fcurrents[SelectedFilamentBoard][SelIdx()];
+  Fpower = Fpowers[SelectedFilamentBoard][SelIdx()];
   // Rev 3 and 4 display the emission current of the board that is selected
   if((SelectedFilamentBoard >= 0) && ((FDarray[SelectedFilamentBoard].Rev == 3) || (FDarray[SelectedFilamentBoard].Rev == 4)))
     BiasCurrent = EmissionI[SelectedFilamentBoard];
@@ -991,7 +1012,10 @@ void FilamentChannels(void)
 // Tests the channel number if invalid its NAKed and false is returned.
 bool IsFilamentChannelValid(int channel, bool Response = true)
 {
-  if ((channel >= 1) && (channel <= NumberOfFilamentChannels)) return true;
+  // Every serial command validates the channel here and then uses the board and index below as array
+  // subscripts, so require that both resolve as well as the channel being in range.
+  if ((channel >= 1) && (channel <= NumberOfFilamentChannels) &&
+      (BoardFromSelectedFilamentChannel(channel - 1) >= 0) && (Channel2Index(channel - 1) >= 0)) return true;
   if (!Response) return false;
   SetErrorCode(ERR_BADARG);
   SendNAK;
@@ -1237,8 +1261,8 @@ void SetCurrentDirection(char *chan, char *dir)
   SendACK;
   // Refresh the screen if the filament dialog is displayed. Also need to update the 
   // active channel buffer
-  FCD = FD.FCD[Channel2Index(SelectedFilamentChan)];
-  FCY = FD.FCyl[Channel2Index(SelectedFilamentChan)];
+  FCD = FD.FCD[SelIdx()];
+  FCY = FD.FCyl[SelIdx()];
   if (ActiveDialog == &FilamentDialog) DialogBoxDisplay(&FilamentDialog);
 }
 
@@ -1354,6 +1378,7 @@ void GetFilamentStatus(int channel)
   if (!SerialMute) 
   {
     if(!FDarray[b].FCyl[Channel2Index(channel-1)].FCenable) serial->println("NO");
+    else if(FDarray[b].FCyl[Channel2Index(channel-1)].FCnumCyl == 0) serial->println("INF");   // 0 cycles means run forever
     else serial->println(FDarray[b].FCyl[Channel2Index(channel-1)].FCnumCyl - FilamentCycleCounts[b][Channel2Index(channel-1)]);
   }
 }

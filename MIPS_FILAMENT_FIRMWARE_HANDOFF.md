@@ -7,7 +7,9 @@ conventions, QUAD and TWI work).
 
 **Repo:** https://github.com/GordonAnderson/MIPS, branch `master`.
 **Fix commits:** `5dc8f71` (first set, section 3) and the commit titled "Filament: guard bias current, fix
-reporting channel, emission display and CalibrateFilament" (second set, section 3a). **Firmware version string is still `1.268`**, so builds with and without the
+reporting channel, emission display and CalibrateFilament" (second set, section 3a), then the commit
+titled "Filament: fix Rev 1 channel selection overrun, add index guards and finish the cleanups" (third
+set, section 3b). **Firmware version string is still `1.268`**, so builds with and without the
 fixes look the same; identify a build with `git log -1`.
 
 **Nothing in section 3 has run on hardware.** It builds clean under PlatformIO and was reviewed by reading.
@@ -102,7 +104,8 @@ Status of each:
 | 9 | Emission current display mixes all channels and boards | **Fixed** (second set) |
 | 10 | Reporting threads use fixed channel indices | **Fixed** (second set) |
 | 11 | `CalibrateFilament` unchecked pointer, bypassed ramp, saves transient state | **Fixed** (second set), one leftover in section 5 |
-| 12 | Smaller items, listed in section 5 | Open |
+| 12 | Smaller items (`SFLENAR` help text, `GFLENAR` for infinite cycles, cycling stall after a power trim, IV constants, unguarded -1 indexes) | **Fixed** (third set) |
+| 13 | Found while doing the index guards: `SelectFilamentChannel` indexed `FCD[Fchannel - 1]` for Rev 1, past the 2 element array for channels 3 and 4 (the second board), and the next dialog change wrote that data back over the channel structure | **Fixed** (third set) |
 
 **Severity note on finding 2.** `FilamentShutdown` runs from the power-off handler in `MIPS.cpp`, which is
 entered when `ReadVin() < 10 V` with the controller alive on USB. The modules lose their supply at the same
@@ -156,6 +159,38 @@ All in `src/Filament.cpp`. Build tested only.
    restored: IV is the production mode for this module and the intended end point of the procedure (confirmed
    by Gordon, October 17, 2026).
 
+### 3b. Third set
+
+All in `src/Filament.cpp` except the help text in `src/Serial.cpp` (which regenerates `MIPScommands.txt`).
+Build tested only.
+
+1. **Rev 1 channel selection overrun (finding 13).** `SelectFilamentChannel` now resolves the board and the
+   channel index with `BoardFromSelectedFilamentChannel(Fchannel - 1)` and `Channel2Index(Fchannel - 1)` for
+   every revision, and leaves the selection unchanged if either is -1. Before, Rev 1 used `Fchannel - 1`
+   directly. On a two-board Rev 1 system, selecting channel 3 or 4 loaded bytes from past the end of
+   `FCD[2]`, and the next `Changed` dialog pass wrote them into the channel's pin and DAC/ADC mapping.
+   Single-board systems were not affected because the channel entry's maximum is 2.
+2. **Index guards.** `SelIdx()` returns `Channel2Index(SelectedFilamentChan)` clamped to 0 when it is -1, and
+   replaces the unguarded uses in the loop, cycling, control, calibration and restore code.
+   `IsFilamentChannelValid` (used by every serial command) now also requires that the board and the channel
+   index both resolve. `Filament_loop` keeps the previous `SelectedFilamentBoard` if the lookup fails, so the
+   control loop still runs for the boards that are present.
+3. **Cycling stall.** The cycle advances when the ramp reaches the commanded setpoint
+   (`CurrentSetpoints == FCD[c].CurrentSetpoint`) instead of when it equals point 1 or 2. The maximum power
+   limit can lower the commanded setpoint by 0.1 A, after which the ramp stops below the point and the old
+   float equality never became true. A side effect: if the user changes the setpoint during a cycle, the
+   cycle advances when the ramp reaches the new value.
+4. **`GFLENAR`** prints `INF` when cycling is enabled with a cycle count of 0 (forever) instead of a negative
+   number.
+5. **Help text.** `GFLENAR`/`SFLENAR` comments in the command table and the file header now say `NO`/`YES`/`INF`.
+6. **IV mode constants** are named (`IVbandCenter` 0.8, `IVbandHalf` 0.1, `IVtarget` 0.75) and explained. The
+   numbers are unchanged. The target sits inside the band near its lower edge, so this was intentional.
+
+A mistake worth remembering from this set: a global replace of `Channel2Index(SelectedFilamentChan)` with
+`SelIdx()` also rewrote the body of `SelIdx()` itself, making it call itself. It compiled cleanly and would
+have overflowed the stack on first use. A read of the whole diff caught it. After any scripted replace, read
+the diff, especially the definitions of the thing being substituted.
+
 ---
 
 ## 4. Design decisions and why
@@ -198,11 +233,6 @@ ever needs to grow past 256 bytes, check `WriteEEPROM`'s 16 byte page behaviour 
 | `CalibrateFilament` leaves DC bias channel 8 at 0 | The emission current step sets `DCbDarray[b]->DCCD[7].VoltageSetpoint = 0` and writes the DAC, then never restores the user's bias setpoint. Not changed because the DCbias module may not rewrite the DAC from the variable unless it changes. |
 | Serial calibration helpers | `CalFilSupplyV`, `CalFilV`, `CalFilI` use `SelectBoard(0)` while the `FD` macro follows the selected board. Fine for a single Rev 4 board in slot 0. |
 | Turn-off is ramp limited (decided, no change) | Disable and the serial watchdog timeout both ramp the current to zero at the configured rate before the enable drops: current / rate, e.g. 5 A at the default 0.1 A/s is 50 s, plus the 10 s watchdog wait. **Gordon decided on October 17, 2026 to keep this** (option A) because the gentle ramp protects the filament. The alternatives considered were an immediate off on watchdog timeout, or a faster fixed ramp for the watchdog (about 1 A/s). Revisit only if a use case needs a faster safety shutdown. Power loss already forces an immediate off (`FilamentShutdown`). |
-| No guard for -1 | `Channel2Index` / `BoardFromSelectedFilamentChannel` can return -1 and callers index arrays with it. No reachable path found today because `NumberOfFilamentChannels` limits the channel, but a second `Filament_init` for the same board would double it. |
-| IV mode constants | The dead band is centred on 0.8 V (`abs(Fvoltages - 0.8) > 0.1`) but the correction aims at 0.75 V. Probably harmless; confirm the intended set point. |
-| Power limit and cycling | The maximum power limit lowers `CurrentSetpoint` by 0.1 A, so cycling that waits for `CurrentSetpoints == FCpoint2` can stall forever (float equality). |
-| `GFLENAR` with infinite cycles | `FCnumCyl` 0 means infinite but the status prints a negative number. |
-| `SFLENAR` help text | Says ON/OFF; the code accepts `YES`/`NO`. Fix the comment in the command table (it generates `MIPScommands.txt`). |
 | Version not bumped | Bump before shipping so builds are distinguishable. |
 | Struct versioning | There is no version field, only `Size`. Adding one would make a future change safer than inferring from size. |
 
