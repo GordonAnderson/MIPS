@@ -91,6 +91,7 @@
 #include "string.h"
 #include "Serial.h"
 #include "Filament.h"
+#include "FilamentEmission.h"
 #include "Dialog.h"
 #include "Variants.h"
 
@@ -684,6 +685,8 @@ void Filament_init(int8_t Board, int8_t addr)
   else NumberOfFilamentChannels += 2;  // Always add two channels for each board if Rev is 1
   // Set the maximum number of channels in the selection menu
   FilamentEntriesPage1[0].Max = NumberOfFilamentChannels;
+  // Emission current regulation (Rev 3 and 4 only), a separate module: see FilamentEmission.cpp
+  FilamentEmission_init(Board);
 }
 
 // This function implements the filament cyclying between to programmed setpoints, point 1 and point 2.

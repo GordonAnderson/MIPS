@@ -4,6 +4,8 @@ Bench plan for the filament fixes in two sets of commits. Written October 17, 20
 
 - **First set, Parts 1–8:** `5dc8f71` ("Filament: fix ramp-rate freeze, shutdown, startup glitch, Rev 2 sync
   and EEPROM restore").
+- **Emission regulation, Part 12:** the commit titled "Filament: add emission current regulation (Rev 3 and 4)".
+  This is new capability, not a fix.
 - **Fourth set, Part 11:** the commit titled "Move the filament host commands into the filament module".
 - **Third set, Part 10:** the commit titled "Filament: fix Rev 1 channel selection overrun, add index guards
   and finish the cleanups".
@@ -34,7 +36,8 @@ Run in this order. Parts 1–3 are the safety items and should pass before anyth
 | 9 | 9 | Second set: bias guard, reporting, emission display, `CALFIL` | Rev 1, 2+, 4; DCbias module for 9.1 and 9.4 | Revert the item, they are independent |
 | 10 | 10 | Third set: Rev 1 channel selection, cycling, `GFLENAR`, IV mode | Rev 1 two board system for 10.1 | Revert the item |
 | 11 | 11 | Filament commands registered by the module | Any system, with and without a filament board | Revert the commit |
-| 12 | 8 | Regression of normal operation (run last) | Any | Find which part above broke it |
+| 12 | 12 | Emission current regulation | Rev 3 module, vacuum tube first | `SFLEREG,<ch>,OFF`; revert the commit if needed |
+| 13 | 8 | Regression of normal operation (run last) | Any | Find which part above broke it |
 
 Revision matrix. Only some tests apply to each module revision; mark the ones you have.
 
@@ -397,6 +400,91 @@ from the generated `MIPScommands.txt`).
 
 ---
 
+## Part 12 — Emission current regulation (Rev 3 and 4)
+
+New capability: hold a user set emission current (uA) by adjusting the filament current. Design and limits are in
+`src/FilamentEmission.cpp` and the handoff section 3d. The regulator only writes the commanded filament current
+(`CurrentSetpoint`), so the ramp limiter, power limiter, serial watchdog and disable ramp-down all still apply.
+Settings are RAM only and return to their defaults at power up.
+
+**Read first.** The filament limit is the module **Max power** (page 2 of the filament dialog, 1 to 20 W in 1 W
+steps; there is no serial command for it). The regulator holds the current at 97% of it. The controller cannot
+see whether bias is applied: with no bias it raises the current to the power limit and waits, and when bias then
+arrives the emission can be far above the setpoint for a time (the ramp limiter also limits how fast the
+current falls). In the host simulation, with the limit 4% above the operating power, late bias gave a peak of
+about 250 to 300 uA for a 200 uA setpoint; with the limit 25% above it, 1.6 mA to well over 5 mA for 10 to 30 s.
+**Set Max power only a little above the power at the operating point.**
+
+Defaults: setpoint 0, largest setpoint 1000 uA, lowest current 0 A, gain 0.005 A/s per unit of log error, rise
+0.02 A/s, fall 0.1 A/s, rate hold 0.05 per second. Regulation starts OFF.
+
+### 12.0 Host check of the control law (any computer)
+
+- [ ] `c++ -std=c++11 -O1 -Iinclude tools/FilamentEmissionSim.cpp -o /tmp/femsim && /tmp/femsim` runs and prints
+      the same table as in the handoff (cold start settles in 120 to 230 s, worst overshoot 28% only at the
+      extreme plant, power hold at 5.83 W for a 6 W limit). This is the model, not your filament.
+
+### 12.1 Commands and refusals (no filament needed)
+
+- [ ] On a Rev 3 module, each of `SFLEIS`, `GFLEIS`, `SFLEREG`, `GFLEREG`, `GFLEST`, `SFLEIM`, `GFLEIM`, `SFLEIMN`,
+      `GFLEIMN`, `SFLEGAIN`, `GFLEGAIN`, `SFLEUP`, `GFLEUP`, `SFLEDN`, `GFLEDN`, `SFLERH`, `GFLERH` answers, and a
+      value read back equals the value set.
+- [ ] `GFLEST,1` right after power up is `OFF,<measured>,<current>`. Defaults match the list above.
+- [ ] Range checks NAK: `SFLEIS,1,2000` (above the largest setpoint 1000), `SFLEIM,1,0`, `SFLEGAIN,1,1`,
+      `SFLEUP,1,0`, `SFLEREG,1,MAYBE`.
+- [ ] `SFLEIM,1,100` with the setpoint at 200 lowers the setpoint to 100.
+- [ ] On a Rev 1 or Rev 2 module the commands NAK (no on-module emission measurement). With no filament module
+      they are unknown commands (`GERR` = 1).
+- [ ] `SFLEREG,1,ON` is refused while filament cycling is enabled (`SFLENAR,1,YES`).
+
+### 12.2 Measurement first (vacuum tube)
+
+- [ ] Wire the tube so the filament module's emission measurement sees the emission current. Set **Max power** a
+      little above the power at the intended operating point (see above).
+- [ ] With regulation off, set the filament current by hand (`SFLI`) and compare the emission reading
+      (`GFLECUR` or "Bias I, uA") with an external meter. Calibrate it first if it is off ("Cal Emission I").
+      The regulator is only as good as this reading.
+- [ ] Note the filament current at which emission first appears and the current for 200 uA. Set `SFLEIMN` just
+      below the onset to shorten the start-up climb.
+
+### 12.3 Closed loop
+
+- [ ] **Cold start.** `SFLEIS,1,200`, `SFLEREG,1,ON`, then enable the filament. Poll `GFLEST,1` every 5 s and log
+      status, emission and current. Expect `SEEK` rising to `REG` and a settle to within 5% in about 2 to 4
+      minutes, with little overshoot. Record settle time, peak, and the steady ripple.
+- [ ] **Setpoint steps.** `SFLEIS,1` 200 to 100 to 400 to 200. Each settles in well under a minute. Record.
+- [ ] **Disturbance.** Change the bias or the plate voltage so the emission moves. The regulator brings it back.
+- [ ] **Tuning, if needed.** Overshoot or oscillation: lower `SFLEGAIN` (halve it) and `SFLERH`. Too slow: raise
+      them. Record the values that work for the tube.
+- [ ] **Direction.** On a Rev 3 module, repeat a short run with the current direction reversed (`SFLDIR`). The live
+      channel is regulated in either direction.
+
+### 12.4 Limits
+
+- [ ] **Power limit as the ceiling.** Set **Max power** below what the setpoint needs. Status `PLIM`, the current
+      steady at about 97% of the power limit, emission below the setpoint, and **no sawtooth** of 0.1 A steps
+      from the power limiter trimming (watch `GFLI` or the current on a meter). Raising Max power releases it.
+- [ ] **Late bias (option A).** Start with the bias off: enable, regulate, wait until the current has climbed to the
+      power limit (`PLIM`). Apply bias. Record the peak emission and the time to settle, and compare with the
+      simulation figures above. Repeat with Max power closer to the operating power.
+- [ ] **Largest setpoint.** `SFLEIM,1,300`: a setpoint above 300 is refused.
+
+### 12.5 Interactions
+
+- [ ] **Disable and enable.** `SFLENA,1,OFF`: status `WAIT`, the current ramps down at the ramp rate and the
+      enable line drops. `SFLENA,1,ON`: it ramps back to the last regulated current and regulates again.
+- [ ] **Serial watchdog.** `SFLSWD,TRUE`, stop serial traffic: after the timeout the filament turns off as before
+      and the status goes to `WAIT`.
+- [ ] **Cycling excludes regulation.** With regulation on, `SFLENAR,1,YES`: status `BLOCKED`, cycling runs.
+      `SFLENAR,1,NO`: regulation resumes.
+- [ ] **A manual `SFLI` while regulating** is treated as a new starting point and the regulator walks back.
+- [ ] **Regulation off** (`SFLEREG,1,OFF`) leaves the current where it is.
+- [ ] **Two modules.** Regulate channel 1 and channel 2 at different setpoints at the same time. They do not
+      interact.
+- [ ] **Power loss while regulating** shuts the filament down as before.
+
+---
+
 ## Sign-off
 
 | Part | Rev tested | Result | Date | Notes |
@@ -419,6 +507,12 @@ from the generated `MIPScommands.txt`).
 | 10.4 `GFLENAR` | | | | |
 | 10.5 IV mode | | | | |
 | 11 Commands registered by module | | | | with and without a board |
+| 12.0 Host check | | | | |
+| 12.1 Commands | | | | |
+| 12.2 Measurement | | | | emission reading agrees with meter? |
+| 12.3 Closed loop | | | | gain / rate hold used: |
+| 12.4 Limits and late bias | | | | peak emission on late bias: |
+| 12.5 Interactions | | | | |
 | 8 Regression | | | | |
 
 Record anything unexpected in the handoff's open items table with the commit from `git log -1`.

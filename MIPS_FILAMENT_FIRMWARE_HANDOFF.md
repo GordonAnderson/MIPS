@@ -10,7 +10,7 @@ conventions, QUAD and TWI work).
 reporting channel, emission display and CalibrateFilament" (second set, section 3a), then the commit
 titled "Filament: fix Rev 1 channel selection overrun, add index guards and finish the cleanups" (third
 set, section 3b), then the commit titled "Move the filament host commands into the filament module"
-(section 3c). **Firmware version string is still `1.268`**, so builds with and without the
+(section 3c), then the commit titled "Filament: add emission current regulation (Rev 3 and 4)" (section 3d). **Firmware version string is still `1.268`**, so builds with and without the
 fixes look the same; identify a build with `git log -1`.
 
 **Nothing in section 3 has run on hardware.** It builds clean under PlatformIO and was reviewed by reading.
@@ -213,6 +213,76 @@ the main table in `Serial.cpp`, between `// Start of command block` and `// End 
   0.7 KB with one board) is small next to the 16 KB freed by moving the command tables and default images out
   of RAM, and the refactor touches the safety-relevant control loop. If it is revisited, do it after the
   lab verification of sections 3, 3a and 3b so any fault is attributable.
+
+### 3d. Emission current regulation (new capability)
+
+Hold a user set emission current (uA) by adjusting the filament current. **Built so it does not change the
+module's structure:** it is a separate client, `src/FilamentEmission.cpp`, `include/FilamentEmission.h` and the
+control law in `include/FilamentEmissionCore.h`. The only edit to `Filament.cpp` is one call,
+`FilamentEmission_init(Board)`, at the end of `Filament_init`, plus its include. `FilamentData` and the module
+EEPROM image are unchanged; the settings are RAM only.
+
+- **Where it acts.** It reads `FDarray`, `FilamentBoards`, `EmissionI[b]` (the per board filtered on-module
+  emission reading from section 3a), `Fpowers`, and writes only `FDarray[b].FCD[0/1].CurrentSetpoint`, the value
+  the dialog, `SFLI`, cycling and the power limiter already adjust. Everything downstream (ramp limiter, DACs,
+  power limiter, serial watchdog, disable ramp-down) is unchanged. It writes both channel structures, the Rev
+  2+ invariant, and regulates the live channel (`Idir`).
+- **Revisions.** Rev 3 and Rev 4 only, which have the on-module measurement, one per board, so two modules
+  regulate independently. Rev 1/2 modules NAK the commands. Allocation is per board at init (`new`, about 80
+  bytes) plus one `Thread` (about 48 bytes); static RAM grew by 24 bytes, flash by about 3 KB.
+- **Own thread, own command table.** A 500 mS thread (`FEMloop`) and a `const` command table `FEMCmdArray`
+  registered with `AddToCommandList` by the first board, in flash, with the block markers so
+  `MIPScommands.txt` documents it.
+- **Control law** (`FEMcoreStep`), incremental, no integrator: `step = Ki * ln(Iset / max(meas, 1 uA)) * dt`,
+  clamped to +SlewUp and -SlewDn, held while the emission is already moving toward the target faster than
+  RateHold, held (no increase) while the filament power is at or above 97% of the module Max power, and the
+  result limited to [Imin, 12 A]. The commanded current is the state, so any other writer is simply a new
+  starting point and nothing winds up.
+- **Defaults** (from simulation): Ki 0.005 A/s per unit log error, rise 0.02 A/s, fall 0.1 A/s, rate hold 0.05 per
+  second, largest setpoint 1000 uA, Imin 0.
+- **Filament limit is Max power.** There is no separate maximum current setting; decided with Gordon, October 17,
+  2026. The existing power limiter keeps enforcing it; the 97% hold stops the regulator and the limiter from
+  fighting. If the setpoint cannot be reached inside the limit the controller holds there (status `PLIM`) and
+  stays silent otherwise (option A, Gordon's choice).
+- **Host commands.** `SFLEIS/GFLEIS` setpoint (uA), `SFLEREG/GFLEREG` ON/OFF, `GFLEST` (`status,measured uA,
+  current A`; status OFF, WAIT, BLOCKED, SEEK, REG, PLIM, IMAX), `SFLEIM/GFLEIM` largest setpoint, `SFLEIMN/
+  GFLEIMN` lowest current, `SFLEGAIN`, `SFLEUP`, `SFLEDN`, `SFLERH` and their getters. Channel numbers are 1 based.
+- **Exclusions.** Regulation refuses to turn on while filament cycling is enabled and stands aside (`BLOCKED`) if
+  cycling is turned on later. Disabling the filament gives `WAIT` and leaves the setpoint alone, so re-enabling
+  starts from the last regulated current.
+
+**Host simulation** (`tools/FilamentEmissionSim.cpp`, compile with `c++ -std=c++11 -O1 -Iinclude
+tools/FilamentEmissionSim.cpp -o /tmp/femsim`). The plant is a guess: emission = 200 uA * exp(k * (I_hot - 2 A)),
+k from 5 to 40 per amp, filament thermal lag 1 to 6 s, the real 2 s measurement filter, the 0.1 A/s ramp limiter,
+and a power limiter like `FilamentControl`. Results:
+
+| Case | Result |
+|---|---|
+| Cold start to 200 uA | settles within 5% in 123 to 225 s |
+| Overshoot | 0.1 to 2.4% for most plants, 10.5% at k=20 with a 6 s lag, 28% at k=40 with a 6 s lag |
+| Setpoint step 200 to 400 uA | 17 to 40 s, at most 2.5% overshoot |
+| Power limit as ceiling | holds at 5.83 W for a 6 W limit, no oscillation, status PLIM |
+| Late bias, limit 5.0 W (4% above the 4.8 W operating power) | peak 244 to 298 uA for a 200 uA setpoint, settles in 19 to 38 s |
+| Late bias, limit 6.0 W (25% above) | peak 1.6 mA to over 5 mA, 8 to 29 s above 1 mA, settles in 56 to 80 s |
+| Limit below what the setpoint needs | holds at the limit, never settles (expected) |
+
+**The late bias risk (answer 6).** The bias can come from another system, so the controller cannot tell no bias
+from not hot enough. With no bias it climbs to the power limit and waits. When bias arrives the emission can be
+well above the setpoint for a time, because the ramp limiter (default 0.1 A/s) also limits how fast the current
+can fall. The mitigation is the user's: set Max power only a little above the operating power. An alternative
+(option B: retreat to the last current that gave emission, then retry) was offered and not chosen.
+
+**Open items for this feature**
+
+| Item | Notes |
+|---|---|
+| Hardware verification | The test plan Part 12. Bench with the vacuum tube first. |
+| Tuning on the real filament | The defaults are from a guessed plant. `SFLEGAIN`, `SFLERH`, `SFLEUP`, `SFLEDN` are settable. |
+| No serial command for Max power | The filament limit is front panel only (1 to 20 W, 1 W steps, page 2). A `SFLMAXP`/`GFLMAXP` pair would make the feature fully host controlled. Not done. |
+| RAM only | Setpoint and limits are lost at power up. A separate EEPROM record after the 256 byte `FilamentData` (signature, CRC, 16 byte aligned) is the way, after checking the module EEPROM size. |
+| No front panel page | Serial only, by request. A dialog opened from page 2, like the cycle menu, is the path. |
+| Retreat on no emission | Option B above. Would also reduce the late bias excursion. |
+| Fixed 12 A ceiling | `FEM_MAXCUR` duplicates `MaxFilCur` from `Filament.cpp`, which is not in a header. Move it into `Filament.h` if it ever changes. |
 
 ---
 

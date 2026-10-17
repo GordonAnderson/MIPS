@@ -942,6 +942,26 @@ Filament commands
   GFLECUR           Returns the filament emission current
   SFLSWD            Set serial watch dog timer mode
   CALFIL            Calibration procedure for rev 4 filament module
+Filament emission current regulation, Rev 3 and 4 modules. Channel is the filament channel, 1 based.
+Regulation raises or lowers the filament current to hold the emission current. The filament limit is the
+module Max power setting. See FilamentEmission.cpp.
+  SFLEIS            Set the emission current setpoint, channel,uA. 0 to the emission max
+  GFLEIS            Get the emission current setpoint, uA
+  SFLEREG           Enable emission regulation, channel,ON|OFF. Refused while filament cycling is on
+  GFLEREG           Get the emission regulation state, ON or OFF
+  GFLEST            Get status,measured uA,filament current A. Status is OFF, WAIT, BLOCKED, SEEK, REG, PLIM or IMAX
+  SFLEIM            Set the largest emission setpoint accepted, channel,uA. 1 to 10000, default 1000
+  GFLEIM            Get the largest emission setpoint accepted, uA
+  SFLEIMN           Set the lowest filament current regulation will command, channel,A. Default 0
+  GFLEIMN           Get the lowest filament current regulation will command, A
+  SFLEGAIN          Set the regulation gain, channel,A/s per unit of log error. 0.0005 to 0.1, default 0.005
+  GFLEGAIN          Get the regulation gain
+  SFLEUP            Set the largest filament current increase rate, channel,A/s. 0.001 to 1, default 0.02
+  GFLEUP            Get the largest filament current increase rate
+  SFLEDN            Set the largest filament current decrease rate, channel,A/s. 0.001 to 1, default 0.1
+  GFLEDN            Get the largest filament current decrease rate
+  SFLERH            Set the emission rate hold, channel,1/s of ln(emission). 0.005 to 1, default 0.05
+  GFLERH            Get the emission rate hold
 
 FPGA module commands
 
