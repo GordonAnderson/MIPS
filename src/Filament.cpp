@@ -85,6 +85,7 @@
 #include <Thread.h>
 #include <ThreadController.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include "Wire.h"
 #include "SD.h"
 #include "string.h"
@@ -161,6 +162,29 @@ float Fcurrent;
 float Fpower;
 float BiasCurrent;
 
+// Smallest ramp rate used by the control loop, amps per second. The ramp step is RampRate / 10 per pass,
+// so a rate of 0 froze the current setpoint where it was: a running filament could neither be ramped nor
+// turned off, because the power pin only switches off once the ramped-down setpoint reaches 0. A stored
+// rate below this value (the EEPROM may hold 0) is treated as this value.
+#define MinRampRate 0.01
+
+// Rev 2 and later keep every channel parameter identical in both channel structures, and the current
+// direction only selects which structure is live. Copies the shared parameters from the channel index
+// "from" to the other one. Call it after a serial command changes a shared parameter and, with "from" set
+// to the index that was live before the change, after the current direction changes.
+static void FilamentSyncChannels(int b, int from)
+{
+  int to;
+
+  if((b < 0) || (b > 1) || (from < 0) || (from > 1)) return;
+  to = from ^ 1;
+  FDarray[b].FCD[to].CurrentSetpoint = FDarray[b].FCD[from].CurrentSetpoint;
+  FDarray[b].FCD[to].FilamentVoltage = FDarray[b].FCD[from].FilamentVoltage;
+  FDarray[b].FCD[to].RampRate        = FDarray[b].FCD[from].RampRate;
+  FDarray[b].FCD[to].Mode            = FDarray[b].FCD[from].Mode;
+  FDarray[b].FCD[to].MaxPower        = FDarray[b].FCD[from].MaxPower;
+}
+
 extern DialogBoxEntry FilamentEntriesPage2[];
 extern DialogBoxEntry FilamentEntriesCalibration[];
 extern DialogBox      FilamentCycleDialog;
@@ -186,7 +210,7 @@ char Fmode[8]   = "Ictrl";
 DialogBoxEntry FilamentEntriesPage2[] = {
   {" Mode"               , 0, 1, D_LIST , 0, 0, 7, 16, false, FmodeList, Fmode, NULL, FmodeChange},
   {" Max power"          , 0, 2, D_FLOAT, 1, 20, 1, 18, false, "%5.0f", &FCD.MaxPower, NULL, NULL},
-  {" Ramp rate"          , 0, 3, D_FLOAT, 0, 1, 0.01, 18, false, "%5.3f", &FCD.RampRate, NULL, NULL},
+  {" Ramp rate"          , 0, 3, D_FLOAT, MinRampRate, 1, 0.01, 18, false, "%5.3f", &FCD.RampRate, NULL, NULL},
   {" Current dir"        , 0, 4, D_OFF, 0, 1, 1, 19, false, NULL, &CurrentDir, NULL, CurrentDirChange},
   {" Calibration"        , 0, 5, D_PAGE, 0, 0, 0, 0, false, NULL, FilamentEntriesCalibration, NULL, NULL},
   {" Cycle menu"         , 0, 8, D_DIALOG  , 0, 0, 0, 0, false, NULL, &FilamentCycleDialog, NULL, NULL},
@@ -325,8 +349,11 @@ void FmodeChange(void)
     FilamentEntriesPage1[3].NoEdit = true;
   }
   //FD.FCD[Channel2Index(SelectedFilamentChan)] = FCD;
-  FD.FCD[0].Mode = FD.FCD[1].Mode = FCD.Mode;             // I think this fixes the bug where the rev channel does not update the Mode 
-                                                          // When changed on the fwd channel. 1/27/2019
+  // Rev 2 and later share one mode across both channel structures (fixes the bug where the rev channel did
+  // not update the Mode when changed on the fwd channel, 1/27/2019). Rev 1 channels are independent, so
+  // only the selected channel's mode changes.
+  if(FD.Rev >= 2) FD.FCD[0].Mode = FD.FCD[1].Mode = FCD.Mode;
+  else if(Channel2Index(SelectedFilamentChan) >= 0) FD.FCD[Channel2Index(SelectedFilamentChan)].Mode = FCD.Mode;
 }
 
 // This function uses the selected channel to determine the board number, 0 or 1.
@@ -427,7 +454,10 @@ void CurrentDirChange(void)
   }
   // Here if filament power is off
   if(CurrentDir == FD.Idir) return;
+  // The live channel structure is about to change, so carry its parameters over to the new one
+  int from = Channel2Index(SelectedFilamentChan);
   FD.Idir = CurrentDir;
+  FilamentSyncChannels(SelectedFilamentBoard, from);
   SelectFilamentChannel();
 }
 
@@ -443,19 +473,36 @@ void SaveFilamentSettings(void)
   else DisplayMessage("Unable to Save!", 2000);
 }
 
+// Restore the filament board parameters from the module EEPROM. The stored structure may have been
+// written by older firmware with a smaller FilamentData, whose newer fields (Idir, Ecurrent...) are then
+// whatever the EEPROM held past the end of that image. fd.Size is the size that was written, so only that
+// many bytes are taken from the EEPROM and the rest keep their current (default) values. A stored size
+// larger than this firmware's structure is truncated to it.
 void RestorFilamentSettings(bool NoDisplay)
 {
-  FilamentData fd;
+  FilamentData fd,nd;
+  int          n;
 
   SelectBoard(SelectedFilamentBoard);
   if (ReadEEPROM(&fd, FD.EEPROMadr, 0, sizeof(FilamentData)) == 0)
   {
+    fd.Name[sizeof(fd.Name) - 1] = 0;   // The EEPROM may not hold a terminated string
     if (strcmp(fd.Name, FD.Name) == 0)
     {
-      // Here if the name matches so copy the data to the operating data structure
-      if (fd.Size != sizeof(FilamentData)) fd.Size = sizeof(FilamentData);
-      fd.EEPROMadr = FD.EEPROMadr;
-      memcpy(&FD, &fd, fd.Size);
+      // Here if the name matches. Reject an image too small to hold the core fields (through the TWI
+      // addresses) or with a revision or channel count this firmware cannot use.
+      n = fd.Size;
+      if (n > (int)sizeof(FilamentData)) n = sizeof(FilamentData);
+      if ((n < (int)offsetof(FilamentData, FCyl)) || (fd.Rev < 1) || (fd.Rev > 4) || (fd.NumChannels < 1) || (fd.NumChannels > 2))
+      {
+        if (!NoDisplay) DisplayMessage("Corrupted EEPROM data!", 2000);
+        return;
+      }
+      nd = FD;                    // Defaults for any field the stored image does not have
+      memcpy(&nd, &fd, n);
+      nd.Size      = sizeof(FilamentData);
+      nd.EEPROMadr = FD.EEPROMadr;
+      FD = nd;
       FCD = FD.FCD[Channel2Index(SelectedFilamentChan)];
       FCY = FD.FCyl[Channel2Index(SelectedFilamentChan)];
       CurrentDir = FD.Idir;
@@ -485,6 +532,10 @@ void RestorFilamentSettings(void)
 // No pullups
 void FilamentAD5593init(int8_t addr)
 {
+   // Preload the digital output data with the enable OFF (active low, so the bit is set) before the
+   // channel is made an output. The register powers up as 0, which is ON, and the output would
+   // otherwise be driven on until the first pass of Filament_loop.
+   AD5593write(addr, 9, 0x0001);
    // General purpose configuration
    AD5593write(addr, 3, 0x0100);
    // Set reference
@@ -519,6 +570,11 @@ void Filament_init(int8_t Board, int8_t addr)
   if(FDarray[Board].Rev == 4) FilamentAD5593init(FDarray[Board].ADCadr);
   else
   {
+     // Preload the output latch with the enable OFF (active low) before enabling the output. The latch
+     // powers up LOW, which is ON, so pinMode(OUTPUT) alone drives the enable on until the first pass
+     // of Filament_loop.
+     digitalWrite(FDarray[Board].FCD[0].Fpwr, HIGH);
+     digitalWrite(FDarray[Board].FCD[1].Fpwr, HIGH);
      pinMode(FDarray[Board].FCD[0].Fpwr, OUTPUT);
      pinMode(FDarray[Board].FCD[1].Fpwr, OUTPUT);
   }
@@ -695,20 +751,33 @@ void ResetFilamentSerialWD(void)
   FLserialTimer = 100;
 }
 
+// Called when input power is lost. Turns off the power enable and zeros the supply voltage and current
+// DACs of every filament board that is present. Rev 4 is the single board AD5593 variant: its enable is
+// a digital output on the AD5593 (register 9, active low like the other revs) and its DACs are AD5593
+// channels, so the AD5625 writes used by the other revs do not apply to it.
 void FilamentShutdown(void)
 {
-  digitalWrite(FDarray[0].FCD[0].Fpwr, HIGH);
-  digitalWrite(FDarray[0].FCD[1].Fpwr, HIGH);
-  SelectBoard(0);
-  AD5625(FDarray[0].DACadr, FDarray[0].FCD[0].DCfsuply.Chan, 0);
-  AD5625(FDarray[0].DACadr, FDarray[0].FCD[0].Fcurrent.Chan, 0);
-  AD5625(FDarray[0].DACadr, FDarray[0].FCD[1].DCfsuply.Chan, 0);
-  AD5625(FDarray[0].DACadr, FDarray[0].FCD[1].Fcurrent.Chan, 0);
-  SelectBoard(1);
-  AD5625(FDarray[1].DACadr, FDarray[1].FCD[0].DCfsuply.Chan, 0);
-  AD5625(FDarray[1].DACadr, FDarray[1].FCD[0].Fcurrent.Chan, 0);
-  AD5625(FDarray[1].DACadr, FDarray[1].FCD[1].DCfsuply.Chan, 0);
-  AD5625(FDarray[1].DACadr, FDarray[1].FCD[1].Fcurrent.Chan, 0);
+  for(int b = 0; b < 2; b++)
+  {
+    if(!FilamentBoards[b]) continue;
+    SelectBoard(b);
+    if(FDarray[b].Rev == 4)
+    {
+      for(int c = 0; c < FDarray[b].NumChannels; c++)
+      {
+        AD5593write(FDarray[b].ADCadr, 9, 1 << FDarray[b].FCD[c].Fpwr);
+        AD5593writeDAC(FDarray[b].DACadr, FDarray[b].FCD[c].DCfsuply.Chan, 0);
+        AD5593writeDAC(FDarray[b].DACadr, FDarray[b].FCD[c].Fcurrent.Chan, 0);
+      }
+      continue;
+    }
+    for(int c = 0; c < 2; c++)
+    {
+      digitalWrite(FDarray[b].FCD[c].Fpwr, HIGH);
+      AD5625(FDarray[b].DACadr, FDarray[b].FCD[c].DCfsuply.Chan, 0);
+      AD5625(FDarray[b].DACadr, FDarray[b].FCD[c].Fcurrent.Chan, 0);
+    }
+  }
 }
 
 // The process is scheduled by the Filament_init function if the module is detected.
@@ -805,7 +874,7 @@ void Filament_loop(void)
           if((FDarray[b].ADCadr & 0xFE) == 0x10) AD5593write(FDarray[b].ADCadr, 9, 0);
           else digitalWrite(FDarray[b].FCD[c].Fpwr, LOW); // Power on
           // Adjust the current setpoint applying the ramp rate limit, this logic assumes this loop runs 10 times a sec
-          StepSize = FDarray[b].FCD[c].RampRate / 10;
+          StepSize = ((FDarray[b].FCD[c].RampRate < MinRampRate) ? MinRampRate : FDarray[b].FCD[c].RampRate) / 10;
           if (abs(FDarray[b].FCD[c].CurrentSetpoint - CurrentSetpoints[b][c]) < StepSize) CurrentSetpoints[b][c] = FDarray[b].FCD[c].CurrentSetpoint;
           else if (FDarray[b].FCD[c].CurrentSetpoint > CurrentSetpoints[b][c]) CurrentSetpoints[b][c] += StepSize;
           else if (FDarray[b].FCD[c].CurrentSetpoint < CurrentSetpoints[b][c]) CurrentSetpoints[b][c] -= StepSize;
@@ -824,7 +893,7 @@ void Filament_loop(void)
         else
         {
           // Ramp current to zero and then turn off power
-          StepSize = FDarray[b].FCD[c].RampRate / 10;
+          StepSize = ((FDarray[b].FCD[c].RampRate < MinRampRate) ? MinRampRate : FDarray[b].FCD[c].RampRate) / 10;
           CurrentSetpoints[b][c] -= StepSize;
           if(CurrentSetpoints[b][c] <= 0)
           {
@@ -991,7 +1060,7 @@ void SetFilamentCurrent(char *Chan, char *Current)
     return;
   }
   FDarray[b].FCD[Channel2Index(c - 1)].CurrentSetpoint = I;
-  if(FDarray[b].Rev >= 2) FDarray[b].FCD[0].CurrentSetpoint = I;
+  if(FDarray[b].Rev >= 2) FilamentSyncChannels(b, Channel2Index(c - 1));
   if ((c - 1) == SelectedFilamentChan) FCD.CurrentSetpoint = I;
   SendACK;
 }
@@ -1027,7 +1096,7 @@ void SetFilamentSupplyVoltage(char *Chan, char *Voltage)
   }
   FDarray[b].FCD[Channel2Index(c - 1)].FilamentVoltage = V;
   if ((c - 1) == SelectedFilamentChan) FCD.FilamentVoltage = FDarray[b].FCD[Channel2Index(c - 1)].FilamentVoltage;
-  if(FDarray[b].Rev >= 2) FDarray[b].FCD[0].FilamentVoltage = V;  
+  if(FDarray[b].Rev >= 2) FilamentSyncChannels(b, Channel2Index(c - 1));
   SendACK;
 }
 
@@ -1088,7 +1157,7 @@ void SetCurrentRampRate(char *chan, char *RampRate)
   b = BoardFromSelectedFilamentChannel(c-1);
   res = RampRate;
   fval = res.toFloat();
-  if ((fval < 0.0) || (fval > 1))
+  if ((fval < MinRampRate) || (fval > 1))
   {
     SetErrorCode(ERR_BADARG);
     SendNAK;
@@ -1146,8 +1215,11 @@ void SetCurrentDirection(char *chan, char *dir)
     SendNAK;
     return;    
   }
+  // The live channel structure is about to change, so carry its parameters over to the new one
+  int from = Channel2Index(channel-1);
   if(res == "FWD") CurrentDir = FDarray[b].Idir = true;
   else  CurrentDir = FDarray[b].Idir = false;
+  FilamentSyncChannels(b, from);
   SendACK;
   // Refresh the screen if the filament dialog is displayed. Also need to update the 
   // active channel buffer
@@ -1290,7 +1362,7 @@ void SetFilamentStatus(char *chan, char *Status)
   }
   if(res.equals("NO")) FDarray[b].FCyl[Channel2Index(c-1)].FCenable = false;
   else FDarray[b].FCyl[Channel2Index(c-1)].FCenable = true;
-  if ((c) == SelectedFilamentChan) FCY.FCenable = FDarray[b].FCyl[Channel2Index(c-1)].FCenable;
+  if ((c - 1) == SelectedFilamentChan) FCY.FCenable = FDarray[b].FCyl[Channel2Index(c-1)].FCenable;
   SendACK;
 }
 
