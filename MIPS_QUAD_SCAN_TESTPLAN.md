@@ -131,11 +131,13 @@ Setup of the electrometer through the MIPS (all via `TWI1CMD,32,...`, **argument
 `TWI1CMD,32,SMODE,1`): `SMODE,1`, then `SNUMP` and `SSRATE` for the burst you want, then `CONFIG` to apply them,
 `SGAIN`, `SBIAS`, `ZERO` as needed.
 
-**The electrometer's real sample rate is one third of `SSRATE` (measured October 17, 2026, see its TODO.md).**
-Burst time is `3 * SNUMP / SSRATE`: 100 points at `SSRATE,10000` takes 31 mS, not 10; 1000 points at 10000 takes 301 mS;
-5000 at 10000 takes 1.5 s, which is **longer than the default `SQSETMO` of 1000 mS**. Set `SQSETMO` above the longest
-burst you use. Add about 1 mS to each burst for processing. Choose a **short burst first** (e.g. `SNUMP,100`,
-`SSRATE,10000`, 31 mS) so the scan is quick. Then on the MIPS:
+**Electrometer sample rate.** Firmware built before October 17, 2026 (before commit "Fix the sample rate being one third of
+SSRATE") ran at **one third** of `SSRATE`, so bursts took 3 times the nominal time; make sure the electrometer has the fixed
+firmware (`GSRATEA` is then correct, and a 1000 point burst at `SSRATE,10000` takes 101 mS). With the fix, burst time is
+`SNUMP / SSRATE` (plus about 1 mS) for `SSRATE` up to **100000**. Above 100000 the ADC loses events (2x the nominal burst time
+at 120 to 200 kHz, 3x at 250 kHz) and `GSRATEA` does not show it, so stay at or below 100000 until the ADC clock is raised.
+The default `SQSETMO` of 1000 mS covers a 5000 point burst at 10000 (500 mS). Choose a **short burst first** (e.g. `SNUMP,100`,
+`SSRATE,10000`, about 11 mS) so the scan is quick. Then on the MIPS:
 `SQSSRC,1,ELECT`, `QSCANSTAT,1`.
 
 - [ ] **D.1 Electrometer new command.** Confirm the electrometer firmware has 0x8B: `GTWI,01208B72` (Wire1,
@@ -162,7 +164,7 @@ burst you use. Add about 1 mS to each burst for processing. Choose a **short bur
       non zero `GTRIGMIS` means triggers arrived mid-burst (point time is shorter than the burst).
 - [ ] **D.7 TWI trigger.** `SQSETRG,1,TWI`, repeat D.5/D.6. Same count and similar sums. Note the extra
       latency (about one short TWI write) on the scope.
-- [ ] **D.8 Timeout.** Set `SNUMP` large (e.g. 5000 at a slow rate; remember the burst takes 3 times its nominal time) and `SQSETMO,1,50`. `QSCAN` aborts with
+- [ ] **D.8 Timeout.** Set `SNUMP` large (e.g. 5000 at 1000, a 5 s burst) and `SQSETMO,1,50`. `QSCAN` aborts with
       the trailer (`0xEB`), `GERR` reports 134, and the next `QSCAN` works after restoring both.
 - [ ] **D.9 Abort.** ESC (0x1B) mid scan aborts with a trailer; a following scan runs normally.
 - [ ] **D.10 Several scans.** `SQSNUM,1,3`: three header/trailer frames. The count keeps rising.
