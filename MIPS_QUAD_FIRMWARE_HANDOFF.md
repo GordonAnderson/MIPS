@@ -474,9 +474,18 @@ same physical level — and has **not been done**.
   `arm-none-eabi-objdump -h src/<file>.cpp.o | grep CmdArray`: it should say `.rodata`, not `.data`.
   A bisect of the table entries (compile, check the section, drop half the entries) found the culprit in
   about ten compiles.
-- **Default module images are RAM too.** About 6.1 KB of read-only default structures in `Variants.cpp`
-  (`FILAMENT_Rev_1`, `RFA_Rev1`, the DCbias, RFdriver and Twave images...) are non-const globals. Every one is
-  only used as a copy source, and `BoardVariants[]` has no consumer, so they can be `const`. Not done yet.
+- **Default module images are `const`.** The read-only default structures in `Variants.cpp`
+  (`FILAMENT_Rev_1`, `RFA_Rev1`, the DCbias, RFdriver, Twave, ESI, ARB, DAC, FPGA and WiFi images) and
+  `HVPS_Rev_1/2` in `HVPS.cpp` are `const`, with matching `extern const` in `Variants.h` and `HVPS.h`, and
+  `BoardVariants[]` is `const void * const`. Each is only a copy source (`*XXXarray[Board] = XXX_Rev1`).
+  October 2026: `.relocate` 34,504 to 28,312 bytes (6,192 freed, flash +6,192), checked with `nm` that all
+  23 symbols are at flash addresses. `WriteEEPROM`/`WriteEEPROMext` take `const void *` because
+  `BoardFormatEEPROM` (the "Board type" format function in `MIPS.cpp`) writes a variant image from the
+  table; they only read their source buffer. **Gotcha:** an `extern const T X;` declaration must be visible
+  before the definition, or a `const` global has internal linkage and other files fail to link; the headers
+  already declare them and `Variants.cpp` includes them. A new default image added to `Variants.cpp` should
+  follow the same pattern. A grep that filters out lines containing `BoardVariantsNames` hid the one
+  consumer of `BoardVariants` the first time, so check for users with the plain name.
 - **Prove a change is comment-only when it claims to be.** Strip comments from both revisions
   and diff — cheaper and more convincing than reading the patch.
 - **Watch for silent-success failure modes.** `WriteEEPROM` returning 0 on a bad write,

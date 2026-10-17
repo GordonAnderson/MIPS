@@ -52,8 +52,8 @@ typedef struct
   float        b;
 } HVPSadc;
 
-extern HVPSdata HVPS_Rev_1;
-extern HVPSdata HVPS_Rev_2;
+extern const HVPSdata HVPS_Rev_1;
+extern const HVPSdata HVPS_Rev_2;
 extern float    MaxHVvoltage;
 
 extern HVPSdata *HVPSarray[];

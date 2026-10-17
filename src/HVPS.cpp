@@ -72,7 +72,7 @@ int SelectedHVPSboard       =  0;    // Active board, 0 through 3
 int HVPSCalChannel = 1;
 
 // Default parameters for modules 1 and 2.
-HVPSdata HVPS_Rev_1 = {
+const HVPSdata HVPS_Rev_1 = {
     sizeof(HVPSdata),"HVPS",1,
     0x52,0x48,0x23,2,
     
@@ -96,7 +96,7 @@ HVPSdata HVPS_Rev_1 = {
 };
 
 // Default parameters for modules 3 and 4.
-HVPSdata HVPS_Rev_2 = {
+const HVPSdata HVPS_Rev_2 = {
     sizeof(HVPSdata),"HVPS",1,
     0x54,0x4A,0x20,2,
     

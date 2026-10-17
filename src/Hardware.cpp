@@ -937,14 +937,14 @@ int ReadEEPROMext(void *src, uint16_t dadr, uint16_t address, uint16_t count)
 // count is the total number of bytes to write.
 //
 // Returns 0 if no errors are detected.
-int WriteEEPROM(void *src, uint16_t dadr, uint16_t address, uint16_t count)
+int WriteEEPROM(const void *src, uint16_t dadr, uint16_t address, uint16_t count)
 {
-  byte  *bval;
+  const byte  *bval;
   int   iStat, i = 0, num;
 
   AcquireTWI();
   num = count;
-  bval = (byte *)src;
+  bval = (const byte *)src;
   delay(10);
   while (1)
   {
@@ -989,14 +989,14 @@ int WriteEEPROM(void *src, uint16_t dadr, uint16_t address, uint16_t count)
   return (0);
 }
 
-int WriteEEPROMext(void *src, uint16_t dadr, uint16_t address, uint16_t count)
+int WriteEEPROMext(const void *src, uint16_t dadr, uint16_t address, uint16_t count)
 {
-  byte  *bval;
+  const byte  *bval;
   int   iStat, i = 0, num;
 
   AcquireTWI();
   num = count;
-  bval = (byte *)src;
+  bval = (const byte *)src;
   delay(10);
   while (1)
   {

@@ -144,23 +144,23 @@ void   DisplayIntensity(void);
 void   SetBackLight(void);
 
 extern MIPSconfigStruct MIPSconfigData;
-extern TwaveData Twave_Rev1;
-extern TwaveData Twave_Rev2;
-extern TwaveData Twave_Rev3;
-extern RFdriverData  RFDD_A_Rev_1; 
-extern RFdriverData  RFDD_B_Rev_1;
-extern DCbiasData  DCbD_250_Rev_1;
-extern DCbiasData  DCbD_250_Rev_2;
-extern DCbiasData  DCbD_50_Rev_1;
-extern FAIMSdata  FAIMS_Rev_1;
-extern ESIdata  ESI_Rev_1;
-extern FilamentData FILAMENT_Rev_1;
-extern ARBdata  ARB_Rev_1;
-extern WiFiData  WiFi_Rev_1;
-extern HOFAIMSdata  HOFAIMS_Rev_1;
-extern DACdata DAC_Rev1;
-extern RFAdata RFA_Rev1;
-extern FPGAmodule FPGA_Rev1;
+extern const TwaveData Twave_Rev1;
+extern const TwaveData Twave_Rev2;
+extern const TwaveData Twave_Rev3;
+extern const RFdriverData  RFDD_A_Rev_1; 
+extern const RFdriverData  RFDD_B_Rev_1;
+extern const DCbiasData  DCbD_250_Rev_1;
+extern const DCbiasData  DCbD_250_Rev_2;
+extern const DCbiasData  DCbD_50_Rev_1;
+extern const FAIMSdata  FAIMS_Rev_1;
+extern const ESIdata  ESI_Rev_1;
+extern const FilamentData FILAMENT_Rev_1;
+extern const ARBdata  ARB_Rev_1;
+extern const WiFiData  WiFi_Rev_1;
+extern const HOFAIMSdata  HOFAIMS_Rev_1;
+extern const DACdata DAC_Rev1;
+extern const RFAdata RFA_Rev1;
+extern const FPGAmodule FPGA_Rev1;
 
 // List of all possible board addresses. These addresses are those of the EEPROM on the modules
 extern const char *BoardAddressList;
@@ -169,7 +169,7 @@ extern const char *BoardAddressList;
 extern const char *BoardVariantsNames;
 
 // List of variant board default data structure pointers with a one to one correspondence to list of board names
-extern void *BoardVariants[];
+extern const void * const BoardVariants[];
 
 // Prototype for functions in MIPS
 void ReadAllSerial(void);

@@ -608,7 +608,7 @@ void BoardFormat(void)
 
 bool BoardFormatEEPROM(void)
 {
-  void *BoardConfigData;
+  const void *BoardConfigData;
   uint8_t addr;
   uint8_t brd;
   int CurrentBoard;
@@ -628,7 +628,7 @@ bool BoardFormatEEPROM(void)
   if (brd == 0) ENA_BRD_A;             // Select board
   else ENA_BRD_B;
   // Write to EEPROM
-  if (WriteEEPROM(BoardConfigData, addr, 0, *(int16_t *)BoardConfigData) != 0)
+  if (WriteEEPROM(BoardConfigData, addr, 0, *(const int16_t *)BoardConfigData) != 0)
   {
     digitalWrite(BRDSEL, CurrentBoard);  // Restore board select
     return false;

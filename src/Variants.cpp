@@ -25,7 +25,7 @@ softRTC rtc;
 
 MIPSconfigStruct MIPSconfigData = {sizeof(MIPSconfigStruct),"MIPS",2,0,0,1,false,true,1.0,"",false,false,"",50,false,(int)0xA55AE99E,false,false,false,false,0,0,0,0,true,0};
 
-TwaveData Twave_Rev1 = {sizeof(TwaveData),"Twave",1,1000000,03,0x10,0x20,0x27,0x69,
+const TwaveData Twave_Rev1 = {sizeof(TwaveData),"Twave",1,1000000,03,0x10,0x20,0x27,0x69,
                         20.0, 0, 76.53, 905, 0, 1, 0,
                          0.0, 1, 76.53, 0, 1, 1, 0,
                         10.0, 2, 76.53, 905, 2, 1, 0,
@@ -36,7 +36,7 @@ TwaveData Twave_Rev1 = {sizeof(TwaveData),"Twave",1,1000000,03,0x10,0x20,0x27,0x
                         0,-1,false,
                         };
 
-TwaveData Twave_Rev2 = {sizeof(TwaveData),"Twave",2,100000,03,0x10,0x20,0x27,0x69,
+const TwaveData Twave_Rev2 = {sizeof(TwaveData),"Twave",2,100000,03,0x10,0x20,0x27,0x69,
                         20.0, 0, 520, 0, 0, 520, 0,
                          0.0, 1, 520, 0, 1, 520, 0,
                         10.0, 2, 520, 0, 2, 520, 0,
@@ -48,7 +48,7 @@ TwaveData Twave_Rev2 = {sizeof(TwaveData),"Twave",2,100000,03,0x10,0x20,0x27,0x6
                         0,1,0.0
                         };
                         
-TwaveData Twave_Rev3 = {sizeof(TwaveData),"Twave",3,100000,03,0x1F,0x24,0x27,0x58,
+const TwaveData Twave_Rev3 = {sizeof(TwaveData),"Twave",3,100000,03,0x1F,0x24,0x27,0x58,
                         20.0, 0, 520, 0, 0, 520, 0,
                          0.0, 1, 520, 0, 1, 520, 0,
                         10.0, 2, 520, 0, 2, 520, 0,
@@ -60,7 +60,7 @@ TwaveData Twave_Rev3 = {sizeof(TwaveData),"Twave",3,100000,03,0x1F,0x24,0x27,0x5
                         0,1,0.0
                         };
 
-TwaveData Twave_Rev5 = {sizeof(TwaveData),"Twave",5,100000,03,0x1F,0x24,0x27,0x58,
+const TwaveData Twave_Rev5 = {sizeof(TwaveData),"Twave",5,100000,03,0x1F,0x24,0x27,0x58,
                         20.0, 0, 100, 0, 0, 100, 0,
                          0.0, 1, 100, 0, 1, 100, 0,
                         10.0, 2, 100, 0, 2, 100, 0,
@@ -72,7 +72,7 @@ TwaveData Twave_Rev5 = {sizeof(TwaveData),"Twave",5,100000,03,0x1F,0x24,0x27,0x5
                         0,1,0.0
                         };
 
-RFdriverData  RFDD_A_Rev_1 = {sizeof(RFdriverData),"RFdriver", 3, 2, 0x20, 0x69, 0x50,
+const RFdriverData  RFDD_A_Rev_1 = {sizeof(RFdriverData),"RFdriver", 3, 2, 0x20, 0x69, 0x50,
                               1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 5, 4, 32, 320, 5, 32, 320, 0, 2383.09, 0, 1, 2621.4, 0,
                               1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 7, 6, 32, 320, 7, 32, 320, 2, 2383.09, 0, 3, 2621.4, 0,
                               0,0,
@@ -84,7 +84,7 @@ RFdriverData  RFDD_A_Rev_1 = {sizeof(RFdriverData),"RFdriver", 3, 2, 0x20, 0x69,
                               9,6391,8051,9690,11382,12972,14830,16443,18287,20129,0,100,200,300,400,500,600,700,800,900,0,
                               };
                              
-RFdriverData  RFDD_B_Rev_1 = {sizeof(RFdriverData),"RFdriver", 3, 2, 0x20, 0x69, 0x50,
+const RFdriverData  RFDD_B_Rev_1 = {sizeof(RFdriverData),"RFdriver", 3, 2, 0x20, 0x69, 0x50,
                               1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 6, 4, 32, 320, 5, 32, 320, 0, 2383.09, 0, 1, 2621.4, 0,
                               1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 8, 6, 32, 320, 7, 32, 320, 2, 2383.09, 0, 3, 2621.4, 0,
                               0,0,
@@ -97,7 +97,7 @@ RFdriverData  RFDD_B_Rev_1 = {sizeof(RFdriverData),"RFdriver", 3, 2, 0x20, 0x69,
                              };
 
 // Rev 2 uses the new linear tech level sensors and thus needs a different engineering unit conversion.
-RFdriverData  RFDD_A_Rev_2 = {sizeof(RFdriverData),"RFdriver", 5, 2, 0x20, 0x69, 0x50,
+const RFdriverData  RFDD_A_Rev_2 = {sizeof(RFdriverData),"RFdriver", 5, 2, 0x20, 0x69, 0x50,
                               1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 5, 4, 32, 320, 5, 32, 320, 0, 2383.09, 0, 1, 2621.4, 0,
                               1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 7, 6, 32, 320, 7, 32, 320, 2, 2383.09, 0, 3, 2621.4, 0,
                               0,0,
@@ -109,7 +109,7 @@ RFdriverData  RFDD_A_Rev_2 = {sizeof(RFdriverData),"RFdriver", 5, 2, 0x20, 0x69,
                               9,6391,8051,9690,11382,12972,14830,16443,18287,20129,0,100,200,300,400,500,600,700,800,900,0,
                              };
                              
-RFdriverData  RFDD_B_Rev_2 = {sizeof(RFdriverData),"RFdriver", 5, 2, 0x20, 0x69, 0x50,
+const RFdriverData  RFDD_B_Rev_2 = {sizeof(RFdriverData),"RFdriver", 5, 2, 0x20, 0x69, 0x50,
                               1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 6, 4, 32, 320, 5, 32, 320, 0, 2383.09, 0, 1, 2621.4, 0,
                               1000000, 0, 0, RF_MANUAL, 50.0, 20.0, 8, 6, 32, 320, 7, 32, 320, 2, 2383.09, 0, 3, 2621.4, 0,
                               0,0,
@@ -121,7 +121,7 @@ RFdriverData  RFDD_B_Rev_2 = {sizeof(RFdriverData),"RFdriver", 5, 2, 0x20, 0x69,
                               9,6391,8051,9690,11382,12972,14830,16443,18287,20129,0,100,200,300,400,500,600,700,800,900,0,
                               };
 
-DCbiasData  DCbD_250_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 250, -250, true, 2, 0x23, 0x11, 0x52,
+const DCbiasData  DCbD_250_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 250, -250, true, 2, 0x23, 0x11, 0x52,
                               0, 0, 121.3, 32673, 0, 121.3, 32673,        // Ch 1
                               0, 1, 121.3, 32673, 1, 121.3, 32673,        // Ch 2
                               0, 2, 121.3, 32673, 2, 121.3, 32673,        // Ch 3
@@ -135,7 +135,7 @@ DCbiasData  DCbD_250_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 250, -250, true
                               0.0,0,0.0,0.0,0.0,0,
                              };
 
-DCbiasData  DCbD_250_Rev_2 = {sizeof(DCbiasData),"DCbias", 2, 8, 250, -250, true, 0, 0x20, 0x10, 0x54,
+const DCbiasData  DCbD_250_Rev_2 = {sizeof(DCbiasData),"DCbias", 2, 8, 250, -250, true, 0, 0x20, 0x10, 0x54,
                               0, 0, 121.3, 32673, 0, 121.3, 32673,        // Ch 1
                               0, 1, 121.3, 32673, 1, 121.3, 32673,        // Ch 2
                               0, 2, 121.3, 32673, 2, 121.3, 32673,        // Ch 3
@@ -149,7 +149,7 @@ DCbiasData  DCbD_250_Rev_2 = {sizeof(DCbiasData),"DCbias", 2, 8, 250, -250, true
                               0.0,0,0.0,0.0,0.0,0,
                              };
 
-DCbiasData  DCbD_750_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 750, -750, true, 2, 0x23, 0x18, 0x52,
+const DCbiasData  DCbD_750_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 750, -750, true, 2, 0x23, 0x18, 0x52,
                               0, 0, -26, 32767, 0, 26, 32767,        // Ch 1
                               0, 1, -26, 32767, 1, 26, 32767,        // Ch 2
                               0, 2, -26, 32767, 2, 26, 32767,        // Ch 3
@@ -163,7 +163,7 @@ DCbiasData  DCbD_750_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 750, -750, true
                               0.0,0,0.0,0.0,0.0,0,
                             };
           
-DCbiasData  DCbD_50_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 50, -50, true, 2, 0x23, 0x18, 0x52,
+const DCbiasData  DCbD_50_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 50, -50, true, 2, 0x23, 0x18, 0x52,
                              0, 0, 609.48, 32767, 0, 609.48, 32767,        // Ch 1
                              0, 1, 609.48, 32767, 1, 609.48, 32767,        // Ch 2
                              0, 2, 609.48, 32767, 2, 609.48, 32767,        // Ch 3
@@ -177,7 +177,7 @@ DCbiasData  DCbD_50_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 50, -50, true, 2
                               0.0,0,0.0,0.0,0.0,0,
                           };
 
-DCbiasData  DCbD_60_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 60, -60, true, 2, 0x23, 0x18, 0x52,
+const DCbiasData  DCbD_60_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 60, -60, true, 2, 0x23, 0x18, 0x52,
                              0, 0, 540, 32767, 0, 540, 32767,        // Ch 1
                              0, 1, 540, 32767, 1, 540, 32767,        // Ch 2
                              0, 2, 540, 32767, 2, 540, 32767,        // Ch 3
@@ -192,7 +192,7 @@ DCbiasData  DCbD_60_Rev_1 = {sizeof(DCbiasData),"DCbias", 1, 8, 60, -60, true, 2
                             };
 // Supports the single board filament controller for e-msion. remaps the DAC channels for board routing,
 // also uses the AD5593 ADC/DAC                            
-DCbiasData  DCbD_60_Rev_3 = {sizeof(DCbiasData),"DCbias", 3, 8, 60, -60, true, 2, 0x23, 0x11, 0x52,
+const DCbiasData  DCbD_60_Rev_3 = {sizeof(DCbiasData),"DCbias", 3, 8, 60, -60, true, 2, 0x23, 0x11, 0x52,
                              0, 1, 540, 32767, 0, 540, 32767,        // Ch 1
                              0, 3, 540, 32767, 1, 540, 32767,        // Ch 2
                              0, 5, 540, 32767, 2, 540, 32767,        // Ch 3
@@ -206,7 +206,7 @@ DCbiasData  DCbD_60_Rev_3 = {sizeof(DCbiasData),"DCbias", 3, 8, 60, -60, true, 2
                               0.0,0,0.0,0.0,0.0,0,
                             };
 #if FAIMScode                            
-FAIMSdata  FAIMS_Rev_1 = {sizeof(FAIMSdata),"FAIMS", 1, 1000000, 25.0, false, 4, 180, 75.2, 21.5, 100.0, 60.0,0.5,
+const FAIMSdata  FAIMS_Rev_1 = {sizeof(FAIMSdata),"FAIMS", 1, 1000000, 25.0, false, 4, 180, 75.2, 21.5, 100.0, 60.0,0.5,
                           0, 2, -113.7, 32767, 5, 113.7, 32767,            // DC offset
                           0, 0, 113.7, 32767, 3, 113.7, 32767,             // DC bias
                           0, 1, 113.7, 32767, 4, 113.7, 32767,             // DC CV
@@ -228,7 +228,7 @@ FAIMSdata  FAIMS_Rev_1 = {sizeof(FAIMSdata),"FAIMS", 1, 1000000, 25.0, false, 4,
                           };
 #endif
                          
-ESIdata  ESI_Rev_1 =   { sizeof(ESIdata),"ESI", 1,
+const ESIdata  ESI_Rev_1 =   { sizeof(ESIdata),"ESI", 1,
                          false,0.0,6000,6000,0.1,    // ESI channel 0
                              0,10.9225,0,            //   DAC voltage control
                              1,10.9225,0,            //   ADC voltage readback
@@ -247,7 +247,7 @@ ESIdata  ESI_Rev_1 =   { sizeof(ESIdata),"ESI", 1,
                          false
                         };
 
-FilamentData FILAMENT_Rev_1 = {sizeof(FilamentData),"Filament",1,2,
+const FilamentData FILAMENT_Rev_1 = {sizeof(FilamentData),"Filament",1,2,
                                0,5.0,false,0.1,FmodeI,10,14, 0,-3868,21206, 1,5392,13960, 0,13156,-137, 1,13050,-96, 2,2722,6421,
                                0,5.0,false,0.1,FmodeI,10,48, 2,-3868,21206, 3,5392,13960, 3,13156,-137, 4,13050,-96, 5,2722,6421,
                                0x24,0x12,0x52,
@@ -258,7 +258,7 @@ FilamentData FILAMENT_Rev_1 = {sizeof(FilamentData),"Filament",1,2,
                               };
                               
 // Supports the single board filament controller for e-msion. only one filament channel and no reversal
-FilamentData FILAMENT_Rev_4 = {sizeof(FilamentData),"Filament",4,1,
+const FilamentData FILAMENT_Rev_4 = {sizeof(FilamentData),"Filament",4,1,
                                0,5.0,false,0.1,FmodeI,10, 0, 1,-3868,21206, 4,5392,13960, 2,13156,-137, 3,13050,-96, 5,2722,6421,
                                0,5.0,false,0.1,FmodeI,10, 0, 1,-3868,21206, 4,5392,13960, 2,13156,-137, 3,13050,-96, 5,2722,6421,
                                0x10,0x10,0x52,
@@ -268,7 +268,7 @@ FilamentData FILAMENT_Rev_4 = {sizeof(FilamentData),"Filament",4,1,
                                6,2500,32767,
                               };
 
-ARBdata  ARB_Rev_1 = {sizeof(ARBdata),"ARB", 1, false, 1, false, 100, 0, true,20000,25,0,32,ARB_SIN,
+const ARBdata  ARB_Rev_1 = {sizeof(ARBdata),"ARB", 1, false, 1, false, 100, 0, true,20000,25,0,32,ARB_SIN,
                       1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,
                       0x40,0x50,
                       "TWAVE",25.0,'R',RISING,1000,1,0,-1,
@@ -284,7 +284,7 @@ ARBdata  ARB_Rev_1 = {sizeof(ARBdata),"ARB", 1, false, 1, false, 100, 0, true,20
                       0,false,false,0,0,10,100,0,0,0,0,0,0,100,false,10,1
                      };
 #if HOFAIMcode
-HOFAIMSdata  HOFAIMS_Rev_1 = {sizeof(HOFAIMSdata),"HOFAIMS", 1, false, 0, 25.0, 0, 20, 50,
+const HOFAIMSdata  HOFAIMS_Rev_1 = {sizeof(HOFAIMSdata),"HOFAIMS", 1, false, 0, 25.0, 0, 20, 50,
                               0,2621,0,                                         // Vmon
                               1,2621,0,                                         // Imod
                               2,6656,10000,                                     // RFmon
@@ -293,7 +293,7 @@ HOFAIMSdata  HOFAIMS_Rev_1 = {sizeof(HOFAIMSdata),"HOFAIMS", 1, false, 0, 25.0, 
                               };
 #endif
 
-DACdata DAC_Rev1 = {sizeof(DACdata),"DAC",1,8,3,4,0x54,
+const DACdata DAC_Rev1 = {sizeof(DACdata),"DAC",1,8,3,4,0x54,
                     0,-10,10,"CH1","V",0,0,3276, 32767,
                     0,-10,10,"CH2","V",0,1,3276, 32767,
                     0,-10,10,"CH3","V",0,2,3276, 32767,
@@ -304,7 +304,7 @@ DACdata DAC_Rev1 = {sizeof(DACdata),"DAC",1,8,3,4,0x54,
                     0,0,10,"CH8","V",0,7,6553, 0
                    };
 
-RFAdata RFA_Rev1 = {sizeof(RFAdata),"RFamp",1,false,1000000,0,0,true,false,3,4,0x56,0x1F,0x24,
+const RFAdata RFA_Rev1 = {sizeof(RFAdata),"RFamp",1,false,1000000,0,0,true,false,3,4,0x56,0x1F,0x24,
                     0,650,0,
                     1,3.47,0,
                     2,650,0,
@@ -329,7 +329,7 @@ RFAdata RFA_Rev1 = {sizeof(RFAdata),"RFamp",1,false,1000000,0,0,true,false,3,4,0
                     false,888000,-0.35    // Calibration compensation parameters
                    };
 
-FPGAmodule FPGA_Rev1 = {sizeof(FPGAmodule),"FPGA",1,0x56,
+const FPGAmodule FPGA_Rev1 = {sizeof(FPGAmodule),"FPGA",1,0x56,
                         {{0,2962,32753},
                         {1,2962,32753},
                         {2,2962,32753},
@@ -347,13 +347,13 @@ FPGAmodule FPGA_Rev1 = {sizeof(FPGAmodule),"FPGA",1,0x56,
 };
 
 #if DCBanalog
-ADCmodule ADC_Rev1 = {sizeof(FPGAmodule),"ADC",1};
+const ADCmodule ADC_Rev1 = {sizeof(FPGAmodule),"ADC",1};
 #endif
 
 #ifdef TestMode
-WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_AP,"MIPSnet","MIPS","MIPS1234","",0,true,1};
+const WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_AP,"MIPSnet","MIPS","MIPS1234","",0,true,1};
 #else
-WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_IDLE,"MIPSnet","MIPS","MIPS1234","",0,false,1};
+const WiFiData  WiFi_Rev_1 = {sizeof(WiFiData),"WiFi",1,WS_IDLE,"MIPSnet","MIPS","MIPS1234","",0,false,1};
 #endif
 
 
@@ -399,7 +399,7 @@ const char *BoardVariantsNames = "RFdrvA R1,"
                            ;
                            
 // List of variant board default data structure pointers with a one to one correspondence to list of board names
-void *BoardVariants[] = {
+const void * const BoardVariants[] = {
                           (void *)&RFDD_A_Rev_1,
                           (void *)&RFDD_B_Rev_1,
                           (void *)&RFDD_A_Rev_2,
