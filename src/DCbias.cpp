@@ -1949,6 +1949,10 @@ void ProfileTrigISR(void)
   else ApplyDCbiasProfile(Profile2);
 }
 
+// True while the L (LT, pin 13) input is attached as the profile toggle level input. QUADscan checks
+// this before it drives LT as the electrometer trigger output.
+volatile bool DCBprofileLTattached = false;
+
 void profileLevelISR(void)
 {
   delayMicroseconds(10);
@@ -2011,6 +2015,7 @@ void SetDCbiasProfileToggle(void)
        if(ProfileTrig == NULL) ProfileTrig = new DIhandler;
        pinMode(LT,INPUT);
        attachInterrupt(LT,profileLevelISR,RISING);
+       DCBprofileLTattached = true;
        SendACK;
        return;
      }
@@ -2034,6 +2039,7 @@ void StopProfileToggle(void)
   if(ProfileTrig != NULL) ProfileTrig->detach();
   TMR_Profiles.stop();
   detachInterrupt(LT);
+  DCBprofileLTattached = false;
   SendACK;
 }
 

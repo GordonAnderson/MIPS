@@ -15,6 +15,8 @@
 #include "Serial.h"
 #include "Errors.h"
 #include "ADCdrv.h"
+#include "TWIext.h"
+#include "DCbias.h"
 #include <stddef.h>
 
 // Number of bytes the CRC covers: everything up to but NOT including the CRC field.
@@ -27,6 +29,11 @@
 #define QUADcalCRCLEN  offsetof(QUADcalRecord, CRC)
 
 // Defined later in the scan engine section, used before their definitions
+// Electrometer acquisition source state, see the Electrometer section in the scan engine
+static int  electLast[2]         = {0,0};       // Last completed burst count seen
+static bool electHostReady[2]    = {false,false};// Host driven scan initialised by SQSEINIT
+static bool electHostPending[2]  = {false,false};// Host driven scan has a triggered point not yet read
+
 static void QUADscanParmsInit(int brd);
 static int  QUADscanPointCount(int b);
 
@@ -576,6 +583,92 @@ void QUADscanGetFrame(int Module)
   else serial->println("NONE");
 }
 
+// Acquisition source, ADC or ELECT. ELECT triggers an IsolatedElectrometer on TWI1 and reads its burst sum.
+void QUADscanSetSrc(char *Module, char *value)
+{
+  int    b;
+  String token;
+  if((b = QUADcalBoardStr(Module)) == -1) return;
+  token = value;
+  if(token == "ADC") QUADscanP[b]->AcqSrc = QUADsrcADC;
+  else if(token == "ELECT") QUADscanP[b]->AcqSrc = QUADsrcELECT;
+  else BADARG;
+  // A source change ends any host driven (RFAACQ) electrometer scan in progress
+  QUADelectHostReset(b);
+  SendACK;
+}
+void QUADscanGetSrc(int Module)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  if(QUADscanP[b]->AcqSrc == QUADsrcELECT) serial->println("ELECT");
+  else serial->println("ADC");
+}
+void QUADscanSetElectAdd(int Module, int value)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  if((value < 8) || (value > 119)) BADARG;
+  QUADscanP[b]->ElectAdd = value;
+  QUADelectHostReset(b);
+  SendACK;
+}
+void QUADscanGetElectAdd(int Module)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  serial->println(QUADscanP[b]->ElectAdd);
+}
+void QUADscanSetElectTrig(char *Module, char *value)
+{
+  int    b;
+  String token;
+  if((b = QUADcalBoardStr(Module)) == -1) return;
+  token = value;
+  if(token == "HW") QUADscanP[b]->ElectHW = true;
+  else if(token == "TWI") QUADscanP[b]->ElectHW = false;
+  else BADARG;
+  QUADelectHostReset(b);
+  SendACK;
+}
+void QUADscanGetElectTrig(int Module)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  if(QUADscanP[b]->ElectHW) serial->println("HW");
+  else serial->println("TWI");
+}
+void QUADscanSetElectTmo(int Module, int value)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  if((value < 10) || (value > 60000)) BADARG;
+  QUADscanP[b]->ElectTmo = value;
+  SendACK;
+}
+void QUADscanGetElectTmo(int Module)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  serial->println(QUADscanP[b]->ElectTmo);
+}
+// Prepares the electrometer for a host driven (RFAACQ) scan: runs the preflight and clears any
+// pending result. The host sends this once before the first RFAACQ of every scan.
+void QUADscanElectInit(int Module)
+{
+  int b,err;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  if(QUADscanP[b]->AcqSrc != QUADsrcELECT) BADARG;
+  QUADelectHostReset(b);
+  if((err = QUADelectPreflight(b)) != 0) { SetErrorCode(err); SendNAK; return; }
+  electHostReady[b] = true;
+  SendACK;
+}
+
 // Reports everything the scan will use, including the ADC settings. Those are global and
 // are set by commands outside this module, so a user who changed ADCnumsamples for some
 // other purpose would otherwise get a silently different acquisition time per point.
@@ -607,18 +700,30 @@ void QUADscanStatus(int Module)
   if(n == -1) serial->println("INVALID, check start/stop/step");
   else if(n > QUADscanMAXPOINTS) { serial->print(n); serial->print(" EXCEEDS LIMIT OF "); serial->println(QUADscanMAXPOINTS); }
   else serial->println(n);
-  serial->println("  ADC settings are global, set with the ADC commands:");
-  serial->print("  ADC channel    "); serial->println(ADCchannel);
-  serial->print("  ADC samples    "); serial->println(ADCnumsamples);
-  serial->print("  ADC rate, Hz   "); serial->println(ADCrate);
-  if(ADCrate > 0)
+  serial->print("  Acquire source ");
+  if(QUADscanP[b]->AcqSrc == QUADsrcELECT)
   {
-    float acq = (float)ADCnumsamples * 1000.0 / (float)ADCrate;   // mS per point
-    serial->print("  Acquire, mS    "); serial->println(acq,3);
-    if(n > 0)
+    serial->println("ELECT, IsolatedElectrometer on TWI1");
+    serial->print("  Elect address  "); serial->println(QUADscanP[b]->ElectAdd);
+    serial->print("  Elect trigger  "); serial->println(QUADscanP[b]->ElectHW ? "HW, LT pin" : "TWI");
+    serial->print("  Elect timeout  "); serial->println(QUADscanP[b]->ElectTmo);
+    serial->println("  Acquire time is set by the electrometer SNUMP and SSRATE");
+  }
+  else
+  {
+    serial->println("  ADC settings are global, set with the ADC commands:");
+    serial->print("  ADC channel    "); serial->println(ADCchannel);
+    serial->print("  ADC samples    "); serial->println(ADCnumsamples);
+    serial->print("  ADC rate, Hz   "); serial->println(ADCrate);
+    if(ADCrate > 0)
     {
-      serial->print("  Est scan, S    ");
-      serial->println(((acq + QUADscanP[b]->Dwell) * n * QUADscanP[b]->NumScans) / 1000.0,2);
+      float acq = (float)ADCnumsamples * 1000.0 / (float)ADCrate;   // mS per point
+      serial->print("  Acquire, mS    "); serial->println(acq,3);
+      if(n > 0)
+      {
+        serial->print("  Est scan, S    ");
+        serial->println(((acq + QUADscanP[b]->Dwell) * n * QUADscanP[b]->NumScans) / 1000.0,2);
+      }
     }
   }
   serial->print("  Cal table      ");
@@ -737,6 +842,24 @@ Commands QUADscanCmdArray[] = {
                                                              // Ignored, framing is always sent, when SQSADCENA
                                                              // is TRUE
   {"GQSFRAME",CMDfunction, 1, (char *)QUADscanGetFrame},      // Return the no-acquire framing mode
+  {"SQSSRC",  CMDfunctionStr, 2, (char *)QUADscanSetSrc},     // Set the acquisition source, module,ADC|ELECT. Default ADC.
+                                                             // ELECT triggers an IsolatedElectrometer in triggered burst
+                                                             // mode (its mode 1) and streams its burst sum. The burst
+                                                             // length and rate come from the electrometer SNUMP and SSRATE
+  {"GQSSRC",  CMDfunction, 1, (char *)QUADscanGetSrc},        // Return the acquisition source
+  {"SQSEADD", CMDfunction, 2, (char *)QUADscanSetElectAdd},   // Set the electrometer TWI1 address, module,add. Decimal,
+                                                             // 8 to 119, default 32 (0x20)
+  {"GQSEADD", CMDfunction, 1, (char *)QUADscanGetElectAdd},   // Return the electrometer TWI1 address
+  {"SQSETRG", CMDfunctionStr, 2, (char *)QUADscanSetElectTrig},// Set how the electrometer is triggered, module,HW|TWI.
+                                                             // HW (default) pulses LT, pin 13, wired to the electrometer
+                                                             // TRIGIN. TWI sends the electrometer software trigger
+  {"GQSETRG", CMDfunction, 1, (char *)QUADscanGetElectTrig},  // Return the electrometer trigger method
+  {"SQSETMO", CMDfunction, 2, (char *)QUADscanSetElectTmo},   // Set the max mS to wait for the electrometer to finish a
+                                                             // point, module,mS. Range 10 to 60000, default 1000
+  {"GQSETMO", CMDfunction, 1, (char *)QUADscanGetElectTmo},   // Return the electrometer timeout
+  {"SQSEINIT",CMDfunction, 1, (char *)QUADscanElectInit},     // Prepare the electrometer for a host driven RFAACQ scan,
+                                                             // module. Checks it is in mode 1 and armed. Send once before
+                                                             // the first RFAACQ of each scan
   {"QSCANSTAT",CMDfunction, 1, (char *)QUADscanStatus},       // Report the scan parameters, the global ADC settings the
                                                              // scan will use, the computed point count and estimated
                                                              // scan time, and what the cal table does at the scan
@@ -780,12 +903,168 @@ static void QUADscanParmsInit(int brd)
   QUADscanP[brd]->AcqEna     = true;
   QUADscanP[brd]->FrameOnNoAcq = true;
   strcpy(QUADscanP[brd]->StartPin, "NA");
+  QUADscanP[brd]->AcqSrc     = QUADsrcADC;
+  QUADscanP[brd]->ElectAdd   = 32;
+  QUADscanP[brd]->ElectHW    = true;
+  QUADscanP[brd]->ElectTmo   = 1000;
 }
 
-// Acquire one spectrum point. Returns false on ADC timeout or failure; the caller aborts
-// the scan rather than emitting a bad point.
-static bool QUADscanAcquire(int *sum)
+// ---------------------------------------------------------------------------------------
+// Electrometer acquisition source
+//
+// An IsolatedElectrometer in triggered burst mode (its mode 1) acquires a burst of samples on
+// a rising edge on TRIGIN, or on the TWI software trigger, then publishes the burst sum and a
+// completed-burst count. TWI_READ_TRIGDATA returns the count (24 bit) and the sum (32 bit) in
+// one transaction, and the electrometer publishes the sum before it increments the count, so a
+// changed count always comes with its matching sum. A point is therefore: trigger, then poll
+// that one read until the count moves. The poll is used rather than a computed burst time
+// because the burst time depends on the electrometer sample rate setting.
+// The electrometer must already be configured (SMODE 1, SNUMP, SSRATE, SGAIN...) over TWI1CMD.
+//
+// STATUS AND BENCH TEST PLAN (build tested only, not yet run on hardware)
+//   Needs the IsolatedElectrometer firmware that has TWI_READ_TRIGDATA (0x8B); an older build will
+//   fail the preflight read. The electrometer TRIGIN is wired to LT (pin 13).
+//    1. Electrometer: TWI1CMD,32,SMODE 1 then SNUMP, SSRATE as needed. Check GTWI reads TRIGST = 1.
+//    2. SQSSRC,1,ELECT then QSCANSTAT,1 and check the electrometer lines.
+//    3. Preflight failures, each must NAK before any header, and GERR must report the code:
+//       electrometer unplugged or wrong SQSEADD (133), electrometer in mode 0 or 2 (133),
+//       SPROTOG L profile active (135, DCBprofileLTattached).
+//    4. Scope LT, quad RF and the electrometer. LT must pulse about 50uS after the dwell, never before
+//       the quad has settled, and the electrometer burst must fall inside one point.
+//    5. QSCAN a short range with SQSETRG HW, then TWI. Both must give the same point count and similar
+//       sums. Electrometer GTRIGCNT must equal the point count and GTRIGMIS must stay 0.
+//    6. Timeout: set SNUMP large and SQSETMO small, expect an aborted frame and error 134.
+//    7. Abort with ESC mid scan, then run again.
+//    8. Compare a peak against the MIPS ADC source at the same dwell.
+//    9. Host driven: SQSEINIT,1 then RFAACQ points. First call returns 0, later calls return the previous
+//       point's sum, -1 on a failure. RFAACQ without SQSEINIT NAKs.
+//   10. LT is also the ethernet config line, which broke when it was flashed every 100mS (see the
+//       1.236 note in RevisionHistory.md). Run the scan with the ethernet interface connected and
+//       check the link stays up. If it drops, use SQSETRG TWI.
+//   11. Wire1 speed: each point polls with a 9 byte transaction. At 100kHz that is about 1mS, at
+//       400kHz (STWISPEED,1,400000) about 0.25mS.
+// ---------------------------------------------------------------------------------------
+#define ELECT_TWI_TRIGGER      0x0B   // Software trigger
+#define ELECT_TWI_READ_MODE    0x83   // Operating mode, 1 = triggered burst
+#define ELECT_TWI_READ_TRIGST  0x89   // Trigger state, 1 = armed
+#define ELECT_TWI_READ_TRIGDAT 0x8B   // Count (24 bit) then burst sum (32 bit), little endian
+#define ELECT_TRIGSTATE_ARMED  1
+#define ELECT_READ_TRIES       3      // A transient NAK is retried before the point is failed
+#define QUADelectTRIGPULSEuS   50     // LT trigger pulse width. Short, LT is also the ethernet config line
+
+static bool electReadData(QUADscanParms *sp, int *count, int *sum)
 {
+  uint8_t d[7];
+  int     tries;
+
+  for(tries = 0; tries < ELECT_READ_TRIES; tries++)
+    if(TWI1readCmd(sp->ElectAdd, ELECT_TWI_READ_TRIGDAT, d, 7)) break;
+  if(tries == ELECT_READ_TRIES) return false;
+  *count = d[0] | (d[1] << 8) | (d[2] << 16);
+  *sum   = (int32_t)((uint32_t)d[3] | ((uint32_t)d[4] << 8) | ((uint32_t)d[5] << 16) | ((uint32_t)d[6] << 24));
+  return true;
+}
+
+// Called before any frame header is emitted. Returns 0 or an ERR_ code.
+int QUADelectPreflight(int brd)
+{
+  QUADscanParms *sp = QUADscanP[brd];
+  static bool    wire1Started = false;
+  uint8_t        mode = 0, state = 0;
+  int            count,sum;
+
+  if(sp->ElectHW && DCBprofileLTattached) return ERR_QUADLTBUSY;
+  if(!wire1Started) { Wire1.begin(); wire1Started = true; }
+  Wire1.setClock(Wire1DefaultSpeed);
+  if(!TWI1readCmd(sp->ElectAdd, ELECT_TWI_READ_MODE, &mode, 1))   return ERR_QUADNOELECT;
+  if(mode != 1)                                                    return ERR_QUADNOELECT;
+  if(!TWI1readCmd(sp->ElectAdd, ELECT_TWI_READ_TRIGST, &state, 1)) return ERR_QUADNOELECT;
+  if(state != ELECT_TRIGSTATE_ARMED)                               return ERR_QUADNOELECT;
+  if(!electReadData(sp, &count, &sum))                             return ERR_QUADNOELECT;
+  electLast[brd] = count;
+  if(sp->ElectHW)
+  {
+    // LT is the controller L LED and the ethernet config line, idle state is LOW. Drive it as an
+    // output for the electrometer trigger and leave it LOW afterwards, as at power up.
+    pinMode(LT, OUTPUT);
+    digitalWrite(LT, LOW);
+  }
+  return 0;
+}
+
+// Start one electrometer acquisition. The electrometer ignores the trigger, and counts it as
+// missed, if it is still busy with the previous burst, which shows up as a wait timeout.
+bool QUADelectTrigger(int brd)
+{
+  QUADscanParms *sp = QUADscanP[brd];
+
+  if(sp->ElectHW)
+  {
+    digitalWrite(LT, HIGH);
+    delayMicroseconds(QUADelectTRIGPULSEuS);
+    digitalWrite(LT, LOW);
+    return true;
+  }
+  return TWI1sendCmd(sp->ElectAdd, ELECT_TWI_TRIGGER);
+}
+
+// Wait for the triggered burst to complete and return its sum.
+bool QUADelectWait(int brd, int *sum, int *err)
+{
+  QUADscanParms *sp = QUADscanP[brd];
+  uint32_t       t0 = millis();
+  int            count;
+
+  while(true)
+  {
+    if(!electReadData(sp, &count, sum)) { *err = ERR_QUADNOELECT; return false; }
+    if(count != electLast[brd]) { electLast[brd] = count; return true; }
+    if((millis() - t0) > (uint32_t)sp->ElectTmo) { *err = ERR_QUADELECTTMO; return false; }
+    WDT_Restart(WDT);
+  }
+}
+
+// Host driven (RFAACQ) support. The host sends SQSEINIT once per scan, then each RFAACQ returns
+// the previous point's sum, sets the next point, and triggers.
+void QUADelectHostReset(int brd)
+{
+  electHostReady[brd]   = false;
+  electHostPending[brd] = false;
+}
+
+bool QUADelectHostReady(int brd)
+{
+  return electHostReady[brd];
+}
+
+// Returns the previous point's sum, or 0 on the first call of a scan, or -1 on a failure (a sum
+// is never negative, so -1 is unambiguous to the host).
+int QUADelectHostPrev(int brd)
+{
+  int sum = 0,err;
+
+  if(!electHostPending[brd]) return 0;
+  electHostPending[brd] = false;
+  if(!QUADelectWait(brd, &sum, &err)) { SetErrorCode(err); return -1; }
+  return sum;
+}
+
+void QUADelectHostTrigger(int brd)
+{
+  if(QUADelectTrigger(brd)) electHostPending[brd] = true;
+}
+
+// Acquire one spectrum point. Returns false on ADC or electrometer timeout or failure; the
+// caller aborts the scan rather than emitting a bad point.
+static bool QUADscanAcquire(int b, int *sum)
+{
+  if(QUADscanP[b]->AcqSrc == QUADsrcELECT)
+  {
+    int err = 0;
+    if(!QUADelectTrigger(b)) { SetErrorCode(ERR_QUADNOELECT); return false; }
+    if(!QUADelectWait(b, sum, &err)) { SetErrorCode(err); return false; }
+    return true;
+  }
   if(!ADCrbTrigger()) return false;
   return ADCfindSum(sum);
 }
@@ -893,7 +1172,7 @@ static bool QUADscanRunScanADC(int b, QUADscanParms *sp, int numPoints)
   // terminate on: neither the promised byte count nor a trailer ever arrived and only a host
   // side idle timeout recovered it. The caller always sends a trailer regardless of what this
   // returns.
-  if(!QUADscanAcquire(&sum)) return false;
+  if(!QUADscanAcquire(b, &sum)) return false;
   if(sp->TrigOutEna) ResetTRGOUT;
   for(int i = 1; i < numPoints; i++)
   {
@@ -911,7 +1190,7 @@ static bool QUADscanRunScanADC(int b, QUADscanParms *sp, int numPoints)
     QUADscanSendPoint(sum);
     // Wait out whatever is left of the dwell
     while((micros() - t0) < (uint32_t)(sp->Dwell * 1000)) ;
-    if(!QUADscanAcquire(&sum)) return false;
+    if(!QUADscanAcquire(b, &sum)) return false;
     if(sp->TrigOutEna) ResetTRGOUT;
   }
   QUADscanSendPoint(sum);      // The final point of this scan
@@ -968,7 +1247,13 @@ void QUADscanGo(int Module)
   // ADC_Handler tears the ADC down and calls ReleaseADC once ADCvectorNum reaches it, so
   // leaving it at the default of 1 would dismantle the ADC after the very first spectrum
   // point.
-  if(sp->AcqEna)
+  if(sp->AcqEna && (sp->AcqSrc == QUADsrcELECT))
+  {
+    // Electrometer source: no MIPS ADC. Check it is there, in mode 1 and armed before any header goes out.
+    QUADelectHostReset(b);
+    if((err = QUADelectPreflight(b)) != 0) { SetErrorCode(err); SendNAK; return; }
+  }
+  else if(sp->AcqEna)
   {
     ADCvectors = (numPoints * sp->NumScans) + 2;
     if((err = ADCrbSetup()) != 0)
@@ -992,7 +1277,7 @@ void QUADscanGo(int Module)
     if(sendFrame) QUADscanSendTrailer(aborted);
   }
   if(sp->TrigOutEna) ResetTRGOUT;
-  if(sp->AcqEna) ADCstop();
+  if(sp->AcqEna && (sp->AcqSrc == QUADsrcADC)) ADCstop();
   // Park back at the scan's start m/z rather than leaving the module sitting at whatever
   // point the scan happened to finish on. Besides being the sane idle state, this also
   // bounds the settling jump the next scan's priming step has to make: without it, that

@@ -1,14 +1,23 @@
 # MIPS QUAD firmware — handoff
 
-State of the firmware after phases 0 through 7a. Written August 2026, superseding the
-earlier `MIPS_QUAD_HANDOFF.md`.
+State of the firmware after phases 0 through 7a, plus the October 2026 work on TWI speed and
+the electrometer acquisition source (section 2a). Originally written August 2026, superseding
+the earlier `MIPS_QUAD_HANDOFF.md`; updated October 16, 2026.
 
 **Repo:** https://github.com/GordonAnderson/MIPS (public)
-**Branches on origin:** `master`, `phase0` … `phase7`, each building on the last.
-Branch from `phase7`. This document is committed on that branch; if the branch list above
-does not match what `git branch -r` reports, this file is behind the repo and the repo wins.
+**Branches on origin:** `master` only. The `phase0` … `phase7` branches this file used to
+describe are gone; all of that work is on `master`. If `git branch -r` shows something
+different, the repo wins.
 
-Firmware version string is `1.263`.
+Firmware version string is `1.268` (`src/MIPS.cpp`). **The October 2026 work did not bump it**,
+so two builds with different TWI/electrometer code report the same version. Identify a build by
+`git log -1`, not by the version string, until it is bumped.
+
+Companion document: [`MIPS_QUAD_SCAN_TESTPLAN.md`](MIPS_QUAD_SCAN_TESTPLAN.md), the ordered lab
+test roadmap for everything not yet bench verified.
+
+Companion firmware: `../IsolatedElectrometer` (separate repo, Adafruit Trinket M0). The QUAD
+scan's electrometer source needs its `TWI_READ_TRIGDATA` (0x8B) command, which is new.
 
 ---
 
@@ -127,6 +136,13 @@ stub, `wiring_pulse_asm.S` for `countPulseASM`, and `avr/dtostrf.c`.
 | phase6 | 420,436 | 26,116 |
 | phase7a | 420,444 | 26,116 |
 
+### On Gordon's Mac
+
+`~/.platformio/penv/bin/pio run` builds the real firmware (the `pio` command is not on PATH).
+A rebuild takes a few seconds. The `help_file_creator.py` post-build step regenerates
+`MIPScommands.txt`, so it will show as modified after any change to a command table; commit it
+with the change. Output is `firmware/MIPS_Version1.268.bin`.
+
 ### This is not a substitute for PlatformIO
 
 GCC 13.2 here versus the older compiler in PlatformIO's `atmelsam` platform. Flags are
@@ -158,6 +174,57 @@ share. Note that both paths pipeline identically: the host script primes with
 `QUADscanGo` primes before its point loop and sends the previous point's sum while the
 current one settles. The calibration lookup is applied to the point being *set* in both.
 
+### 2a. October 2026: TWI speed and the electrometer source
+
+Everything in this section is **build tested only unless it says it was measured**. None of
+the electrometer source has run on hardware. Order of work, oldest first:
+
+| Commit | Content | Verified |
+|---|---|---|
+| `0dd7a40` | `TWIreadLine()` in `TWIext.cpp`: master read that stops the bus transaction at the `\n` | Bench, via TWI1CMD |
+| `f4b8129` | GTWI/STWI fixes: board select missing `else`, GTWI read buffer overflow | Build only |
+| `bb69a44` | `TWI1scmd` uses `TWIreadLine`, fails fast on address NAK | Bench, measured |
+| `6411f52` | `TWIscmd` (channel 0) uses `TWIreadLine` behind `TWICMD_FAST` | **Build only** |
+| (next commit) | Electrometer acquisition source for `QSCAN` and `RFAACQ`; this doc and the test plan | **Build only** |
+
+**Measured TWI1CMD result** (`TWI1CMD,32,RADC`, 200 iteration JavaScript loop timed from the host,
+so it includes the serial round trip): 6.64 mS before, 3.9 mS after at 100 kHz, 2.5 mS at 400 kHz.
+`GTWI,0120A125` is 1.36 mS at 400 kHz, which is the floor for that device. `GTWI,0020A125`
+(Wire, not Wire1) measured 0.889 mS. The remaining gap to the floor is mostly the slave's
+text-command latency, not the master.
+
+**Why it was slow.** `Wire.requestFrom(addr, 32)` cannot stop early, so every poll clocked 32
+bytes (about 3.3 mS at 100 kHz) even for a reply of `"\n"`, and the first poll after the write
+was almost always wasted because the slave had not queued its reply yet. `TWIreadLine` drives the
+SAM3X TWI hardware directly (same `twi.c` calls `Wire.requestFrom` makes) and writes STOP as soon
+as it reads a `\n`.
+
+**Electrometer acquisition source.** `SQSSRC,<module>,ADC|ELECT` selects what `QSCAN` and
+`RFAACQ` acquire with. `ELECT` triggers an IsolatedElectrometer in its triggered burst mode
+(mode 1) and streams its 32-bit burst sum, same 4 byte point format, same framing. The pipelined
+scan loop is unchanged: `QUADscanAcquire(b, &sum)` now dispatches on the source, and the ADC
+claim/release is skipped for `ELECT`.
+
+Per point: set the m/z, send the previous point, wait out the dwell, **trigger**, then **poll
+`TWI_READ_TRIGDATA` until the completed-burst count changes**. The poll returns count (24 bit) and
+sum (32 bit) in one 7 byte read.
+
+| Command | Purpose |
+|---|---|
+| `SQSSRC` / `GQSSRC` | `ADC` (default) or `ELECT` |
+| `SQSEADD` / `GQSEADD` | Electrometer TWI1 address, decimal, default 32 (0x20) |
+| `SQSETRG` / `GQSETRG` | `HW` (default) pulses LT, pin 13; `TWI` sends the software trigger (0x0B) |
+| `SQSETMO` / `GQSETMO` | Max mS to wait for one point, default 1000 |
+| `SQSEINIT` | Host driven scans only: preflight and arm. Send once before the first `RFAACQ` of each scan |
+
+Error codes 133 (`ERR_QUADNOELECT`), 134 (`ERR_QUADELECTTMO`), 135 (`ERR_QUADLTBUSY`).
+
+**Electrometer firmware change** (`../IsolatedElectrometer`, uncommitted when this was written
+unless its `git log` says otherwise): new TWI command `0x8B TWI_READ_TRIGDATA` returns count
+(24 bit) then sum (32 bit), 7 bytes, little endian. `processTriggeredBurst()` publishes the sum
+before it increments the count, so a changed count always carries its matching sum. The electrometer
+README and TODO are updated. An older electrometer build fails the preflight read (error 133).
+
 ---
 
 ## 3. Phase by phase, what shipped
@@ -173,6 +240,7 @@ current one settles. The calibration lookup is applied to the point being *set* 
 | 6c | Range hold while a calibration page is active |
 | 6d | Resync the dialog copy after a calibration |
 | 7a | Always emit a trailer for every `QSCAN` header |
+| Oct 2026 | TWI read speed-up, GTWI/STWI fixes, electrometer acquisition source (section 2a). Not phased, committed straight to `master` |
 
 ### 5a is load bearing for documentation
 
@@ -289,6 +357,51 @@ guards the point loop instead of breaking.
 Structural invariant worth preserving: header and trailer are at the same brace depth in the
 scan loop body, and the two remaining `break`s are inside the inner point loop.
 
+**`TWIreadLine` and the STOP timing.** The SAM3X sends STOP at the end of the byte in flight, so
+writing STOP after the byte that ended the reply is read lets one more byte be clocked. The
+function drains zero, one or more extra bytes until `TXCOMP`, so it works whether the hardware
+NACKs the `\n` byte itself or clocks one more. Whether it does is unmeasured; the scope check is
+in the test plan. A reply never starts with 0xFF (an idle slave pads with 0xFF), so a first byte of
+0xFF returns 0 ("nothing queued yet") after about 2 byte times instead of a full wasted poll. The
+status register is cleared on read, so all status bits are accumulated in one variable.
+
+**Fixed length chunked reads were rejected.** Reading 10 bytes per poll looked like an easy win but
+is only safe if the slave keeps a persistent reply buffer with a read pointer. The IsolatedElectrometer
+and similar Arduino slaves rebuild the reply in `onRequest`, so a reply over 10 bytes would repeat
+its first 10 bytes forever. Stopping on `\n` needs no slave change.
+
+**`TWICMD_FAST` switch (Serial.cpp).** Channel 0 (`TWICMD`, the `Wire` port with board select and
+the `AcquireTWI` lock) was changed without hardware to test it, so the new reply loop sits behind
+`#define TWICMD_FAST 1`. Set it to 0 to restore the original `requestFrom(32)` loop with no other
+change. Every exit path of the new branch calls `ReleaseTWI()`; a missed one would leave `TWIbusy`
+set and stop the ISR queue from ever flushing. Both settings build.
+
+**Electrometer: poll the count, do not compute the burst time.** The electrometer TODO says the real
+sample rate may be one third of the requested one (TC4 CC[0] computed from `F_CPU` 48 MHz while the
+timer runs from the 16 MHz GCLK4), and the ADC tops out near 53 kS/s although `SSRATE` allows
+250000. A burst time derived from `SSRATE` would therefore be wrong. Polling the completed count
+is correct regardless and doubles as missed-trigger detection (a trigger that arrives mid-burst is
+ignored, the count never moves, the wait times out and the scan aborts with 134).
+
+**Why a combined 0x8B read.** One transaction per poll instead of a count read plus a sum read, and
+the 24 bit `SendInt24` is too small for the sum (4095 × up to 5000 points). The sum is sent as two
+`SendWord`s because the WireHelper library has no 32 bit send, and the library was not modified.
+
+**LT is the electrometer trigger, and it has other jobs.** LT (pin 13) is the yellow L LED, the
+ethernet config line and, in DCbias "L" profile mode, an interrupt input. The scan sets it to an
+output LOW only when the hardware trigger is selected, pulses it HIGH for 50 µs per point, and
+leaves it LOW, which is the state `setup()` leaves it in. `RevisionHistory.md` 1.236 records that
+flashing LT every 100 mS broke the ethernet interface; whether a 50 µs pulse per point does is
+**unknown** and is a test plan item. `DCBprofileLTattached` (DCbias.cpp) is set while the L profile
+input is attached, and the electrometer preflight refuses the hardware trigger (error 135) while it is.
+
+**`RFAACQ` electrometer protocol.** Same contract as the ADC path: each call returns the previous
+point's sum, sets the next point, waits the dwell and triggers. The first call of a scan returns 0.
+A failure returns **-1**, which is unambiguous because a sum is never negative. `RFAACQ` cannot
+detect the start of a scan by itself, as the ADC path does through `ADCrbSetup`, so the host sends
+`SQSEINIT` once per scan; `RFAACQ` NAKs with 133 without it. Changing `SQSSRC`, `SQSEADD` or
+`SQSETRG` clears the initialised state.
+
 **Setpoint DAC calibration depends on the readback calibration.** `GetAverageV()` and
 `GetAverageVLR()` measure through `ADCchans` / `ADCchansLR`. So the readback calibration must
 be done **before** the setpoint DAC calibration, or the drive side inherits the old readback
@@ -318,6 +431,14 @@ same physical level — and has **not been done**.
 | T1-2 command preamble refactor | ~30 handlers share four lines of boilerplate. Never done. |
 | Auto tune coarse grid vs high Q | Mitigated by `SRFATSTEP` / `SRFATDLY` / range narrowing, not solved. A resonance narrower than the coarse step can fall between grid points. |
 | Lock the range for a whole scan | Raised as optional in the dual range work: `QUADscanGo` knows the range before it starts and could hold one range for the whole spectrum. 6b and 6c may have made this unnecessary — measure first. |
+| **Electrometer source, bench test** | Nothing in section 2a has run on hardware. Roadmap in the test plan. First checks: LT pulse timing against the quad settle, `GTRIGCNT` equals the point count with `GTRIGMIS` 0, and the ethernet link stays up. |
+| `TWICMD` (channel 0) on hardware | `TWICMD_FAST 1` is untested. Fallback is setting it to 0. |
+| Extra byte after the `\n` | Whether `TWIreadLine` clocks one. Scope on SDA1/SCL1. Harmless either way, but unmeasured. |
+| Wire1 users from ISRs | Never audited. `Wire` use from ISRs is protected by `AcquireTWI`/`TWIqueue`; `Wire1` is not. The scan blocks the 10 Hz loop but an ISR could still touch Wire1. |
+| `STWISPEED` is RAM only | `Wire1DefaultSpeed` defaults to 100000 at every boot. 400 kHz cuts a TWI1CMD from 3.9 to 2.5 mS but affects every Wire1 module (DCbias, DCBcurrent, FAIMSfb, level detector, ESI). Not checked on all of them. |
+| Version string not bumped | See the header. Bump before shipping so builds are distinguishable. |
+| Electrometer TODO items | Hardware TRIGIN edges, TRIGIN pull-down (LT drives it LOW when idle, but it floats if LT is not an output), first-sample timing after a trigger, the sample-rate and ADC-clock mismatches. In `../IsolatedElectrometer/TODO.md`. |
+| Electrometer data content | `ELECT` streams the integer burst sum; the host does not know it is not the MIPS ADC sum. The frame header has no source field. |
 | Terminal instability after binary streams | Seen twice. The most likely explanation is the host feeding the ACK and binary payload into the line oriented command parser; see the Qt handoff. Watch whether it survives the Qt work. |
 | Manual: calibration ordering | `MIPSquadOperationsR3_2.docx` Appendix B does not state that readbacks must be calibrated before setpoints. Worth adding. Appendix B otherwise survived 6a untouched because it tells the operator to match the value shown on the front panel rather than naming target voltages. |
 

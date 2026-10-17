@@ -1730,6 +1730,20 @@ void RFAacquire(void)
     if(!valueFromCommandLine(&delta,-10,10)) break;
     if(!valueFromCommandLine(&dwell,0,1000)) break;
     if((b = RFAmodule2board(module)) == -1) return;
+    // Electrometer source (SQSSRC ELECT). Same protocol as the ADC path: return the previous
+    // point's sum (0 on the first call of a scan, -1 on a failure), set this point, wait the
+    // dwell and trigger. SQSEINIT must have been sent to start the scan.
+    if((QUADscanP[b] != NULL) && (QUADscanP[b]->AcqSrc == QUADsrcELECT))
+    {
+      if(!QUADelectHostReady(b)) { SetErrorCode(ERR_QUADNOELECT); SendNAK; return; }
+      SendACKonly;
+      sum = QUADelectHostPrev(b);
+      RFAsetScanPoint(b, mz, delta);
+      if(dwell > 0) delay(dwell);
+      QUADelectHostTrigger(b);
+      serial->println(sum);
+      return;
+    }
     SendACKonly;
     // Read the digitizer vector sum. sum is preset to 0 because ADCfindSum leaves it
     // untouched when no vector has been recorded yet or the acquire timed out; the

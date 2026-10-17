@@ -1051,6 +1051,24 @@ SAVEQCAL; they return to their defaults on reset.
                     Ignored, framing is always sent, when SQSADCENA
                     is TRUE
   GQSFRAME          Return the no-acquire framing mode
+  SQSSRC            Set the acquisition source, module,ADC|ELECT. Default ADC.
+                    ELECT triggers an IsolatedElectrometer in triggered burst
+                    mode (its mode 1) and streams its burst sum. The burst
+                    length and rate come from the electrometer SNUMP and SSRATE
+  GQSSRC            Return the acquisition source
+  SQSEADD           Set the electrometer TWI1 address, module,add. Decimal,
+                    8 to 119, default 32 (0x20)
+  GQSEADD           Return the electrometer TWI1 address
+  SQSETRG           Set how the electrometer is triggered, module,HW|TWI.
+                    HW (default) pulses LT, pin 13, wired to the electrometer
+                    TRIGIN. TWI sends the electrometer software trigger
+  GQSETRG           Return the electrometer trigger method
+  SQSETMO           Set the max mS to wait for the electrometer to finish a
+                    point, module,mS. Range 10 to 60000, default 1000
+  GQSETMO           Return the electrometer timeout
+  SQSEINIT          Prepare the electrometer for a host driven RFAACQ scan,
+                    module. Checks it is in mode 1 and armed. Send once before
+                    the first RFAACQ of each scan
   QSCANSTAT         Report the scan parameters, the global ADC settings the
                     scan will use, the computed point count and estimated
                     scan time, and what the cal table does at the scan

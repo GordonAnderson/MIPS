@@ -839,6 +839,26 @@ int TWIreadLine(Twi *twi, uint8_t addr, char *buf, int maxlen)
   }
 }
 
+// Wire1 helpers for firmware that talks to a binary TWI device directly, i.e. the QUAD scan reading
+// an IsolatedElectrometer. Both return false on any NAK or short read.
+//
+// TWI1sendCmd writes the single command byte cmd, no data.
+// TWI1readCmd writes the single command byte cmd, then reads n bytes into buf.
+bool TWI1sendCmd(uint8_t add, uint8_t cmd)
+{
+  Wire1.beginTransmission(add);
+  Wire1.write(cmd);
+  return (Wire1.endTransmission() == 0);
+}
+
+bool TWI1readCmd(uint8_t add, uint8_t cmd, uint8_t *buf, int n)
+{
+  if(!TWI1sendCmd(add, cmd)) return false;
+  if(Wire1.requestFrom((int)add, n) != n) return false;
+  for(int i=0;i<n;i++) buf[i] = Wire1.read();
+  return true;
+}
+
 // The following codes support the GTWI and STWI commands
 //
 // Add generic TWI commands allowing MIPS controller to talk to TWI attached modules or

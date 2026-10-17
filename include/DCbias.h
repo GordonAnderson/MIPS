@@ -127,6 +127,7 @@ void GetDCbiasProfile(int num);
 void SetApplyDCbiasProfile(int num);
 void SetDCbiasProfileFromCurrent(int num);
 void StopProfileToggle(void);
+extern volatile bool DCBprofileLTattached;   // True while LT is attached as the profile level input
 void SetDCbiasProfileToggle(void);
 void SetDCbiasProfileChanMask(char *mask);
 void GetDCbiasProfileChanMask(void);

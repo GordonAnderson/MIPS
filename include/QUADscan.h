@@ -114,9 +114,20 @@ typedef struct
                                 // still streams the header/trailer per scan, with no point
                                 // payload, so the host retains scan start/end bookkeeping.
                                 // FALSE streams nothing at all during the scan.
+  uint8_t AcqSrc;               // Acquisition source when AcqEna is TRUE. QUADsrcADC (default) uses the
+                                // MIPS ADC. QUADsrcELECT triggers an IsolatedElectrometer in triggered
+                                // burst mode (mode 1) and reads the burst sum over TWI1. The streamed
+                                // point is the electrometer burst sum, 4 bytes, same framing.
+  uint8_t ElectAdd;             // Electrometer TWI1 address, decimal. Default 32 (0x20)
+  bool    ElectHW;              // TRUE (default) triggers by pulsing LT (pin 13), wired to the electrometer
+                                // TRIGIN. FALSE sends the electrometer TWI software trigger instead.
+  int     ElectTmo;             // Max mS to wait for the electrometer to finish one point. Default 1000
 } QUADscanParms;
 
 #define QUADscanMAXPOINTS   2000
+
+#define QUADsrcADC          0         // Acquire with the MIPS ADC
+#define QUADsrcELECT        1         // Acquire with an IsolatedElectrometer on TWI1
 
 // Streaming frame markers. Same convention as ADCtrigger in ADCdrv.cpp so the host parser
 // pattern is familiar.
@@ -128,6 +139,23 @@ typedef struct
 extern QUADcal *QUADcalTable[2];
 extern QUADscanParms *QUADscanP[2];
 extern CommandList QUADscanCmdList;
+
+// Electrometer acquisition source, shared by the QSCAN engine and the host driven RFAACQ path.
+// QUADelectPreflight checks the electrometer ACKs, is in mode 1 and is armed, takes over LT if the
+// hardware trigger is selected, and returns 0 or an ERR_ code. QUADelectTrigger starts one
+// acquisition. QUADelectWait blocks until that acquisition completes, then returns its sum.
+// QUADelectWait returns false on a TWI error or timeout, with the error code in *err.
+int  QUADelectPreflight(int brd);
+bool QUADelectTrigger(int brd);
+bool QUADelectWait(int brd, int *sum, int *err);
+
+// Host driven (RFAACQ) electrometer support. SQSEINIT calls the preflight and marks the scan ready;
+// each RFAACQ then reads the previous point (QUADelectHostPrev, 0 on the first call, -1 on a
+// failure), sets the next point, and triggers (QUADelectHostTrigger).
+void QUADelectHostReset(int brd);
+bool QUADelectHostReady(int brd);
+int  QUADelectHostPrev(int brd);
+void QUADelectHostTrigger(int brd);
 
 // Prototypes
 
@@ -172,6 +200,15 @@ void QUADscanSetAcqEna(char *Module, char *value);
 void QUADscanGetAcqEna(int Module);
 void QUADscanSetFrame(char *Module, char *value);
 void QUADscanGetFrame(int Module);
+void QUADscanSetSrc(char *Module, char *value);
+void QUADscanGetSrc(int Module);
+void QUADscanSetElectAdd(int Module, int value);
+void QUADscanGetElectAdd(int Module);
+void QUADscanSetElectTrig(char *Module, char *value);
+void QUADscanGetElectTrig(int Module);
+void QUADscanSetElectTmo(int Module, int value);
+void QUADscanGetElectTmo(int Module);
+void QUADscanElectInit(int Module);
 void QUADscanStatus(int Module);
 void QUADscanGo(int Module);
 

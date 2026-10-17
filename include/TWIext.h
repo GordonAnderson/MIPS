@@ -105,6 +105,8 @@ bool TWIreadBlock(uint8_t add, int board,int cmd, void *ptr, int numbytes);
 bool TWIreadBlock(uint8_t add, int board,int ch, int cmd, void *ptr, int numbytes);
 
 int  TWIreadLine(Twi *twi, uint8_t addr, char *buf, int maxlen);
+bool TWI1sendCmd(uint8_t add, uint8_t cmd);
+bool TWI1readCmd(uint8_t add, uint8_t cmd, uint8_t *buf, int n);
 
 void setTWIspeed(int ch, int speed);
 void getTWIspeed(int ch);
