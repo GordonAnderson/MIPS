@@ -53,6 +53,29 @@ static Run sim(double k, double tau, double Rfil, double plimit, double bias_on,
   return r;
 }
 
+// Heater current ADC input: the commanded current is rewritten from the ADC value at 10 Hz. With hold = false it is
+// rewritten unconditionally, which undoes FilamentControl's trimming. With hold = true it never raises the current
+// while the power is at 97% of the limit (FilamentEmission.cpp, step 3 of FEMloop).
+static void heaterAdc(double target, double plimit, double Rfil, int mode, double *maxP, double *meanCmd, double *meanP)
+{
+  // mode 0: rewrite every pass          mode 1: + never raise at 97% of the limit
+  // mode 2: + never command more than 0.1 A ahead of the ramped (actual) current
+  double dt = 0.1, cmd = 0.5, cur = 0.5, nextlim = 1.1, mp = 0, sum = 0, sp = 0; int n = 0;
+  for(int i = 0; i < 1200; i++)
+  {
+    double t = i*dt;
+    double d = cmd - cur, m = 0.1*dt; cur += (d > m) ? m : (d < -m) ? -m : d;     // ramp limiter
+    double P = Rfil*cur*cur;
+    if(t >= nextlim) { nextlim += 1.1; if(P > plimit) cmd -= 0.1; }              // FilamentControl power limiter
+    double v = target;                                                             // ADC rewrite every pass
+    if(mode >= 2 && v > cur + 0.1) v = cur + 0.1;
+    if(mode >= 1 && v > cmd && P >= 0.97*plimit) v = cmd;
+    cmd = v;
+    if(t > 60) { if(P > mp) mp = P; sum += cmd; sp += P; n++; }
+  }
+  *maxP = mp; *meanCmd = sum/n; *meanP = sp/n;
+}
+
 int main()
 {
   srand(3);
@@ -91,5 +114,13 @@ int main()
       Run r = sim(k, tau, 1.2, lim, 400, 200, 12, 1300);
       printf("   %4.1f W %3.0f %3.0f | %7.3f  %8.0f  %10.0f  %12.0f\n", lim, k, tau, sqrt(lim/1.2), r.peak, r.above1000, r.settle);
     }
+  printf("5) Heater current ADC input asking for 3.0 A with a 6.0 W power limit (Rfil 1.2 ohm: the limit is 2.236 A)\n");
+  { double mp, mc, mm;
+    const char *names[] = {"rewritten every pass            ", "+ no raise at 97%% of the limit    ", "+ never more than 0.1 A ahead of ramp"};
+    for(int mode = 0; mode < 3; mode++)
+    {
+      heaterAdc(3.0, 6.0, 1.2, mode, &mp, &mc, &mm);
+      printf("   %s: max power %5.2f W, mean power %5.2f W, mean commanded %.3f A\n", names[mode], mp, mm, mc);
+    } }
   return 0;
 }

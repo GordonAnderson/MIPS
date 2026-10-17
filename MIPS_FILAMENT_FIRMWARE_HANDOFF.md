@@ -230,7 +230,8 @@ EEPROM image are unchanged; the settings are RAM only.
 - **Revisions.** Rev 3 and Rev 4 only, which have the on-module measurement, one per board, so two modules
   regulate independently. Rev 1/2 modules NAK the commands. Allocation is per board at init (`new`, about 80
   bytes) plus one `Thread` (about 48 bytes); static RAM grew by 24 bytes, flash by about 3 KB.
-- **Own thread, own command table.** A 500 mS thread (`FEMloop`) and a `const` command table `FEMCmdArray`
+- **Own thread, own command table.** A 100 mS thread (`FEMloop`; ADC and enable inputs at 10 Hz, the regulation
+  law itself only every 500 mS) and a `const` command table `FEMCmdArray`
   registered with `AddToCommandList` by the first board, in flash, with the block markers so
   `MIPScommands.txt` documents it.
 - **Control law** (`FEMcoreStep`), incremental, no integrator: `step = Ki * ln(Iset / max(meas, 1 uA)) * dt`,
@@ -247,6 +248,32 @@ EEPROM image are unchanged; the settings are RAM only.
 - **Host commands.** `SFLEIS/GFLEIS` setpoint (uA), `SFLEREG/GFLEREG` ON/OFF, `GFLEST` (`status,measured uA,
   current A`; status OFF, WAIT, BLOCKED, SEEK, REG, PLIM, IMAX), `SFLEIM/GFLEIM` largest setpoint, `SFLEIMN/
   GFLEIMN` lowest current, `SFLEGAIN`, `SFLEUP`, `SFLEDN`, `SFLERH` and their getters. Channel numbers are 1 based.
+- **ADC and enable inputs** (added October 17, 2026, in the style of ESI's `SESICTRL`; commit titled "Filament
+  emission: add ADC setpoint inputs and a digital enable input"). Per module, RAM only. `SFLEADC,chan,adc,slope,
+  intercept` sets the emission setpoint (uA) from a MIPS ADC channel (0 to 9, -1 for none; value is `counts *
+  slope + intercept`, 12 bit counts, 10 reads averaged, 10 Hz), clamped to 0 to the largest setpoint. `SFLIADC`
+  does the same for the heater current (A), clamped to 0 to 12 A. `SFLDIO,chan,Q..X|NA` names a digital input that
+  enables the filament (authoritative, high enables, low disables, as ESI). Getters `GFLEADC`, `GFLIADC`, `GFLDIO`.
+  The enable input is its own command pair, not a field on the two ADC commands as in ESI, because it belongs to the
+  channel and two commands setting it would be ambiguous. 23 commands in all.
+  - **A defined heater current ADC owns the filament current and disables regulation.** `SFLEREG,ON` is refused,
+    regulation is forced off when the heater ADC is defined, and `GFLEST` reports `HEATADC`. Removing it (adc -1)
+    does not restart regulation. It stands aside (`BLOCKED`) while filament cycling is enabled.
+  - **The power limiter interaction (found in simulation).** Rewriting `CurrentSetpoint` from the ADC every 100 mS
+    would undo `FilamentControl`'s trimming. A rule that only stopped raising the current at 97% of Max power still
+    produced a limit cycle: the command jumped to the ADC value while the ramped current was low, measured power
+    lagged, the limiter trimmed, and the ADC jumped it back (8.4 W peak on a 6 W limit). The heater ADC path
+    therefore also never commands more than `FEM_AHEAD` = 0.1 A above the ramped current
+    (`CurrentSetpoints[b][idx]`), so it follows the ramp and the limiter sees real power: 5.96 W mean and 6.18 W peak
+    on a 6 W limit, steady, in `tools/FilamentEmissionSim.cpp` scenario 5. For comparison the limiter alone peaks at
+    8.4 W when a user sets 3 A on a 6 W limit by hand; that is a property of the existing reactive limiter, not
+    changed. The emission regulator does not need the ahead rule (its 0.02 A/s slew is below the 0.1 A/s ramp), and
+    keeping it off preserves the warm start from the last regulated current.
+  - ADC reads go through `AcquireADC()`/`ReleaseADC()` and hold the last value if the digitizer owns the ADC. ESI and
+    HVPS do not do this.
+  - Cautions: a floating ADC input reads garbage (Max power is then the protection); a defined enable input
+    overrides `SFLENA` and the dialog within 100 mS; manual `SFLEIS`, `SFLI` and dialog edits are overwritten while
+    the corresponding ADC input is defined.
 - **Exclusions.** Regulation refuses to turn on while filament cycling is enabled and stands aside (`BLOCKED`) if
   cycling is turned on later. Disabling the filament gives `WAIT` and leaves the setpoint alone, so re-enabling
   starts from the last regulated current.
@@ -282,6 +309,7 @@ can fall. The mitigation is the user's: set Max power only a little above the op
 | RAM only | Setpoint and limits are lost at power up. A separate EEPROM record after the 256 byte `FilamentData` (signature, CRC, 16 byte aligned) is the way, after checking the module EEPROM size. |
 | No front panel page | Serial only, by request. A dialog opened from page 2, like the cycle menu, is the path. |
 | Retreat on no emission | Option B above. Would also reduce the late bias excursion. |
+| ADC inputs and enable input are RAM only | Like the regulation settings. They must be re-sent after every power up. |
 | Fixed 12 A ceiling | `FEM_MAXCUR` duplicates `MaxFilCur` from `Filament.cpp`, which is not in a header. Move it into `Filament.h` if it ever changes. |
 
 ---

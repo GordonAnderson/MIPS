@@ -5,7 +5,8 @@ Bench plan for the filament fixes in two sets of commits. Written October 17, 20
 - **First set, Parts 1–8:** `5dc8f71` ("Filament: fix ramp-rate freeze, shutdown, startup glitch, Rev 2 sync
   and EEPROM restore").
 - **Emission regulation, Part 12:** the commit titled "Filament: add emission current regulation (Rev 3 and 4)".
-  This is new capability, not a fix.
+  This is new capability, not a fix. Part 12.6 covers the ADC and enable inputs added by the commit titled
+  "Filament emission: add ADC setpoint inputs and a digital enable input".
 - **Fourth set, Part 11:** the commit titled "Move the filament host commands into the filament module".
 - **Third set, Part 10:** the commit titled "Filament: fix Rev 1 channel selection overrun, add index guards
   and finish the cleanups".
@@ -36,7 +37,7 @@ Run in this order. Parts 1–3 are the safety items and should pass before anyth
 | 9 | 9 | Second set: bias guard, reporting, emission display, `CALFIL` | Rev 1, 2+, 4; DCbias module for 9.1 and 9.4 | Revert the item, they are independent |
 | 10 | 10 | Third set: Rev 1 channel selection, cycling, `GFLENAR`, IV mode | Rev 1 two board system for 10.1 | Revert the item |
 | 11 | 11 | Filament commands registered by the module | Any system, with and without a filament board | Revert the commit |
-| 12 | 12 | Emission current regulation | Rev 3 module, vacuum tube first | `SFLEREG,<ch>,OFF`; revert the commit if needed |
+| 12 | 12 | Emission current regulation, and its ADC and enable inputs | Rev 3 module, vacuum tube first; a signal source on a MIPS ADC input for 12.6 | `SFLEREG,<ch>,OFF`, `SFLIADC,<ch>,-1,1,0`, `SFLEADC,<ch>,-1,1,0`, `SFLDIO,<ch>,NA` |
 | 13 | 8 | Regression of normal operation (run last) | Any | Find which part above broke it |
 
 Revision matrix. Only some tests apply to each module revision; mark the ones you have.
@@ -483,6 +484,44 @@ Defaults: setpoint 0, largest setpoint 1000 uA, lowest current 0 A, gain 0.005 A
       interact.
 - [ ] **Power loss while regulating** shuts the filament down as before.
 
+### 12.6 ADC setpoint inputs and the enable input
+
+In the style of the ESI module's `SESICTRL`: `SFLEADC,chan,adc,slope,intercept` (ADC to emission setpoint, uA),
+`SFLIADC,chan,adc,slope,intercept` (ADC to heater current, A), `SFLDIO,chan,Q..X|NA` (digital input that enables the
+filament). `adc` is a MIPS ADC channel 0 to 9, or -1 for none. The value is `counts * slope + intercept` where
+counts are the 12 bit Due ADC (0 to 4095 for 0 to 3.3 V at the pin), 10 reads averaged, updated at 10 Hz. Settings
+are RAM only. Use a bench supply or a potentiometer into the MIPS ADC input, with your own divider.
+**Test with a dummy load or the tube at a safe power first. A floating ADC input reads garbage.**
+
+- [ ] **12.6.1 Commands.** Each of `SFLEADC`, `GFLEADC`, `SFLIADC`, `GFLIADC`, `SFLDIO`, `GFLDIO` answers.
+      `GFLEADC,1` after `SFLEADC,1,2,0.5,10` returns `2,0.500000,10.000000,<last value>`. Defaults are `-1,1,0,0` and
+      `NA`. Range checks NAK: `SFLEADC,1,10,1,0` (adc above 9), `SFLEADC,3,...` (no channel 3), `SFLDIO,1,A`.
+- [ ] **12.6.2 Emission setpoint from the ADC.** `SFLEADC,1,<adc>,<slope>,<intercept>`; vary the input. `GFLEIS,1` follows
+      it within a second, clamped to 0 and the largest setpoint (`GFLEIM`). With regulation on
+      (`SFLEREG,1,ON`) the emission follows the changing setpoint. `SFLEADC,1,-1,1,0` removes it and the
+      setpoint stays where it was. A manual `SFLEIS` is overwritten while it is defined.
+- [ ] **12.6.3 Heater current from the ADC.** `SFLIADC,1,<adc>,<slope>,<intercept>`; vary the input with the filament
+      enabled into a safe load. `GFLI,1` follows it, the actual current (`GFLAI`) follows at the ramp rate, and it is
+      clamped to 0 to 12 A. `SFLI` and the dialog are overwritten while it is defined.
+- [ ] **12.6.4 Heater ADC disables regulation.** With regulation on, define the heater ADC: `GFLEREG,1` = OFF,
+      `GFLEST,1` status is `HEATADC`. `SFLEREG,1,ON` is refused (NAK). `SFLIADC,1,-1,1,0` removes it: status
+      returns to `OFF`, `SFLEREG,1,ON` is accepted again, and regulation does not restart on its own.
+- [ ] **12.6.5 Cycling.** With the heater ADC defined, enable filament cycling: the ADC stands aside (the current
+      follows the cycle, status `BLOCKED`). Disable cycling and the ADC takes the current again.
+- [ ] **12.6.6 The power limiter still works with the heater ADC.** Set **Max power** below the power the ADC value
+      would produce (e.g. a 6 W limit and an input asking for more). The power settles at about the limit, not the
+      value the ADC asks for: in the host simulation 5.96 W mean and 6.18 W peak for a 6 W limit, and a steady current
+      with **no repeated 0.1 A sawtooth**. A rule that only held at 97% of the limit gave an 8.4 W peak in
+      simulation (a limit cycle), which is why the command is also held to 0.1 A above the ramped current. Check
+      this one carefully: it is the safety interaction. Removing the high input lets the current fall.
+- [ ] **12.6.7 Enable input.** `SFLDIO,1,Q` (any of Q to X): high on that digital input enables the filament within
+      about 100 mS, low disables it and the current ramps down, and **this overrides `SFLENA` and the dialog** while
+      defined, as in ESI. `GFLDIO,1` returns the letter. `SFLDIO,1,NA` removes it and the filament stays as it was.
+      Check the input's polarity setting (`DIinvert`) gives the expected sense.
+- [ ] **12.6.8 ADC in use.** While the MIPS ADC digitizer is running (a host driven `RFAACQ` scan with the MIPS ADC),
+      the ADC values hold their last reading instead of being read, and resume afterwards.
+- [ ] **12.6.9 Two modules.** Assign different ADC channels to channel 1 and channel 2; each follows its own input.
+
 ---
 
 ## Sign-off
@@ -513,6 +552,7 @@ Defaults: setpoint 0, largest setpoint 1000 uA, lowest current 0 A, gain 0.005 A
 | 12.3 Closed loop | | | | gain / rate hold used: |
 | 12.4 Limits and late bias | | | | peak emission on late bias: |
 | 12.5 Interactions | | | | |
+| 12.6 ADC and enable inputs | | | | limiter check 12.6.6: |
 | 8 Regression | | | | |
 
 Record anything unexpected in the handoff's open items table with the commit from `git log -1`.

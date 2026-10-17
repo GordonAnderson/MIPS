@@ -54,7 +54,8 @@ enum FEMstatusCodes
   FEMst_SEEK,          // Emission is outside the band, current is being moved
   FEMst_REG,           // Emission is within the band of the setpoint
   FEMst_PLIM,          // Wanted to increase but the filament power limit holds it
-  FEMst_IMAX           // Wanted to increase but the current is at its maximum
+  FEMst_IMAX,          // Wanted to increase but the current is at its maximum
+  FEMst_HEATADC        // A heater current ADC input owns the filament current, regulation is disabled
 };
 
 typedef struct

@@ -947,9 +947,9 @@ Regulation raises or lowers the filament current to hold the emission current. T
 module Max power setting. See FilamentEmission.cpp.
   SFLEIS            Set the emission current setpoint, channel,uA. 0 to the emission max
   GFLEIS            Get the emission current setpoint, uA
-  SFLEREG           Enable emission regulation, channel,ON|OFF. Refused while filament cycling is on
+  SFLEREG           Enable emission regulation, channel,ON|OFF. Refused while filament cycling is on or a heater current ADC input is defined
   GFLEREG           Get the emission regulation state, ON or OFF
-  GFLEST            Get status,measured uA,filament current A. Status is OFF, WAIT, BLOCKED, SEEK, REG, PLIM or IMAX
+  GFLEST            Get status,measured uA,filament current A. Status is OFF, WAIT, BLOCKED, SEEK, REG, PLIM, IMAX or HEATADC
   SFLEIM            Set the largest emission setpoint accepted, channel,uA. 1 to 10000, default 1000
   GFLEIM            Get the largest emission setpoint accepted, uA
   SFLEIMN           Set the lowest filament current regulation will command, channel,A. Default 0
@@ -962,6 +962,12 @@ module Max power setting. See FilamentEmission.cpp.
   GFLEDN            Get the largest filament current decrease rate
   SFLERH            Set the emission rate hold, channel,1/s of ln(emission). 0.005 to 1, default 0.05
   GFLERH            Get the emission rate hold
+  SFLEADC           Set the ADC input that sets the emission setpoint, channel,adc,slope,intercept. adc 0 to 9, -1 for none. uA = counts * slope + intercept
+  GFLEADC           Get adc,slope,intercept,last value for the emission setpoint ADC input
+  SFLIADC           Set the ADC input that sets the heater current, channel,adc,slope,intercept. adc 0 to 9, -1 for none. A = counts * slope + intercept. Disables emission regulation while defined
+  GFLIADC           Get adc,slope,intercept,last value for the heater current ADC input
+  SFLDIO            Set the digital input that enables the filament, channel,Q to X or NA. High enables, low disables
+  GFLDIO            Get the digital input that enables the filament, Q to X or NA
 
 FPGA module commands
 
