@@ -199,11 +199,12 @@ The default `SQSETMO` of 1000 mS covers a 5000 point burst at 10000 (500 mS). Ch
 - [ ] **D.14 Wire1 speed.** *Result: October 17, 2026, TWI trigger, 201 points, 10 sample bursts, dwell 0: 4.98 mS per point at 100 kHz and 5.00 to 5.03 mS at 400 kHz, so the bus speed is not what sets the point time here (something else costs about 5 mS per point; not investigated). The resolving DC and pole bias read the same at 400 kHz. Restored to 100 kHz.* Repeat D.5 at 100 kHz and 400 kHz and note the per point overhead; the poll is
       a 9 byte transaction (about 1 mS and 0.25 mS respectively).
 - [x] **D.16 Where the time per point goes (RESOLVED October 17, 2026, see the conclusion at the end of this item).** *Gordon's measurements: an
-      `RFAACQ` scan of 1000 points with the electrometer takes about 11 s (about 11 mS per point) with dwell 0, a 10 point
-      burst and either 100 or 400 kHz on Wire1; the same scan with the MIPS ADC takes 3.3 s. Looping the commands from the
-      host: `TWI1CMD,32,GTRIGCNT` 6.39 mS per call, `GTWI,01208B72` 4.44 mS per call. So the host link, main loop and quad
-      update cost at most 3.3 mS per point, a Wire1 transaction is cheap, and the electrometer path adds about 7.7 mS per
-      point that does not depend on the bus speed or the dwell. Cause not yet found.* Run the scan (QSCAN or an
+      `RFAACQ` scan of **800 points** (the first `GQSESTAT` counted 801) with the electrometer takes 11 s (13.8 mS per
+      point) with dwell 0 and a 10 point burst; the same scan with the MIPS ADC takes 3.3 s (4.1 mS per point). Looping the
+      commands from the host: `TWI1CMD,32,GTRIGCNT` 6.39 mS per call, `GTWI,01208B72` 4.44 mS per call. So the host link,
+      main loop and quad update cost at most 4.1 mS per point, a Wire1 transaction is cheap, and the electrometer path
+      added about 9.6 mS per point. Cause not yet found.* *(Correction, October 18, 2026: these per point figures were
+      first written assuming 1000 points and were 20% low. Dividing by 800 makes them 25% higher.)* Run the scan (QSCAN or an
       `RFAACQ` scan after `SQSEINIT,1`), then `GQSESTAT,1`. It returns
       `points,trigUs,waitUs,completeUs,polls,readUs,readMaxUs,retries,fails` for the last point, in microseconds, and it
       is reset by each `QSCAN` / `SQSEINIT`. Read it as follows:
@@ -228,11 +229,12 @@ The default `SQSETMO` of 1000 mS covers a 5000 point burst at 10000 (500 mS). Ch
       the first poll of the last point. `completeUs` is the last point only and in an `RFAACQ` scan contains the host gap,
       so it did not locate the remaining cost. One read in each run took the 100 kHz time (`readMaxUs` 992).*
       ***Conclusion (Gordon, October 17, 2026):** an `RFAACQ` scan with the electrometer at 400 kHz on Wire1, 50 kHz sample
-      rate and 10 samples takes 3.7 mS per point, against 3.3 mS per point with the MIPS ADC, so the electrometer adds
-      only 0.4 mS, which is what the counters predict (a 69 us trigger plus a 334 us read). The earlier 7 to 11 mS per
-      point was not a fault in the scan code. Burst settings changed with `SSRATE` / `SNUMP` do not take effect until
+      rate and 10 samples takes 3.7 s for the 800 point scan (4.6 mS per point), against 3.3 s (4.1 mS per point) with the MIPS ADC, so the
+      electrometer adds about 0.5 mS per point, which is what the counters predict (a 69 us trigger plus a 334 us read is
+      0.4 mS; the scan times are only good to 0.1 s, which is 0.1 mS per point). The earlier 9.4 to 13.8 mS per
+      point (7.5 s and 11 s) was not a fault in the scan code. Burst settings changed with `SSRATE` / `SNUMP` do not take effect until
       `CONFIG` (so reducing `SNUMP` appeared to do nothing and the bursts stayed long), and the bus had been at 100
-      kHz and not 400 kHz. The 3.3 mS floor is the `RFAACQ` command round trip, the script and the plotting. To go lower
+      kHz and not 400 kHz. The 4.1 mS floor (3.3 s for 800 points) is the `RFAACQ` command round trip, the script and the plotting. To go lower
       use `QSCAN` (no host in the per point path), or send several `RFAACQ` commands before reading the replies, or plot
       every 10 to 20 points.*
 - [x] **D.15 ADC path untouched.** *(Also: full range ADC scan, 200 to 1200 m/z step 1 dwell 5 mS, 1001 points in 6.0 s, `0xEA`, parked at 200.)* `SQSSRC,1,ADC`, `QSCAN` behaves as in Part F.

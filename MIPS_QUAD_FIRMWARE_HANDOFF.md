@@ -188,14 +188,15 @@ the electrometer source has run on hardware. Order of work, oldest first:
 | `6411f52` | `TWIscmd` (channel 0) uses `TWIreadLine` behind `TWICMD_FAST` | **Build only** |
 | (next commit) | Electrometer acquisition source for `QSCAN` and `RFAACQ`; this doc and the test plan | **Build only** |
 
-**Resolved: the electrometer source's extra cost per point (October 17, 2026).** An `RFAACQ` scan of 1000 points first
-took 11 s with the electrometer against 3.3 s with the MIPS ADC. With the electrometer burst settings actually applied and the
-bus really at 400 kHz (Wire1, 50 kHz sampling, 10 samples) it takes 3.7 mS per point, so the electrometer adds 0.4 mS (a 69 us
-trigger plus a 334 us read), as `GQSESTAT` predicts. The cause of the earlier numbers was operational: `SSRATE` and
+**Resolved: the electrometer source's extra cost per point (October 17, 2026).** An `RFAACQ` scan of **800 points** first
+took 11 s with the electrometer (13.8 mS per point) against 3.3 s with the MIPS ADC (4.1 mS per point). With the electrometer
+burst settings actually applied and the bus really at 400 kHz (Wire1, 50 kHz sampling, 10 samples) it takes 3.7 s, 4.6 mS per
+point, so the electrometer adds about 0.5 mS (the counters show a 69 us trigger plus a 334 us read, 0.4 mS), as `GQSESTAT`
+predicts. These per point figures were first computed with 1000 points and were 20% low; corrected October 18, 2026. The cause of the earlier numbers was operational: `SSRATE` and
 `SNUMP` only store a value and do not take effect until `CONFIG` (or `SMODE,1` again) so a reduced burst never ran, and the
 bus was at 100 kHz. `GQSESTAT,<module>` (last point) and `GQSESUM,<module>` (averages over the scan) were added to investigate and
 remain as diagnostics: they report the trigger, wait, trigger-to-completion time, polls, TWI read times and counts of
-failed and retried reads. The remaining 3.3 mS per point floor is the `RFAACQ` round trip, the host script and the plotting;
+failed and retried reads. The remaining 4.1 mS per point floor is the `RFAACQ` round trip, the host script and the plotting;
 `QSCAN`, pipelined `RFAACQ` commands, or plotting less often go lower. Open suggestion: have the electrometer re-apply
 `SSRATE`, `SNUMP` and `SANUMS` itself when they change, so `CONFIG` is no longer a trap.
 

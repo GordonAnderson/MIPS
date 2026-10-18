@@ -259,9 +259,11 @@ RFAACQ,1,201,0,0                      returns the previous sum
 
 ### Speed
 
-Measured, 1000 points, dwell 0: **3.3 ms per point with the ADC, 3.7 ms with the electrometer** (400 kHz bus, 50 kHz
-sample rate, 10 samples). **(lab)** The electrometer adds only about 0.4 ms (a 69 microsecond trigger and a 334 microsecond
-read). The floor of about 3.3 ms is the command round trip, the script and the plotting. To go faster:
+Measured, an 800 point scan, dwell 0: **3.3 s with the ADC (4.1 ms per point) and 3.7 s with the electrometer (4.6 ms per
+point)** (400 kHz bus, 50 kHz sample rate, 10 samples). **(lab)** The electrometer adds only about 0.5 ms per point (the counters
+show a 69 microsecond trigger and a 334 microsecond read, 0.4 ms). The floor of about 4.1 ms is the command round trip, the
+script and the plotting. Divide a scan time by the **actual** number of points; an earlier version of this page used 1000 and
+was 20% low. To go faster:
 - use `QSCAN` (no host in the per point path),
 - or send several `RFAACQ` lines before reading the replies,
 - or redraw the plot every 10 to 20 points.
