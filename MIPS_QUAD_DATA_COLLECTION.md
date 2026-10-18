@@ -264,7 +264,9 @@ point)** (400 kHz bus, 50 kHz sample rate, 10 samples). **(lab)** The electromet
 show a 69 microsecond trigger and a 334 microsecond read, 0.4 ms). The floor of about 4.1 ms is the command round trip, the
 script and the plotting. Divide a scan time by the **actual** number of points; an earlier version of this page used 1000 and
 was 20% low. To go faster:
-- use `QSCAN` (no host in the per point path),
+- use `QSCAN` (no host in the per point path). **(lab)** Measured with the electrometer, TWI trigger, 400 kHz bus,
+  100 kHz sample rate, 10 samples: about **2.7 ms per point** (about 2.2 s for 800 points), including the host's acquire and
+  plotting time, so the scan engine alone is faster than that,
 - or send several `RFAACQ` lines before reading the replies,
 - or redraw the plot every 10 to 20 points.
 

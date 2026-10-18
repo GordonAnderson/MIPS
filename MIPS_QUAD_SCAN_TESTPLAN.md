@@ -234,7 +234,7 @@ The default `SQSETMO` of 1000 mS covers a 5000 point burst at 10000 (500 mS). Ch
       0.4 mS; the scan times are only good to 0.1 s, which is 0.1 mS per point). The earlier 9.4 to 13.8 mS per
       point (7.5 s and 11 s) was not a fault in the scan code. Burst settings changed with `SSRATE` / `SNUMP` do not take effect until
       `CONFIG` (so reducing `SNUMP` appeared to do nothing and the bursts stayed long), and the bus had been at 100
-      kHz and not 400 kHz. The 4.1 mS floor (3.3 s for 800 points) is the `RFAACQ` command round trip, the script and the plotting. To go lower
+      kHz and not 400 kHz. The 4.1 mS floor (3.3 s for 800 points) is the `RFAACQ` command round trip, the script and the plotting. A `QSCAN` with the electrometer (TWI trigger, 400 kHz, 100 kHz sample rate, 10 samples) measured about 2.7 mS per point including the host acquire and plotting (lab, October 18, 2026). To go lower
       use `QSCAN` (no host in the per point path), or send several `RFAACQ` commands before reading the replies, or plot
       every 10 to 20 points.*
 - [x] **D.15 ADC path untouched.** *(Also: full range ADC scan, 200 to 1200 m/z step 1 dwell 5 mS, 1001 points in 6.0 s, `0xEA`, parked at 200.)* `SQSSRC,1,ADC`, `QSCAN` behaves as in Part F.
