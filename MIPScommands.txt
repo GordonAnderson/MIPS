@@ -1092,6 +1092,9 @@ SAVEQCAL; they return to their defaults on reset.
   SQSETMO           Set the max mS to wait for the electrometer to finish a
                     point, module,mS. Range 10 to 60000, default 1000
   GQSETMO           Return the electrometer timeout
+  GQSESTAT          Electrometer timing since the last scan start, module. Returns points,trigUs,waitUs,
+                    completeUs,polls,readUs,readMaxUs,retries,fails. Microseconds, last point. completeUs is the
+                    trigger to completion time; retries and fails count failed TWI reads
   SQSEINIT          Prepare the electrometer for a host driven RFAACQ scan,
                     module. Checks it is in mode 1 and armed. Send once before
                     the first RFAACQ of each scan

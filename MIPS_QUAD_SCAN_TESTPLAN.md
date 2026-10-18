@@ -197,6 +197,24 @@ The default `SQSETMO` of 1000 mS covers a 5000 point burst at 10000 (500 mS). Ch
       Watch the link stays up. If it drops: use `SQSETRG,<module>,TWI` and report it.
 - [ ] **D.14 Wire1 speed.** *Result: October 17, 2026, TWI trigger, 201 points, 10 sample bursts, dwell 0: 4.98 mS per point at 100 kHz and 5.00 to 5.03 mS at 400 kHz, so the bus speed is not what sets the point time here (something else costs about 5 mS per point; not investigated). The resolving DC and pole bias read the same at 400 kHz. Restored to 100 kHz.* Repeat D.5 at 100 kHz and 400 kHz and note the per point overhead; the poll is
       a 9 byte transaction (about 1 mS and 0.25 mS respectively).
+- [ ] **D.16 Where the time per point goes (open investigation, October 17, 2026).** *Gordon's measurements: an
+      `RFAACQ` scan of 1000 points with the electrometer takes about 11 s (about 11 mS per point) with dwell 0, a 10 point
+      burst and either 100 or 400 kHz on Wire1; the same scan with the MIPS ADC takes 3.3 s. Looping the commands from the
+      host: `TWI1CMD,32,GTRIGCNT` 6.39 mS per call, `GTWI,01208B72` 4.44 mS per call. So the host link, main loop and quad
+      update cost at most 3.3 mS per point, a Wire1 transaction is cheap, and the electrometer path adds about 7.7 mS per
+      point that does not depend on the bus speed or the dwell. Cause not yet found.* Run the scan (QSCAN or an
+      `RFAACQ` scan after `SQSEINIT,1`), then `GQSESTAT,1`. It returns
+      `points,trigUs,waitUs,completeUs,polls,readUs,readMaxUs,retries,fails` for the last point, in microseconds, and it
+      is reset by each `QSCAN` / `SQSEINIT`. Read it as follows:
+      - `completeUs` much larger than the burst (`GNUMP / GSRATEA`) plus about 1000: the electrometer is slow to
+        publish a finished burst. `polls` of 1 with a large `completeUs` is the same.
+      - `retries` or `fails` above 0: TWI reads are failing and being retried, and each failure costs the I2C library
+        timeout, which does not scale with the bus speed. This is the leading suspect for a fixed cost.
+      - `readUs` / `readMaxUs` of about 1000 or more at 100 kHz (about 350 at 400 kHz) is plain bus time. Much larger means
+        clock stretching by the electrometer.
+      - `trigUs` is the trigger write; it should be about 300 us at 100 kHz.
+      Also send `TWI1CMD,32,GSRATEA` and `TWI1CMD,32,GNUMP` to get the burst time, and check the electrometer has the
+      sample rate fix (a burst should take `SNUMP / SSRATE`, not 3 times that).
 - [x] **D.15 ADC path untouched.** *(Also: full range ADC scan, 200 to 1200 m/z step 1 dwell 5 mS, 1001 points in 6.0 s, `0xEA`, parked at 200.)* `SQSSRC,1,ADC`, `QSCAN` behaves as in Part F.
       *Result: Verified October 17, 2026: Part F ran on the ADC source before D, and the source was set back to ADC at the end.*
 

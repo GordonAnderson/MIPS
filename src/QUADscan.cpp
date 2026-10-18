@@ -858,6 +858,9 @@ const Commands QUADscanCmdArray[] = {
   {"SQSETMO", CMDfunction, 2, (char *)QUADscanSetElectTmo},   // Set the max mS to wait for the electrometer to finish a
                                                              // point, module,mS. Range 10 to 60000, default 1000
   {"GQSETMO", CMDfunction, 1, (char *)QUADscanGetElectTmo},   // Return the electrometer timeout
+  {"GQSESTAT",CMDfunction, 1, (char *)QUADscanGetElectStat},  // Electrometer timing since the last scan start, module. Returns points,trigUs,waitUs,
+                                                             // completeUs,polls,readUs,readMaxUs,retries,fails. Microseconds, last point. completeUs is the
+                                                             // trigger to completion time; retries and fails count failed TWI reads
   {"SQSEINIT",CMDfunction, 1, (char *)QUADscanElectInit},     // Prepare the electrometer for a host driven RFAACQ scan,
                                                              // module. Checks it is in mode 1 and armed. Send once before
                                                              // the first RFAACQ of each scan
@@ -953,14 +956,35 @@ static void QUADscanParmsInit(int brd)
 #define ELECT_READ_TRIES       3      // A transient NAK is retried before the point is failed
 #define QUADelectTRIGPULSEuS   50     // LT trigger pulse width. Short, LT is also the ethernet config line
 
+// Timing and error counters for the electrometer source, read with GQSESTAT. Reset by the preflight, so they
+// cover the scan (QSCAN or an RFAACQ scan started with SQSEINIT) that follows. They exist to find where the
+// time per point goes: the TWI reads, the burst, or failed reads that are retried (a failed read costs the
+// I2C library timeout, which does not depend on the bus speed).
+static uint32_t stPoints,stPolls,stRetries,stFails;
+static uint32_t stTrigUs,stWaitUs,stCompleteUs,stReadUs,stReadMaxUs;
+static uint32_t stTrigDoneUs;                 // micros() when the last trigger returned
+
+static void electStatsReset(void)
+{
+  stPoints = stPolls = stRetries = stFails = 0;
+  stTrigUs = stWaitUs = stCompleteUs = stReadUs = stReadMaxUs = 0;
+  stTrigDoneUs = 0;
+}
+
 static bool electReadData(QUADscanParms *sp, int *count, int *sum)
 {
-  uint8_t d[7];
-  int     tries;
+  uint8_t  d[7];
+  int      tries;
+  uint32_t t0 = micros();
 
   for(tries = 0; tries < ELECT_READ_TRIES; tries++)
+  {
     if(TWI1readCmd(sp->ElectAdd, ELECT_TWI_READ_TRIGDAT, d, 7)) break;
-  if(tries == ELECT_READ_TRIES) return false;
+    stRetries++;                                           // A failed read, retried
+  }
+  stReadUs = micros() - t0;                                // Includes any retries
+  if(stReadUs > stReadMaxUs) stReadMaxUs = stReadUs;
+  if(tries == ELECT_READ_TRIES) { stFails++; return false; }
   *count = d[0] | (d[1] << 8) | (d[2] << 16);
   *sum   = (int32_t)((uint32_t)d[3] | ((uint32_t)d[4] << 8) | ((uint32_t)d[5] << 16) | ((uint32_t)d[6] << 24));
   return true;
@@ -975,6 +999,7 @@ int QUADelectPreflight(int brd)
   int            count,sum;
 
   if(sp->ElectHW && DCBprofileLTattached) return ERR_QUADLTBUSY;
+  electStatsReset();
   if(!wire1Started) { Wire1.begin(); wire1Started = true; }
   Wire1.setClock(Wire1DefaultSpeed);
   if(!TWI1readCmd(sp->ElectAdd, ELECT_TWI_READ_MODE, &mode, 1))   return ERR_QUADNOELECT;
@@ -998,15 +1023,20 @@ int QUADelectPreflight(int brd)
 bool QUADelectTrigger(int brd)
 {
   QUADscanParms *sp = QUADscanP[brd];
+  uint32_t       t0 = micros();
+  bool           ok;
 
   if(sp->ElectHW)
   {
     digitalWrite(LT, HIGH);
     delayMicroseconds(QUADelectTRIGPULSEuS);
     digitalWrite(LT, LOW);
-    return true;
+    ok = true;
   }
-  return TWI1sendCmd(sp->ElectAdd, ELECT_TWI_TRIGGER);
+  else ok = TWI1sendCmd(sp->ElectAdd, ELECT_TWI_TRIGGER);
+  stTrigDoneUs = micros();
+  stTrigUs     = stTrigDoneUs - t0;
+  return ok;
 }
 
 // Wait for the triggered burst to complete and return its sum.
@@ -1014,15 +1044,47 @@ bool QUADelectWait(int brd, int *sum, int *err)
 {
   QUADscanParms *sp = QUADscanP[brd];
   uint32_t       t0 = millis();
+  uint32_t       u0 = micros();
+  uint32_t       polls = 0;
   int            count;
 
   while(true)
   {
+    polls++;
     if(!electReadData(sp, &count, sum)) { *err = ERR_QUADNOELECT; return false; }
-    if(count != electLast[brd]) { electLast[brd] = count; return true; }
+    if(count != electLast[brd])
+    {
+      electLast[brd] = count;
+      stPolls      = polls;
+      stWaitUs     = micros() - u0;                       // Time spent in this wait
+      stCompleteUs = micros() - stTrigDoneUs;             // From the end of the trigger to the completion being seen
+      stPoints++;
+      return true;
+    }
     if((millis() - t0) > (uint32_t)sp->ElectTmo) { *err = ERR_QUADELECTTMO; return false; }
     WDT_Restart(WDT);
   }
+}
+
+// GQSESTAT: timing and error counters for the electrometer source since the last preflight (a QSCAN, or SQSEINIT).
+// Reports points,trigUs,waitUs,completeUs,polls,readUs,readMaxUs,retries,fails. Times are for the last point, in
+// microseconds. completeUs runs from the end of the trigger to the completion being seen, so it holds the burst, the
+// electrometer's time to publish it, and for RFAACQ the host's turnaround. retries counts failed TWI reads that were
+// retried, fails counts reads that failed all three tries.
+void QUADscanGetElectStat(int Module)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  serial->print(stPoints);      serial->print(",");
+  serial->print(stTrigUs);      serial->print(",");
+  serial->print(stWaitUs);      serial->print(",");
+  serial->print(stCompleteUs);  serial->print(",");
+  serial->print(stPolls);       serial->print(",");
+  serial->print(stReadUs);      serial->print(",");
+  serial->print(stReadMaxUs);   serial->print(",");
+  serial->print(stRetries);     serial->print(",");
+  serial->println(stFails);
 }
 
 // Host driven (RFAACQ) support. The host sends SQSEINIT once per scan, then each RFAACQ returns

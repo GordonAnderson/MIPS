@@ -187,6 +187,16 @@ the electrometer source has run on hardware. Order of work, oldest first:
 | `6411f52` | `TWIscmd` (channel 0) uses `TWIreadLine` behind `TWICMD_FAST` | **Build only** |
 | (next commit) | Electrometer acquisition source for `QSCAN` and `RFAACQ`; this doc and the test plan | **Build only** |
 
+**Open: the electrometer source costs about 7.7 mS per point more than the ADC (October 17, 2026).** An `RFAACQ` scan
+of 1000 points takes 11 s with the electrometer and 3.3 s with the MIPS ADC, with dwell 0, a 10 point burst, and no change
+at 400 kHz. A `GTWI,01208B72` call takes 4.44 mS and `TWI1CMD,32,GTRIGCNT` 6.39 mS from the host, so a Wire1
+transaction is cheap and the cost is not bus time. The electrometer's own firmware has no delay in the trigger path and
+re-arms in under 1 mS over USB on the bench. `GQSESTAT,<module>` was added to find it: for the last point it reports the
+trigger time, the wait, the trigger-to-completion time, the number of polls, the time of each TWI read, and counts of
+failed and retried reads (a failed read costs the I2C library timeout, which does not depend on the bus speed, so it is
+the leading suspect). See test plan D.16. Candidate cheap improvements that are not the cause: poll the 1-byte trigger
+state instead of the 7-byte data, and send each streamed point as one USB write instead of four.
+
 **Measured TWI1CMD result** (`TWI1CMD,32,RADC`, 200 iteration JavaScript loop timed from the host,
 so it includes the serial round trip): 6.64 mS before, 3.9 mS after at 100 kHz, 2.5 mS at 400 kHz.
 `GTWI,0120A125` is 1.36 mS at 400 kHz, which is the floor for that device. `GTWI,0020A125`
