@@ -210,6 +210,7 @@ void QUADscanSetElectTmo(int Module, int value);
 void QUADscanGetElectTmo(int Module);
 void QUADscanElectInit(int Module);
 void QUADscanGetElectStat(int Module);
+void QUADscanGetElectSummary(int Module);
 void QUADscanStatus(int Module);
 void QUADscanGo(int Module);
 

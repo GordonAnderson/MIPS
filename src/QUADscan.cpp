@@ -861,6 +861,8 @@ const Commands QUADscanCmdArray[] = {
   {"GQSESTAT",CMDfunction, 1, (char *)QUADscanGetElectStat},  // Electrometer timing since the last scan start, module. Returns points,trigUs,waitUs,
                                                              // completeUs,polls,readUs,readMaxUs,retries,fails. Microseconds, last point. completeUs is the
                                                              // trigger to completion time; retries and fails count failed TWI reads
+  {"GQSESUM",CMDfunction, 1, (char *)QUADscanGetElectSummary},// Electrometer averages over the whole scan, module. Returns points,avgCompleteUs,minCompleteUs,
+                                                             // maxCompleteUs,avgWaitUs,avgPolls x100,maxPolls,points needing more than one poll
   {"SQSEINIT",CMDfunction, 1, (char *)QUADscanElectInit},     // Prepare the electrometer for a host driven RFAACQ scan,
                                                              // module. Checks it is in mode 1 and armed. Send once before
                                                              // the first RFAACQ of each scan
@@ -963,12 +965,16 @@ static void QUADscanParmsInit(int brd)
 static uint32_t stPoints,stPolls,stRetries,stFails;
 static uint32_t stTrigUs,stWaitUs,stCompleteUs,stReadUs,stReadMaxUs;
 static uint32_t stTrigDoneUs;                 // micros() when the last trigger returned
+// Totals over every point since the preflight, so one scan gives averages and not just the last point
+static uint32_t stSumComplete,stMinComplete,stMaxComplete,stSumWait,stSumPolls,stMaxPolls,stMultiPoll;
 
 static void electStatsReset(void)
 {
   stPoints = stPolls = stRetries = stFails = 0;
   stTrigUs = stWaitUs = stCompleteUs = stReadUs = stReadMaxUs = 0;
   stTrigDoneUs = 0;
+  stSumComplete = stSumWait = stSumPolls = stMaxPolls = stMultiPoll = stMaxComplete = 0;
+  stMinComplete = 0xFFFFFFFF;
 }
 
 static bool electReadData(QUADscanParms *sp, int *count, int *sum)
@@ -1059,6 +1065,13 @@ bool QUADelectWait(int brd, int *sum, int *err)
       stWaitUs     = micros() - u0;                       // Time spent in this wait
       stCompleteUs = micros() - stTrigDoneUs;             // From the end of the trigger to the completion being seen
       stPoints++;
+      stSumComplete += stCompleteUs;
+      stSumWait     += stWaitUs;
+      stSumPolls    += polls;
+      if(stCompleteUs < stMinComplete) stMinComplete = stCompleteUs;
+      if(stCompleteUs > stMaxComplete) stMaxComplete = stCompleteUs;
+      if(polls > stMaxPolls) stMaxPolls = polls;
+      if(polls > 1) stMultiPoll++;
       return true;
     }
     if((millis() - t0) > (uint32_t)sp->ElectTmo) { *err = ERR_QUADELECTTMO; return false; }
@@ -1085,6 +1098,27 @@ void QUADscanGetElectStat(int Module)
   serial->print(stReadMaxUs);   serial->print(",");
   serial->print(stRetries);     serial->print(",");
   serial->println(stFails);
+}
+
+// GQSESUM: averages over every point since the last preflight. Reports points,avgCompleteUs,minCompleteUs,
+// maxCompleteUs,avgWaitUs,avgPolls x100,maxPolls,pointsNeedingMoreThanOnePoll. In a QSCAN the completion time is the
+// burst plus the electrometer's time to publish it plus the poll granularity, with no host in the loop, so the minimum
+// and average are the electrometer's real latency. In an RFAACQ scan it also includes the host's turnaround between
+// calls. avgPolls x100 is 100 when every wait found the burst already finished.
+void QUADscanGetElectSummary(int Module)
+{
+  int b;
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly; if(SerialMute) return;
+  uint32_t n = (stPoints > 0) ? stPoints : 1;
+  serial->print(stPoints);                                   serial->print(",");
+  serial->print(stSumComplete / n);                          serial->print(",");
+  serial->print((stPoints > 0) ? stMinComplete : 0);         serial->print(",");
+  serial->print(stMaxComplete);                              serial->print(",");
+  serial->print(stSumWait / n);                              serial->print(",");
+  serial->print((stSumPolls * 100) / n);                     serial->print(",");
+  serial->print(stMaxPolls);                                 serial->print(",");
+  serial->println(stMultiPoll);
 }
 
 // Host driven (RFAACQ) support. The host sends SQSEINIT once per scan, then each RFAACQ returns

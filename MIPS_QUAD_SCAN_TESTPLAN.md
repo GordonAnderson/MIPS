@@ -215,6 +215,17 @@ The default `SQSETMO` of 1000 mS covers a 5000 point burst at 10000 (500 mS). Ch
       - `trigUs` is the trigger write; it should be about 300 us at 100 kHz.
       Also send `TWI1CMD,32,GSRATEA` and `TWI1CMD,32,GNUMP` to get the burst time, and check the electrometer has the
       sample rate fix (a burst should take `SNUMP / SSRATE`, not 3 times that).
+      **`GQSESUM,1`** (added after the first readings, because `GQSESTAT` is the last point only) returns averages over
+      the whole scan: `points,avgCompleteUs,minCompleteUs,maxCompleteUs,avgWaitUs,avgPolls x100,maxPolls,
+      pointsNeedingMoreThanOnePoll`. `avgPolls x100` of 100 means every wait found the burst already finished. In a
+      `QSCAN` (no host in the loop) the minimum and average completion time are the electrometer's real latency: the
+      burst plus the time to publish it plus the poll granularity. In an `RFAACQ` scan they also contain the host's
+      turnaround, so use `QSCAN` for the electrometer's own timing.
+      *Readings, October 17, 2026 (Gordon), `GQSESTAT,1` after a scan with a 10 point burst: at 100 kHz Wire1
+      `801,208,995,15377,1,989,992,0,0`; at 400 kHz `1603,69,341,8113,1,334,992,0,0`. So: the bus speed did change
+      (trigger 208 to 69 us, read 989 to 334 us), there were no retried or failed reads, and the burst had finished at
+      the first poll of the last point. `completeUs` is the last point only and in an `RFAACQ` scan contains the host gap,
+      so it did not locate the remaining cost. One read in each run took the 100 kHz time (`readMaxUs` 992).*
 - [x] **D.15 ADC path untouched.** *(Also: full range ADC scan, 200 to 1200 m/z step 1 dwell 5 mS, 1001 points in 6.0 s, `0xEA`, parked at 200.)* `SQSSRC,1,ADC`, `QSCAN` behaves as in Part F.
       *Result: Verified October 17, 2026: Part F ran on the ADC source before D, and the source was set back to ADC at the end.*
 
