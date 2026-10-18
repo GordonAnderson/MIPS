@@ -13,8 +13,9 @@ Firmware version string is `1.268` (`src/MIPS.cpp`). **The October 2026 work did
 so two builds with different TWI/electrometer code report the same version. Identify a build by
 `git log -1`, not by the version string, until it is bumped.
 
-Companion document: [`MIPS_QUAD_SCAN_TESTPLAN.md`](MIPS_QUAD_SCAN_TESTPLAN.md), the ordered lab
-test roadmap for everything not yet bench verified.
+Companion documents: [`MIPS_QUAD_DATA_COLLECTION.md`](MIPS_QUAD_DATA_COLLECTION.md), the operating reference (every
+data collection mode with its commands, the stream format, timing and the traps found in the lab), and
+[`MIPS_QUAD_SCAN_TESTPLAN.md`](MIPS_QUAD_SCAN_TESTPLAN.md), the ordered lab test roadmap for everything not yet bench verified.
 
 Companion firmware: `../IsolatedElectrometer` (separate repo, Adafruit Trinket M0). The QUAD
 scan's electrometer source needs its `TWI_READ_TRIGDATA` (0x8B) command, which is new.

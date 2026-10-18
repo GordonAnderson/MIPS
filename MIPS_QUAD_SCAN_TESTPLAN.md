@@ -3,6 +3,7 @@
 Ordered bench plan for everything not yet verified on hardware. Written October 16, 2026 for a
 lab session on a different computer; read [`MIPS_QUAD_FIRMWARE_HANDOFF.md`](MIPS_QUAD_FIRMWARE_HANDOFF.md)
 section 2a for the background and the design reasons behind each item.
+The commands for each data collection mode are in [`MIPS_QUAD_DATA_COLLECTION.md`](MIPS_QUAD_DATA_COLLECTION.md).
 
 **Status of the code under test:** all of it builds under PlatformIO. Parts A–E have **not run on
 hardware** except where a line says "measured". Part F is the earlier external DAQ plan, kept as it
