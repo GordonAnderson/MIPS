@@ -197,7 +197,10 @@ predicts. These per point figures were first computed with 1000 points and were 
 bus was at 100 kHz. `GQSESTAT,<module>` (last point) and `GQSESUM,<module>` (averages over the scan) were added to investigate and
 remain as diagnostics: they report the trigger, wait, trigger-to-completion time, polls, TWI read times and counts of
 failed and retried reads. The remaining 4.1 mS per point floor is the `RFAACQ` round trip, the host script and the plotting;
-`QSCAN`, pipelined `RFAACQ` commands, or plotting less often go lower. Open suggestion: have the electrometer re-apply
+`QSCAN`, pipelined `RFAACQ` commands, or plotting less often go lower. Measured later the same day: `QSCAN` with the electrometer is
+2.3 mS per point at the host and 1.13 mS per point for the data transfer alone, the rest being the host's plotting. The
+set-point change (`GRFASPT`) costs 460 us on a non-Rev 3 module with TWI 0 at 100 kHz and 179 us at 400 kHz, the RF level write
+over TWI being the cost; see MIPS_QUAD_DATA_COLLECTION.md section 7. Open suggestion: have the electrometer re-apply
 `SSRATE`, `SNUMP` and `SANUMS` itself when they change, so `CONFIG` is no longer a trap.
 
 **Measured TWI1CMD result** (`TWI1CMD,32,RADC`, 200 iteration JavaScript loop timed from the host,

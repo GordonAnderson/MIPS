@@ -275,6 +275,23 @@ To see how much of the per point time is the set-point change, send `RRFASPT,1` 
 calculation, the RF level DAC, the resolving DC), in every scan mode. It does not include the physical settling of the RF amplifier
 and DC supplies after the DACs are written, which needs a scope.
 
+**(lab, October 18, 2026)** Measured on a module that is not Rev 3, where the RF level DAC is an AD5625 on TWI channel 0 and the
+resolving DC is the DC bias board (AD5668, SPI):
+
+| Part of `RFAsetScanPoint` | TWI 0 at 100 kHz | TWI 0 at 400 kHz |
+|---|---|---|
+| m/z calculation | 25 us | 25 us |
+| RF level DAC (AD5625, TWI) | 399 us | 118 us |
+| Resolving DC (AD5668, SPI) | 35 us | 35 us |
+| **Total** | **460 us** | **179 us** |
+
+Set with `STWISPEED,0,400000` (every device on channel 0 must support 400 kHz; check the module EEPROMs read back and `TWIfails`).
+The Rev 3 hardware writes both through SPI, so its RF write should be faster still.
+
+`QSCAN` with the electrometer (TWI trigger, 400 kHz, 100 kHz sample rate, 10 samples), 800 points: **2.3 ms per point at the
+host, 1.13 ms per point for the data transfer alone**, so about 1.2 ms per point is the host's plotting. Speeding up the set-point
+write moved the total only 0.1 ms, because the host's receive and plot set the pace, not the MIPS. Look at the host side next.
+
 ---
 
 ## 8. Mode E: m/z from an analog voltage, applied by a strobe
