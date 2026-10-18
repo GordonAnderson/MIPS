@@ -218,6 +218,9 @@ QSCAN,1                               the range and dwell as in section 3
 - `TRGOUT` is inverted on the controller, so check its polarity on a scope. **(not run: pulses not scoped)**
 - The time per point is just the dwell plus a little overhead.
 - Set `SQSADCENA,1,TRUE` to go back to the normal modes.
+- **Scan only, record nothing** (no ADC, no electrometer, no data back): `SQSADCENA,1,FALSE` with `SQSFRAME,1,NONE`, and leave
+  `SQSSTPIN` at `NA` and `SQSTRIG` at `FALSE` if no external DAQ needs the pulses. The module just steps m/z on the dwell
+  timer, then parks at the start m/z. See the recipe in section 13.
 
 ---
 
@@ -432,6 +435,16 @@ SQSADCENA,1,FALSE  SQSFRAME,1,FRAME  SQSSTPIN,1,A  SQSTRIG,1,TRUE
 SQSSTRT,1,200  SQSSTOP,1,1200  SQSSTEP,1,1  SQSDWELL,1,5  SQSNUM,1,3
 QSCAN,1
 ```
+
+**Scan only, no data recorded anywhere (the MIPS just steps m/z; `NONE` sends nothing but the ACK):**
+```
+SRFAENA,1,ON
+SQSADCENA,1,FALSE  SQSFRAME,1,NONE  SQSSTPIN,1,NA  SQSTRIG,1,FALSE
+SQSSTRT,1,200  SQSSTOP,1,1200  SQSSTEP,1,1  SQSDWELL,1,5  SQSNUM,1,1
+QSCAN,1
+```
+ESC aborts. Set `SQSSTPIN` and `SQSTRIG,1,TRUE` instead if an external DAQ should be synchronised (the start pulse uses the
+digital output bank, so pick a free channel; the `TRGOUT` polarity is not scoped yet).
 
 **Back to normal after any of the above:**
 ```
