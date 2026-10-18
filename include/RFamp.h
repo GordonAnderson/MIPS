@@ -188,6 +188,8 @@ void RFAsetRes(char *Module, char *value);
 void RFAgetRes(int Module);
 void RFAupdateQUAD(int Module);
 void RFAacquire(void);
+void RFAgetSetPointTiming(int Module);
+void RFAresetSetPointTiming(int Module);
 // Shared per point primitive used by both the host driven scan (RFAACQ) and the
 // firmware resident scan. Sets m/z and applies the resolving DC delta; does not
 // acquire or delay.

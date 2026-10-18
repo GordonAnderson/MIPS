@@ -359,6 +359,8 @@ const Commands  RFAMPCmdArray[] = {
   {"SRFARES", CMDfunctionStr, 2, (char *)RFAsetRes},         // Sets the resolution in AMU
   {"GRFARES", CMDfunction, 1, (char *)RFAgetRes},            // Returns the resolution in AMU
   {"RFAQUPDATE", CMDfunction, 1, (char *)RFAupdateQUAD},     // Updates the QUAD parameters
+  {"GRFASPT", CMDfunction, 1, (char *)RFAgetSetPointTiming}, // Time RFAsetScanPoint takes, module. Returns points,avgTotalUs,minTotalUs,maxTotalUs,avgUpdateUs,avgRFUs,avgDCUs
+  {"RRFASPT", CMDfunction, 1, (char *)RFAresetSetPointTiming},// Reset the RFAsetScanPoint timing counters, module
   {"RFAACQ", CMDfunctionLine, 1, (char *)RFAacquire},        // Report last point and acquire,module,mz,delta,dwell
   {"SRFAGAIN", CMDfunctionStr, 2, (char *)RFAsetGain},       // Sets RF head level control gain, HIGH or LOW (HIGH is high voltage range)
   {"GRFAGAIN", CMDfunction, 1, (char *)RFAreturnGain},       // Returns RF head level control gain, HIGH or LOW
@@ -1698,11 +1700,19 @@ void RFAupdateQUAD(int Module)
 // Note on ordering: QUADupdate() recalculates ResolvingDC from the m/z value, so the
 // delta below is applied to the freshly computed value. The += reads as accumulation
 // but is effectively "computed value plus delta" on every call.
+//
+// Timing: every call is timed with micros() in three parts (QUADupdate, the RF level, the resolving DC) and
+// accumulated for GRFASPT. This is the firmware cost of changing the set point in every scan mode; it does not
+// include the physical settling of the RF amplifier or the DC supplies after the DACs are written.
+static uint32_t sptN, sptSumTot, sptMinTot, sptMaxTot, sptSumUpd, sptSumRF, sptSumDC;
+
 void RFAsetScanPoint(int brd, float mz, float delta)
 {
+  uint32_t t0 = micros(), t1, t2;
   // Set mz and calculate parameters
   RFAarray[brd]->mz = mz;
   QUADupdate(brd);
+  t1 = micros();
   // Update RF setpoint
   if(RFAarray[brd]->Enabled)
   {
@@ -1714,9 +1724,37 @@ void RFAsetScanPoint(int brd, float mz, float delta)
     SelectRange(brd, RFAarray[brd]->SetPoint);
     setRFADAC(brd, RFAdacSETPOINT,RFAarray[brd]->SetPoint, gc);
   }
+  t2 = micros();
   // Update the resolving DC now
   RFAarray[brd]->ResolvingDC += delta;
   SetResolvingDC(brd, RFAarray[brd]->ResolvingDC, true);
+  uint32_t t3 = micros(), tot = t3 - t0;
+  if((sptN == 0) || (tot < sptMinTot)) sptMinTot = tot;
+  if(tot > sptMaxTot) sptMaxTot = tot;
+  sptN++;
+  sptSumTot += tot;  sptSumUpd += t1 - t0;  sptSumRF += t2 - t1;  sptSumDC += t3 - t2;
+}
+
+void RFAresetSetPointTiming(int Module)
+{
+  if(RFAmodule2board(Module) == -1) return;
+  sptN = sptSumTot = sptMinTot = sptMaxTot = sptSumUpd = sptSumRF = sptSumDC = 0;
+  SendACKonly;
+}
+
+void RFAgetSetPointTiming(int Module)
+{
+  if(RFAmodule2board(Module) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  uint32_t n = (sptN > 0) ? sptN : 1;
+  serial->print(sptN);          serial->print(",");
+  serial->print(sptSumTot / n); serial->print(",");
+  serial->print(sptMinTot);     serial->print(",");
+  serial->print(sptMaxTot);     serial->print(",");
+  serial->print(sptSumUpd / n); serial->print(",");
+  serial->print(sptSumRF / n);  serial->print(",");
+  serial->println(sptSumDC / n);
 }
 
 void RFAacquire(void)

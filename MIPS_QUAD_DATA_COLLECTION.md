@@ -270,6 +270,11 @@ was 20% low. To go faster:
 - or send several `RFAACQ` lines before reading the replies,
 - or redraw the plot every 10 to 20 points.
 
+To see how much of the per point time is the set-point change, send `RRFASPT,1` (reset), run a scan, then `GRFASPT,1`. It returns
+`points,avgTotalUs,minTotalUs,maxTotalUs,avgUpdateUs,avgRFUs,avgDCUs`: the firmware time `RFAsetScanPoint` takes (the m/z
+calculation, the RF level DAC, the resolving DC), in every scan mode. It does not include the physical settling of the RF amplifier
+and DC supplies after the DACs are written, which needs a scope.
+
 ---
 
 ## 8. Mode E: m/z from an analog voltage, applied by a strobe

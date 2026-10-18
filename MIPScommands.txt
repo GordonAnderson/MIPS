@@ -1141,6 +1141,8 @@ General RFamp and QUAD commands
   SRFARES           Sets the resolution in AMU
   GRFARES           Returns the resolution in AMU
   RFAQUPDATE        Updates the QUAD parameters
+  GRFASPT           Time RFAsetScanPoint takes, module. Returns points,avgTotalUs,minTotalUs,maxTotalUs,avgUpdateUs,avgRFUs,avgDCUs
+  RRFASPT           Reset the RFAsetScanPoint timing counters, module
   RFAACQ            Report last point and acquire,module,mz,delta,dwell
   SRFAGAIN          Sets RF head level control gain, HIGH or LOW (HIGH is high voltage range)
   GRFAGAIN          Returns RF head level control gain, HIGH or LOW
