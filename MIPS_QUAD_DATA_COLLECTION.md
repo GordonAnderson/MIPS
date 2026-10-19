@@ -179,12 +179,18 @@ QSCAN,1                               the range and dwell as in section 3
 
 ### 5.3 Turning the sums into current
 
-The electrometer's counts go **down** as the current goes up (so peaks appear as dips in the raw sums):
+The electrometer's raw counts move **down** for current into the input (positive ions) and **up** for current out of it
+(negative ions). The stream, `RSUM` and `TWI1CMD,32,RADC` report the **magnitude** instead, so peaks are always peaks:
 
 ```
-counts = sum * 16 / SNUMP                      16-bit left-justified average
-nA     = (zeroCounts - counts) / (Calfactor * gain)        (x 1000 for the pA range)
+streamed sum = | rawsum - SNUMP * zeroCounts / 16 |           always >= 0, rises with |current|
+mean counts  = streamed sum * 16 / SNUMP                       signal counts, 16-bit scale
+nA           = mean counts / (Calfactor * gain)                (x 1000 for the pA range), magnitude only
 ```
+
+The streamed value has lost the sign. For the signed current read `TWI1CMD,32,RCUR` (positive ions positive, negative ions
+negative), or take the sign from the ion polarity you are measuring. This needs the electrometer firmware that reports
+magnitudes (IsolatedElectrometer after the magnitude change); an older build still sends the raw sum.
 
 `zeroCounts` is set by `TWI1CMD,32,ZERO` with no beam (the factory value is 45000), `Calfactor` is counts per nA at unit
 gain (factory 1977), and `gain` is `SGAIN`. Polarity is `SPOL`, range `SRNG`. For a single reading, `TWI1CMD,32,RCUR`
