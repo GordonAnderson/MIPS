@@ -415,7 +415,12 @@ unread arguments are parsed as commands and overwrite the error code. The NAK it
 4. **`SQSETMO` shorter than the burst** stops the scan with error 134. The burst is `SNUMP / SSRATE`.
 5. **Bus speed.** The Wire1 default is 100 kHz; `STWISPEED,1,400000` makes the electrometer polling about 3 times
    faster. A reading of about 990 microseconds per 7-byte read in `GQSESTAT` means the bus is at 100 kHz.
-6. **Waiting after `CONFIG`.** The arming burst makes a scan started during it fail with 133.
+6. **Waiting after `CONFIG`.** `CONFIG` makes the electrometer re-arm with a burst of `SNUMP / SSRATE` seconds, and `SQSEINIT`
+   (and `QSCAN`) fail with 133 until it is ARMED again. **(lab, October 19, 2026)** A host script that sent `CONFIG` and then
+   `SQSEINIT` straight away worked at 100 and 200 samples at 100 kHz (1 and 2 ms) but got `?` from `SQSEINIT`, and then from every
+   `RFAACQ`, at 300 samples (3 ms), because the host's command turnaround is a few ms. Wait after `CONFIG` for longer than the
+   burst, or poll `TWI1CMD,32,GTRIGST` until it reads ARMED, before `SQSEINIT`. A delay fixed it. `SQSEINIT` is also needed again
+   after every `QSCAN` and after `SQSSRC`, `SQSEADD` or `SQSETRG`.
 7. **ADC limit.** Above 100000 Hz requested the electrometer loses events. Keep `SSRATE` at or below that.
 8. **Electrometer stream polarity.** The earlier electrometer firmware streamed raw sums, so peaks were dips (positive ion current lowers
    the raw counts). The firmware of October 18, 2026 streams magnitudes instead, but only meaningful after `TWI1CMD,32,ZERO` with no
