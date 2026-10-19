@@ -204,6 +204,22 @@ About **dwell + burst + 0.4 ms of TWI (at 400 kHz) + about 1 ms of overhead**. R
 your other Wire1 modules still read correctly at 400 kHz. Measured: dwell 5 ms, 100 samples at 10 kS/s, TWI trigger (bus
 speed not recorded): **17.6 ms per point**. **(lab)**
 
+**Scope measurements of the time between points (TRGOUT), October 19, 2026.** Both TWI channels at 400 kHz, electrometer
+sampling at 100 kHz, TWI trigger, dwell 0. **(lab)** This is the older hardware, **not the new rev**: the RF level DAC is a TWI
+AD5625 on channel 0 here, and the new rev writes it over SPI, so the set-point part will be faster. Measure again on the new rev.
+
+| Acquisition | Burst | Time between points |
+|---|---|---|
+| none (scan only) | none | 0.2 ms |
+| electrometer, 100 samples | 1 ms | 2 ms |
+| electrometer, 200 samples | 2 ms | 3 ms |
+
+So the time per point with the electrometer is the **burst time (`SNUMP / SSRATE`) plus about 1.0 ms**. The scan only time matches
+the set-point write (179 us from `GRFASPT`). Estimated split of the 1.0 ms (not measured separately): set-point 0.18 ms, trigger
+0.07 ms, final 7 byte read 0.33 ms, polling latency about 0.17 ms (the wait polls with back to back 0.33 ms reads), and about 0.25
+ms for the electrometer to publish the sum plus the USB write. `GQSESUM` average completion time minus the burst gives the
+polling and publishing part directly.
+
 ---
 
 ## 6. Mode C: external DAQ (the MIPS only steps m/z)
