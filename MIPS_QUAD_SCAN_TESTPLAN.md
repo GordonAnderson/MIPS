@@ -240,6 +240,11 @@ The default `SQSETMO` of 1000 mS covers a 5000 point burst at 10000 (500 mS). Ch
 - [x] **D.15 ADC path untouched.** *(Also: full range ADC scan, 200 to 1200 m/z step 1 dwell 5 mS, 1001 points in 6.0 s, `0xEA`, parked at 200.)* `SQSSRC,1,ADC`, `QSCAN` behaves as in Part F.
       *Result: Verified October 17, 2026: Part F ran on the ADC source before D, and the source was set back to ADC at the end.*
 
+- [x] **D.16b Set-point timing (`GRFASPT`).** `RRFASPT,1`, scan, `GRFASPT,1` returns points,avgTotal,minTotal,maxTotal,avgUpdate,avgRF,avgDC in us.
+      *Result: Gordon measured, October 18, 2026, non-Rev 3 module: `1002,460,458,462,25,399,35` with TWI 0 at 100 kHz; `1002,179,176,182,25,118,35` after `STWISPEED,0,400000` (the RF level DAC is a TWI AD5625). `QSCAN` with the electrometer was 2.4 to 2.7 mS per point before and 2.3 mS after, 1.13 mS for the data transfer alone, so the host plotting (about 1.2 mS) sets the pace. Not yet checked: module EEPROM reads and `TWIfails` at 400 kHz on channel 0.*
+- [ ] **D.17 Electrometer magnitude firmware (flash first).** After `ZERO` with no beam in NEG then POS: `RADC` and `RSUM` read near 0, `RCUR` near 0. With a known 1 nA source in each direction: `RCUR` is +1 for current into the input and −1 for current out, `RADC` is about 1876 either way, and a `QSCAN` shows peaks (not dips) in the streamed sums. Check `GTWI,01208B72` and `0xA1` against `RSUM`/`RADC`.
+      *Result: not run, the electrometer was not connected when this was written (October 18, 2026).*
+
 ---
 
 ## E. `RFAACQ` with the electrometer
@@ -324,7 +329,7 @@ same call `QSCAN` uses. Do not use it while a scan is running. Rev 1/2 modules n
 The standing acceptance test from the handoff (section 5, "Ion testing"). With the electrometer source it
 doubles as the check that the integer sum scale and polarity are what the host expects.
 
-*October 17, 2026, first look with a signal on the electrometer, no mass reference: see D.12. Raw sums are inverted (dips), `RCUR` in NEG polarity is positive. The `QSCAN`/`RFAACQ` overlay and the calibrated masses are still to do.*
+*October 17, 2026, first look with a signal on the electrometer, no mass reference: see D.12. Raw sums were inverted (dips) and `RCUR` in NEG polarity was positive; this is not explained by the front end analysis (positive ions lower the raw counts, negative ions raise them), so recheck after `ZERO` with the October 18 magnitude firmware (D.17 below). The `QSCAN`/`RFAACQ` overlay and the calibrated masses are still to do.*
 
 **RF level check to m/z 1200 (October 17, 2026, Gordon approved about 1970 V):** stepped `SRFAMZ` + `RFAQUPDATE` from 500 to 1200 in steps of 100 m/z: setpoint 822 V at 500 and 1973 V at 1200, readbacks A 786 / B 767 V at 500 and A 1990 / B 1930 V at 1200 (about 1.64 V per m/z), forward power 5.4 W at 500 and 36.9 W at 1200, nothing faulted. The readback is not the setpoint at the top: A reads 1.0 to 1.5% above it. Returns to m/z 200 and about 334 / 322 V.
 

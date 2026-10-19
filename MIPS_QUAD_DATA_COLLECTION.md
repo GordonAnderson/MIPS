@@ -69,7 +69,8 @@ QSCAN,1                               run it
 | Trailer | 5 | `AE AE AE AE`, then `EA` (completed) or `EB` (aborted) |
 
 Every header gets a trailer, including when the scan fails or is aborted. The value is the **raw sum** of the samples,
-not an average (divide by the number of samples in the burst). **(lab)**
+not an average (divide by the number of samples in the burst). **(lab)** With the electrometer source it is the sum's
+**magnitude** from the zero baseline, see section 5.3.
 
 A reference parser (Python, `pyserial`):
 
@@ -400,7 +401,9 @@ unread arguments are parsed as commands and overwrite the error code. The NAK it
    faster. A reading of about 990 microseconds per 7-byte read in `GQSESTAT` means the bus is at 100 kHz.
 6. **Waiting after `CONFIG`.** The arming burst makes a scan started during it fail with 133.
 7. **ADC limit.** Above 100000 Hz requested the electrometer loses events. Keep `SSRATE` at or below that.
-8. **The raw sums dip for the electrometer** (more current is fewer counts). Convert with section 5.3.
+8. **Electrometer stream polarity.** The earlier electrometer firmware streamed raw sums, so peaks were dips (positive ion current lowers
+   the raw counts). The firmware of October 18, 2026 streams magnitudes instead, but only meaningful after `TWI1CMD,32,ZERO` with no
+   beam: until then `zeroCounts` is the factory placeholder (45000) and the values are wrong. **(not yet tested on hardware)** See 5.3.
 9. **`GNUMP` / `GSRATE` show the stored value**, not what is running.
 10. **Everything is RAM only.** Resend the scan setup after every power up, or `SAVE` the electrometer.
 11. **Do not mix** a strobe, `QSCAN` and `RFAACQ`: they all set the m/z.

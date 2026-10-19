@@ -278,6 +278,9 @@ are unchanged, the settings are RAM only.
 | 4 | Calibration applied during scan, distinct error codes 127–131, `QSCANSTAT` |
 | 5a | Help generator markers on the QUAD command table |
 | 5 (doc) | `MIPSquadOperationsR3_2.docx` — Rev 3 section, firmware scan section, Appendix C |
+| Electrometer source | `SQSSRC,<m>,ELECT`, `SQSEADD`, `SQSETRG`, `SQSETMO`, `SQSEINIT`, `RFAACQ` electrometer branch, `GQSESTAT`, `GQSESUM` (October 2026, bench verified with the MIPS) |
+| Set-point timing | `GRFASPT,<m>` / `RRFASPT,<m>` time `RFAsetScanPoint` (October 18, 2026, `64558ee`; lab: 460 us at TWI 0 100 kHz, 179 us at 400 kHz on a non-Rev 3 module) |
+| Electrometer magnitude | The electrometer firmware (separate repo, `1fb1421`) reports `abs(zeroCounts − counts)` for `RADC`, `RSUM`, TWI `0xA1` and the `0x8B` sum; `RCUR` keeps the physical sign. Built, not yet flashed or tested |
 | 6a | Both detector ranges calibrated at a common point |
 | 6b | Hysteresis on the range switch, `SRFARNGHYST` / `GRFARNGHYST` |
 | 6c | Range hold while a calibration page is active |
@@ -334,6 +337,8 @@ the watchdog and polls for abort itself.
 **Streaming is fixed width binary, raw sums.** Variable length ASCII would make per point
 write time depend on the value, reintroducing the timing jitter the feature exists to remove.
 Averaging N samples buys resolution beyond 12 bits; a 12 bit average would discard it.
+With the electrometer source the value is the electrometer's own sum, which since October 18, 2026 is the magnitude
+`abs(sum − n × zeroCounts / 16)` (see the open items table); the MIPS passes it through unchanged.
 
 **Scan parameters are not persisted.** The EEPROM record region has 8 bytes spare and they
 need 24. Persisting them means relocating or shrinking the calibration record.
