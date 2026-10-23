@@ -1288,6 +1288,18 @@
 //          changed for field tests with SSPIDIV,div (4 to 255, applied immediately) and read with
 //          GSPIDIV; it returns to SPIdivDEFAULT on reboot. The display and SD card use their own
 //          SPI channel and are not affected.
+//      9.) Added DCBCINIT,ch, a field diagnostic for DCbiasCtrl modules. Reports the board's
+//          DCBchngMask, DCBtstMask, TCA9534 chanMode and the DCbiasProfileApplied flag, then
+//          rewrites the TCA9534 config and output registers (reporting each write's TWI status,
+//          0 = acknowledged), sends the AD5668 a software reset followed by the internal
+//          reference enable, and forces every DAC channel to be rewritten.
+//     10.) Fixed CALDCBCCH (DCbiasCtrl ADC calibration) reading the wrong ADC input on every
+//          module except the first. TLC3578IDW(brd, ch, num) indexed the 8 entry adcCH[] array
+//          with the system wide channel index (8 to 15 for board 1, 16 to 23 for board 2),
+//          reading past the end of the array, so the ADC input number came from whatever memory
+//          followed. Typically every channel ended up reading the module's first input. The
+//          channel is now masked to 0-7. Calibrations previously saved for channels 9 and up
+//          were taken from the wrong input and should be redone with CALDCBCCH and DCBCSAVE.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

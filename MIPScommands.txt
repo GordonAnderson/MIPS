@@ -641,6 +641,7 @@ DC bias control output module commands
   GDCBCADC          Returns a ADC value for the channel selected
   CALDCBCCH         Calibrates an ADC value for select channel
   DACRAW            Diagnostic, raw AD5668 write bypassing all DCbias data, brd,spi,chan,counts
+  DCBCINIT          Diagnostic, report state and redo the boot time TCA9534 and DAC setup, ch = any channel on module
 
 DC bias switch module commands
 

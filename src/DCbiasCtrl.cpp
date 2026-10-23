@@ -10,6 +10,7 @@
 
 // External symbols defined in other translation units
 extern ThreadController control;
+extern bool DCbiasProfileApplied;
 
 // Forward declarations for functions defined later in this file
 void dcbcRestore(int CH);
@@ -22,6 +23,7 @@ void dcbcGetCHoff(int ch);
 void dcbcGetADC(int ch);
 void dcbcCalibratetADC(int ch);
 void dacRawWrite(void);
+void dcbcReinit(int CH);
 bool dcbcLoad(int brd);
 int  TLC3578IDW(uint8_t spiADD, int cmd);
 
@@ -112,6 +114,7 @@ const Commands DCBiasCtrlCmdArray[] = {
   {"GDCBCADC", CMDfunction, 1, (char *)dcbcGetADC},               // Returns a ADC value for the channel selected
   {"CALDCBCCH", CMDfunction, 1, (char *)dcbcCalibratetADC},       // Calibrates an ADC value for select channel
   {"DACRAW",   CMDfunctionLine, 0, (char *)dacRawWrite},          // Diagnostic, raw AD5668 write bypassing all DCbias data, brd,spi,chan,counts
+  {"DCBCINIT", CMDfunction, 1, (char *)dcbcReinit},               // Diagnostic, report state and redo the boot time TCA9534 and DAC setup, ch = any channel on module
 // End of table marker
   {0}
 };
@@ -174,8 +177,11 @@ void TLC3578IDWscan(int brd)
   }
 }
 
+// ch can be passed as a system wide channel index (e.g. 16 to 23 for board 2), adcCH[] only has
+// the 8 channels on this module, so mask to the module channel before indexing
 int TLC3578IDW(int brd, int ch, int num)
 {
+  ch &= 7;
   TLC3578IDW(DCbDarray[brd]->DACspi, (0x00A00 | (dcbiasctrl[brd]->adcCH[ch].Chan << 12)) & 0x7000);
   int sum=0;
   for(int i=0;i<num;i++) sum += TLC3578IDW(DCbDarray[brd]->DACspi, (0x00A00 | (dcbiasctrl[brd]->adcCH[ch].Chan << 12)) & 0x7000);
@@ -396,6 +402,42 @@ void dacRawWrite(void)
   AD5668(vals[1], vals[2], vals[3], 3);
   SelectBoard(b);
   SendACK;
+}
+
+// Diagnostic, reports the firmware state that can block DAC writes for the board containing CH,
+// then redoes the per board hardware setup dcbctrlEnable() performs once at boot: the TCA9534
+// config (all outputs) and output (channel modes) registers, then a full AD5668 software reset
+// (clears any latched power down, LDAC register or clear code state) followed by the internal
+// reference enable. Reports the TWI status of each TCA9534 write, 0 = acknowledged. Then forces
+// DCbias_loop() to rewrite every DAC channel.
+void dcbcReinit(int CH)
+{
+  int brd,cfg,out;
+
+  if((brd=checkBoard(CH)) == -1) return;
+  // Report the firmware state before touching anything
+  SendACKonly;
+  if(!SerialMute)
+  {
+    serial->print("Board "); serial->print(brd);
+    serial->print(", DCBchngMask 0x"); serial->print(DCBchngMask[brd], HEX);
+    serial->print(", DCBtstMask 0x"); serial->print(DCBtstMask[brd], HEX);
+    serial->print(", chanMode 0x"); serial->print(dcbiasctrl[brd]->chanMode, HEX);
+    serial->print(", ProfileApplied "); serial->println(DCbiasProfileApplied ? "TRUE" : "FALSE");
+  }
+  SelectBoard(brd + brdOffset);
+  cfg = TCA9534write(TCA9534add + (brd / 2),TCA9534config,0);
+  out = TCA9534write(TCA9534add + (brd / 2),TCA9534out,dcbiasctrl[brd]->chanMode);
+  SelectBoard(brd + brdOffset);
+  AD5668(DCbDarray[brd]->DACspi, 0, 0, 7);   // AD5668 software reset, returns the DAC to its power on state
+  delay(1);
+  AD5668_EnableRef(DCbDarray[brd]->DACspi);
+  DCbiasUpdate = true;
+  if(SerialMute) return;
+  serial->print("TCA9534 0x"); serial->print(TCA9534add + (brd / 2), HEX);
+  serial->print(" config status "); serial->print(cfg);
+  serial->print(", output status "); serial->print(out);
+  serial->print(", DAC SPI address "); serial->println(DCbDarray[brd]->DACspi);
 }
 
 void dcbcSetCHmode(char *chan, char *mode)
