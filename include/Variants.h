@@ -26,6 +26,12 @@
 
 #define DCBtripsESI
 
+// Set true to blank the display on main power loss (USB powering the controller) by turning off
+// its backlight only, with no SPI display writes. With main power off, unpowered modules can load
+// the shared SPI clock line so display writes fail and the screen goes blank or garbled. When false
+// the "MIPS power is off" message is drawn as before. Does not add a letter to the version.
+#define PowerOffBlankDisplay  true
+
 #include "Errors.h"
 #include "DIO.h"
 #include "Hardware.h"

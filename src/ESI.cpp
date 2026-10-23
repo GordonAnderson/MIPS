@@ -1075,17 +1075,25 @@ void ESI_loop(void)
         //ESIarray[b].ESIchan[0].DCImon.b = 0;
         //ESIarray[b].ESIchan[1].DCImon.m = 1;
         //ESIarray[b].ESIchan[1].DCImon.b = 0;
+        // Use the negative channel's readbacks when the output is negative, or always when no
+        // positive supply is in use (positive MaxVoltage set to 0). Otherwise at 0 or positive
+        // setpoints the unused positive monitor inputs would be reported as the module readbacks.
+        bool useNeg = (SetpointsR3[b] < 0) || (ESIarray[b]->ESIchan[0].MaxVoltage == 0);
         if((ESIarray[b]->ESIchan[0].DCImon.m == 1) && (ESIarray[b]->ESIchan[0].DCImon.b == 0))
         {
-          if(SetpointsR3[b] < 0) ReadbackV[b][0] = ReadbackV[b][1];
-          if(SetpointsR3[b] >=0 ) Imonitor[b] = (ReadbackI[b][0] - (SetpointsR3[b] * 1.3728 - 166.04))/19600.0;
+          if(useNeg) ReadbackV[b][0] = ReadbackV[b][1];
+          if(!useNeg) Imonitor[b] = (ReadbackI[b][0] - (SetpointsR3[b] * 1.3728 - 166.04))/19600.0;
           else Imonitor[b] = (ReadbackI[b][1] - (abs(SetpointsR3[b]) * 1.5797 - 147.91))/19600.0;
         } else
         {
-          if(SetpointsR3[b] < 0) ReadbackV[b][0] = ReadbackV[b][1];
-          if(SetpointsR3[b] >=0 ) Imonitor[b] = ReadbackI[b][0];
+          if(useNeg) ReadbackV[b][0] = ReadbackV[b][1];
+          if(!useNeg) Imonitor[b] = ReadbackI[b][0];
           else Imonitor[b] = ReadbackI[b][1];
         }
+        // Report 0 V when the applied setpoint is 0. The monitor ADC can not read below 0 counts and
+        // the readback calibration line does not pass exactly through 0, so near 0 V the readback
+        // would otherwise sit at a small offset voltage (the line's intercept).
+        if(SetpointsR3[b] == 0) ReadbackV[b][0] = 0;
         if(Imonitor[b] < 0) Imonitor[b] = 0;
         if(ESIarray[b]->ESIchan[0].MaxCurrent > 0)
         {

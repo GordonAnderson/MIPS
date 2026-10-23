@@ -1300,6 +1300,26 @@
 //          followed. Typically every channel ended up reading the module's first input. The
 //          channel is now masked to 0-7. Calibrations previously saved for channels 9 and up
 //          were taken from the wrong input and should be redone with CALDCBCCH and DCBCSAVE.
+//     11.) Added the PowerOffBlankDisplay build option in Variants.h, default false. With main
+//          power off and the controller on USB power, the unpowered modules load the shared SPI
+//          clock so display writes fail. When true the power off handling just turns the display
+//          backlight off and blocks display writes instead of drawing the "MIPS power is off"
+//          message.
+//     12.) Display handling during a USB only boot. The backlight is now turned off as the first
+//          step of setup() and main power is checked early. The backlight only comes on after the
+//          display is initialized and cleared, and only with main power present, so the display
+//          no longer shows white while the SD card init times out on the loaded SPI bus. The 30
+//          second backlight restore in MIPSsystemLoop() now runs after the main power check. If
+//          main power is applied part way through the boot the controller resets and boots again
+//          cleanly, the same as when power returns in the power off loop. Skipping the SD card
+//          init on a USB only boot was considered and noted in setup(), but not done since the
+//          card's config data may be needed by the host while on USB power.
+//     13.) ESI rev 5 (4.1/4.2/4.3 hardware) readbacks. When no positive supply is in use
+//          (positive channel MaxVoltage 0) the module voltage and current readbacks now always
+//          come from the negative channel, previously at 0 or positive setpoints the unused
+//          positive monitor inputs were reported. The module voltage readback now reports 0 V
+//          when the applied setpoint is 0, the readback calibration line does not pass exactly
+//          through 0 so it otherwise showed a small offset voltage.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

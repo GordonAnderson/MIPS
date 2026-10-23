@@ -920,6 +920,17 @@ void test(void)
 
 void setup()
 {
+  bool mainPower;
+
+  // Turn the display backlight off first. It stays off until the display has been initialized
+  // and cleared, and only comes on during boot if main power is present. With only USB power the
+  // unpowered modules load the shared SPI clock, the display and SD card writes fail and the panel
+  // would otherwise show white. The PWM resolution is set here because SetBackLight(), which
+  // normally sets it, is not called during a USB only boot and the power off code in
+  // MIPSsystemLoop() uses 12 bit backlight values.
+  analogWriteResolution(12);
+  pinMode(BACKLIGHT, OUTPUT);
+  digitalWrite(BACKLIGHT, LOW);
   // Set LT as output and turn off
   pinMode(LT, OUTPUT);
   digitalWrite(LT,LOW);
@@ -949,6 +960,9 @@ void setup()
   digitalWrite(LT,LOW);
   //
   analogReadResolution(12);
+  // Check for main power now, same threshold as MIPSsystemLoop(), so the backlight can be held
+  // off through the display and SD card init during a USB only boot
+  mainPower = (ReadVin() >= 10.0);
   Reset_IOpins();
   ClearDOshiftRegs();
   SPI.setClockDivider(21);
@@ -956,8 +970,6 @@ void setup()
   digitalWrite(_sdcs, HIGH);
   delay(100);
   // Init the display and setup all the hardware
-  pinMode(BACKLIGHT, INPUT_PULLUP);
-  SetBackLight();
   // Pin 49 defines the display type, if grounded is the HX8347_DSP else ILI9340_DSP
   pinMode(49, INPUT_PULLUP);
   tft.SetDisplayType(ILI9340_DSP);
@@ -968,6 +980,8 @@ void setup()
   tft.setTextColor(ILI9340_WHITE, ILI9340_BLACK);
   tft.setTextSize(1);
   tft.println("Initializing....");
+  // Backlight on only now that the display is initialized and cleared, and only with main power
+  if(mainPower) SetBackLight();
 
   SerialInit();
   delay(250);
@@ -982,6 +996,11 @@ void setup()
   digitalWrite(_sdcs, HIGH);
 
   delay(100);
+  // NOTE: during a USB only boot (mainPower false) the SD card init below times out because the
+  // unpowered modules load the SPI clock. Skipping SD.begin() and LOADparms() in that case would
+  // remove the wait, the controller resets and reads the card normally once main power arrives.
+  // Not done yet: with PowerOffBlankDisplay true the SD card config data may still be needed by
+  // the host software while on USB power, so the final plan for the SD card is still open.
   SD.begin(_sdcs);
   WDT_Restart(WDT);
   delay(100);
@@ -998,9 +1017,20 @@ void setup()
   }
   LOADparms("default.cfg");   // Load the defaults if the file is present
   SPI.setClockDivider(11);    // If SD card init fails it will slow down the SPI interface
-  SetBackLight();
-  DisplayIntensity();
+  // Without main power keep the backlight off, MIPSsystemLoop() handles the power off display
+  // (message or blank, see PowerOffBlankDisplay in Variants.h)
+  if(mainPower)
+  {
+    SetBackLight();
+    DisplayIntensity();
+  }
   MIPSsystemLoop();
+  // If main power was off when the boot started but is on now, it was applied part way through
+  // the boot. The display and SD card were initialized while the unpowered modules loaded the SPI
+  // clock and the backlight was held off, so reset and boot again cleanly, the same way the power
+  // off loop in MIPSsystemLoop() resets when power returns. If power is still off MIPSsystemLoop()
+  // never returns to here.
+  if(!mainPower && (ReadVin() >= 10.0)) Software_Reset();
   if (bmpDraw(MIPSconfigData.BootImage, 0, 0))
   {
     DisableDisplay = true;
@@ -1063,8 +1093,6 @@ void setup()
 // This task is called every 10 milliseconds and handels a number of tasks.
 void MIPSsystemLoop(void)
 {
-
-  if ((BrightTime + 30000) < millis()) SetBackLight();
   float MaxVoltage;
   // Determine the maximum output voltage and set the proper button color
   MaxVoltage = MaxRFVoltage;
@@ -1093,11 +1121,19 @@ void MIPSsystemLoop(void)
   // a warning on the display. Process serial commands and stay in this loop until
   // power is reapplied. Reset when power is reapplied
 #ifdef TestMode
+  if ((BrightTime + 30000) < millis()) SetBackLight();
   return;
 #endif
   if (!AcquireADC()) return;
   if (ReadVin() < 10.0)
   {
+#if PowerOffBlankDisplay
+    // Blank the display by turning its backlight off, no SPI display writes. The unpowered modules
+    // can load the shared SPI clock line and corrupt any display write. Block further display
+    // writes until power returns, the reset that follows re-initializes the display.
+    tft.disableDisplay(true);
+    analogWrite(BACKLIGHT, 0);
+#else
     tft.disableDisplay(false);
     // Display a message on the screen that MIPS power is off.
     tft.fillScreen(ILI9340_BLACK);
@@ -1115,6 +1151,7 @@ void MIPSsystemLoop(void)
     // Dim the display, we could be like this for a long time!
     if (MIPSconfigData.EnetUseTWI) analogWrite(BACKLIGHT, 0);
     else analogWrite(BACKLIGHT, 400);
+#endif
     delay(100);
     // Set all control lines to input, this will keep the systems from sourcing power to
     // the modules through driven outputs. Moved these commands to affter the diplay
@@ -1139,6 +1176,9 @@ void MIPSsystemLoop(void)
     Software_Reset();
   }
   ReleaseADC();
+  // Restore the normal backlight level 30 seconds after DisplayIntensity() brightened it. Done
+  // after the main power check so this can never turn the backlight on while on USB power only.
+  if ((BrightTime + 30000) < millis()) SetBackLight();
 }
 
 // This function will scan through all the possible addresses for the EEPROMs that are located on
