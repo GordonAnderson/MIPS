@@ -21,6 +21,7 @@ void dcbcSetCHoff(int ch, int offset);
 void dcbcGetCHoff(int ch);
 void dcbcGetADC(int ch);
 void dcbcCalibratetADC(int ch);
+void dacRawWrite(void);
 bool dcbcLoad(int brd);
 int  TLC3578IDW(uint8_t spiADD, int cmd);
 
@@ -110,6 +111,7 @@ const Commands DCBiasCtrlCmdArray[] = {
   {"GDCBCOF",  CMDfunction, 1, (char *)dcbcGetCHoff},             // Returns a channels offset, ch
   {"GDCBCADC", CMDfunction, 1, (char *)dcbcGetADC},               // Returns a ADC value for the channel selected
   {"CALDCBCCH", CMDfunction, 1, (char *)dcbcCalibratetADC},       // Calibrates an ADC value for select channel
+  {"DACRAW",   CMDfunctionLine, 0, (char *)dacRawWrite},          // Diagnostic, raw AD5668 write bypassing all DCbias data, brd,spi,chan,counts
 // End of table marker
   {0}
 };
@@ -223,8 +225,9 @@ void DCbiasCtrl_loop(void)
 int checkBoard(int CH)
 {
   int brd=DCbiasCH2Brd(CH-1);
-  if(dcbiasctrl[brd] == NULL) { SetErrorCode(ERR_BADARG); SendNAK; return -1;}
+  // Check brd before using it as an index, DCbiasCH2Brd() returns -1 for an invalid channel
   if(brd == -1) { SetErrorCode(ERR_BADARG); SendNAK; return -1;}
+  if(dcbiasctrl[brd] == NULL) { SetErrorCode(ERR_BADARG); SendNAK; return -1;}
   return brd;
 }
 
@@ -358,6 +361,41 @@ void dcbcRestore(int CH)
     return;
   }
   BADARG;
+}
+
+// Diagnostic, writes counts directly to one AD5668 channel bypassing all the DCbias data
+// structures, calibration, masks and channel numbering. Arguments: brd,spi,chan,counts
+//   brd    = board number, 0 through 3, only used to drive the board select line (0,2 = A, 1,3 = B)
+//   spi    = SPI address, 0 through 7
+//   chan   = AD5668 DAC channel, 0 through 7
+//   counts = 16 bit DAC value, 0 through 65535, 32768 is mid scale
+// Uses the write and update command so LDAC is not needed. The DCbias loop only rewrites a
+// channel when its setpoint changes, so the raw value holds until then, or disable the DCbias
+// thread first with STHRDENA,DCbias,FALSE.
+void dacRawWrite(void)
+{
+  char   *Token;
+  String sToken;
+  int    vals[4];
+
+  for(int i=0;i<4;i++)
+  {
+    GetToken(true);   // Comma
+    if((Token = GetToken(true)) == NULL) BADARG;
+    sToken = Token;
+    vals[i] = sToken.toInt();
+  }
+  if((Token = GetToken(true)) == NULL) BADARG;
+  if(Token[0] != '\n') BADARG;
+  if((vals[0] < 0) || (vals[0] > 3)) BADARG;
+  if((vals[1] < 0) || (vals[1] > 7)) BADARG;
+  if((vals[2] < 0) || (vals[2] > 7)) BADARG;
+  if((vals[3] < 0) || (vals[3] > 65535)) BADARG;
+  int b = SelectedBoard();
+  SelectBoard(vals[0]);
+  AD5668(vals[1], vals[2], vals[3], 3);
+  SelectBoard(b);
+  SendACK;
 }
 
 void dcbcSetCHmode(char *chan, char *mode)

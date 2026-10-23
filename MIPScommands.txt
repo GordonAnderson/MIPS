@@ -638,6 +638,7 @@ DC bias control output module commands
   GDCBCOF           Returns a channels offset, ch
   GDCBCADC          Returns a ADC value for the channel selected
   CALDCBCCH         Calibrates an ADC value for select channel
+  DACRAW            Diagnostic, raw AD5668 write bypassing all DCbias data, brd,spi,chan,counts
 
 DC bias switch module commands
 

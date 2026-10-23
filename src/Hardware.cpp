@@ -1652,7 +1652,12 @@ void AD5668(int8_t spiAdr, int8_t DACchan, uint16_t vali)
 void AD5668_EnableRef(int8_t spiAdr)
 {
   uint8_t     buf[4];
-  
+
+  AtomicBlock< Atomic_RestoreState > a_Block;
+  // The AD5668 samples on the falling clock edge and needs SPI_MODE1, same as AD5668() sets on
+  // every call. This function previously sent in whatever mode SPI_CS was left in, MODE0 at boot
+  // from SPI.begin(SPI_CS), making the internal reference enable marginal from chip to chip.
+  SPI.setDataMode(SPI_CS, SPI_MODE1);
   SetAddress(spiAdr);
   // This command turns on the internal refference
   // Fill buffer with data

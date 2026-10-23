@@ -1262,6 +1262,23 @@
 //          write the needed value. Excluding a board also enables sharing for the other boards
 //          in one step. See the September 2026 offset sharing notes above for the full command
 //          set and the offset readback "highest addressed board" behavior.
+//      5.) Fixed DCbiasCtrl modules whose AD5668 DACs never produced output. AD5668_EnableRef()
+//          sends the command that turns on the DAC's internal reference, which DCbiasCtrl
+//          equipped modules depend on, but it never set the SPI mode, so the command went out in
+//          whatever mode SPI_CS was left in, SPI_MODE0 at boot. The AD5668 samples on the falling
+//          edge and needs SPI_MODE1, so the enable latched on some chips and not others; a DAC
+//          without its reference outputs nothing regardless of what is written to it. Now sets
+//          SPI_MODE1 and runs with interrupts off, same as AD5668().
+//      6.) Fixed checkBoard() in DCbiasCtrl.cpp indexing dcbiasctrl[] with -1 before checking
+//          for an invalid channel.
+//      7.) Added DACRAW,brd,spi,chan,counts, a diagnostic that writes counts directly to one
+//          AD5668 channel, bypassing the DCbias data structures, calibration and masks. Used to
+//          trace a three DCbiasCtrl module system where the first module's DAC stopped updating
+//          once a third module was added on the same board select. The cause was hardware:
+//          ringing on the SPI clock line at the near (source) end of the ribbon cable bus, which
+//          the Due's SCK pin cannot drive cleanly with three modules attached, causing double
+//          clocking. Fixed with a ~40 ohm series resistor on SCK at the controller. Note the
+//          third/fourth DCbias modules use SPI address 0 by default (DCbD_250_Rev_2).
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)
