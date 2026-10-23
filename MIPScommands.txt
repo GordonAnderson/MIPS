@@ -107,6 +107,8 @@ TWI commands
   TWIERROR          Reports the numner of detected TWI failures
   STWIHDW           If true then the TWI hardware interface is used for ADC read functions
   GTWIHDW           Returns the current status.
+  SSPIDIV           Set the default module SPI clock divider, 84MHz/div, RAM only, reset on reboot
+  GSPIDIV           Returns the default module SPI clock divider
   TWICMD            Sends a command to the addressed TWI (Wire) address, TWICMD,brd,add,string.
                     add is decimal, string is \n terminated
   TWI1CMD           Sends a command to the addressed TWI1 (Wire1) address, TWICMD,add,string.

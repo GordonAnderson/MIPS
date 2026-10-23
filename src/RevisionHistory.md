@@ -1279,6 +1279,15 @@
 //          the Due's SCK pin cannot drive cleanly with three modules attached, causing double
 //          clocking. Fixed with a ~40 ohm series resistor on SCK at the controller. Note the
 //          third/fourth DCbias modules use SPI address 0 by default (DCbD_250_Rev_2).
+//      8.) Made the module SPI bus (SPI_CS) clock consistent. The dividers are now defined in
+//          Hardware.h: SPIdivDEFAULT 8 (10.5MHz, normal), SPIdivTABLE 6 (14MHz, table mode) and
+//          SPIdivLIST 4 (21MHz, DCbias list DMA). Previously table mode left the bus at 14MHz
+//          after it finished, DCbias segment playback left it at 21MHz in 16 bit transfer mode,
+//          and SSTATE restored it to 4MHz (divider 21, commented as 21MHz). All three now return
+//          to the default through RestoreSPIclock(). The default is held in RAM and can be
+//          changed for field tests with SSPIDIV,div (4 to 255, applied immediately) and read with
+//          GSPIDIV; it returns to SPIdivDEFAULT on reboot. The display and SD card use their own
+//          SPI channel and are not affected.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

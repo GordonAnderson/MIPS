@@ -203,6 +203,8 @@ const Commands  CmdArray[] = 	{
   {"TWIERROR",  CMDint, 0, (char *)&TWIfails},                 // Reports the numner of detected TWI failures 
   {"STWIHDW", CMDbool, 1, (char *)&MIPSconfigData.TWIhardware},// If true then the TWI hardware interface is used for ADC read functions
   {"GTWIHDW", CMDbool, 0, (char *)&MIPSconfigData.TWIhardware},// Returns the current status.
+  {"SSPIDIV", CMDfunction, 1, (char *)SetSPIdiv},              // Set the default module SPI clock divider, 84MHz/div, RAM only, reset on reboot
+  {"GSPIDIV", CMDint, 0, (char *)&SPIdivDefault},              // Returns the default module SPI clock divider
   {"TWICMD", CMDfunctionLine, 0, (char *)&TWIscmd},            // Sends a command to the addressed TWI (Wire) address, TWICMD,brd,add,string. 
                                                                // add is decimal, string is \n terminated
   {"TWI1CMD", CMDfunctionLine, 0, (char *)&TWI1scmd},          // Sends a command to the addressed TWI1 (Wire1) address, TWICMD,add,string.

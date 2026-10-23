@@ -1020,7 +1020,7 @@ void setup()
   enc.attachInterruptPushButton(encPB);
   // Start the SPI interface
   SPI.begin(SPI_CS);
-  SPI.setClockDivider(SPI_CS, 8);  // Default divider is 21 and equals 4 MHz
+  RestoreSPIclock();               // Default module SPI clock, see SPIdivDEFAULT in Hardware.h
   // Increase speed for better performance of tables
   // Start the TWI interface
   TWI_RESET();
@@ -1621,7 +1621,7 @@ void PowerControl(void)
   #if DMSDMSMB
   // In case SPI is not initialized
   SPI.begin(SPI_CS);
-  SPI.setClockDivider(SPI_CS, 8);  // Default divider is 21 and equals 4 MHz
+  RestoreSPIclock();               // Default module SPI clock, see SPIdivDEFAULT in Hardware.h
   // Make sure LDAC IO lines are initialized
   LDACcapture;
   // Enable DIO

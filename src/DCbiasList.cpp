@@ -179,7 +179,7 @@ void PlaySegments(void)
   // Init the SPI hardware for the DMA transfer
   SPI.begin(10);                   // Dummy DMA SPI device, needed after each xfer to trigger strobe
   SPI.setClockDivider(10,1);       // Set the dummy at max speed
-  SPI.setClockDivider(SPI_CS,4);   // 21 MHz clock rate for DAC SPI speed
+  SPI.setClockDivider(SPI_CS,SPIdivLIST);   // DAC SPI clock for list DMA transfers, see Hardware.h
   SPI.setDataMode(SPI_CS, SPI_MODE1);
   pSpi->SPI_CSR[BOARD_PIN_TO_SPI_CHANNEL(SPI_CS)] &= 0x00FF0F;  // Set DLYBCT delay between bytes to zero
   pSpi->SPI_CSR[BOARD_PIN_TO_SPI_CHANNEL(SPI_CS)] |= 8 << 4;    // Set 16 bit transfer mode
@@ -221,6 +221,8 @@ void PlaySegments(void)
   LDACcapture;
   pinMode(LDAC,OUTPUT);
   LDAClow;
+  // Return the module SPI bus to its default clock and 8 bit transfers
+  RestoreSPIclock();
 }
 
 void DACsetup(void)
@@ -471,7 +473,7 @@ void SetDBbiasState(DCstate *dcs)
     // Init the SPI hardware for the DMA transfer
     SPI.begin(10);                   // Dummy DMA SPI device, needed after each xfer to trigger strobe
     SPI.setClockDivider(10,1);       // Set the dummy at max speed
-    SPI.setClockDivider(SPI_CS,4);   // 21 MHz clock rate for DAC SPI speed
+    SPI.setClockDivider(SPI_CS,SPIdivLIST);   // DAC SPI clock for list DMA transfers, see Hardware.h
     SPI.setDataMode(SPI_CS, SPI_MODE1);
     pSpi->SPI_CSR[BOARD_PIN_TO_SPI_CHANNEL(SPI_CS)] &= 0x00FF0F;  // Set DLYBCT delay between bytes to zero
     pSpi->SPI_CSR[BOARD_PIN_TO_SPI_CHANNEL(SPI_CS)] |= 8 << 4;    // Set 16 bit transfer mode
@@ -629,7 +631,7 @@ void SetState(char *name)
     if(!DCbiasStateBusy) break;
    }
    pSpi->SPI_CSR[BOARD_PIN_TO_SPI_CHANNEL(SPI_CS)] &= 0x00FF0F;
-   SPI.setClockDivider(SPI_CS,21);   // 21 MHz clock rate for DAC SPI speed
+   RestoreSPIclock();   // Return to the default module SPI clock and 8 bit transfers
    
    // Pluse LDAC
    LDACcapture;

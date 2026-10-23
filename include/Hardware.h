@@ -139,6 +139,18 @@ extern PBledStates  PBledMode;
 #define ADDR1         26
 #define ADDR2         27
 #define SPI_CS        52
+
+// SPI clock dividers for the module SPI bus (the SPI_CS channel), SPI clock = 84 MHz / divider.
+// Table mode and DCbias list mode switch to their own divider while running and return to the
+// default divider when they finish. The default is held in RAM (SPIdivDefault) so it can be
+// changed for field tests with SSPIDIV / read with GSPIDIV; it returns to SPIdivDEFAULT on reboot.
+#define SPIdivDEFAULT   8     // 10.5 MHz, normal operation
+#define SPIdivTABLE     6     // 14 MHz, table mode
+#define SPIdivLIST      4     // 21 MHz, DCbias list (segment and state) DMA transfers
+#define SPIdivMIN       4     // Fastest default divider SSPIDIV will accept
+extern int SPIdivDefault;
+void RestoreSPIclock(void);
+void SetSPIdiv(int div);
 #define SCL           45    // Shift register clear
 #define DOenable      44    // Digital output buffer enable, active low
 #define DOMSBlatch    DAC0  // Digital output MSB latch

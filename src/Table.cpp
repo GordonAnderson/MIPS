@@ -1512,6 +1512,8 @@ void ProcessTables(void)
     LDACcapture;
     pinMode(LDAC,OUTPUT);
     LDAClow;
+    // Return the module SPI bus to its default clock, table mode runs it at SPIdivTABLE
+    RestoreSPIclock();
     // Reset all the digital outputs to there pre-table states
     SetImageRegs();
     if(!DisableDisplay) DismissMessage();
@@ -1597,7 +1599,7 @@ void SetupTimer(void)
     {
        LDAChigh;
     }
-    SPI.setClockDivider(SPI_CS,6);
+    SPI.setClockDivider(SPI_CS,SPIdivTABLE);
     SPI.setDataMode(SPI_CS, SPI_MODE1);
     Spi* pSpi = SPI0;
     pSpi->SPI_CSR[BOARD_PIN_TO_SPI_CHANNEL(SPI_CS)] &= 0xFFFFFF;  // Set DLYBCT delay between bytes to zero

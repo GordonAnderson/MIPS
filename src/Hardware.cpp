@@ -691,6 +691,31 @@ void RebootStatus(void)
    serial->println(TWIfails);
 }
 
+// Default module SPI bus clock divider, RAM only so field changes reset on reboot. See Hardware.h.
+int SPIdivDefault = SPIdivDEFAULT;
+
+// Returns the module SPI bus (SPI_CS) to the default clock divider. Calling setClockDivider
+// rewrites the whole chip select configuration from the SPI library's stored mode, so this also
+// undoes the 16 bit transfer and zero byte delay settings table and list modes apply.
+void RestoreSPIclock(void)
+{
+  SPI.setClockDivider(SPI_CS, SPIdivDefault);
+}
+
+// SSPIDIV command, sets the default module SPI bus clock divider and applies it immediately.
+void SetSPIdiv(int div)
+{
+  if((div < SPIdivMIN) || (div > 255))
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;
+  }
+  SPIdivDefault = div;
+  RestoreSPIclock();
+  SendACK;
+}
+
 // This function will set the three address lines used for the SPI device selection. It is assumed
 // the bit directions have already been set.
 void SetAddress(int8_t addr)
