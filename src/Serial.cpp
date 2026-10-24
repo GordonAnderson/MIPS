@@ -468,6 +468,20 @@ const Commands  CmdArray[] = 	{
                                                             // module (1 thru 4), channel (POS or NEG)
   {"SESICTRL",CMDfunctionLine, 0, (char *)SetESIadcControl},// Defines ADC channel to control output channel voltage
                                                             // channel,enable DI,ADC channel,gain,offset. ADC channel = -1 to disable
+  {"SESICALPT",CMDfunction, 2, (char *)SetESIcalPoints},    // Sets the CAL4P3 DAC calibration points, low,high in counts (0-65535, low < high).
+                                                            // Default 3000,10000. RAM only, returns to the default on reboot.
+  {"GESICALPT",CMDfunction, 0, (char *)GetESIcalPoints},    // Returns the CAL4P3 DAC calibration points, low,high
+  {"SESIKNEE",CMDfunctionLine, 0, (char *)SetESIknee},      // Sets the ESI near zero knee correction, module,POS|NEG,Vk,C0. Below Vk volts the
+                                                            // DAC counts follow a line from C0 counts (supply turn on) at 0V to the normal
+                                                            // calibration at Vk. Vk = 0 disables. RAM only, use a startup macro to set.
+  {"GESIKNEE",CMDfunctionLine, 0, (char *)GetESIknee},      // Returns the ESI knee correction, module,POS|NEG, returns Vk,C0
+  {"ESIDACRAW",CMDfunctionLine, 0, (char *)ESIdacRaw},      // Diagnostic, raw ESI output DAC write, module,POS|NEG,counts. Stop the ESI loop
+                                                            // first with STHRDENA,ESI,FALSE, it rewrites the DAC every pass.
+  {"SESIRBKNEE",CMDfunctionLine, 0, (char *)SetESIrbKnee},  // Sets the ESI voltage readback knee correction, module,POS|NEG,Vk,A0. Below Vk
+                                                            // volts the readback follows a line from A0 raw ADC counts (0V) to the normal
+                                                            // calibration at Vk. Vk = 0 disables. RAM only, use a startup macro to set.
+  {"GESIRBKNEE",CMDfunctionLine, 0, (char *)GetESIrbKnee},  // Returns the ESI readback knee correction, module,POS|NEG, returns Vk,A0
+  {"ESIADCRAW",CMDfunctionLine, 0, (char *)ESIadcRaw},      // Diagnostic, returns raw ESI voltage monitor ADC counts, module,POS|NEG
   
 // Table commands, tables enable pulse sequence generation
   {"STBLDAT", CMDfunction, 0, (char *)ParseTableCommand}, // Set the pulse sequence table

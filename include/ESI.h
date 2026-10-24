@@ -90,7 +90,22 @@ void GetESIgate(int module);
 void SetESIramp(int module, int ramp);
 void GetESIramp(int module);
 
+// CAL4P3 calibration DAC points, in 16 bit DAC counts. The RAM copies (ESIcalLow/ESIcalHigh) can be
+// changed with SESICALPT for field tuning and return to these defaults on reboot.
+#define ESIcalLowDEFAULT   3000
+#define ESIcalHighDEFAULT  10000
+extern int ESIcalLow;
+extern int ESIcalHigh;
+
 void calESI4P3(char *mod, char *chan);
+void SetESIcalPoints(int low, int high);
+void GetESIcalPoints(void);
+void SetESIknee(void);
+void GetESIknee(void);
+void ESIdacRaw(void);
+void SetESIrbKnee(void);
+void GetESIrbKnee(void);
+void ESIadcRaw(void);
 void SetESIadcControl(void);
 
 #endif

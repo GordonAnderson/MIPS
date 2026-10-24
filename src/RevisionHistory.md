@@ -1300,11 +1300,11 @@
 //          followed. Typically every channel ended up reading the module's first input. The
 //          channel is now masked to 0-7. Calibrations previously saved for channels 9 and up
 //          were taken from the wrong input and should be redone with CALDCBCCH and DCBCSAVE.
-//     11.) Added the PowerOffBlankDisplay build option in Variants.h, default false. With main
+//     11.) Added the PowerOffBlankDisplay build option in Variants.h, currently set true. With main
 //          power off and the controller on USB power, the unpowered modules load the shared SPI
 //          clock so display writes fail. When true the power off handling just turns the display
 //          backlight off and blocks display writes instead of drawing the "MIPS power is off"
-//          message.
+//          message. Set false to draw the message as before.
 //     12.) Display handling during a USB only boot. The backlight is now turned off as the first
 //          step of setup() and main power is checked early. The backlight only comes on after the
 //          display is initialized and cleared, and only with main power present, so the display
@@ -1320,6 +1320,34 @@
 //          positive monitor inputs were reported. The module voltage readback now reports 0 V
 //          when the applied setpoint is 0, the readback calibration line does not pass exactly
 //          through 0 so it otherwise showed a small offset voltage.
+//     14.) ESI CAL4P3 calibration points are no longer hard coded in three places. The two DAC
+//          points are defined once in ESI.h (ESIcalLowDEFAULT 3000, ESIcalHighDEFAULT 10000) and
+//          held in RAM, set with SESICALPT,low,high and read with GESICALPT. The DAC writes and
+//          the slope/intercept math both use them so they can not get out of step. RAM only.
+//     15.) ESI near zero (knee) corrections, RAM only so there are no EEPROM or backward
+//          compatibility changes, set them from a startup macro. HV supplies have a turn on
+//          threshold and are nonlinear near zero, so a two point CAL4P3 line that is accurate in
+//          the working range under drives small setpoints and the readback is also off there.
+//          Output: SESIKNEE,module,POS|NEG,Vk,C0. Vk is a voltage magnitude (always positive,
+//          0 = off) and C0 is DAC counts. Below Vk the output DAC counts follow a straight line
+//          from C0 at 0 V to the normal calibration at Vk, at and above Vk the normal calibration
+//          is used. Pick Vk where the normal calibration is accurate again. C0 is the DAC count
+//          where the real output line extends down to 0 V, not the knee count: measure two
+//          points in the working range (e.g. the count where the output just turns on and a
+//          count giving an accurate voltage near Vk), extend that line to 0 V. Example from
+//          testing, output turned on at 400 counts (-30 V), 1100 counts gave -287 V, giving
+//          SESIKNEE,2,NEG,287,300. Readback: SESIRBKNEE,module,POS|NEG,Vk,A0, same idea for the
+//          voltage readback, A0 is the raw monitor ADC counts at 0 V on the real readback line.
+//          GESIKNEE and GESIRBKNEE read the settings back. Tuning by trial is quick, each change
+//          takes effect on the next ESI loop pass.
+//          Diagnostics: ESIDACRAW,module,POS|NEG,counts writes the output DAC directly (stop the
+//          ESI loop first with STHRDENA,ESI,FALSE, it rewrites the DAC every pass) and
+//          ESIADCRAW,module,POS|NEG returns the raw voltage monitor ADC counts.
+//     16.) Fixed the ESI front panel "Save settings" not saving modules 3 and 4, it only ever
+//          wrote ESIarray[0] and [1] (and set module 1's Size field when saving module 2). The
+//          front panel save and "Restore settings" now act only on the module selected on the
+//          front panel. SAVEM,ESI still saves all modules and all modules are still restored at
+//          power up.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

@@ -103,6 +103,8 @@ void ESIcalibrate(void);
 void ESIcalibratePos(void);
 void ESIcalibrateNeg(void);
 void ESI_loop(void);
+int  ESIvalue2Counts(int b, int c, float V);
+float ESIcounts2Value(int b, int c, int counts);
 void AddMainMenuEntry(MenuEntry *me);
 
 // Filter time constant is:
@@ -610,17 +612,12 @@ void SaveESIsettings(void)
   
   *esidata = esi;
   if(ESIisDualChanRev(esidata->Rev)) esidata->ESIchan[(ESIchannel-1)&1] = esich;
-  if(ESIarray[0] != NULL)
-  {
-    SelectBoard(0);
-    if(WriteEEPROM(ESIarray[0], ESIarray[0]->EEPROMadr, 0, ESIarray[0]->Size = sizeof(ESIdata)) != 0) Success = false;
-  } 
-  if(ESIarray[1] != NULL)
-  {
-    SelectBoard(1);
-    if(WriteEEPROM(ESIarray[1], ESIarray[1]->EEPROMadr, 0, ESIarray[0]->Size = sizeof(ESIdata)) != 0) Success = false;
-  }
+  // Save only the module selected on the front panel, the one being edited. The other modules are
+  // left untouched, use SAVEM,ESI to save all modules. This used to always save ESIarray[0] and [1],
+  // so modules 3 and 4 were never saved from the front panel.
   SelectBoard(SelectedESIboard);
+  esidata->Size = sizeof(ESIdata);
+  if(WriteEEPROM(esidata, esidata->EEPROMadr, 0, sizeof(ESIdata)) != 0) Success = false;
   if(Success)
   {
     DisplayMessage("Parameters Saved!",2000);
@@ -628,39 +625,53 @@ void SaveESIsettings(void)
   else DisplayMessage("Error saving!",2000);
 }
 
-void RestoreESIsettings(void)
+// Restores one ESI module's settings from its EEPROM. The outputs and gating are left disabled.
+// Returns 0 on success, 1 if the EEPROM read failed, 2 if the EEPROM does not hold ESI data.
+int RestoreESIboard(int b)
 {
-  RestoreESIsettings(false);
+  ESIdata esi_data;
+
+  SelectBoard(b);
+  if(ReadEEPROM(&esi_data, ESIarray[b]->EEPROMadr, 0, sizeof(ESIdata)) != 0) return 1;
+  if(strcmp(esi_data.Name,ESIarray[b]->Name) != 0) return 2;
+  // Here if the name matches so copy the data to the operating data structure
+  esi_data.EEPROMadr = ESIarray[b]->EEPROMadr;
+  esi_data.ESIchan[0].Enable = false;
+  esi_data.ESIchan[1].Enable = false;
+  esi_data.EnableGatting[0] = false;
+  esi_data.EnableGatting[1] = false;
+  esi_data.Enable = false;
+  memcpy(ESIarray[b], &esi_data, esi_data.Size);
+  return 0;
 }
 
+// Front panel "Restore settings", restores only the module selected on the front panel, the
+// same module the front panel "Save settings" writes. All modules are restored at power up by
+// RestoreESIsettings(bool).
+void RestoreESIsettings(void)
+{
+  int stat = RestoreESIboard(SelectedESIboard);
+  SelectBoard(SelectedESIboard);
+  esi = *esidata;
+  if(ESIisDualChanRev(esidata->Rev)) esich = esi.ESIchan[(ESIchannel-1)&1];
+  if(stat == 2) DisplayMessage("Corrupted EEPROM data!",2000);
+  else if(stat == 1)  DisplayMessage("Unable to Restore!",2000);
+  else DisplayMessage("Parameters Restored!",2000);
+}
+
+// Restores all detected ESI modules, used at power up
 void RestoreESIsettings(bool NoDisplay)
 {
-  int b;
-  ESIdata esi_data;
+  int  b,stat;
   bool Success=true;
   bool Corrupted=false;
-  
+
   for(b=0;b<MAXESI;b++)
   {
     if(ESIarray[b] == NULL) continue;
-    SelectBoard(b);
-    if(ReadEEPROM(&esi_data, ESIarray[b]->EEPROMadr, 0, sizeof(ESIdata)) == 0)
-    {
-       if(strcmp(esi_data.Name,ESIarray[b]->Name) == 0)
-       {
-         // Here if the name matches so copy the data to the operating data structure
-         esi_data.EEPROMadr = ESIarray[b]->EEPROMadr;
-         esi_data.ESIchan[0].Enable = false;
-         esi_data.ESIchan[1].Enable = false;
-         esi_data.EnableGatting[0] = false;
-         esi_data.EnableGatting[1] = false;
-         esi_data.Enable = false;
-         //memcpy(&ESIarray[b], &esi_data, sizeof(ESIdata));
-         memcpy(ESIarray[b], &esi_data, esi_data.Size);
-       } 
-       else Corrupted=true;
-    }
-    else Success=false;
+    stat = RestoreESIboard(b);
+    if(stat == 1) Success = false;
+    if(stat == 2) Corrupted = true;
   }
   SelectBoard(SelectedESIboard);
   esi = *esidata;
@@ -982,10 +993,10 @@ void ESI_loop(void)
       else if(ESIarray[b]->ESIchan[1].VoltageSetpoint < ESIarray[b]->ESIchan[1].VoltageLimit) ESIarray[b]->ESIchan[1].VoltageSetpoint = ESIarray[b]->ESIchan[1].VoltageLimit;
       // Output the control voltages
       SelectBoard(b);
-      if(ESIarray[b]->ESIchan[0].Enable) AD5625(ESIarray[b]->DACadr,ESIarray[b]->ESIchan[0].DCctrl.Chan,Value2Counts(Setpoints[b][0],&ESIarray[b]->ESIchan[0].DCctrl));
+      if(ESIarray[b]->ESIchan[0].Enable) AD5625(ESIarray[b]->DACadr,ESIarray[b]->ESIchan[0].DCctrl.Chan,ESIvalue2Counts(b,0,Setpoints[b][0]));
       else AD5625(ESIarray[b]->DACadr,ESIarray[b]->ESIchan[0].DCctrl.Chan,Value2Counts(0,&ESIarray[b]->ESIchan[0].DCctrl));
 
-      if(ESIarray[b]->ESIchan[1].Enable) AD5625(ESIarray[b]->DACadr,ESIarray[b]->ESIchan[1].DCctrl.Chan,Value2Counts(Setpoints[b][1],&ESIarray[b]->ESIchan[1].DCctrl));
+      if(ESIarray[b]->ESIchan[1].Enable) AD5625(ESIarray[b]->DACadr,ESIarray[b]->ESIchan[1].DCctrl.Chan,ESIvalue2Counts(b,1,Setpoints[b][1]));
       else  AD5625(ESIarray[b]->DACadr,ESIarray[b]->ESIchan[1].DCctrl.Chan,Value2Counts(0,&ESIarray[b]->ESIchan[1].DCctrl));
       //
       // Read the readback ADC values for voltage and current
@@ -993,7 +1004,7 @@ void ESI_loop(void)
       if(AD7994(ESIarray[b]->ADCadr, ADCvals)==0)
       {
         i = ESIarray[b]->ESIchan[0].DCVmon.Chan;
-        ReadbackV[b][0] = Filter * (Counts2Value(ADCvals[i],&ESIarray[b]->ESIchan[0].DCVmon)) + (1-Filter) * ReadbackV[b][0];
+        ReadbackV[b][0] = Filter * (ESIcounts2Value(b,0,ADCvals[i])) + (1-Filter) * ReadbackV[b][0];
         if(ReadbackV[b][0] > MaxESIvoltage) MaxESIvoltage = ReadbackV[b][0];
         i = ESIarray[b]->ESIchan[0].DCImon.Chan;
         if(ESIarray[b]->Rev == 2)
@@ -1006,7 +1017,7 @@ void ESI_loop(void)
         }
         else ReadbackI[b][0] = Filter * (Counts2Value(ADCvals[i],&ESIarray[b]->ESIchan[0].DCImon)) + (1-Filter) * ReadbackI[b][0];
         i = ESIarray[b]->ESIchan[1].DCVmon.Chan;
-        ReadbackV[b][1] = Filter * (Counts2Value(ADCvals[i],&ESIarray[b]->ESIchan[1].DCVmon)) + (1-Filter) * ReadbackV[b][1];
+        ReadbackV[b][1] = Filter * (ESIcounts2Value(b,1,ADCvals[i])) + (1-Filter) * ReadbackV[b][1];
         if(ReadbackV[b][1] > MaxESIvoltage) MaxESIvoltage = ReadbackV[b][1];
         i = ESIarray[b]->ESIchan[1].DCImon.Chan;
         if(ESIarray[b]->Rev == 2)
@@ -1487,7 +1498,182 @@ void GetESIramp(int module)
   serial->println(ESIarray[module -1]->ESIstepsize);
 }
 
-// calESI4P3 is an interactive calibration routine for ESI revision 4.3/4.4 hardware that 
+// CAL4P3 calibration DAC points, RAM only, see ESI.h
+int ESIcalLow  = ESIcalLowDEFAULT;
+int ESIcalHigh = ESIcalHighDEFAULT;
+
+// SESICALPT,low,high command, sets the two DAC count points used by CAL4P3. Low must be less
+// than high, both 0 to 65535. RAM only, reset to the ESI.h defaults on reboot.
+void SetESIcalPoints(int low, int high)
+{
+  if((low < 0) || (high > 65535) || (low >= high)) BADARG;
+  ESIcalLow  = low;
+  ESIcalHigh = high;
+  SendACK;
+}
+
+// GESICALPT command, returns the CAL4P3 DAC points as low,high
+void GetESIcalPoints(void)
+{
+  SendACKonly;
+  if(SerialMute) return;
+  serial->print(ESIcalLow);
+  serial->print(",");
+  serial->println(ESIcalHigh);
+}
+
+// Near zero (knee) correction for the ESI output DAC, RAM only so there are no EEPROM or backward
+// compatibility changes, set from a startup macro if needed. HV supplies have a turn on threshold
+// and are nonlinear near zero, so the two point CAL4P3 line under drives small setpoints. Below the
+// knee voltage Vk the DAC counts come from a second line running from C0 (counts where the supply
+// output just starts) at 0 V to the normal calibration's counts at Vk, so the two lines meet at
+// the knee. At and above Vk, and at exactly 0 V, the normal calibration is used. Vk = 0 is off.
+float ESIkneeV[MAXESI][2];
+int   ESIkneeC0[MAXESI][2];
+
+// Converts a voltage setpoint to output DAC counts for ESI board b, channel c (0 = POS, 1 = NEG),
+// applying the knee correction when enabled
+int ESIvalue2Counts(int b, int c, float V)
+{
+  DACchan *dc = &ESIarray[b]->ESIchan[c].DCctrl;
+  float   Vk  = ESIkneeV[b][c];
+
+  if((Vk <= 0) || (V == 0) || (fabs(V) >= Vk)) return Value2Counts(V, dc);
+  int Ck     = Value2Counts((V > 0) ? Vk : -Vk, dc);
+  int counts = ESIkneeC0[b][c] + (int)((Ck - ESIkneeC0[b][c]) * fabs(V) / Vk);
+  if(counts < 0) counts = 0;
+  if(counts > 65535) counts = 65535;
+  return counts;
+}
+
+// Matching near zero (knee) correction for the voltage readback (DCVmon), RAM only. The monitor ADC
+// path also has an offset near zero. Below the knee voltage Vk (judged by the normal readback) the
+// voltage comes from a line running from A0 (raw ADC counts that correspond to 0 V, found by
+// extending the real readback line down to 0 V) to the normal calibration's counts at Vk, so the
+// two lines meet at the knee. Readings on the zero side of A0 report 0 V. Vk = 0 is off.
+float ESIrbKneeV[MAXESI][2];
+int   ESIrbKneeA0[MAXESI][2];
+
+// Converts raw monitor ADC counts to volts for ESI board b, channel c, applying the readback knee
+// correction when enabled. The polarity comes from the normal readback.
+float ESIcounts2Value(int b, int c, int counts)
+{
+  ADCchan *ac = &ESIarray[b]->ESIchan[c].DCVmon;
+  float   V   = Counts2Value(counts, ac);
+  float   Vk  = ESIrbKneeV[b][c];
+
+  if((Vk <= 0) || (V == 0) || (fabs(V) >= Vk)) return V;
+  float sVk = (V > 0) ? Vk : -Vk;               // Knee voltage with this reading's polarity
+  float Ak  = sVk * ac->m + ac->b;              // Normal calibration's counts at the knee
+  if(Ak == ESIrbKneeA0[b][c]) return V;
+  float t = ((float)counts - ESIrbKneeA0[b][c]) / (Ak - ESIrbKneeA0[b][c]);
+  if(t <= 0) return 0;
+  if(t > 1) t = 1;
+  return sVk * t;
+}
+
+// Reads ",module,POS|NEG" from the command line into board index b and channel c, false on error
+bool ESImodChanFromCommandLine(int *b, int *c)
+{
+  int  module;
+  char *tkn;
+
+  if(!valueFromCommandLine(&module,1,MAXESI)) return false;
+  if(ESIarray[module-1] == NULL) return false;
+  if((tkn = TokenFromCommandLine(',')) == NULL) return false;
+  if(strcmp(tkn,"POS") == 0) *c = 0;
+  else if(strcmp(tkn,"NEG") == 0) *c = 1;
+  else return false;
+  *b = module - 1;
+  return true;
+}
+
+// SESIKNEE,module,POS|NEG,Vk,C0 sets the knee correction, Vk in volts (magnitude, 0 = off) and C0
+// in DAC counts. RAM only.
+void SetESIknee(void)
+{
+  int   b,c,c0;
+  float vk;
+
+  if(!ESImodChanFromCommandLine(&b,&c)) BADARG;
+  if(!valueFromCommandLine(&vk,0,100000)) BADARG;
+  if(!valueFromCommandLine(&c0,0,65535)) BADARG;
+  ESIkneeV[b][c]  = vk;
+  ESIkneeC0[b][c] = c0;
+  SendACK;
+}
+
+// GESIKNEE,module,POS|NEG returns the knee correction as Vk,C0
+void GetESIknee(void)
+{
+  int b,c;
+
+  if(!ESImodChanFromCommandLine(&b,&c)) BADARG;
+  SendACKonly;
+  if(SerialMute) return;
+  serial->print(ESIkneeV[b][c]);
+  serial->print(",");
+  serial->println(ESIkneeC0[b][c]);
+}
+
+// SESIRBKNEE,module,POS|NEG,Vk,A0 sets the readback knee correction, Vk in volts (magnitude,
+// 0 = off) and A0 in raw ADC counts at 0 V. RAM only.
+void SetESIrbKnee(void)
+{
+  int   b,c,a0;
+  float vk;
+
+  if(!ESImodChanFromCommandLine(&b,&c)) BADARG;
+  if(!valueFromCommandLine(&vk,0,100000)) BADARG;
+  if(!valueFromCommandLine(&a0,0,65535)) BADARG;
+  ESIrbKneeV[b][c]  = vk;
+  ESIrbKneeA0[b][c] = a0;
+  SendACK;
+}
+
+// GESIRBKNEE,module,POS|NEG returns the readback knee correction as Vk,A0
+void GetESIrbKnee(void)
+{
+  int b,c;
+
+  if(!ESImodChanFromCommandLine(&b,&c)) BADARG;
+  SendACKonly;
+  if(SerialMute) return;
+  serial->print(ESIrbKneeV[b][c]);
+  serial->print(",");
+  serial->println(ESIrbKneeA0[b][c]);
+}
+
+// ESIADCRAW,module,POS|NEG returns the raw voltage monitor ADC counts for the channel, averaged
+// over 20 reads. Used with a meter to find the readback knee A0 value.
+void ESIadcRaw(void)
+{
+  int b,c;
+
+  if(!ESImodChanFromCommandLine(&b,&c)) BADARG;
+  SelectBoard(b);
+  int counts = AD7994(ESIarray[b]->ADCadr, ESIarray[b]->ESIchan[c].DCVmon.Chan, 20);
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(counts);
+}
+
+// ESIDACRAW,module,POS|NEG,counts writes counts directly to the channel's output DAC, bypassing
+// calibration and the knee correction. Used to find the supply turn on count (C0). ESI_loop()
+// rewrites the DAC every pass, so stop it first with STHRDENA,ESI,FALSE after enabling the module
+// at a small setpoint of the right polarity (so the relays are set), and restart it afterwards.
+void ESIdacRaw(void)
+{
+  int b,c,counts;
+
+  if(!ESImodChanFromCommandLine(&b,&c)) BADARG;
+  if(!valueFromCommandLine(&counts,0,65535)) BADARG;
+  SelectBoard(b);
+  AD5625(ESIarray[b]->DACadr,ESIarray[b]->ESIchan[c].DCctrl.Chan,counts);
+  SendACK;
+}
+
+// calESI4P3 is an interactive calibration routine for ESI revision 4.3/4.4 hardware that
 // accepts a module number and channel ("POS" or "NEG"), validates the selection, enables 
 // the module, and prompts for user-entered voltages and ADC readings at two DAC setpoints 
 // to derive and store calibration coefficients for the DAC control, voltage readback, and 
@@ -1522,26 +1708,24 @@ void calESI4P3(char *mod, char *chan)
   }
   // Set voltage point 1 and ask for actual voltage
   SelectBoard(b);
-  AD5625(ESIarray[b]->DACadr,ESIarray[b]->ESIchan[ch].DCctrl.Chan,3000);    // Set voltage point 1 DAC value
+  AD5625(ESIarray[b]->DACadr,ESIarray[b]->ESIchan[ch].DCctrl.Chan,ESIcalLow);    // Set voltage point 1 DAC value
   float v1 = UserInputFloat("Enter measured ESI voltaage : ", ReadAllSerial);
   int Vadc1 = AD7994(ESIarray[b]->ADCadr, ESIarray[b]->ESIchan[ch].DCVmon.Chan, 20);
   int Iadc1 = AD7994(ESIarray[b]->ADCadr, ESIarray[b]->ESIchan[ch].DCImon.Chan, 20);
   // Set voltage point 2 and ask for actual voltage
   SelectBoard(b);
-  AD5625(ESIarray[b]->DACadr,ESIarray[b]->ESIchan[ch].DCctrl.Chan,10000);    // Set voltage point 2 DAC value
+  AD5625(ESIarray[b]->DACadr,ESIarray[b]->ESIchan[ch].DCctrl.Chan,ESIcalHigh);   // Set voltage point 2 DAC value
   float v2 = UserInputFloat("Enter measured ESI voltaage : ", ReadAllSerial);
   int Vadc2 = AD7994(ESIarray[b]->ADCadr, ESIarray[b]->ESIchan[ch].DCVmon.Chan, 20);
   int Iadc2 = AD7994(ESIarray[b]->ADCadr, ESIarray[b]->ESIchan[ch].DCImon.Chan, 20);
-  // Calculate and apply calibration parameters
+  // Calculate and apply calibration parameters, L = ESIcalLow and H = ESIcalHigh DAC counts
   // count = value * m + b
-  // value = (count - b)/m
-  // v1 = 1000/m   - b/m
-  // v2 = 10000/m - b/m
-  // v1 - v2 = (200 - 10000)/m 
-  // m = (1000 - 10000)/(v1 - v2)
-  // b = 10000 - v2 * m
-  float M = (3000 - 10000)/(v1 - v2);
-  float B = 10000 - v2 * M;
+  // L = v1 * m + b
+  // H = v2 * m + b
+  // m = (L - H)/(v1 - v2)
+  // b = H - v2 * m
+  float M = (float)(ESIcalLow - ESIcalHigh)/(v1 - v2);
+  float B = ESIcalHigh - v2 * M;
   serial->println("DAC calibration parameters:");
   serial->println(M);
   serial->println(B);
