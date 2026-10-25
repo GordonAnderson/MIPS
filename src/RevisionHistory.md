@@ -1357,6 +1357,22 @@
 //          as 19/18. Added CURSCAN, reports the interface in use, idle line levels and pin state
 //          (soft I2C) and every address on the current monitor bus that acknowledges. It is in
 //          the main command table so it works even when no current monitor was detected.
+//     18.) Faster and more robust current monitor soft I2C. Update task for 3 boards went from 30 mS
+//          to 4 mS per pass, tested with no read errors:
+//          - DCBcurSoftI2CdelayUS reduced from 5 to 3 uS, about an 8 uS clock period (125 kHz),
+//            the ADS7828 is rated for 400 kHz. If read errors show up in CURSCAN check the SDA
+//            rise time and go back to 5.
+//          - The lines are driven by direct PIO register access (OER = drive low, ODR = release,
+//            PDSR = read) instead of pinMode/digitalRead, removes most of the per bit overhead.
+//          - The pins are taken over once per update pass, not once per transaction.
+//          - Error recovery, a failed channel read clears the bus (9 clocks and a stop) and the
+//            channel keeps its last value. CURSCAN reports the read error count since boot.
+//          - DCBcurOneBoardPerPass in DCBcurrent.h (default true) reads one board per thread pass,
+//            with the thread interval set to DCBcurUpdateMS (100) / number of boards, so each board
+//            is still updated every 100 mS but the system is blocked for a shorter time. False
+//            reads all boards every pass as before.
+//          - soft_i2c_hal_t has a new half_period_us field, the clock stretch timeout no longer
+//            assumes a 5 uS half period.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

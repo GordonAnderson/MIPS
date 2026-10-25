@@ -13,6 +13,7 @@ typedef struct {
     bool (*sda_read)(void);        // Read SDA level
     void (*delay_half_period)(void);// Half-clock delay (e.g. 5 us for 100 kHz)
     uint32_t stretch_timeout_us;   // Clock stretch safety limit (e.g. 10000 us)
+    uint32_t half_period_us;       // Half-clock delay length in us, used to count the stretch timeout
 } soft_i2c_hal_t;
 
 void soft_i2c_init(const soft_i2c_hal_t *hal);

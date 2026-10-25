@@ -75,27 +75,29 @@ CommandList DCBiasCurList = {(Commands *)DCBiasCurCmdArray, NULL };
 static Pio      *curSDApio, *curSCLpio;
 static uint32_t  curSDAmask, curSCLmask;
 
-// Open drain line control using the Arduino pin functions, the same calls as the DSET/DWRITE
-// commands. The pin's stored output value is held LOW (set in curTakePins), so pinMode OUTPUT drives
-// the line low and pinMode INPUT_PULLUP releases it to the pull ups. Reads are only done while the
-// pin is an input, digitalRead of an output pin returns the stored value, not the pin level.
-static void curSCLfloat(void) { pinMode(DCBcurSoftSCL, INPUT_PULLUP); }
-static void curSCLlow(void)   { pinMode(DCBcurSoftSCL, OUTPUT); }
-static bool curSCLread(void)  { return digitalRead(DCBcurSoftSCL) == HIGH; }
-static void curSDAfloat(void) { pinMode(DCBcurSoftSDA, INPUT_PULLUP); }
-static void curSDAlow(void)   { pinMode(DCBcurSoftSDA, OUTPUT); }
-static bool curSDAread(void)  { return digitalRead(DCBcurSoftSDA) == HIGH; }
+// Read errors since boot, a failed read is followed by a bus clear. Reported by CURSCAN
+static uint32_t  curErrors = 0;
+
+// Open drain line control by direct PIO register access. The output data is held 0 (set in
+// curTakePins), so enabling the output (OER) drives the line low and disabling it (ODR) releases it
+// to the pull ups. The line is never driven high. PDSR always reads the actual pin level.
+static void curSCLfloat(void) { curSCLpio->PIO_ODR = curSCLmask; }
+static void curSCLlow(void)   { curSCLpio->PIO_OER = curSCLmask; }
+static bool curSCLread(void)  { return (curSCLpio->PIO_PDSR & curSCLmask) != 0; }
+static void curSDAfloat(void) { curSDApio->PIO_ODR = curSDAmask; }
+static void curSDAlow(void)   { curSDApio->PIO_OER = curSDAmask; }
+static bool curSDAread(void)  { return (curSDApio->PIO_PDSR & curSDAmask) != 0; }
 static void curDelay(void)    { delayMicroseconds(DCBcurSoftI2CdelayUS); }
 
 static const soft_i2c_hal_t curHAL = {curSCLfloat, curSCLlow, curSCLread,
                                       curSDAfloat, curSDAlow, curSDAread,
-                                      curDelay, DCBcurSoftI2Cstretch};
+                                      curDelay, DCBcurSoftI2Cstretch, DCBcurSoftI2CdelayUS};
 
 // Takes the Wire1 pins for soft I2C: PIO controlled, multi drive off, output data 0, output disabled
 // (released high) with the internal pull ups enabled. The current monitors are the only devices on
-// these pins, so the soft driver owns them
-// and they are not handed back to the TWI0 peripheral. This is done at the start of every
-// transaction in case another driver's init calls Wire1.begin() and reassigns the pins.
+// these pins, so the soft driver owns them and they are not handed back to the TWI0 peripheral.
+// Called at the start of each DCbiasCur_loop pass and by the other users of the bus, in case another
+// driver's init calls Wire1.begin() and reassigns the pins. Only register writes, so it is cheap.
 static void curTakePins(void)
 {
   static bool inited = false;
@@ -110,16 +112,16 @@ static void curTakePins(void)
     pmc_enable_periph_clk(g_APinDescription[DCBcurSoftSDA].ulPeripheralId);   // Needed to read the pins
     pmc_enable_periph_clk(g_APinDescription[DCBcurSoftSCL].ulPeripheralId);
   }
-  // Release both lines, then store LOW as the output value so pinMode OUTPUT drives low. Writing LOW
-  // to an input pin turns its pull up off, so release again afterwards to turn the pull ups back on.
-  pinMode(DCBcurSoftSDA, INPUT_PULLUP);
-  pinMode(DCBcurSoftSCL, INPUT_PULLUP);
-  digitalWrite(DCBcurSoftSDA, LOW);
-  digitalWrite(DCBcurSoftSCL, LOW);
-  pinMode(DCBcurSoftSDA, INPUT);
-  pinMode(DCBcurSoftSCL, INPUT);
-  pinMode(DCBcurSoftSDA, INPUT_PULLUP);
-  pinMode(DCBcurSoftSCL, INPUT_PULLUP);
+  curSDApio->PIO_ODR  = curSDAmask;   // Release, output disabled
+  curSCLpio->PIO_ODR  = curSCLmask;
+  curSDApio->PIO_CODR = curSDAmask;   // Output data 0, so OER drives low
+  curSCLpio->PIO_CODR = curSCLmask;
+  curSDApio->PIO_MDDR = curSDAmask;   // Multi drive off
+  curSCLpio->PIO_MDDR = curSCLmask;
+  curSDApio->PIO_PUER = curSDAmask;   // Pull ups on
+  curSCLpio->PIO_PUER = curSCLmask;
+  curSDApio->PIO_PER  = curSDAmask;   // PIO controls the pins, not the TWI0 peripheral
+  curSCLpio->PIO_PER  = curSCLmask;
 }
 
 static void curBusInit(void)
@@ -138,21 +140,29 @@ static bool curProbe(int8_t adr)
 static bool curSDAidle(void) { curTakePins(); curSDAfloat(); curSCLfloat(); delayMicroseconds(10); return curSDAread(); }
 static bool curSCLidle(void) { curTakePins(); curSDAfloat(); curSCLfloat(); delayMicroseconds(10); return curSCLread(); }
 
+// Reads one ADS7828 channel, the caller must call curTakePins() first. A failed read from a module
+// that is known to be present is a bus fault, so the bus is cleared (9 clocks and a stop) to
+// recover a device left holding SDA low.
 static int curADC(int8_t adr, int8_t chan)
 {
   uint8_t cmd = 0x8C | ((chan & 0x06) << 3) | ((chan & 0x01) << 6);
   uint8_t buf[2];
   int     val = -1;
 
-  curTakePins();
   if(soft_i2c_write(&curHAL, adr, &cmd, 1) && soft_i2c_read(&curHAL, adr, buf, 2))
   {
     val = ((buf[0] << 8) | buf[1]) & 0xFFF;
     val <<= 4;
   }
+  else
+  {
+    curErrors++;
+    soft_i2c_bus_clear(&curHAL);
+  }
   return val;
 }
 #else
+static void curTakePins(void) {}
 static void curBusInit(void) { Wire1.begin(); }
 
 static bool curProbe(int8_t adr)
@@ -201,6 +211,8 @@ void curScan(void)
     if(i == 0) curSDAfloat(); else curSCLfloat();
     serial->print(", driven low reads "); serial->println(lv);
   }
+  serial->print("Read errors since boot: ");
+  serial->println(curErrors);
 #else
   serial->println("Hardware Wire1");
 #endif
@@ -224,34 +236,60 @@ int ADS7828(TwoWire *wire, int8_t adr, int8_t chan, int num)
   return sum/num;
 }
 
+// Reads and filters all the current channels on one board and returns the largest current over the
+// trip level, 0 if none or limit testing is off. A failed read (-1) keeps the channel's last value.
+static float curReadBoard(int brd)
+{
+  float maxI = 0;
+
+  for(int i=0;i<8;i++)
+  {
+    int counts = curADC(DCBCurAdd + (brd), dcbcurdata[brd]->curCH[i].Chan);
+    if(counts < 0) continue;
+    float fval = Counts2Value(counts, &dcbcurdata[brd]->curCH[i]);
+    currents[brd]->ch[i] = fval * FILTER + (1-FILTER) *  currents[brd]->ch[i];
+  }
+  // Limit test if enabled and power is on
+  if((dcbcurdata[brd]->TestEna) && IsPowerON()) for(int i=0;i<8;i++)
+  {
+    // Find the maximum current level
+    if(abs(currents[brd]->ch[i]) > dcbcurdata[brd]->TrigLevel)
+    {
+      if(abs(currents[brd]->ch[i]) > maxI) maxI = abs(currents[brd]->ch[i]);
+    }
+  }
+  return maxI;
+}
+
 void DCbiasCur_loop(void)
 {
   float maxI   = 0;
 
+  curTakePins();
+#if DCBcurOneBoardPerPass
+  // Read the next installed board only, the thread interval is scaled by the number of boards in
+  // dcbcurEnable() so each board is still read every DCBcurUpdateMS
+  static int nextBrd = 0;
+  for(int n=0;n<4;n++)
+  {
+    int brd = nextBrd;
+    nextBrd = (nextBrd + 1) & 3;
+    if(currents[brd] != NULL)
+    {
+      maxI = curReadBoard(brd);
+      break;
+    }
+  }
+#else
   for(int brd=0;brd<4;brd++)
   {
     if(currents[brd] != NULL)
     {
-      // Read and filter all the current values
-      for(int i=0;i<8;i++)
-      {
-        float fval = Counts2Value(curADC(DCBCurAdd + (brd), dcbcurdata[brd]->curCH[i].Chan), &dcbcurdata[brd]->curCH[i]);
-        currents[brd]->ch[i] = fval * FILTER + (1-FILTER) *  currents[brd]->ch[i];
-      }
-      // Limit test if enabled and power is on
-      if((dcbcurdata[brd]->TestEna) && IsPowerON()) for(int i=0;i<8;i++)
-      {
-        // Find the maximum current level
-        if(abs(currents[brd]->ch[i]) > dcbcurdata[brd]->TrigLevel)
-        {
-          if(abs(currents[brd]->ch[i]) > maxI)
-          {
-            maxI   = abs(currents[brd]->ch[i]);
-          }
-        }
-      }
+      float bmax = curReadBoard(brd);
+      if(bmax > maxI) maxI = bmax;
     }
   }
+#endif
   // If a limit happened then trip the supplies and popup a message
   if(maxI > 0)
   {
@@ -293,18 +331,22 @@ bool dcbcurEnable(int CH)
   // If this is the first defined insert commands into the command processor
   int num = 0;
   for(int i = 0;i<4;i++) if(dcbcurdata[i] != NULL) num++;
-  if(num == 1) 
+  if(num == 1)
   {
-    // Add conmmands 
+    // Add conmmands
     AddToCommandList(&DCBiasCurList);
     // Start a thread to read the ADC channels
     // Configure Threads
     DCBiasCurThread.setName("DCbiasCur");
     DCBiasCurThread.onRun(DCbiasCur_loop);
-    DCBiasCurThread.setInterval(100);
+    DCBiasCurThread.setInterval(DCBcurUpdateMS);
     // Add threads to the controller
     control.add(&DCBiasCurThread);
   }
+#if DCBcurOneBoardPerPass
+  // One board is read per pass, so run the thread num times faster to keep each board's update rate
+  DCBiasCurThread.setInterval(DCBcurUpdateMS / num);
+#endif
   // Set default settings
   *dcbcurdata[brd] = dcbcurTemplate;
   // Load the settings 
@@ -438,9 +480,11 @@ void dccurCalCH(int ch)
   ch--;
   // Apply voltage 1 and read the ADC channels raw data
   float val1 = UserInputFloat("Apply current 1 and enter value, mA : ");
+  curTakePins();
   int adc1   = curADC(DCBCurAdd + (brd), dcbcurdata[brd]->curCH[ch & 7].Chan);
   // Apply voltage 2 and read the ADC channels raw data
   float val2 = UserInputFloat("Apply current 2 and enter value, mA : ");
+  curTakePins();
   int adc2   = curADC(DCBCurAdd + (brd), dcbcurdata[brd]->curCH[ch & 7].Chan);
   // Calculate and apply calibration parameters
   dcbcurdata[brd]->curCH[ch & 7].m = ((float)adc1 - (float)adc2) / (val1 - val2);

@@ -5,7 +5,7 @@ static bool wait_scl_high(const soft_i2c_hal_t *hal) {
     uint32_t elapsed = 0;
     while (!hal->scl_read()) {
         hal->delay_half_period();
-        elapsed += 5; // assumes nominal 5us half-period
+        elapsed += (hal->half_period_us > 0) ? hal->half_period_us : 1;
         if (elapsed > hal->stretch_timeout_us) {
             return false; // Slave hung holding SCL low
         }

@@ -16,8 +16,16 @@
 #define DCBcurUseSoftI2C       true
 #define DCBcurSoftSDA          70   // Soft I2C SDA Arduino pin number, 70 = PA17
 #define DCBcurSoftSCL          71   // Soft I2C SCL Arduino pin number, 71 = PA18
-#define DCBcurSoftI2CdelayUS   5      // Soft I2C half clock period in uS, 5 = about 100 kHz or less
+#define DCBcurSoftI2CdelayUS   3      // Soft I2C half clock period in uS, 5 = about 83 kHz, 3 = about 125 kHz
 #define DCBcurSoftI2Cstretch   10000  // Soft I2C clock stretch timeout in uS
+
+// Current monitor update. Each installed board's 8 channels are read every DCBcurUpdateMS.
+//   DCBcurOneBoardPerPass false = read all the boards in one thread pass every DCBcurUpdateMS
+//                         true  = read one board per pass, rotating through the installed boards,
+//                                 with the thread interval set to DCBcurUpdateMS / number of boards.
+//                                 Same update rate per board, shorter blocking time per pass.
+#define DCBcurUpdateMS         100
+#define DCBcurOneBoardPerPass  true
 
 typedef struct
 {
