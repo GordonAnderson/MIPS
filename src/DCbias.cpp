@@ -1658,7 +1658,7 @@ void DCbiasReportAllValues(void)
 
 void  DCbiasUseOneOffset(char *state)
 {
-  if((strcmp(state,"TRUE")==0) || (strcmp(state,"FALSE")==0) || (DCbDarray[0] = NULL))
+  if(((strcmp(state,"TRUE")==0) || (strcmp(state,"FALSE")==0)) && (DCbDarray[0] != NULL))
   {
     if(strcmp(state,"TRUE")==0) DCbDarray[0]->UseOneOffset = true;
     else DCbDarray[0]->UseOneOffset = false;
@@ -1695,7 +1695,7 @@ void SetDCbiasOffsetExclude(char *board, char *state)
 
 void  DCbiasOffsetReadback(char *state)
 {
-  if((strcmp(state,"TRUE")==0) || (strcmp(state,"FALSE")==0) || (DCbDarray[0] = NULL))
+  if(((strcmp(state,"TRUE")==0) || (strcmp(state,"FALSE")==0)) && (DCbDarray[0] != NULL))
   {
     SendACKonly;
     if(strcmp(state,"TRUE")==0) DCbDarray[0]->OffsetReadback = true;

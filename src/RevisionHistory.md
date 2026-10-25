@@ -1394,6 +1394,12 @@
 //            (AD5593 enable) is unchanged. The current direction change is still refused while
 //            the module's enable pin is on, so with a shared enable both modules must be off to
 //            change direction.
+//     20.) Fixed SDCBONEOFF and DCBOFFRBENA erasing board 0's DCbias data pointer when sent with an
+//          argument other than TRUE or FALSE. The argument check used (DCbDarray[0] = NULL), an
+//          assignment, so a bad argument set the pointer to NULL and a later access crashed. Now
+//          the argument must be TRUE or FALSE and board 0 must be present, otherwise NAK.
+//     21.) ESI_ADC_Control() (SESICTRL) read ESIarray[b] before checking it, and ESIchannel2board()
+//          can return -1. A channel that does not map to an installed module is now skipped.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

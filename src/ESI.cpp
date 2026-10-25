@@ -773,7 +773,8 @@ void ESI_ADC_Control(void)
   for(int i=0;i<NumberOfESIchannels;i++)
   {
     b = ESIchannel2board(i+1);
-    if((ESIarray[b] != NULL) && (esiadc[i].enable != 0))
+    if((b < 0) || (ESIarray[b] == NULL)) continue;   // Channel not on an installed module
+    if(esiadc[i].enable != 0)
     {
       if((esiadc[i].enable >= 'Q') && (esiadc[i].enable <= 'X'))
       {
@@ -791,7 +792,7 @@ void ESI_ADC_Control(void)
     }
     if(ESIisRelayRev(ESIarray[b]->Rev))  enabled = ESIarray[b]->Enable;
     else enabled = ESIarray[b]->ESIchan[i&1].Enable;
-    if((ESIarray[b] != NULL) && (enabled == true) && (esiadc[i].adc != -1))
+    if((enabled == true) && (esiadc[i].adc != -1))
     {
       // Read the ADC raw counts and apply calibration
       counts = 0;
