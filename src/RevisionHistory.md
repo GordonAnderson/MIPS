@@ -1348,6 +1348,15 @@
 //          front panel save and "Restore settings" now act only on the module selected on the
 //          front panel. SAVEM,ESI still saves all modules and all modules are still restored at
 //          power up.
+//     17.) Added a software (bit banged) I2C option for the DCbias current monitor modules, which
+//          are the only devices on the Wire1 pins (Arduino pins 70 SDA, 71 SCL, PA17/PA18). Set
+//          in DCBcurrent.h: DCBcurUseSoftI2C (currently true, false = hardware Wire1/TWI0),
+//          DCBcurSoftSDA/DCBcurSoftSCL pin numbers, half clock delay and clock stretch timeout.
+//          Uses soft_i2c.cpp/.h, pins driven with pinMode/digitalWrite as open drain. Note the pin
+//          numbers must be used, not the Arduino SDA1/SCL1 names, Hardware.h redefines SDA1/SCL1
+//          as 19/18. Added CURSCAN, reports the interface in use, idle line levels and pin state
+//          (soft I2C) and every address on the current monitor bus that acknowledges. It is in
+//          the main command table so it works even when no current monitor was detected.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

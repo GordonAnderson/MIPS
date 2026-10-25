@@ -115,6 +115,7 @@ TWI commands
                     add is decimal, string is \n terminated
   TWISCAN           Scans the selected board address for TWI devices and displays a map (Wire interface)
   TWI1SCAN          Scans the selected board address for TWI devices and displays a map (Wire1 interface)
+  CURSCAN           Scans the DCbias current monitor bus (soft I2C or Wire1), reports idle SDA/SCL levels and found addresses
   TWIADDSET         This function will automatically set the TWI addresses for the selected
                     module. RFD,DCB,FAIMS
   TWITALK           Redirect the serial communications through a board and TWI address passed

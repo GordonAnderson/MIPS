@@ -211,6 +211,9 @@ const Commands  CmdArray[] = 	{
                                                                // add is decimal, string is \n terminated
   {"TWISCAN", CMDfunction, 1, (char *)TWIscan},                // Scans the selected board address for TWI devices and displays a map (Wire interface)
   {"TWI1SCAN", CMDfunction, 0, (char *)TWI1scan},              // Scans the selected board address for TWI devices and displays a map (Wire1 interface)
+#if DCBcurrent
+  {"CURSCAN", CMDfunction, 0, (char *)curScan},                // Scans the DCbias current monitor bus (soft I2C or Wire1), reports idle SDA/SCL levels and found addresses
+#endif
   {"TWIADDSET", CMDfunctionStr, 1, (char *)TWIaddSet},         // This function will automatically set the TWI addresses for the selected
                                                                // module. RFD,DCB,FAIMS
   {"TWITALK", CMDfunction, 2, (char *)TWItalk},                // Redirect the serial communications through a board and TWI address passed
