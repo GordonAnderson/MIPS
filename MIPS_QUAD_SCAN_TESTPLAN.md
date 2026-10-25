@@ -430,6 +430,8 @@ Purpose: confirm the `QUADscanGo` refactor (splitting the point loop into
 - [ ] `QSCAN 1`
 - [ ] Serial capture shows a header immediately followed by a trailer for each scan, with
       **no point bytes** in between.
+- [ ] The header's point count (3 bytes after `55 55 55 55 AA`) is **0**. Firmware before
+      October 25, 2026 announced the scan's point count here even though no points followed.
 - [ ] `TRGOUT` (`SQSTRIG TRUE`) and the start pin (`SQSSTPIN`) still pulse correctly and at
       the right point in each scan.
 - [ ] Per-point dwell timing on the scope still matches `SQSDWELL` (no ADC acquisition

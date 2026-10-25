@@ -1367,7 +1367,9 @@ void QUADscanGo(int Module)
   bool sendFrame = sp->AcqEna || sp->FrameOnNoAcq;
   for(int scan = 0; (scan < sp->NumScans) && !aborted; scan++)
   {
-    if(sendFrame) QUADscanSendHeader(numPoints, scan, (scan == (sp->NumScans - 1)));
+    // No acquisition means no data values follow, so the header announces 0 points and a parser
+    // that reads the announced count lands directly on the trailer
+    if(sendFrame) QUADscanSendHeader(sp->AcqEna ? numPoints : 0, scan, (scan == (sp->NumScans - 1)));
     QUADscanStartPulse(sp);      // once per scan, before the first point moves
     if(sp->AcqEna) aborted = !QUADscanRunScanADC(b, sp, numPoints);
     else            aborted = !QUADscanRunScanNoADC(b, sp, numPoints);

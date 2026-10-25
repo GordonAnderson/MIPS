@@ -1400,6 +1400,9 @@
 //          the argument must be TRUE or FALSE and board 0 must be present, otherwise NAK.
 //     21.) ESI_ADC_Control() (SESICTRL) read ESIarray[b] before checking it, and ESIchannel2board()
 //          can return -1. A channel that does not map to an installed module is now skipped.
+//     22.) QSCAN with acquisition off (SQSADCENA FALSE) and SQSFRAME FRAME now sends a point count
+//          of 0 in each scan header. It announced the scan's point count although no values follow,
+//          so a parser that read the announced count consumed the trailer and the next header.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

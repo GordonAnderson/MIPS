@@ -96,7 +96,7 @@ def read_scan(ser):
     scan = hdr[3] | (hdr[4] << 8)
     last = hdr[5] == 0xFF
     points = [struct.unpack("<i", read_exact(ser, 4))[0] for _ in range(npts)] if npts else []
-    # a no-acquisition scan (section 6) has a header and a trailer with no points between them
+    # a no-acquisition scan (section 6) announces 0 points, so the trailer follows the header
     trailer = read_exact(ser, 5)
     assert trailer[:4] == b"\xAE\xAE\xAE\xAE", "bad trailer"
     return scan, last, points, trailer[4] == 0xEB
@@ -234,7 +234,8 @@ SQSTRIG,1,TRUE                        TRGOUT driven for the duration of each poi
 QSCAN,1                               the range and dwell as in section 3
 ```
 
-- With `FRAME` the stream is a header and a trailer per scan with no points between them. With `NONE` the MIPS sends only
+- With `FRAME` the stream is a header and a trailer per scan with no points between them, and the header's point count
+  is 0 (firmware of October 25, 2026 on; earlier firmware announced the scan's point count but sent none). With `NONE` the MIPS sends only
   the ACK. ESC still aborts either way, and a command sent right afterwards is answered. **(lab, by serial)**
 - The start pulse comes before the first point of **each** scan (so `SQSNUM` scans give that many pulses). It goes out
   through the digital output bank, so choose a channel that is not wired to something else (interlock, FAIMS...).
