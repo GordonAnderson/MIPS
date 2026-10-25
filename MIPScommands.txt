@@ -957,8 +957,9 @@ Filament commands
   SFLENAR           Set filament cycle status, YES or NO
   RFLPARMS          Sets a filament channel reporting rate, 0 = off. Rate is in seconds
   GFLSRES           Returns the bias current sense resistor value
-  SFLSRES           Sets the bias current sense resistor value
-  GFLECUR           Returns the filament emission current
+  SFLSRES           Sets the bias current sense resistor value, all filament modules
+  GFLECUR           Returns the filament emission current, uA. GFLECUR,channel returns that
+                    channel's module (Rev 3 and 4), without a channel the selected module
   SFLSWD            Set serial watch dog timer mode
   CALFIL            Calibration procedure for rev 4 filament module
 Filament emission current regulation, Rev 3 and 4 modules. Channel is the filament channel, 1 based.

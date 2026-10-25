@@ -1373,6 +1373,27 @@
 //            reads all boards every pass as before.
 //          - soft_i2c_hal_t has a new half_period_us field, the clock stretch timeout no longer
 //            assumes a 5 uS half period.
+//     19.) Filament module updates:
+//          - GFLECUR accepts an optional channel number, GFLECUR,ch returns the emission current of
+//            that channel's module (Rev 3 and 4, one emission ADC per module). Rev 1 and 2 have one
+//            bias current sense path so they return that value. GFLECUR with no channel works as
+//            before, it returns the displayed value (the selected module), backward compatible.
+//            GFLSRES is unchanged. SFLSRES now sets the sense resistor value in all filament modules,
+//            one value is used for the system and each module's EEPROM holds it after SAVEM,FIL.
+//          - Fixed the filament page being redrawn 3 times at power up with two modules installed.
+//            The power up settings restore and the channel select in Filament_init no longer
+//            redraw the dialog, it is drawn once for the first module. A front panel restore still
+//            redraws.
+//          - Shared power enables. The two filament power enable lines (pins 14 and 48) are routed
+//            the same on both module positions, so module 1 and 2 channel N share an enable line.
+//            With two modules the line pulsed (one module turning it on, the other off) unless both
+//            were enabled. The enable pins are now set once per pass after all channels are
+//            processed: a pin is on if any channel using it is on or still ramping its current down,
+//            off only when all are off and at zero. A channel that is off holds its current and
+//            voltage DACs at the calibrated zero. With unique pins this is the same as before. Rev 4
+//            (AD5593 enable) is unchanged. The current direction change is still refused while
+//            the module's enable pin is on, so with a shared enable both modules must be off to
+//            change direction.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

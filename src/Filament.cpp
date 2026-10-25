@@ -101,6 +101,8 @@ extern ThreadController control;
 
 // Forward declarations for functions used in static initializers
 void SelectFilamentChannel(void);
+void SelectFilamentChannel(bool Redraw);
+void SetFilamentSenseRes(int ohms);
 void FmodeChange(void);
 void CurrentDirChange(void);
 void SaveFilamentSettings(void);
@@ -435,6 +437,13 @@ int Channel2Index(int channel)
 // Called after the user selects a channel
 void SelectFilamentChannel(void)
 {
+  SelectFilamentChannel(true);
+}
+
+// Redraw false skips the filament dialog redraw, used during power up init so the page is only drawn
+// once no matter how many filament modules are installed
+void SelectFilamentChannel(bool Redraw)
+{
   int b   = BoardFromSelectedFilamentChannel(Fchannel - 1);
   int idx = Channel2Index(Fchannel - 1);
 
@@ -450,7 +459,7 @@ void SelectFilamentChannel(void)
   if (FCD.Mode == FmodeI) strcpy(Fmode, "Ictrl");
   else strcpy(Fmode, "IVctrl");
   // Update the display
-  if (ActiveDialog == &FilamentDialog) DialogBoxDisplay(&FilamentDialog);
+  if (Redraw && (ActiveDialog == &FilamentDialog)) DialogBoxDisplay(&FilamentDialog);
 }
 
 // Called after user updates the current direction, only used on Rev 2 of this driver
@@ -521,7 +530,8 @@ void RestorFilamentSettings(bool NoDisplay)
       FCY = FD.FCyl[SelIdx()];
       CurrentDir = FD.Idir;
       if (!NoDisplay) DisplayMessage("Parameters Restored!", 2000);
-      SelectFilamentChannel();
+      // No redraw for the power up restore (NoDisplay), Filament_init selects the channel itself
+      SelectFilamentChannel(!NoDisplay);
     }
     else if (!NoDisplay) DisplayMessage("Corrupted EEPROM data!", 2000);
   }
@@ -598,8 +608,9 @@ const Commands FilamentCmdArray[] = {
   {"SFLENAR", CMDfunctionStr, 2, (char *)SetFilamentStatus},         // Set filament cycle status, YES or NO
   {"RFLPARMS", CMDfunction, 2, (char *)SetFilamentReporting},        // Sets a filament channel reporting rate, 0 = off. Rate is in seconds
   {"GFLSRES", CMDint, 0, (char *)&FDarray[0].iSense},                // Returns the bias current sense resistor value
-  {"SFLSRES", CMDint, 1, (char *)&FDarray[0].iSense},                // Sets the bias current sense resistor value
-  {"GFLECUR", CMDfunction, 0, (char *)ReportBiasCurrent},            // Returns the filament emission current 
+  {"SFLSRES", CMDfunction, 1, (char *)SetFilamentSenseRes},          // Sets the bias current sense resistor value, all filament modules
+  {"GFLECUR", CMDfunctionLine, 0, (char *)ReportBiasCurrent},        // Returns the filament emission current, uA. GFLECUR,channel returns that
+                                                                     // channel's module (Rev 3 and 4), without a channel the selected module
   {"SFLSWD",  CMDbool, 1, (char *)&FLserialWD},                      // Set serial watch dog timer mode
   {"CALFIL", CMDfunction, 0, (char *)CalibrateFilament},             // Calibration procedure for rev 4 filament module 
 // End of table marker
@@ -664,9 +675,10 @@ void Filament_init(int8_t Board, int8_t addr)
     de = GetDialogEntries(FilamentEntriesPage2, " Current dir");
     if(de != NULL) de->Type = D_OFF;    
   }
-  // Define the initial selected channel as 0 and setup
+  // Define the initial selected channel as 0 and setup. No redraw here, the dialog is drawn once
+  // below for the first board. A second board used to redraw it twice more (here and in the restore).
   Fchannel = 1;
-  SelectFilamentChannel();
+  SelectFilamentChannel(false);
   // Setup the menu if this is the very first call to this init function
   if (NumberOfFilamentChannels == 0)
   {
@@ -855,6 +867,9 @@ void Filament_loop(void)
   int        adcStatus;
   float      StepSize;
   static     float LastVoltage = -1000;
+  int        enPin[4];      // Power enable pins in use and their state, see the channel loop below
+  bool       enOn[4];
+  int        enNum = 0;
 
   // Keep the previous selection if the channel does not resolve to a board, so the control loop below
   // still runs for the boards that are present instead of indexing FDarray[-1].
@@ -947,8 +962,7 @@ void Filament_loop(void)
         // Process power
         if (FDarray[b].FCD[c].FilamentPwr)
         {
-          if((FDarray[b].ADCadr & 0xFE) == 0x10) AD5593write(FDarray[b].ADCadr, 9, 0);
-          else digitalWrite(FDarray[b].FCD[c].Fpwr, LOW); // Power on
+          if((FDarray[b].ADCadr & 0xFE) == 0x10) AD5593write(FDarray[b].ADCadr, 9, 0);   // Power on, rev 4
           // Adjust the current setpoint applying the ramp rate limit, this logic assumes this loop runs 10 times a sec
           StepSize = ((FDarray[b].FCD[c].RampRate < MinRampRate) ? MinRampRate : FDarray[b].FCD[c].RampRate) / 10;
           if (abs(FDarray[b].FCD[c].CurrentSetpoint - CurrentSetpoints[b][c]) < StepSize) CurrentSetpoints[b][c] = FDarray[b].FCD[c].CurrentSetpoint;
@@ -973,11 +987,20 @@ void Filament_loop(void)
           CurrentSetpoints[b][c] -= StepSize;
           if(CurrentSetpoints[b][c] <= 0)
           {
-             if((FDarray[b].ADCadr & 0xFE) == 0x10) AD5593write(FDarray[b].ADCadr, 9, 1 << FDarray[b].FCD[c].Fpwr);
-             else digitalWrite(FDarray[b].FCD[c].Fpwr, HIGH); // Power off
+             if((FDarray[b].ADCadr & 0xFE) == 0x10) AD5593write(FDarray[b].ADCadr, 9, 1 << FDarray[b].FCD[c].Fpwr);  // Power off, rev 4
              CurrentSetpoints[b][c] = 0;
              FilamentVoltageSetpoints[b][c] = 0;
           }
+        }
+        // Power enable pin (not rev 4). The pins can be shared, both module positions use the same two
+        // enable lines, so a pin is only set after all channels are processed: on if any channel using it
+        // is on or still ramping its current down. A channel that is off holds its DACs at zero.
+        if((FDarray[b].ADCadr & 0xFE) != 0x10)
+        {
+          int p;
+          for(p = 0; p < enNum; p++) if(enPin[p] == FDarray[b].FCD[c].Fpwr) break;
+          if((p == enNum) && (enNum < 4)) { enPin[enNum] = FDarray[b].FCD[c].Fpwr; enOn[enNum++] = false; }
+          if((p < enNum) && (FDarray[b].FCD[c].FilamentPwr || (CurrentSetpoints[b][c] > 0))) enOn[p] = true;
         }
         // Output the voltage and current control data to the DAC
         if((FDarray[b].ADCadr & 0xFE) == 0x10)
@@ -1021,8 +1044,10 @@ void Filament_loop(void)
       }
     }
   }
+  // Set the power enable pins, LOW = on
+  for(int p = 0; p < enNum; p++) digitalWrite(enPin[p], enOn[p] ? LOW : HIGH);
   // Update the display variables for voltage and power
-  FsupplyV = FsupplyVs[SelectedFilamentBoard][SelIdx()];
+  FsupplyV =FsupplyVs[SelectedFilamentBoard][SelIdx()];
   Fvoltage = Fvoltages[SelectedFilamentBoard][SelIdx()];
   Fcurrent = Fcurrents[SelectedFilamentBoard][SelIdx()];
   Fpower = Fpowers[SelectedFilamentBoard][SelIdx()];
@@ -1529,11 +1554,41 @@ void SetFilamentReporting(int channel, int period)
   }
 }
 
-// Report filament bias current
+// Sets the bias current sense resistor value. One value is used for the system (FDarray[0].iSense),
+// it is written to every module so each module's EEPROM holds the same value after a save.
+void SetFilamentSenseRes(int ohms)
+{
+  if(ohms < 0) BADARG;
+  FDarray[0].iSense = FDarray[1].iSense = ohms;
+  SendACK;
+}
+
+// Report filament bias (emission) current, GFLECUR or GFLECUR,channel. Command line function so the
+// channel is optional, without it the displayed value is reported as before (the selected board for
+// Rev 3 and 4). With a channel, Rev 3 and 4 report that channel's board emission current, Rev 1 and 2
+// have one sense path (DCbias channel 8 and the sense resistor) so they report that value.
 void ReportBiasCurrent(void)
 {
+  char   *tkn;
+  String token;
+  int    ch,b;
+
+  tkn = GetToken(true);
+  if((tkn == NULL) || (tkn[0] != ','))
+  {
+    SendACKonly;
+    if (!SerialMute) serial->println(BiasCurrent);
+    return;
+  }
+  if((tkn = GetToken(true)) == NULL) BADARG;
+  token = tkn;
+  ch = token.toInt();
+  if(!IsFilamentChannelValid(ch, false)) BADARG;
+  b = BoardFromSelectedFilamentChannel(ch - 1);
   SendACKonly;
-  if (!SerialMute) serial->println(BiasCurrent);
+  if (SerialMute) return;
+  if((FDarray[b].Rev == 3) || (FDarray[b].Rev == 4)) serial->println(EmissionI[b]);
+  else serial->println(BiasCurrent);
 }
 
 // This function saves the Filament module data to EEPROM. All detected Filament modules are saved.
