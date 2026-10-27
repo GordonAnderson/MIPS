@@ -501,41 +501,78 @@ void SaveFilamentSettings(void)
 // whatever the EEPROM held past the end of that image. fd.Size is the size that was written, so only that
 // many bytes are taken from the EEPROM and the rest keep their current (default) values. A stored size
 // larger than this firmware's structure is truncated to it.
-void RestorFilamentSettings(bool NoDisplay)
+// Restores board b from its EEPROM. Returns 0 if restored, 1 if the EEPROM could not be read, 2 if
+// the image is not a usable filament image.
+static int RestoreFILboard(int b)
 {
   FilamentData fd,nd;
   int          n;
 
-  SelectBoard(SelectedFilamentBoard);
-  if (ReadEEPROM(&fd, FD.EEPROMadr, 0, sizeof(FilamentData)) == 0)
+  SelectBoard(b);
+  if (ReadEEPROM(&fd, FDarray[b].EEPROMadr, 0, sizeof(FilamentData)) != 0) return 1;
+  fd.Name[sizeof(fd.Name) - 1] = 0;   // The EEPROM may not hold a terminated string
+  if (strcmp(fd.Name, FDarray[b].Name) != 0) return 2;
+  // Here if the name matches. Reject an image too small to hold the core fields (through the TWI
+  // addresses) or with a revision or channel count this firmware cannot use.
+  n = fd.Size;
+  if (n > (int)sizeof(FilamentData)) n = sizeof(FilamentData);
+  if ((n < (int)offsetof(FilamentData, FCyl)) || (fd.Rev < 1) || (fd.Rev > 4) || (fd.NumChannels < 1) || (fd.NumChannels > 2)) return 2;
+  nd = FDarray[b];            // Defaults for any field the stored image does not have
+  memcpy(&nd, &fd, n);
+  nd.Size      = sizeof(FilamentData);
+  nd.EEPROMadr = FDarray[b].EEPROMadr;
+  FDarray[b] = nd;
+  return 0;
+}
+
+void RestorFilamentSettings(bool NoDisplay)
+{
+  int stat = RestoreFILboard(SelectedFilamentBoard);
+
+  if (stat == 0)
   {
-    fd.Name[sizeof(fd.Name) - 1] = 0;   // The EEPROM may not hold a terminated string
-    if (strcmp(fd.Name, FD.Name) == 0)
-    {
-      // Here if the name matches. Reject an image too small to hold the core fields (through the TWI
-      // addresses) or with a revision or channel count this firmware cannot use.
-      n = fd.Size;
-      if (n > (int)sizeof(FilamentData)) n = sizeof(FilamentData);
-      if ((n < (int)offsetof(FilamentData, FCyl)) || (fd.Rev < 1) || (fd.Rev > 4) || (fd.NumChannels < 1) || (fd.NumChannels > 2))
-      {
-        if (!NoDisplay) DisplayMessage("Corrupted EEPROM data!", 2000);
-        return;
-      }
-      nd = FD;                    // Defaults for any field the stored image does not have
-      memcpy(&nd, &fd, n);
-      nd.Size      = sizeof(FilamentData);
-      nd.EEPROMadr = FD.EEPROMadr;
-      FD = nd;
-      FCD = FD.FCD[SelIdx()];
-      FCY = FD.FCyl[SelIdx()];
-      CurrentDir = FD.Idir;
-      if (!NoDisplay) DisplayMessage("Parameters Restored!", 2000);
-      // No redraw for the power up restore (NoDisplay), Filament_init selects the channel itself
-      SelectFilamentChannel(!NoDisplay);
-    }
-    else if (!NoDisplay) DisplayMessage("Corrupted EEPROM data!", 2000);
+    FCD = FD.FCD[SelIdx()];
+    FCY = FD.FCyl[SelIdx()];
+    CurrentDir = FD.Idir;
+    if (!NoDisplay) DisplayMessage("Parameters Restored!", 2000);
+    // No redraw for the power up restore (NoDisplay), Filament_init selects the channel itself
+    SelectFilamentChannel(!NoDisplay);
   }
-  else if (!NoDisplay) DisplayMessage("Unable to Restore!", 2000);
+  else if (NoDisplay) return;
+  else if (stat == 2) DisplayMessage("Corrupted EEPROM data!", 2000);
+  else DisplayMessage("Unable to Restore!", 2000);
+}
+
+// RESTOREM,FIL. Restores every filament module from its EEPROM, with the checks the front panel
+// "Restore settings" applies. NAKs with ERR_EEPROMREAD if any module could not be restored.
+void RestoreFILfromEEPROM(void)
+{
+  int  brd;
+  bool found = false;
+  bool berr = false;
+
+  brd = SelectedBoard();
+  for(int b=0; b<2; b++)
+  {
+    if(!FilamentBoards[b]) continue;
+    found = true;
+    if(RestoreFILboard(b) != 0) berr = true;
+  }
+  SelectBoard(brd);
+  if(!found) BADARG;   // No module of this type
+  // Reload the selected channel's UI copy
+  FCD = FD.FCD[SelIdx()];
+  FCY = FD.FCyl[SelIdx()];
+  CurrentDir = FD.Idir;
+  SelectFilamentChannel(true);
+  SelectBoard(brd);
+  if(berr)
+  {
+    SetErrorCode(ERR_EEPROMREAD);
+    SendNAK;
+    return;
+  }
+  SendACK;
 }
 
 void RestorFilamentSettings(void)

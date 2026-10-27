@@ -101,6 +101,7 @@ int GetDCbiasBoard(int chan, bool Response = true);
 // Forward declarations for functions used in static initializers
 void SetupRFAentries(void);
 void RFAmoduleSelected(void);
+static void RFAmzLimitsToUI(void);
 void LowRangeCalPrep(void);
 void HighRangeCalPrep(void);
 void StartAutoTune(void);
@@ -141,6 +142,9 @@ bool     RFAupdate = true;                                      // Force all val
 bool     QUADupdateFlag = false;                                // This is a flag set by the UI to cause the QUAD parameters to be recalculated
 bool     ResolvingDCenable = true;                              // Allows disabling resolving DC but keep bias on.
 uint16_t RFACPLDimage[2] = {(1<<RFAcpldSTATUS) | (1<<RFAcpldRANGE),(1<<RFAcpldSTATUS) | (1<<RFAcpldRANGE)}; // CPLD control word image
+
+float    RFAmzMin[2] = {RFAmzMINdefault, RFAmzMINdefault};   // m/z limits, RAM only, see RFamp.h
+float    RFAmzMax[2] = {RFAmzMAXdefault, RFAmzMAXdefault};
 
 RFAdata  *RFAarray[2] = {NULL,NULL};       // Pointer to RF amp data arrays, one for each module. Allocated at init time
 RFAdata  rfad;                             // Copy of the selected channels data, must be static used in menu structs
@@ -354,8 +358,12 @@ const Commands  RFAMPCmdArray[] = {
   {"GRFARDC", CMDfunction, 1, (char *)RFAgetResolvingDC},    // Returns the resolving DC + and - voltages using DC bias channels 1 and 2
   {"SRFAR0", CMDfunctionStr, 2, (char *)RFAsetRo},           // Sets the Ro value in mm
   {"GRFAR0", CMDfunction, 1, (char *)RFAgetRo},              // Returns the Ro value in mm
-  {"SRFAMZ", CMDfunctionStr, 2, (char *)RFAsetMZ},           // Sets the m/z in amu
+  {"SRFAMZ", CMDfunctionStr, 2, (char *)RFAsetMZ},           // Sets the m/z in amu, NAK outside the SRFAMZMIN/SRFAMZMAX limits
   {"GRFAMZ", CMDfunction, 1, (char *)RFAgetMZ},              // Returns the m/z in amu
+  {"SRFAMZMIN", CMDfunctionStr, 2, (char *)RFAsetMZmin},     // Sets the minimum m/z, module,value. RAM only, default 10
+  {"GRFAMZMIN", CMDfunction, 1, (char *)RFAgetMZmin},        // Returns the minimum m/z
+  {"SRFAMZMAX", CMDfunctionStr, 2, (char *)RFAsetMZmax},     // Sets the maximum m/z, module,value. RAM only, default 5000
+  {"GRFAMZMAX", CMDfunction, 1, (char *)RFAgetMZmax},        // Returns the maximum m/z
   {"SRFARES", CMDfunctionStr, 2, (char *)RFAsetRes},         // Sets the resolution in AMU
   {"GRFARES", CMDfunction, 1, (char *)RFAgetRes},            // Returns the resolution in AMU
   {"RFAQUPDATE", CMDfunction, 1, (char *)RFAupdateQUAD},     // Updates the QUAD parameters
@@ -767,6 +775,7 @@ void RFAmoduleSelected(void)
     if((RFAarray[0] != 0) && (RFAarray[1] != 0)) SelectedRFAboard = 1;
   }
   rfad = *RFAD;
+  RFAmzLimitsToUI();
   // Setup menu based on loop mode
   RFAmodeSelected();
   SetupRFAentries();
@@ -795,39 +804,102 @@ void RestoreRFAsettings(void)
   RestoreRFAsettings(false);
 }
 
+// Restores one board from its module EEPROM. Returns 0 if restored, 1 if the EEPROM could not
+// be read, 2 if the stored name does not match (corrupted or not an RF amp image).
+static int RestoreRFAboard(int b)
+{
+  RFAdata rfa_data;
+
+  if(RFAarray[b] == NULL) return 1;
+  SelectBoard(b);
+  if(ReadEEPROM(&rfa_data, RFAarray[b]->EEPROMadr, 0, sizeof(RFAdata)) != 0) return 1;
+  if(strcmp(rfa_data.Name,RFAarray[b]->Name) != 0) return 2;
+  // Here if the name matches so copy the data to the operating data structure
+  rfa_data.EEPROMadr = RFAarray[b]->EEPROMadr;
+  // Size is read from EEPROM and cannot be trusted. An image written by a newer
+  // firmware with a larger RFAdata would overflow the allocation.
+  if(rfa_data.Size > (int16_t)sizeof(RFAdata)) rfa_data.Size = sizeof(RFAdata);
+  if(rfa_data.Size < 0) rfa_data.Size = 0;
+  memcpy(RFAarray[b], &rfa_data, rfa_data.Size);
+  RFAarray[b]->Size = sizeof(RFAdata);
+  // A stored m/z outside the programmable limits (power up or RESTOREM) has no command to NAK,
+  // so it is pulled to the nearest limit
+  if(isnan(RFAarray[b]->mz) || (RFAarray[b]->mz < RFAmzMin[b])) RFAarray[b]->mz = RFAmzMin[b];
+  if(RFAarray[b]->mz > RFAmzMax[b]) RFAarray[b]->mz = RFAmzMax[b];
+  return 0;
+}
+
 void RestoreRFAsettings(bool NoDisplay)
 {
-  int b;
-  RFAdata rfa_data;
-  bool Success=true;
-  bool Corrupted=false;
-  
-  b = SelectedRFAboard;
-  if(RFAarray[b] == NULL) return;
-  SelectBoard(b);
-  if(ReadEEPROM(&rfa_data, RFAarray[b]->EEPROMadr, 0, sizeof(RFAdata)) == 0)
-  {
-     if(strcmp(rfa_data.Name,RFAarray[b]->Name) == 0)
-     {
-       // Here if the name matches so copy the data to the operating data structure
-       rfa_data.EEPROMadr = RFAarray[b]->EEPROMadr;
-       // Size is read from EEPROM and cannot be trusted. An image written by a newer
-       // firmware with a larger RFAdata would overflow the allocation.
-       if(rfa_data.Size > (int16_t)sizeof(RFAdata)) rfa_data.Size = sizeof(RFAdata);
-       if(rfa_data.Size < 0) rfa_data.Size = 0;
-       memcpy(RFAarray[b], &rfa_data, rfa_data.Size);
-       RFAarray[b]->Size = sizeof(RFAdata);
-     } 
-     else Corrupted=true;
-  }
-  else Success=false;
+  int stat;
+
+  if(RFAarray[SelectedRFAboard] == NULL) return;
+  stat = RestoreRFAboard(SelectedRFAboard);
   rfad = *RFAarray[SelectedRFAboard];
   RFAmoduleSelected();
   if(NoDisplay) return;
-  if(Corrupted) DisplayMessage("Corrupted EEPROM data!",2000);
-  else if(!Success)  DisplayMessage("Unable to Restore!",2000);
+  if(stat == 2) DisplayMessage("Corrupted EEPROM data!",2000);
+  else if(stat == 1)  DisplayMessage("Unable to Restore!",2000);
   else DisplayMessage("Parameters Restored!",2000);
   if(ActiveDialog == &RFAdialog) DialogBoxDisplay(&RFAdialog);
+}
+
+// SAVEM,RFA. Saves every RF amp module to its EEPROM, the same image as the front panel
+// "Save settings" (which saves only the module selected on the front panel).
+void SaveRFA2EEPROM(void)
+{
+  int  brd;
+  bool berr = false;
+
+  brd = SelectedBoard();
+  for(int b=0; b<2; b++)
+  {
+    if(RFAarray[b] == NULL) continue;
+    SelectBoard(b);
+    if(WriteEEPROM(RFAarray[b], RFAarray[b]->EEPROMadr, 0, sizeof(RFAdata)) != 0) berr = true;
+  }
+  SelectBoard(brd);
+  if(berr)
+  {
+    SetErrorCode(ERR_EEPROMWRITE);
+    SendNAK;
+    return;
+  }
+  SendACK;
+}
+
+// RESTOREM,RFA. Restores every RF amp module from its EEPROM and applies it, as the front panel
+// "Restore settings" does for the selected module. The QUAD mass calibration table is a separate
+// record, see RESTOREQCAL. NAKs with ERR_EEPROMREAD if any module failed, the others are restored.
+void RestoreRFAfromEEPROM(void)
+{
+  int  brd;
+  bool found = false;
+  bool berr = false;
+
+  brd = SelectedBoard();
+  for(int b=0; b<2; b++)
+  {
+    if(RFAarray[b] == NULL) continue;
+    found = true;
+    if(RestoreRFAboard(b) != 0) berr = true;
+  }
+  SelectBoard(brd);
+  if(!found) BADARG;   // No module of this type
+  if(RFAarray[SelectedRFAboard] != NULL)
+  {
+    rfad = *RFAarray[SelectedRFAboard];
+    RFAmoduleSelected();
+  }
+  // Rewrite everything to the hardware on the next RFA_loop pass
+  RFAupdate = true;
+  if(berr)
+  {
+    SetErrorCode(ERR_EEPROMREAD);
+    SendNAK;
+    return;
+  }
+  SendACK;
 }
 
 void SetDDSfrequency(int8_t addr, uint32_t freq, bool pwrdown = false)
@@ -1603,14 +1675,71 @@ void RFAsetMZ(char *Module, char *value)
   if((b = RFAmodule2board(mod)) == -1) return;
   token = value;
   v = token.toFloat();
-  if((v < 10) || (v > 400000))
+  if(!RFAmzInRange(b, v))
   {
      SetErrorCode(ERR_BADARG);
-     SendNAK;   
+     SendNAK;
      return;
   }
   SendACK;
-  RFAarray[b]->mz = v;    
+  RFAarray[b]->mz = v;
+}
+
+// m/z limits. True if mz is within the module's programmable limits.
+bool RFAmzInRange(int brd, float mz)
+{
+  if((brd < 0) || (brd > 1)) return false;
+  if(isnan(mz)) return false;
+  return (mz >= RFAmzMin[brd]) && (mz <= RFAmzMax[brd]);
+}
+
+// Puts the selected module's limits on the front panel m/z entry, so it cannot be set outside them
+static void RFAmzLimitsToUI(void)
+{
+  DialogBoxEntry *de = GetDialogEntries(RFAdialogEntriesQUAD, "m/z");
+  if(de == NULL) return;
+  de->Min = RFAmzMin[SelectedRFAboard];
+  de->Max = RFAmzMax[SelectedRFAboard];
+}
+
+// Shared by the min and max set commands. The limits must stay within RFAmzLIMITlow to
+// RFAmzLIMIThigh and the minimum must stay below the maximum.
+static void RFAsetMZlimit(char *Module, char *value, bool isMax)
+{
+  String token;
+  int    b;
+  float  v;
+
+  token = Module;
+  if((b = RFAmodule2board(token.toInt())) == -1) return;
+  token = value;
+  v = token.toFloat();
+  if(isnan(v) || (v < RFAmzLIMITlow) || (v > RFAmzLIMIThigh)) BADARG;
+  if(isMax  && (v <= RFAmzMin[b])) BADARG;
+  if(!isMax && (v >= RFAmzMax[b])) BADARG;
+  if(isMax) RFAmzMax[b] = v;
+  else      RFAmzMin[b] = v;
+  if(b == SelectedRFAboard) RFAmzLimitsToUI();
+  SendACK;
+}
+
+void RFAsetMZmin(char *Module, char *value) { RFAsetMZlimit(Module, value, false); }
+void RFAsetMZmax(char *Module, char *value) { RFAsetMZlimit(Module, value, true); }
+
+void RFAgetMZmin(int Module)
+{
+  int b;
+  if((b = RFAmodule2board(Module)) == -1) return;
+  SendACKonly;
+  if(!SerialMute) serial->println(RFAmzMin[b]);
+}
+
+void RFAgetMZmax(int Module)
+{
+  int b;
+  if((b = RFAmodule2board(Module)) == -1) return;
+  SendACKonly;
+  if(!SerialMute) serial->println(RFAmzMax[b]);
 }
 
 // Returns target M/Z value
@@ -1774,10 +1903,12 @@ void RFAacquire(void)
   {
     // Read and validate arguments
     if(!valueFromCommandLine(&module,1,2)) break;
-    if(!valueFromCommandLine(&mz,10,100000)) break;
+    if(!valueFromCommandLine(&mz,RFAmzLIMITlow,RFAmzLIMIThigh)) break;
     if(!valueFromCommandLine(&delta,-10,10)) break;
     if(!valueFromCommandLine(&dwell,0,1000)) break;
     if((b = RFAmodule2board(module)) == -1) return;
+    // Outside the programmable m/z limits: NAK, nothing is set or triggered
+    if(!RFAmzInRange(b, mz)) BADARG;
     // Electrometer source (SQSSRC ELECT). Same protocol as the ADC path: return the previous
     // point's sum (0 on the first call of a scan, -1 on a failure), set this point, wait the
     // dwell and trigger. SQSEINIT must have been sent to start the scan.

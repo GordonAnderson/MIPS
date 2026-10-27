@@ -1438,6 +1438,34 @@ void SaveESI2EEPROM(void)
   SendACK;
 }
 
+// RESTOREM,ESI. Restores every ESI module from its EEPROM, as at power up: RestoreESIboard leaves
+// the outputs and gating disabled. NAKs with ERR_EEPROMREAD if any module could not be restored.
+void RestoreESIfromEEPROM(void)
+{
+  int  brd;
+  bool found = false;
+  bool berr = false;
+
+  brd = SelectedBoard();
+  for(int b=0; b<MAXESI; b++)
+  {
+    if(ESIarray[b] == NULL) continue;
+    found = true;
+    if(RestoreESIboard(b) != 0) berr = true;
+  }
+  SelectBoard(brd);
+  if(!found) BADARG;   // No module of this type
+  esi = *esidata;
+  if(ESIisDualChanRev(esidata->Rev)) esich = esi.ESIchan[(ESIchannel-1)&1];
+  if(berr)
+  {
+    SetErrorCode(ERR_EEPROMREAD);
+    SendNAK;
+    return;
+  }
+  SendACK;
+}
+
 void SetESIgate(char *channel, char *state)
 {
   String token;

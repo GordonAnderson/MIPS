@@ -83,6 +83,7 @@ void SetESImodulePos(int module, int value);
 void SetESImoduleNeg(int module, int value);
 
 void SaveESI2EEPROM(void);
+void RestoreESIfromEEPROM(void);
 
 void SetESIgateEnable(char *module, char *state);
 void SetESIgate(char *module, char *state);

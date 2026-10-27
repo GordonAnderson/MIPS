@@ -427,11 +427,16 @@ static bool QUADscanFloatArg(char *value, float *f, float ll, float ul)
   return true;
 }
 
+// Start and stop must be within the module's programmable m/z limits (SRFAMZMIN/SRFAMZMAX).
+// QUADscanGo checks them again in case the limits were changed after they were set.
 void QUADscanSetStart(char *Module, char *value)
 {
-  int b;
+  int   b;
+  float v;
   if((b = QUADcalBoardStr(Module)) == -1) return;
-  if(!QUADscanFloatArg(value, &QUADscanP[b]->StartMZ, 1, 100000)) BADARG;
+  if(!QUADscanFloatArg(value, &v, RFAmzLIMITlow, RFAmzLIMIThigh)) BADARG;
+  if(!RFAmzInRange(b, v)) BADARG;
+  QUADscanP[b]->StartMZ = v;
   SendACK;
 }
 void QUADscanGetStart(int Module)
@@ -443,9 +448,12 @@ void QUADscanGetStart(int Module)
 }
 void QUADscanSetStop(char *Module, char *value)
 {
-  int b;
+  int   b;
+  float v;
   if((b = QUADcalBoardStr(Module)) == -1) return;
-  if(!QUADscanFloatArg(value, &QUADscanP[b]->StopMZ, 1, 100000)) BADARG;
+  if(!QUADscanFloatArg(value, &v, RFAmzLIMITlow, RFAmzLIMIThigh)) BADARG;
+  if(!RFAmzInRange(b, v)) BADARG;
+  QUADscanP[b]->StopMZ = v;
   SendACK;
 }
 void QUADscanGetStop(int Module)
@@ -683,6 +691,7 @@ void QUADscanStatus(int Module)
   serial->print("QUAD scan, module "); serial->println(Module);
   serial->print("  Start m/z      "); serial->println(QUADscanP[b]->StartMZ,4);
   serial->print("  Stop m/z       "); serial->println(QUADscanP[b]->StopMZ,4);
+  serial->print("  m/z limits     "); serial->print(RFAmzMin[b]); serial->print(" to "); serial->println(RFAmzMax[b]);
   serial->print("  Step m/z       "); serial->println(QUADscanP[b]->StepMZ,4);
   serial->print("  Dwell, mS      "); serial->println(QUADscanP[b]->Dwell);
   serial->print("  Num scans      "); serial->println(QUADscanP[b]->NumScans);
@@ -1333,6 +1342,9 @@ void QUADscanGo(int Module)
   // silently run the whole scan without ever moving it, see RFAresolvingDCReady.
   if(!RFAresolvingDCReady(b))     { SetErrorCode(ERR_QUADNODCBCHAN);     SendNAK; return; }
   if((numPoints = QUADscanPointCount(b)) == -1)
+                                  { SetErrorCode(ERR_QUADBADRANGE);      SendNAK; return; }
+  // Every point lies between start and stop, so checking both covers the whole scan
+  if(!RFAmzInRange(b, sp->StartMZ) || !RFAmzInRange(b, sp->StopMZ))
                                   { SetErrorCode(ERR_QUADBADRANGE);      SendNAK; return; }
   if(numPoints > QUADscanMAXPOINTS)
                                   { SetErrorCode(ERR_QUADTOOMANYPOINTS); SendNAK; return; }

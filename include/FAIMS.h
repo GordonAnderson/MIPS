@@ -175,6 +175,7 @@ void FAIMSsetRFharPcal(char *m, char *b);
 void FAIMSsetRFharNcal(char *m, char *b);
 
 void SaveFAIMS2EEPROM(void);
+void RestoreFAIMSfromEEPROM(void);
 
 void FAIMSsetCVstart(char *volts);
 void FAIMSsetCVend(char *volts);

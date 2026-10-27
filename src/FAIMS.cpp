@@ -1705,6 +1705,39 @@ void SaveFAIMS2EEPROM(void)
   SendACK;
 }
 
+// RESTOREM,FAIMS. Restores the FAIMS module from its EEPROM as the front panel "Restore settings"
+// does: a field driven system also restores the DC bias modules, and FAIMS is left disabled.
+// NAKs with ERR_EEPROMREAD if the FAIMS EEPROM could not be read or held a bad image.
+void RestoreFAIMSfromEEPROM(void)
+{
+  int       brd;
+  bool      berr = false;
+  FAIMSdata faimsT;
+
+  if(!FAIMSpresent) BADARG;
+  brd = SelectedBoard();
+  if(FieldDriven) RestoreDCbiasSettings(true);
+  SelectBoard(FAIMSBoardAddress);
+  if((ReadEEPROM(&faimsT, faims.EEPROMadr, 0, sizeof(FAIMSdata)) == 0) && (strcmp(faimsT.Name, faims.Name) == 0))
+  {
+    // The stored size cannot be trusted, never copy more than the structure
+    if((faimsT.Size <= 0) || (faimsT.Size > (int)sizeof(FAIMSdata))) faimsT.Size = sizeof(FAIMSdata);
+    memcpy(&faims, &faimsT, faimsT.Size);
+    faims.Size = sizeof(FAIMSdata);
+    Loops = faims.Loops;
+    faims.Enable = false;
+  }
+  else berr = true;
+  SelectBoard(brd);
+  if(berr)
+  {
+    SetErrorCode(ERR_EEPROMREAD);
+    SendNAK;
+    return;
+  }
+  SendACK;
+}
+
 void FAIMSsetCVstart(char *volts)
 {
   String res;

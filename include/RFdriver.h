@@ -134,6 +134,7 @@ void SetRFautoTuneAbort(void);
 void RFmodeReport(int);
 void RFmodeSet(char *, char *);
 void SaveRF2EEPROM(void);
+void RestoreRFfromEEPROM(void);
 
 void setupADCRFcontrol(char *chan, char *gain);
 void setADCRFenable(char *chan, char *value);

@@ -180,6 +180,7 @@ void SetMemAddressOffset(char *address);
 void WriteMemory(char *type, char *val);
 void ReadMemory(char *type);
 void SaveModule(char *Module);
+void RestoreModule(char *Module);
 void UpTime(void);
 void Dread(int pin);
 void Dwrite(char *pin, char *state);

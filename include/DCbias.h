@@ -140,6 +140,7 @@ void SetDCbiasPtrigger(char *src);
 void GetDCbiasPtrigger(void);
 
 void SaveDCB2EEPROM(void);
+void RestoreDCBfromEEPROM(void);
 
 void DCbiasCalParms(int chan);
 void DCbiasCalsetM(char *chan, char *val);

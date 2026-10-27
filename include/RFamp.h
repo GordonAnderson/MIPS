@@ -188,6 +188,23 @@ void RFAsetRes(char *Module, char *value);
 void RFAgetRes(int Module);
 void RFAupdateQUAD(int Module);
 void RFAacquire(void);
+void SaveRFA2EEPROM(void);
+void RestoreRFAfromEEPROM(void);
+
+// Programmable m/z limits, per module, RAM only so RFAdata and the EEPROM image are unchanged.
+// They reset to the defaults at power up. Every path that sets the m/z NAKs (or rejects) a value
+// outside them: SRFAMZ, the front panel, RFAACQ, SQSSTART/SQSSTOP and QSCAN, the ADC m/z input.
+#define RFAmzMINdefault   10.0
+#define RFAmzMAXdefault   5000.0
+#define RFAmzLIMITlow     0.1        // Range allowed for the limits themselves
+#define RFAmzLIMIThigh    100000.0
+extern float RFAmzMin[2];
+extern float RFAmzMax[2];
+bool RFAmzInRange(int brd, float mz);
+void RFAsetMZmin(char *Module, char *value);
+void RFAgetMZmin(int Module);
+void RFAsetMZmax(char *Module, char *value);
+void RFAgetMZmax(int Module);
 void RFAgetSetPointTiming(int Module);
 void RFAresetSetPointTiming(int Module);
 // Shared per point primitive used by both the host driven scan (RFAACQ) and the

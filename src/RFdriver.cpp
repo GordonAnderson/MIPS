@@ -1680,6 +1680,46 @@ void SaveRF2EEPROM(void)
   SendACK;
 }
 
+// RESTOREM,RF. Restores every RF driver module from its EEPROM, as the front panel "Restore
+// settings" does for the selected one. NAKs with ERR_EEPROMREAD if any module could not be restored.
+void RestoreRFfromEEPROM(void)
+{
+  int          brd;
+  bool found = false;
+  bool         berr = false;
+  RFdriverData rfdd;
+
+  brd = SelectedBoard();
+  for(int b=0; b<MAXRF; b++)
+  {
+    if(rfddarray[b] == NULL) continue;
+    found = true;
+    SelectBoard(b);
+    if((ReadEEPROM(&rfdd, RFDDarray[b]->EEPROMadr, 0, sizeof(RFdriverData)) != 0) || (strcmp(rfdd.Name, RFDDarray[b]->Name) != 0))
+    {
+      berr = true;
+      continue;
+    }
+    rfdd.EEPROMadr = RFDDarray[b]->EEPROMadr;
+    // The stored size cannot be trusted, never copy more than the structure
+    if((rfdd.Size <= 0) || (rfdd.Size > (int)sizeof(RFdriverData))) rfdd.Size = sizeof(RFdriverData);
+    memcpy(RFDDarray[b], &rfdd, rfdd.Size);
+    RFDDarray[b]->Size = sizeof(RFdriverData);
+  }
+  SelectBoard(brd);
+  if(!found) BADARG;   // No module of this type
+  // Reload the selected channel's UI copy, SelectChannel also sets the board select
+  SelectChannel();
+  SelectBoard(brd);
+  if(berr)
+  {
+    SetErrorCode(ERR_EEPROMREAD);
+    SendNAK;
+    return;
+  }
+  SendACK;
+}
+
 // This routine processes the RFgateDisable command. If disabled the flag is set and all the 
 // RF channels are enabled
 void RFgateDisable(char *cmd)

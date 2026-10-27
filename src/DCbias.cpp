@@ -2319,6 +2319,44 @@ void SaveDCB2EEPROM(void)
   SendACK;
 }
 
+// RESTOREM,DCB. Restores every DC bias module from its EEPROM, as the front panel "Restore
+// settings" does. NAKs with ERR_EEPROMREAD if any module could not be read or held a bad image.
+void RestoreDCBfromEEPROM(void)
+{
+  int        brd;
+  bool found = false;
+  bool       berr = false;
+  DCbiasData dcb_data;
+
+  brd = SelectedBoard();
+  DelayMonitoring();
+  for(int b=0; b<MAXDCbiasMODULES; b++)
+  {
+    if(DCbDarray[b] == NULL) continue;
+    found = true;
+    SelectBoard(b);
+    if((ReadEEPROM(&dcb_data, DCbDarray[b]->EEPROMadr, 0, sizeof(DCbiasData)) != 0) || (strcmp(dcb_data.Name,DCbDarray[b]->Name) != 0))
+    {
+      berr = true;
+      continue;
+    }
+    dcb_data.EEPROMadr = DCbDarray[b]->EEPROMadr;
+    // The stored size cannot be trusted, never copy more than the structure
+    if((dcb_data.Size <= 0) || (dcb_data.Size > (int)sizeof(DCbiasData))) dcb_data.Size = sizeof(DCbiasData);
+    memcpy(DCbDarray[b], &dcb_data, dcb_data.Size);
+  }
+  SelectBoard(brd);
+  if(!found) BADARG;   // No module of this type
+  dcbd = *DCbD;
+  if(berr)
+  {
+    SetErrorCode(ERR_EEPROMREAD);
+    SendNAK;
+    return;
+  }
+  SendACK;
+}
+
 void DCbiasCalParms(int chan)
 {
   DCbiasData *DCbData;

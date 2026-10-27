@@ -2621,3 +2621,37 @@ void SaveTWAVE2EEPROM(void)
   if(berr) ERR(ERR_EEPROMWRITE);
   SendACK;
 }
+
+// RESTOREM,TWAVE. Restores every Twave module from its EEPROM, the same images SAVEM,TWAVE
+// writes, with the checks the front panel "Restore settings" applies. NAKs with ERR_EEPROMREAD
+// if any module could not be restored.
+void RestoreTWAVEfromEEPROM(void)
+{
+  int       brd;
+  bool found = false;
+  bool      berr = false;
+  TwaveData td;
+
+  brd = SelectedBoard();
+  for(int b=0; b<2; b++)
+  {
+    if(!TwaveBoards[b]) continue;
+    found = true;
+    SelectBoard(b);
+    if((ReadEEPROM(&td, TwaveEEPROMaddr[b], 0, sizeof(TwaveData)) != 0) || (strcmp(td.Name, TDarray[b].Name) != 0))
+    {
+      berr = true;
+      continue;
+    }
+    memcpy(&TDarray[b], &td, sizeof(TwaveData));
+    if(isnan(TDarray[b].GateV)) TDarray[b].GateV = 0.0;
+    if(TDarray[b].TWCD[DAC_PulseVoltage].VoltageSetpoint < MinPulseVoltageSave) TDarray[b].TWCD[DAC_PulseVoltage].VoltageSetpoint = MinPulseVoltageSave;
+  }
+  SelectBoard(brd);
+  if(!found) BADARG;   // No module of this type
+  // Reload the selected module's UI copy, SelectTwaveModule also sets the board select
+  SelectTwaveModule();
+  SelectBoard(brd);
+  if(berr) ERR(ERR_EEPROMREAD);
+  SendACK;
+}

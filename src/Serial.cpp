@@ -178,7 +178,8 @@ const Commands  CmdArray[] = 	{
   {"FORMAT", CMDfunctionLine, 0, (char *)&FormatEEPROM},       // Format the EEPROM, args example,A 0x50,RFdrvA R1  
   {"REEPROM", CMDfunctionLine, 0, (char *)&ReadEEPROMbyte},    // Read the EEPROM, args board, TWI address, EEPROM address, all data base 10  
   {"WEEPROM", CMDfunctionLine, 0, (char *)&WriteEEPROMbyte},   // Write the EEPROM, args board, TWI address, address, data, all base 10  
-  {"SAVEM", CMDfunctionStr, 1, (char *)&SaveModule},           // Save the defined module to EEPROM  
+  {"SAVEM", CMDfunctionStr, 1, (char *)&SaveModule},           // Save the defined module to EEPROM, RF,RFA,DCB,ESI,FAIMS,TWAVE,ARB,FIL
+  {"RESTOREM", CMDfunctionStr, 1, (char *)&RestoreModule},     // Restore the defined module from EEPROM and apply, same names as SAVEM
   {"STBLRETRIG", CMDbool, 1, (char *)&MIPSconfigData.TableRetrig},// Set the table retriggerable flag, TRUE=retriggerable.
   {"GTBLRETRIG", CMDbool, 0, (char *)&MIPSconfigData.TableRetrig},// Returns the table retriggerable flag, TRUE=retriggerable.
   {"SSETECHO", CMDbool, 1, (char *)&Serial1Echo},                 // Set the SerialUSB to Serial1 echo, TRUE enables echo.
@@ -1878,6 +1879,7 @@ void Mute(char *cmd)
 void SaveModule(char *Module)
 {
   if (strcmp(Module, "RF") == 0) SaveRF2EEPROM();
+  else if (strcmp(Module, "RFA") == 0) SaveRFA2EEPROM();
   else if (strcmp(Module, "DCB") == 0) SaveDCB2EEPROM();
   else if (strcmp(Module, "ESI") == 0) SaveESI2EEPROM();
   #if FAIMScode
@@ -1891,7 +1893,31 @@ void SaveModule(char *Module)
     SetErrorCode(ERR_BADARG);
     SendNAK;
     return;
-  }  
+  }
+}
+
+// RESTOREM, the reverse of SAVEM: restores every module of the named type from its EEPROM and
+// applies the settings, as the front panel "Restore settings" does. Same module names as SAVEM.
+// NAKs with ERR_BADARG if no module of that type is present, ERR_EEPROMREAD if a module's
+// EEPROM could not be read or held a bad image (the other modules are still restored).
+void RestoreModule(char *Module)
+{
+  if (strcmp(Module, "RF") == 0) RestoreRFfromEEPROM();
+  else if (strcmp(Module, "RFA") == 0) RestoreRFAfromEEPROM();
+  else if (strcmp(Module, "DCB") == 0) RestoreDCBfromEEPROM();
+  else if (strcmp(Module, "ESI") == 0) RestoreESIfromEEPROM();
+  #if FAIMScode
+  else if (strcmp(Module, "FAIMS") == 0) RestoreFAIMSfromEEPROM();
+  #endif
+  else if (strcmp(Module, "TWAVE") == 0) RestoreTWAVEfromEEPROM();
+  else if (strcmp(Module, "ARB") == 0) RestoreARBfromEEPROM();
+  else if (strcmp(Module, "FIL") == 0) RestoreFILfromEEPROM();
+  else
+  {
+    SetErrorCode(ERR_BADARG);
+    SendNAK;
+    return;
+  }
 }
 
 // Generic get number of channels function, calls the proper routine based on parameter entered.

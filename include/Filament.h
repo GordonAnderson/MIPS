@@ -102,6 +102,7 @@ void SetFilamentReporting(int channel, int period);
 void ReportBiasCurrent(void);
 
 void SaveFIL2EEPROM(void);
+void RestoreFILfromEEPROM(void);
 
 void CalibrateFilament(void);
 

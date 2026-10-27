@@ -13,7 +13,7 @@
 //   The strobe interrupt (DIhandler, rising edge) reads the ADC itself, 4 reads averaged, and records the time. It
 //   cannot wait for the 10 mS thread: the value must be taken at the edge because the source holds it for only
 //   about 10 mS, and a pass of the scheduler can take longer than that. A 10 mS thread then applies it:
-//     - the m/z must be 10 to 40000 (the front panel limits), otherwise the strobe is ignored
+//     - the m/z is capped at the module's programmable limits (SRFAMZMIN/SRFAMZMAX)
 //     - the mass calibration table is applied if it is enabled (QUADcalApply, as QSCAN does) and the m/z must not be
 //       further outside the table than QSCAN allows (QUADcalRangeOK); with the table disabled it is a pass-through
 //     - if the module is enabled it is applied with RFAsetScanPoint, the same primitive QSCAN and RFAACQ use, so the
@@ -48,8 +48,6 @@ extern bool             QUADupdateFlag;
 #define FMZ_ISR_SAMPLES  4          // ADC reads averaged in the strobe interrupt
 #define FMZ_THREAD_MS    10         // The apply thread
 #define FMZ_STALE_MS     500        // A strobe older than this when the thread runs is discarded
-#define FMZ_MZ_MIN       10.0f      // Front panel limits for the m/z
-#define FMZ_MZ_MAX       40000.0f
 
 typedef struct
 {
@@ -109,7 +107,12 @@ static void FMZloop(void)
     if((millis() - ms) > FMZ_STALE_MS) { z->nStale++; continue; }
     req = counts * z->m + z->b;
     z->requested = req;
-    if((req < FMZ_MZ_MIN) || (req > FMZ_MZ_MAX) || (!QUADcalRangeOK(b, req, req)) || (!RFAresolvingDCReady(b)))
+    // An analog input over or under the programmable m/z limits is capped at the limit, not rejected,
+    // so driving the input past full scale holds the m/z at the limit. requested keeps the uncapped value.
+    if(isnan(req)) { z->nRejected++; continue; }
+    if(req < RFAmzMin[b]) req = RFAmzMin[b];
+    if(req > RFAmzMax[b]) req = RFAmzMax[b];
+    if((!QUADcalRangeOK(b, req, req)) || (!RFAresolvingDCReady(b)))
     {
       z->nRejected++;
       continue;

@@ -148,5 +148,6 @@ void TWCtrigger(void);
 void SetTWCswitch(char *mode);
 
 void SaveTWAVE2EEPROM(void);
+void RestoreTWAVEfromEEPROM(void);
 
 #endif

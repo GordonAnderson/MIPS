@@ -1428,6 +1428,23 @@
 //          board. Only DCbias_loop applied it, so with no DC bias board (Rev 3 QUAD) the supply stayed
 //          off while GDCPWR reported ON, and the host had to send SDCPWR OFF then ON. The MIPS config
 //          menu "DCbias supply" entry now also switches the supply, it only changed the setting.
+//     28.) SAVEM,RFA saves every RF amp module to its EEPROM (there was no serial save for the RF amp,
+//          only the front panel, which saves the selected module). New RESTOREM command, the reverse of
+//          SAVEM with the same names (RF,RFA,DCB,ESI,FAIMS,TWAVE,ARB,FIL): restores every module of
+//          that type from its EEPROM and applies it, as the front panel "Restore settings" does, which
+//          only restores the selected module. ESI comes back with its outputs off and FAIMS disabled,
+//          as at power up. NAKs ERR_BADARG with no module of that type, ERR_EEPROMREAD if a module's
+//          EEPROM could not be read or held a bad image (the others are still restored). The QUAD mass
+//          calibration table is separate, SAVEQCAL / RESTOREQCAL.
+//     29.) RF amp (QUAD) programmable m/z limits, SRFAMZMIN/GRFAMZMIN and SRFAMZMAX/GRFAMZMAX, per module,
+//          RAM only (RFAdata is unchanged), defaults 10 and 5000 at power up. The limits themselves can
+//          be 0.1 to 100000, min below max. They replace the old fixed and inconsistent limits (SRFAMZ
+//          10-400000, front panel and ADC m/z input 10-40000, RFAACQ 10-100000, SQSSTART/SQSSTOP
+//          1-100000) everywhere: SRFAMZ, RFAACQ, SQSSTART and SQSSTOP NAK (ERR_BADARG) outside them,
+//          QSCAN NAKs (ERR_QUADBADRANGE) if start or stop is outside them (limits changed after the scan
+//          was set up), the ADC m/z input caps the m/z at the limits, and the front panel m/z entry is bounded
+//          by them. A stored m/z outside the limits at power up or RESTOREM is pulled to the nearest
+//          limit. SQSSTAT shows the limits. The RF set point full scale is not checked on the m/z paths.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

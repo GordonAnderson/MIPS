@@ -9,6 +9,16 @@
 - [ ] ESI.cpp:542 `ESIgateChangeProcess` loop is `for(int brd=0;brd<1;brd++)` — only ever checks board 0; likely should be `brd<MAXESI`
 - [ ] ESI.cpp:1306 `GetESIchannelMin` returns `0` for the dual-channel rev family instead of the negative channel's voltage limit, unlike `GetESIchannelMax` which branches per-channel correctly — confirm if intentional
 
+### Module EEPROM / SD card commands (FILEIO.cpp, reviewed 2026-10-27)
+- [ ] SAVEMOD/LOADMOD (`EEPROMtoSD`/`SDtoEEPROM`): validate the TWI address against `ModuleAddresses` (0x50,0x52,0x54,0x56,0x60,0x62) and check the `sscanf` hex parse (a non-hex token leaves `add` uninitialized). LOADMOD writes 512 bytes to any address it is given, a typo can write a DAC/ADC
+- [ ] LOADMOD: check the module name in the file matches the name in the EEPROM before writing, with a FORCE option for a blank or corrupted EEPROM (recovery is a main use)
+- [ ] LOADMOD: document that it changes only the EEPROM; send `RESTOREM,<type>` (or reboot) to apply it
+- [ ] `SaveEEPROMtoSD`/`LoadEEPROMfromSD`: restore the board select on exit, as the SAVEM functions do
+- [ ] `SaveEEPROMtoSD`: check the `file.write` count (a full SD card still ACKs); fix the stale "Remove the existing default.cfg file" comment
+- [ ] LOADALL (`LoadAllfromSD`): `LoadEEPROMfromSD` calls `SD.begin` for every file while the root directory scan is open, which can break the scan; init the card once
+- [ ] LOADALL: only write files for modules that are present and whose EEPROM name matches; respect `MIPSconfigData.UseBRDSEL` for B files (SAVEALL does); send one ACK, it sends `SendACKonly` at the start and `SendACK` at the end
+- [ ] `EEPROMtoSerial` and its host-app partner (FILEIO.cpp:924, 968): address check accepts only 0x50–0x56 and rejects 0x60/0x62; `toupper(brd[0] != 'B')` has the bracket misplaced, so lowercase `b` is rejected
+
 ## Functional tests
 - [ ] Fully test the platformIO version of MIPS
 - [ ] Test serial watchdog, needs to reboot system on loss of comms activity

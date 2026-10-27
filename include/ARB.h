@@ -349,6 +349,7 @@ void ARBCtrigger(void);
 void SetARBCswitch(char *mode);
 
 void SaveARB2EEPROM(void);
+void RestoreARBfromEEPROM(void);
 
 // Prototypes for the alternate waveform capability
 void SetARBaltTrgInp(char *module, char *trgin);

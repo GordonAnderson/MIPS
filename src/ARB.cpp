@@ -967,6 +967,43 @@ void RestorARBsettings(void)
   RestorARBsettings(false);
 }
 
+// RESTOREM,ARB. Restores every ARB module from its EEPROM, as the front panel "Restore settings"
+// does for the selected one. NAKs with ERR_EEPROMREAD if any module could not be restored.
+void RestoreARBfromEEPROM(void)
+{
+  int     brd;
+  bool found = false;
+  bool    berr = false;
+  ARBdata ad;
+
+  brd = SelectedBoard();
+  for(int b=0; b<MAXARBMODULES; b++)
+  {
+    if(ARBarray[b] == NULL) continue;
+    found = true;
+    SelectBoard(b);
+    if((ReadEEPROM(&ad, ARBarray[b]->EEPROMadr, 0, sizeof(ARBdata)) != 0) || (strcmp(ad.Name, ARBarray[b]->Name) != 0))
+    {
+      berr = true;
+      continue;
+    }
+    // The stored size cannot be trusted, never copy more than the structure
+    if((ad.Size <= 0) || (ad.Size > (int16_t)sizeof(ARBdata))) ad.Size = sizeof(ARBdata);
+    ad.EEPROMadr = ARBarray[b]->EEPROMadr;
+    memcpy(ARBarray[b], &ad, ad.Size);
+  }
+  SelectBoard(brd);
+  if(!found) BADARG;   // No module of this type
+  if(ARB != NULL) arb = *ARB;
+  if(berr)
+  {
+    SetErrorCode(ERR_EEPROMREAD);
+    SendNAK;
+    return;
+  }
+  SendACK;
+}
+
 // External trigger interrupt vectors here!
 // This function will pulse the sync line and keep its status fixed
 void ARBsyncISR(void)
