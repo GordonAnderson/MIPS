@@ -1445,6 +1445,73 @@
 //          was set up), the ADC m/z input caps the m/z at the limits, and the front panel m/z entry is bounded
 //          by them. A stored m/z outside the limits at power up or RESTOREM is pulled to the nearest
 //          limit. SQSSTAT shows the limits. The RF set point full scale is not checked on the m/z paths.
+//     The following items were done October 16 to 18, 2026, before items 5 to 29, and were not recorded
+//     at the time.
+//     30.) TWI command relay speed up. New TWIreadLine(), a TWI master read that drives the SAM3X TWI
+//          hardware directly and stops at the newline, so a reply lasts only as long as the reply instead
+//          of the fixed 32 bytes (about 3.3 mS at 100 kHz) Wire.requestFrom clocks. TWI1CMD uses it and
+//          returns ? at once on an address NAK instead of waiting out the 250 mS reply timeout,
+//          TWI1CMD,32,RADC went from 6.64 mS to 3.9 mS at 100 kHz and 2.5 mS at 400 kHz. TWICMD (Wire
+//          channel) uses it when TWICMD_FAST in Serial.cpp is 1 (the default), 0 restores the old loop.
+//     31.) Fixed GTWI/STWI board select, a missing else made board 0 on the Wire channel always NAK. The
+//          GTWI read buffer was 4 bytes but the count allows 15, overflowing the stack, it is now 16 bytes
+//          and the read loop is bounded.
+//     32.) QUAD scan electrometer acquisition source. SQSSRC,module,ADC|ELECT selects the MIPS ADC (default)
+//          or an IsolatedElectrometer on TWI1, triggered in burst mode by a pulse on LT (pin 13) or a TWI
+//          software trigger, for both QSCAN and RFAACQ (prepare with SQSEINIT before an RFAACQ scan). New
+//          commands SQSSRC, SQSEADD (TWI1 address), SQSETRG (HW|TWI), SQSETMO (timeout mS), SQSEINIT and
+//          their getters. New errors 133 (electrometer did not ACK, not in mode 1 or not armed), 134
+//          (acquisition timeout) and 135 (LT in use as the DCbias profile level input). The electrometer
+//          must be in mode 1, set it in the host init.
+//          Diagnostics: GQSESTAT reports the last point's trigger, wait and completion times, poll count
+//          and retried/failed TWI reads, GQSESUM the averages, minimum and maximum over the whole scan.
+//          GRFASPT reports the firmware time RFAsetScanPoint takes to change the set point (total, the
+//          QUAD calculation, the RF level and the resolving DC) and RRFASPT resets it.
+//     33.) RF amp ADC m/z input. SRFAMZADC sets the m/z from a MIPS ADC channel (counts * slope + intercept)
+//          and SRFAMZSTB names a digital input Q to X whose rising edge applies it, per module, RAM only.
+//          The ADC is read in the strobe interrupt (4 reads averaged) since the source holds the value for
+//          only about 10 mS, a 10 mS thread applies it with the mass calibration table if enabled. The m/z
+//          is capped at the m/z limits (item 29). Not for use with a scan in progress, QSCAN clears a
+//          pending strobe when it ends.
+//     34.) Filament fixes: a ramp rate of 0 froze the current so a running filament could not be ramped or
+//          turned off, the rate is now at least 0.01 A/S (SFLRT and the dialog reject lower values).
+//          FilamentShutdown only touches boards that are present and handles Rev 4. The enable output is
+//          preloaded off before it is made an output so it is not driven on at startup. FmodeChange writes
+//          both channel modes only for Rev 2 and later. SetFilamentStatus compared a 1 based channel to a 0
+//          based selection. Rev 2+ shared parameters are synced to both channel structures. The EEPROM
+//          restore honors the stored structure size and rejects a bad Rev or NumChannels.
+//     35.) Filament fixes: the bias current code no longer uses a NULL DC bias pointer when a sense
+//          resistor is set and no DC bias module is installed. RFLPARMS reports the live channel on Rev 2+
+//          (the REV direction reported zeros). Emission current is filtered per board and the selected
+//          board's value displayed, not blended across boards. CalibrateFilament (CALFIL) checks for a DC
+//          bias module first, runs its waits in real time and finishes in IV mode, the production mode,
+//          with the filament left off.
+//     36.) Filament fixes: Rev 1 channel selection read past the 2 entry channel array for channels 3 and
+//          4 on a two board system and the next dialog change wrote it back over the channel data. Index
+//          guards added. Cycling advances when the ramp reaches the commanded setpoint so a power limit
+//          trim no longer stalls it. GFLENAR reports INF for an infinite cycle count.
+//     37.) The 28 filament commands moved from the main command table to a const table in Filament.cpp,
+//          registered by Filament_init. On a system with no filament module they now return error 1
+//          (unknown command) instead of error 2 (bad argument).
+//     38.) Filament emission current regulation (Rev 3 and 4), FilamentEmission.cpp. Holds a set emission
+//          current (uA) by adjusting the filament current, SFLEIS sets it, SFLEREG turns regulation on,
+//          GFLEST reports the status, plus tuning commands. It only writes the commanded filament current
+//          so the ramp limiter, power limiter, serial watchdog and disable ramp down still apply, and it
+//          never goes above 97% of the module Max power. Not used during filament cycling. RAM only, the
+//          module EEPROM image is unchanged.
+//     39.) Filament emission ADC and digital inputs, in the style of SESICTRL: SFLEADC sets the emission
+//          setpoint and SFLIADC the heater current from a MIPS ADC channel (counts * slope + intercept),
+//          SFLDIO names a digital input Q to X that enables the filament. A heater current ADC owns the
+//          filament current and disables emission regulation, and never commands more than 0.1 A above
+//          the ramped current so the power limit holds. RAM only.
+//     40.) Static RAM freed, 16 KB in all, no behavior change. The command tables (CmdArray, OffCmdArray,
+//          QUADscanCmdArray) were being copied to RAM because OnMessage/OffMessage were pointer variables,
+//          they are now arrays and the tables stay in flash (9.9 KB). The default module images are const
+//          and stay in flash (6.2 KB). Static RAM went from 69,776 to 53,704 bytes of 98,304.
+//     41.) Variants.h, DCBanalog and DCBcurrent were set false for the filament test system and are set
+//          back to true for the release build.
+//
+//  1.268 is frozen at this point, October 27, 2026.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)
