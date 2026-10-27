@@ -659,16 +659,23 @@ void Set_18bitDAC(int brd, int DACchannel, int value)
     SendFRAcpldCommand(RFAarray[brd]->CPLDspi, RFACPLDimage[brd] & ~(1 << DACchannel));
     return;
   }
-  // Send Data. AD5680 clocks data on the falling edge, SPI mode 2. Set the mode and
-  // divider on every call; SendFRAcpldCommand, SetDDSfrequency and AD5668 all
-  // reconfigure SPI in between.
-  SPI.setDataMode(SPI_MODE2);
-  SPI.setClockDivider(12);
+  // Send Data. AD5680 clocks data on the falling edge, SPI mode 2, divider 12. The bytes go out on
+  // the SPI default channel (BOARD_SPI_DEFAULT_SS), the channel this has always used; the CPLD
+  // decodes the DAC select from the address, so the channel's own chip select pin plays no part.
+  // That channel is also the display's, and the display driver sets its mode and divider only once
+  // at startup, so the channel's configuration register is saved here and restored afterwards. The
+  // old SPI.setDataMode/setClockDivider calls left it in mode 2 at divider 12 for every later
+  // display write. The register is written directly so the SPI library's stored settings for the
+  // display's channel are not changed either.
+  const uint32_t spiCh   = BOARD_PIN_TO_SPI_CHANNEL(BOARD_SPI_DEFAULT_SS);
+  const uint32_t savedCSR = SPI0->SPI_CSR[spiCh];
+  SPI0->SPI_CSR[spiCh] = SPI_MODE2 | SPI_CSR_CSAAT | SPI_CSR_SCBR(12) | SPI_CSR_DLYBCT(1);
   value <<= 2;
   uint8_t *b = (uint8_t *)&value;
   SPI.transfer(b[2]);
   SPI.transfer(b[1]);
   SPI.transfer(b[0]);
+  SPI0->SPI_CSR[spiCh] = savedCSR;
   // Raise CS
   SetAddress(0);
   SendFRAcpldCommand(RFAarray[brd]->CPLDspi, RFACPLDimage[brd] & ~(1 << DACchannel));

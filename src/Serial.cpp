@@ -2382,6 +2382,7 @@ int ProcessCommand(void)
         SendNAK;
         break;
       }
+      RecordCommand(CurCmd->Cmd);   // Kept through a reset for STATUS, see Hardware.cpp
       // If the type CMDfunctionLine then we will wait for a full line in the ring buffer
       // before we call the function. Function has not args and must pull tokens from ring buffer.
       if (CurCmd->Type == CMDfunctionLine)

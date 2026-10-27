@@ -657,14 +657,56 @@ void Software_Reset(void)
   while (true);
 }
 
+// Reset cause tracking. The general purpose backup registers (GPBR) keep their contents through a
+// processor reset, so they carry information from before a reset to the boot that follows it:
+//   GPBR[0] = RESETwdtMARK when setup() converted a watchdog reset into a software reset. setup()
+//             does that conversion, so without the mark the reset controller reports the watchdog
+//             reset as a software reset.
+//   GPBR[1], GPBR[2] = the first 8 characters of the last command the command processor accepted.
+// CaptureResetReason() is called once at boot and STATUS reports what it captured.
+#define RESETwdtMARK   0x57445452   // "WDTR"
+static int  BootResetReason = 0;
+static char LastCmdBeforeReset[9] = "";
+
+// Called from setup() after any watchdog conversion. reason is the reset controller RSTTYP.
+void CaptureResetReason(uint32_t reason)
+{
+   BootResetReason = reason;
+   if((reason == 3) && (GPBR->SYS_GPBR[0] == RESETwdtMARK)) BootResetReason = 2;
+   GPBR->SYS_GPBR[0] = 0;
+   // The command record is only meaningful after a reset with backup power held, not a power up
+   if(reason != 0)
+   {
+     uint32_t w[2] = {GPBR->SYS_GPBR[1], GPBR->SYS_GPBR[2]};
+     memcpy(LastCmdBeforeReset, w, 8);
+     LastCmdBeforeReset[8] = 0;
+     for(int i=0;i<8;i++) if((LastCmdBeforeReset[i] != 0) && ((LastCmdBeforeReset[i] < ' ') || (LastCmdBeforeReset[i] > '~'))) LastCmdBeforeReset[0] = 0;
+   }
+   GPBR->SYS_GPBR[1] = GPBR->SYS_GPBR[2] = 0;
+}
+
+// Called from setup() before it converts a watchdog reset into a software reset
+void MarkWatchdogReset(void)
+{
+   GPBR->SYS_GPBR[0] = RESETwdtMARK;
+}
+
+// Called by the command processor for every command it accepts, so the last one survives a reset
+void RecordCommand(const char *cmd)
+{
+   uint32_t w[2] = {0,0};
+   strncpy((char *)w, cmd, 8);
+   GPBR->SYS_GPBR[1] = w[0];
+   GPBR->SYS_GPBR[2] = w[1];
+}
+
 // Reports the last reboot reason and the number of millisec the system has been up and running, this
-// time counter is reset every 50 days.
+// time counter is reset every 50 days. A watchdog reset is reported as a watchdog fault even though
+// setup() turns it into a software reset, see CaptureResetReason().
 void RebootStatus(void)
 {
    SendACKonly;
-   uint32_t i = REG_RSTC_SR;  // Reads the boot flag
-   i >>= 8;
-   i &= 7;   
+   uint32_t i = BootResetReason;
    switch (i)
    {
        case 0:
@@ -689,6 +731,11 @@ void RebootStatus(void)
    serial->println(millis());
    serial->print("TWI failure / reset count: ");
    serial->println(TWIfails);
+   if((BootResetReason != 0) && (LastCmdBeforeReset[0] != 0))
+   {
+     serial->print("Last command before reset: ");
+     serial->println(LastCmdBeforeReset);
+   }
 }
 
 // Default module SPI bus clock divider, RAM only so field changes reset on reboot. See Hardware.h.
@@ -1167,8 +1214,16 @@ int AD7994_b(int8_t adr, int8_t chan)
     ReleaseTWI();
     return(-1);
   }
-  Wire.requestFrom(adr, 2);
-  while (Wire.available() < 2);
+  // requestFrom returns the number of bytes received. A device that does not answer returns
+  // fewer than 2 and they never arrive, the old "while (Wire.available() < 2);" waited forever
+  // until the watchdog reset the system.
+  if(Wire.requestFrom(adr, 2) != 2)
+  {
+    TWIerror();
+    TWIfails++;
+    ReleaseTWI();
+    return(-1);
+  }
   val = (Wire.read() << 8) & 0xFF00;
   val |= (Wire.read()) & 0xFF;
   val &= 0xFFF;

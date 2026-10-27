@@ -241,11 +241,10 @@ void ARB_init(int8_t Board, int8_t addr);
 void FPGA_init(int8_t Board, int8_t addr);
 void Analog_init(void);
 void ReportADCchange(void);
-// USB error tracking (replaces custom USBCore.cpp additions)
-static bool USBtimeout   = false;
-static bool USBfatalError = false;
-bool isUSBerror(void)    { return USBtimeout || USBfatalError; }
-void clearUSBerror(void) { USBtimeout = USBfatalError = false; }
+// USB error tracking, set by the USB lockup timeouts in src/USBCore.cpp (the MIPS copy of the core
+// file). USBportTest() polls isUSBerror() and resets the serial port when a timeout occurred.
+bool isUSBerror(void);
+void clearUSBerror(void);
 
 char BoardAddress[20] = "";
 char BoardName[20] = "";
@@ -952,7 +951,10 @@ void setup()
   uint32_t i = REG_RSTC_SR;  // Reads the boot flag
   i >>= 8;
   i &= 7;
-  if(i==2) Software_Reset();
+  // Mark the watchdog reset in a backup register first, the software reset replaces the reset
+  // controller's record of it. STATUS then still reports it as a watchdog fault.
+  if(i==2) { MarkWatchdogReset(); Software_Reset(); }
+  CaptureResetReason(i);
   // Start the real time clock and set default date and time, 1/1/2020 12:00:00
   digitalWrite(LT,HIGH);
   DateTime now = DateTime(F(__DATE__), F(__TIME__));

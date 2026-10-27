@@ -1403,6 +1403,27 @@
 //     22.) QSCAN with acquisition off (SQSADCENA FALSE) and SQSFRAME FRAME now sends a point count
 //          of 0 in each scan header. It announced the scan's point count although no values follow,
 //          so a parser that read the announced count consumed the trailer and the next header.
+//     23.) Restored the USB lockup timeouts from version 1.151 (Feb 2019). They were edits to the
+//          Arduino IDE core's USBCore.cpp and were lost in the PlatformIO conversion, which uses the
+//          stock core: every reply to the host waited forever for the host to take the previous USB
+//          packet, so a stalled host or USB link (electrical noise) froze the firmware until the
+//          watchdog reset it. Seen October 2026 as reboots after the host interface locked up while
+//          changing the QUAD frequency and drive. src/USBCore.cpp is now a copy of the core file with
+//          the timeouts, it replaces the core's copy at link time. The isUSBerror()/clearUSBerror()
+//          stubs in MIPS.cpp are removed, so the USB port recovery in USBportTest() (1.152) works
+//          again. If the framework-arduino-sam package is updated, recopy the file and reapply the
+//          changes marked GAA.
+//     24.) STATUS now reports watchdog resets. setup() turns a watchdog reset into a software reset,
+//          which replaced the reset controller's record, so STATUS reported "Processor reset required
+//          by the software" after a watchdog reset. setup() now marks it in a backup register first.
+//          STATUS also reports the last command accepted before the reset (first 8 characters), kept
+//          through the reset in the backup registers.
+//     25.) Rev 3 RFamp 18 bit DAC writes (Set_18bitDAC) no longer leave the display's SPI channel in
+//          SPI mode 2 at divider 12. The writes use the SPI default channel, the display's channel, and
+//          set its mode and divider with SPI.setDataMode/setClockDivider. The channel's configuration
+//          register is now saved and restored around the write, the bus signals are unchanged.
+//     26.) AD7994_b (TWI hardware ADC read, used when STWIHDW is TRUE and by CALRFAPS) waited forever
+//          for 2 bytes when the device did not answer. It now returns -1 and counts a TWI failure.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)
