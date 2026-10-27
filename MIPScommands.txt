@@ -82,7 +82,8 @@ General commands
   FORMAT            Format the EEPROM, args example,A 0x50,RFdrvA R1
   REEPROM           Read the EEPROM, args board, TWI address, EEPROM address, all data base 10
   WEEPROM           Write the EEPROM, args board, TWI address, address, data, all base 10
-  SAVEM             Save the defined module to EEPROM
+  SAVEM             Save the defined module to EEPROM, RF,RFA,DCB,ESI,FAIMS,TWAVE,ARB,FIL
+  RESTOREM          Restore the defined module from EEPROM and apply, same names as SAVEM
   STBLRETRIG        Set the table retriggerable flag, TRUE=retriggerable.
   GTBLRETRIG        Returns the table retriggerable flag, TRUE=retriggerable.
   SSETECHO          Set the SerialUSB to Serial1 echo, TRUE enables echo.
@@ -1156,8 +1157,12 @@ General RFamp and QUAD commands
   GRFARDC           Returns the resolving DC + and - voltages using DC bias channels 1 and 2
   SRFAR0            Sets the Ro value in mm
   GRFAR0            Returns the Ro value in mm
-  SRFAMZ            Sets the m/z in amu
+  SRFAMZ            Sets the m/z in amu, NAK outside the SRFAMZMIN/SRFAMZMAX limits
   GRFAMZ            Returns the m/z in amu
+  SRFAMZMIN         Sets the minimum m/z, module,value. RAM only, default 10
+  GRFAMZMIN         Returns the minimum m/z
+  SRFAMZMAX         Sets the maximum m/z, module,value. RAM only, default 5000
+  GRFAMZMAX         Returns the maximum m/z
   SRFARES           Sets the resolution in AMU
   GRFARES           Returns the resolution in AMU
   RFAQUPDATE        Updates the QUAD parameters
