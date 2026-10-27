@@ -109,6 +109,7 @@ void  DCbiasSet(int Chan, float value);
 void  DCbiasSetNumBoardChans(int board, int num);
 void  DCbiasReportAllSetpoints(void);
 void  SetAllDCbiasChannels(void);
+void  SetPowerSource(void);
 void  DCbiasReportAllValues(void);
 void  DCbiasDelta(char *Value);
 void  DCbiasOffsetable(char *schan, char *state);

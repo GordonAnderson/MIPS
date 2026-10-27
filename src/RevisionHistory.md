@@ -1424,6 +1424,10 @@
 //          register is now saved and restored around the write, the bus signals are unchanged.
 //     26.) AD7994_b (TWI hardware ADC read, used when STWIHDW is TRUE and by CALRFAPS) waited forever
 //          for 2 bytes when the device did not answer. It now returns -1 and counts a TWI failure.
+//     27.) DC power supply (PWR_ON) now follows the saved setting at power up on systems with no DC bias
+//          board. Only DCbias_loop applied it, so with no DC bias board (Rev 3 QUAD) the supply stayed
+//          off while GDCPWR reported ON, and the host had to send SDCPWR OFF then ON. The MIPS config
+//          menu "DCbias supply" entry now also switches the supply, it only changed the setting.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

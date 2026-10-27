@@ -270,7 +270,7 @@ DialogBoxEntry MIPSconfigEntries[] = {
   {" Config modules"     , 0, 2, D_DIALOG, 0, 0, 0, 0, false, NULL, &ModuleConfig, SetupModuleConfig, NULL},
   {" Startup delay"      , 0, 3, D_INT,    0, 100, 1, 20, false, "%3d", &MIPSconfigData.StartupDelay, NULL, NULL},
   {" Startup hold"       , 0, 4, D_YESNO,  0, 1, 1, 21, false, NULL, &MIPSconfigData.StartupHold, NULL, NULL},
-  {" DCbias supply"      , 0, 5, D_ONOFF,  0, 1, 1, 20, false, NULL, &MIPSconfigData.PowerEnable, NULL, NULL},
+  {" DCbias supply"      , 0, 5, D_ONOFF,  0, 1, 1, 20, false, NULL, &MIPSconfigData.PowerEnable, NULL, SetPowerSource},
   {" DCbias trip, %%FS"  , 0, 6, D_FLOAT,  0, 100, 0.1, 18, false, "%5.1f", &MIPSconfigData.VerrorThreshold, NULL, NULL},
   {" Reboot"             , 0, 7, D_FUNCTION, 0, 0, 0, 0, false, NULL, NULL, Software_Reset, NULL},
   {" Backlight, %%"      , 0, 8, D_INT,      5, 100, 1, 20, false, "%3d", &MIPSconfigData.BackLight, NULL, SetBackLight},
@@ -1071,6 +1071,11 @@ void setup()
   // Init the baords
   ScanHardware();
   DIO_init();
+  // Apply the saved DC power supply setting. DCbias_loop does this on its first pass, but that
+  // thread exists only when a DC bias board is present, so a system without one (a Rev 3 QUAD)
+  // left PWR_ON off while GDCPWR reported ON, and the host had to send SDCPWR OFF then ON.
+  // Only turned on here, never off: Twave Rev 4.2 and FAIMS turn the supply on in their init.
+  if((NumberOfDCChannels == 0) && MIPSconfigData.PowerEnable) SetPowerSource();
   if(ActiveDialog == (DialogBox *)(-1)) MenuDisplay(&MainMenu);
   // Configure Threads
   MIPSsystemThread.setName("System");
