@@ -206,6 +206,7 @@ void RFAgetMZmin(int Module);
 void RFAsetMZmax(char *Module, char *value);
 void RFAgetMZmax(int Module);
 void RFAgetSetPointTiming(int Module);
+void RFAgetPoleReadbacks(int Module);
 void RFAresetSetPointTiming(int Module);
 // Shared per point primitive used by both the host driven scan (RFAACQ) and the
 // firmware resident scan. Sets m/z and applies the resolving DC delta; does not

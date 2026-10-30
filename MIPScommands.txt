@@ -1168,6 +1168,7 @@ General RFamp and QUAD commands
   RFAQUPDATE        Updates the QUAD parameters
   GRFASPT           Time RFAsetScanPoint takes, module. Returns points,avgTotalUs,minTotalUs,maxTotalUs,avgUpdateUs,avgRFUs,avgDCUs
   RRFASPT           Reset the RFAsetScanPoint timing counters, module
+  GRFAPRB           Rev 3 DC supply readbacks, module. Returns board,address then raw counts and volts for P1,P2,HV+,HV-
   RFAACQ            Report last point and acquire,module,mz,delta,dwell
   SRFAGAIN          Sets RF head level control gain, HIGH or LOW (HIGH is high voltage range)
   GRFAGAIN          Returns RF head level control gain, HIGH or LOW

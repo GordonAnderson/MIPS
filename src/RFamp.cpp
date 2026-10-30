@@ -369,6 +369,7 @@ const Commands  RFAMPCmdArray[] = {
   {"RFAQUPDATE", CMDfunction, 1, (char *)RFAupdateQUAD},     // Updates the QUAD parameters
   {"GRFASPT", CMDfunction, 1, (char *)RFAgetSetPointTiming}, // Time RFAsetScanPoint takes, module. Returns points,avgTotalUs,minTotalUs,maxTotalUs,avgUpdateUs,avgRFUs,avgDCUs
   {"RRFASPT", CMDfunction, 1, (char *)RFAresetSetPointTiming},// Reset the RFAsetScanPoint timing counters, module
+  {"GRFAPRB", CMDfunction, 1, (char *)RFAgetPoleReadbacks},  // Rev 3 DC supply readbacks, module. Returns board,address then raw counts and volts for P1,P2,HV+,HV-
   {"RFAACQ", CMDfunctionLine, 1, (char *)RFAacquire},        // Report last point and acquire,module,mz,delta,dwell
   {"SRFAGAIN", CMDfunctionStr, 2, (char *)RFAsetGain},       // Sets RF head level control gain, HIGH or LOW (HIGH is high voltage range)
   {"GRFAGAIN", CMDfunction, 1, (char *)RFAreturnGain},       // Returns RF head level control gain, HIGH or LOW
@@ -644,9 +645,16 @@ void SetRangeLow(int brd, bool Send)
 //
 // SetAddress(0) is what raises SYNC and is therefore the AD5680 output update edge;
 // the part has no LDAC pin. It must happen before the enable bit is cleared.
+//
+// The pole (DC bias) DACs have 200 ohms in series with SYNC, which slows its edges, so SYNC
+// is given RFAdac18CSDLYuS to settle after it falls, before it rises, and after it rises.
+// Added October 29, 2026 while chasing a P2 pole DAC that stops responding after scans.
+#define RFAdac18CSDLYuS  2
+
 void Set_18bitDAC(int brd, int DACchannel, int value)
 {
   AtomicBlock< Atomic_RestoreState > a_Block;
+  int addr;
 
   // An out of range count shifts into the AD5680 PD1:PD0 bits, which powers the
   // output down (value > max) or three-states it (value < 0), rather than simply
@@ -654,19 +662,11 @@ void Set_18bitDAC(int brd, int DACchannel, int value)
   if(value < 0)                value = 0;
   if(value > RFAdac18BITMAX)   value = RFAdac18BITMAX;
 
-  // Arm the chip select enable for this DAC
-  SendFRAcpldCommand(RFAarray[brd]->CPLDspi, RFACPLDimage[brd] | (1 << DACchannel));
-  // Assert CS by placing the decoded address on the bus
-  if(DACchannel == RFAcpldCS_RFD)       SetAddress(RFAcpldADD_RFD);
-  else if(DACchannel == RFAcpldCS_RFSP) SetAddress(RFAcpldADD_RFSP);
-  else if(DACchannel == RFAcpldCS_P1)   SetAddress(RFAcpldADD_P1);
-  else if(DACchannel == RFAcpldCS_P2)   SetAddress(RFAcpldADD_P2);
-  else
-  {
-    // Not a valid 18 bit DAC select, undo the enable and exit without clocking data
-    SendFRAcpldCommand(RFAarray[brd]->CPLDspi, RFACPLDimage[brd] & ~(1 << DACchannel));
-    return;
-  }
+  if(DACchannel == RFAcpldCS_RFD)       addr = RFAcpldADD_RFD;
+  else if(DACchannel == RFAcpldCS_RFSP) addr = RFAcpldADD_RFSP;
+  else if(DACchannel == RFAcpldCS_P1)   addr = RFAcpldADD_P1;
+  else if(DACchannel == RFAcpldCS_P2)   addr = RFAcpldADD_P2;
+  else return;                          // Not a valid 18 bit DAC select, nothing armed yet
   // Send Data. AD5680 clocks data on the falling edge, SPI mode 2, divider 12. The bytes go out on
   // the SPI default channel (BOARD_SPI_DEFAULT_SS), the channel this has always used; the CPLD
   // decodes the DAC select from the address, so the channel's own chip select pin plays no part.
@@ -675,17 +675,26 @@ void Set_18bitDAC(int brd, int DACchannel, int value)
   // old SPI.setDataMode/setClockDivider calls left it in mode 2 at divider 12 for every later
   // display write. The register is written directly so the SPI library's stored settings for the
   // display's channel are not changed either.
+  // The mode is switched before SYNC falls and restored only after SYNC rises: the display runs
+  // mode 0, so a switch inside the SYNC window could move SCLK while the DAC is selected.
   const uint32_t spiCh   = BOARD_PIN_TO_SPI_CHANNEL(BOARD_SPI_DEFAULT_SS);
   const uint32_t savedCSR = SPI0->SPI_CSR[spiCh];
   SPI0->SPI_CSR[spiCh] = SPI_MODE2 | SPI_CSR_CSAAT | SPI_CSR_SCBR(12) | SPI_CSR_DLYBCT(1);
+  // Arm the chip select enable for this DAC
+  SendFRAcpldCommand(RFAarray[brd]->CPLDspi, RFACPLDimage[brd] | (1 << DACchannel));
+  // Assert CS by placing the decoded address on the bus
+  SetAddress(addr);
+  delayMicroseconds(RFAdac18CSDLYuS);
   value <<= 2;
   uint8_t *b = (uint8_t *)&value;
   SPI.transfer(b[2]);
   SPI.transfer(b[1]);
   SPI.transfer(b[0]);
-  SPI0->SPI_CSR[spiCh] = savedCSR;
+  delayMicroseconds(RFAdac18CSDLYuS);
   // Raise CS
   SetAddress(0);
+  delayMicroseconds(RFAdac18CSDLYuS);
+  SPI0->SPI_CSR[spiCh] = savedCSR;
   SendFRAcpldCommand(RFAarray[brd]->CPLDspi, RFACPLDimage[brd] & ~(1 << DACchannel));
 }
 
@@ -1876,6 +1885,32 @@ void RFAresetSetPointTiming(int Module)
   if(RFAmodule2board(Module) == -1) return;
   sptN = sptSumTot = sptMinTot = sptMaxTot = sptSumUpd = sptSumRF = sptSumDC = 0;
   SendACKonly;
+}
+
+// Rev 3 only. Reads the DC supply module's 4 channel readback ADC (AD7994 at rbADDR on board
+// rbBoard) through the same averaged, TWI locked AD7994 call calRFApoleSupplies uses, and reports
+// raw counts and volts through the module's readback calibration. A diagnostic for the pole DAC
+// lock up seen October 29, 2026. A raw count below 0 means the ADC did not answer.
+void RFAgetPoleReadbacks(int Module)
+{
+  int b;
+  static const char *names[4] = {"P1","P2","HV+","HV-"};
+
+  if((b = RFAmodule2board(Module)) == -1) return;
+  if(RFAarray[b]->Rev != 3) BADARG;
+  SendACKonly;
+  if(SerialMute) return;
+  serial->print(RFAarray[b]->rbBoard); serial->print(",0x"); serial->print(RFAarray[b]->rbADDR, HEX);
+  for(int i = 0; i < 4; i++)
+  {
+    SelectBoard(RFAarray[b]->rbBoard);
+    int c = AD7994(RFAarray[b]->rbADDR, RFAarray[b]->ADCresDCCtrl[i].Chan, 4);
+    serial->print(","); serial->print(names[i]); serial->print(",");
+    serial->print(c); serial->print(",");
+    serial->print(Counts2Value(c, &RFAarray[b]->ADCresDCCtrl[i]), 1);
+  }
+  serial->println();
+  SelectBoard(SelectedRFAboard);
 }
 
 void RFAgetSetPointTiming(int Module)
