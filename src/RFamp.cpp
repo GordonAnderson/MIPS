@@ -111,6 +111,7 @@ void RestoreRFAsettings(bool NoDisplay);
 void SetUpdateFlag(void);
 void UpdateLowRangeMenu(void);
 void RFA_loop(void);
+static void RFArev3Readbacks(int brd);
 void AddMainMenuEntry(MenuEntry *me);
 // Calibration read functions (defined later in RFamp.cpp)
 void RFdrvCalPrep(void);
@@ -415,6 +416,16 @@ const Commands  RFAMPCmdArray[] = {
 // Configutation commands
   {"SRFAREV3", CMDfunction, 1, (char *)setRFArev3},          // Set selected module to rev 3, adjust initial calibration parameters
   {"CALRFAPS", CMDfunction, 1, (char *)calRFApoleSupplies},  // Calibrates the Rev 3 pole power supplies
+  {"GRFAPV",   CMDfunction, 2, (char *)RFAgetPoleV},         // Rev 3, returns a pole readback voltage, module,pole. Pole 1 or 2
+  {"GRFAHV",   CMDfunctionStr, 2, (char *)RFAgetHV},         // Rev 3, returns a supply readback voltage, module,POS|NEG
+  {"SRFARBADR",CMDfunction, 2, (char *)RFAsetRBadr},         // Rev 3, set the readback ADC TWI address, module,address. Decimal,
+                                                            // default 32 (0x20). Saved with SAVEM,RFA
+  {"GRFARBADR",CMDfunction, 1, (char *)RFAgetRBadr},         // Rev 3, return the readback ADC TWI address, decimal
+  {"SRFARBBRD",CMDfunction, 2, (char *)RFAsetRBbrd},         // Rev 3, set the board select (0 or 1) of the HV module that
+                                                            // holds the readback ADC, module,board. Saved with SAVEM,RFA
+  {"GRFARBBRD",CMDfunction, 1, (char *)RFAgetRBbrd},         // Rev 3, return the readback ADC board select
+  {"RRFAREV3", CMDfunction, 1, (char *)RFAreportRev3},       // Rev 3, report the readback ADC address, board, channel numbers
+                                                            // and calibration, the pole DAC calibration, and one raw read
 // End of table marker
   {0},
 };
@@ -739,13 +750,23 @@ void SetUpdateFlag(void)
 // Calculate the RF and DC parameters for the selected QUAD.
 // This function sets the values in the data structures that will flag the processing loops
 // to perform the updates. The hardware updates could be delayed up to 100 mS.
+//
+// Called by SRFAMZ, SRFARES, SRFAR0, SRFAK, SQCRES and SQCRSF so a change is applied without
+// a separate RFAQUPDATE. Not by SRFAFREQ: an RF amp that is not driving a quad has its level
+// set directly, and recalculating on a frequency change would replace it with the m/z level.
+// After SRFAFREQ on a quad send RFAQUPDATE. Any of these replaces a level or resolving DC set
+// directly with SRFALEV or SRFARDC.
 void QUADupdate(int brd)
 {
   double c = (float)RFAarray[brd]->Freq * (float)RFAarray[brd]->Freq * RFAarray[brd]->mz * (RFAarray[brd]->Ro/1000) * (RFAarray[brd]->Ro/1000);
   RFAarray[brd]->SetPoint = (0.000000072226 * c) * 2;
   float DCV = RFAarray[brd]->SetPoint / (2 * RFAarray[brd]->K);  // 0.000000012122 * c;
-  float delta = ((RFAarray[brd]->mz - RFAarray[brd]->Res) / RFAarray[brd]->mz);
-  if(delta > 0) DCV *= delta;
+  // Resolution: DC is set to the apex value for mass (m - Res), with Res scaled so one amu of
+  // Res gives one amu of peak width, see Resolution scaling in QUADscan.h. At or below Res the
+  // quad runs RF only (DC 0); this previously left the full apex DC, no transmission.
+  float delta = ((RFAarray[brd]->mz - QUADresEffective(brd, RFAarray[brd]->Res)) / RFAarray[brd]->mz);
+  if(delta < 0) delta = 0;
+  DCV *= delta;
   RFAarray[brd]->ResolvingDC = DCV;  
 }
 
@@ -998,6 +1019,9 @@ void RFA_init(int8_t Board, int8_t addr)
   RFAstates[Board]->PoleBias = 0.0;  
   RFAstates[Board]->RFVPpp = 0;
   RFAstates[Board]->RFVNpp = 0;
+  RFAstates[Board]->PoleV[0] = RFAstates[Board]->PoleV[1] = 0;
+  RFAstates[Board]->HVP = RFAstates[Board]->HVN = 0;
+  RFAstates[Board]->RBok = false;
   RFAstates[Board]->RFpowerFWD = 0;
   RFAstates[Board]->DCV = 0;
   RFAstates[Board]->DCI = 0;
@@ -1382,6 +1406,7 @@ void RFA_loop(void)
          if(RFAstates[brd]->SWR > 100) RFAstates[brd]->SWR = 100;
       }
     }
+    RFArev3Readbacks(brd);
   }
   RFAupdate = false;
   QUADupdateFlag = false;
@@ -1659,6 +1684,7 @@ void RFAsetRo(char *Module, char *value)
   }
   SendACK;
   RFAarray[b]->Ro = v; 
+  QUADupdate(b);
 }
 
 // Returns the current Ro value in mm
@@ -1692,6 +1718,7 @@ void RFAsetMZ(char *Module, char *value)
   }
   SendACK;
   RFAarray[b]->mz = v;
+  QUADupdate(b);
 }
 
 // m/z limits. True if mz is within the module's programmable limits.
@@ -1781,6 +1808,7 @@ void RFAsetRes(char *Module, char *value)
   }
   SendACK;
   RFAarray[b]->Res = v;  
+  QUADupdate(b);
 }
 
 // Returns resolution
@@ -2078,6 +2106,7 @@ void RFAsetK(char *Module, char *value)
   token = value;
   if((token.toFloat() < 1.0) || (token.toFloat() > 10.0)) BADARG;
   RFAarray[b]->K = token.toFloat();
+  QUADupdate(b);
   SendACK;
 }
 
@@ -2428,6 +2457,161 @@ void setQuadATR(int module)
   SendACK;
 }
 
+// Rev 3 resolving DC module readbacks, called by RFA_loop for each board every pass. Reads the
+// 4 channel AD7994 on the HV module (pole 1, pole 2, HV+, HV-), converts with the CALRFAPS
+// calibration and filters lightly so the values follow a scan. The HV module can be on the
+// other board select, so the board is switched for the read and switched back. A failed read
+// clears RBok and keeps the last values; the get commands NAK while RBok is false.
+#define RFArbFILTER 0.5
+
+static void RFArev3Readbacks(int brd)
+{
+  uint16_t vals[4];
+  float    v[4];
+
+  if(RFAarray[brd]->Rev != 3) return;
+  SelectBoard(RFAarray[brd]->rbBoard);
+  int stat = AD7994(RFAarray[brd]->rbADDR, vals);
+  SelectBoard(brd);
+  if(stat != 0)
+  {
+    RFAstates[brd]->RBok = false;
+    return;
+  }
+  for(int i = 0; i < 4; i++) v[i] = Counts2Value(vals[RFAarray[brd]->ADCresDCCtrl[i].Chan & 3], &RFAarray[brd]->ADCresDCCtrl[i]);
+  if(!RFAstates[brd]->RBok)
+  {
+    // First good read, no history to filter against
+    RFAstates[brd]->PoleV[0] = v[DCmonP1];
+    RFAstates[brd]->PoleV[1] = v[DCmonP2];
+    RFAstates[brd]->HVP      = v[DCmonHVP];
+    RFAstates[brd]->HVN      = v[DCmonHVN];
+    RFAstates[brd]->RBok     = true;
+    return;
+  }
+  RFAstates[brd]->PoleV[0] = RFArbFILTER * v[DCmonP1]  + (1 - RFArbFILTER) * RFAstates[brd]->PoleV[0];
+  RFAstates[brd]->PoleV[1] = RFArbFILTER * v[DCmonP2]  + (1 - RFArbFILTER) * RFAstates[brd]->PoleV[1];
+  RFAstates[brd]->HVP      = RFArbFILTER * v[DCmonHVP] + (1 - RFArbFILTER) * RFAstates[brd]->HVP;
+  RFAstates[brd]->HVN      = RFArbFILTER * v[DCmonHVN] + (1 - RFArbFILTER) * RFAstates[brd]->HVN;
+}
+
+// Board index for a Rev 3 readback command, or -1 with the NAK sent
+static int RFArev3Board(int module)
+{
+  int b;
+
+  if((b = RFAmodule2board(module)) == -1) return -1;
+  if(RFAarray[b]->Rev != 3)
+  {
+    SetErrorCode(ERR_BRDNOTSUPPORT);
+    SendNAK;
+    return -1;
+  }
+  return b;
+}
+
+// GRFAPV,module,pole returns the pole 1 or pole 2 voltage
+void RFAgetPoleV(int module, int pole)
+{
+  int b;
+
+  if((b = RFArev3Board(module)) == -1) return;
+  if((pole < 1) || (pole > 2)) BADARG;
+  if(!RFAstates[b]->RBok) ERR(ERR_RFARBFAIL);
+  SendACKonly;
+  if(!SerialMute) serial->println(RFAstates[b]->PoleV[pole-1],1);
+}
+
+// GRFAHV,module,POS|NEG returns the HV+ or HV- supply voltage
+void RFAgetHV(char *Module, char *rail)
+{
+  int    b;
+  float  v;
+  String token = Module;
+
+  if((b = RFArev3Board(token.toInt())) == -1) return;
+  token = rail;
+  if(token == "POS") v = RFAstates[b]->HVP;
+  else if(token == "NEG") v = RFAstates[b]->HVN;
+  else BADARG;
+  if(!RFAstates[b]->RBok) ERR(ERR_RFARBFAIL);
+  SendACKonly;
+  if(!SerialMute) serial->println(v,1);
+}
+
+// The readback ADC address and board select are set by SRFAREV3, which also resets every
+// calibration, so these allow them to be changed on their own. 7 bit TWI address.
+void RFAsetRBadr(int module, int adr)
+{
+  int b;
+
+  if((b = RFArev3Board(module)) == -1) return;
+  if((adr < 8) || (adr > 119)) BADARG;
+  RFAarray[b]->rbADDR = adr;
+  RFAstates[b]->RBok = false;
+  SendACK;
+}
+
+void RFAgetRBadr(int module)
+{
+  int b;
+
+  if((b = RFArev3Board(module)) == -1) return;
+  SendACKonly;
+  if(!SerialMute) serial->println(RFAarray[b]->rbADDR);
+}
+
+void RFAsetRBbrd(int module, int brd)
+{
+  int b;
+
+  if((b = RFArev3Board(module)) == -1) return;
+  if((brd < 0) || (brd > 1)) BADARG;
+  RFAarray[b]->rbBoard = brd;
+  RFAstates[b]->RBok = false;
+  SendACK;
+}
+
+void RFAgetRBbrd(int module)
+{
+  int b;
+
+  if((b = RFArev3Board(module)) == -1) return;
+  SendACKonly;
+  if(!SerialMute) serial->println(RFAarray[b]->rbBoard);
+}
+
+// RRFAREV3,module: diagnostic report of the Rev 3 resolving DC settings and one raw read of the
+// readback ADC (the same 4 channel read the loop uses), counts are 16 bit (12 bit << 4)
+void RFAreportRev3(int module)
+{
+  int      b;
+  uint16_t vals[4];
+  const char *names[4] = {"Pole 1","Pole 2","HV+   ","HV-   "};
+
+  if((b = RFArev3Board(module)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  serial->print("Readback ADC address "); serial->print(RFAarray[b]->rbADDR);
+  serial->print(", board "); serial->println(RFAarray[b]->rbBoard);
+  SelectBoard(RFAarray[b]->rbBoard);
+  int stat = AD7994(RFAarray[b]->rbADDR, vals);
+  SelectBoard(b);
+  for(int i = 0; i < 4; i++)
+  {
+    serial->print(names[i]); serial->print(" ADC chan "); serial->print(RFAarray[b]->ADCresDCCtrl[i].Chan);
+    serial->print(" m "); serial->print(RFAarray[b]->ADCresDCCtrl[i].m,4);
+    serial->print(" b "); serial->print(RFAarray[b]->ADCresDCCtrl[i].b,2);
+    serial->print(", raw ADC input "); serial->print(i+1); serial->print(" = ");
+    if(stat == 0) serial->println(vals[i]); else serial->println("read failed");
+  }
+  for(int i = 0; i < 2; i++)
+  {
+    serial->print("Pole "); serial->print(i+1); serial->print(" DAC m "); serial->print(RFAarray[b]->DACresDCCtrl[i].m,4);
+    serial->print(" b "); serial->println(RFAarray[b]->DACresDCCtrl[i].b,2);
+  }
+}
+
 // Set RFA board to revision 3 and configure DAC and ADC gains accordingly
 void setRFArev3(int module)
 {
@@ -2445,8 +2629,8 @@ void setRFArev3(int module)
   RFAarray[b]->DACchansLR.b = 0;
   // Set initial DC pole bias gains and addresses
   RFAarray[b]->rbBoard = b;   // Assume board addresses equals this module
-  RFAarray[b]->rbADDR = 0x23;
-  // 18 bit DAC gains for drive and setpoint
+  RFAarray[b]->rbADDR = 0x20;   // AD7994 on the HV module, 0x23 is another module's device
+  // 18 bit pole DAC gains
   RFAarray[b]->DACresDCCtrl[0].m = RFAarray[b]->DACresDCCtrl[1].m = -219;
   RFAarray[b]->DACresDCCtrl[0].b = RFAarray[b]->DACresDCCtrl[1].b = 132016;
   // 12 bit ADC pole supply readbacks
@@ -2462,15 +2646,49 @@ void setRFArev3(int module)
   SendACK;
 }
 
-// The calRFApoleSupplies function calibrates the pole supplies for a specified module by measuring voltages, 
-// adjusting digital-to-analog converters (DACs), and calculating calibration parameters based on user input 
-// and readback values from analog-to-digital converters (ADCs). It ensures proper board selection and handles 
-// high voltage power supply operations while providing serial output for monitoring the calibration process.
+// CALRFAPS,module calibrates the Rev 3 pole supplies: each pole DAC and its readback, then the
+// HV+ and HV- supply readbacks. The operator measures each voltage with a meter and enters it.
+//   Poles: each pole is set to about +300 V and then -300 V (with the SRFAREV3 default DAC
+//          calibration), the two points span the +/-600 V range evenly so neither half is
+//          extrapolated. The other pole is left where it was.
+//   Supplies: read with the HV supply on, then off. Let the supply discharge and settle before
+//          entering the off reading, the ADC is read when the value is entered.
+// Entering the same voltage twice, or a readback ADC that does not respond, aborts with a NAK and
+// leaves the calibration unchanged for that step. The supply is restored to its entry state.
+// The calibration is in RAM, save it with SAVEM,RFA.
+#define CALRFAPS_PT1  66300     // About +300 V with the default DAC calibration (m -219, b 132016)
+#define CALRFAPS_PT2  197700    // About -300 V
+#define CALRFAPS_MINDV 10.0     // Minimum difference between the two entered voltages
+
+// Read a readback ADC channel for CALRFAPS, -1 if it does not respond
+static int calRFAreadADC(int b, int chan)
+{
+  SelectBoard(RFAarray[b]->rbBoard);
+  int v = AD7994(RFAarray[b]->rbADDR, RFAarray[b]->ADCresDCCtrl[chan].Chan, 20);
+  SelectBoard(b);
+  return v;
+}
+
+static void calRFAexit(int b, bool hvWasOn, int err)
+{
+  digitalWrite(PWR_ON, hvWasOn ? LOW : HIGH);
+  // Force the loop to resync the poles; the DACs were left at the calibration values.
+  RFAupdate = true;
+  RFAstates[b]->RBok = false;
+  if(err == 0)
+  {
+    serial->println("Calibration done, it is in RAM, save with SAVEM,RFA");
+    SendACK;
+    return;
+  }
+  serial->println("Calibration aborted");
+  SetErrorCode(err);
+  SendNAK;
+}
+
 void calRFApoleSupplies(int module)
 {
   int b;
-  #define   CNTS_P1 131000
-  #define   CNTS_P2 200000
 
   if((b = RFAmodule2board(module)) == -1) return;
   if(RFAarray[b]->Rev != 3) BADARG;
@@ -2480,21 +2698,19 @@ void calRFApoleSupplies(int module)
   digitalWrite(PWR_ON,LOW);
   for(int i=0;i<2;i++)
   {
+    int cs = (i == 0) ? RFAcpldCS_P1 : RFAcpldCS_P2;
     SelectBoard(b);
     serial->print("Calibrating Pole "); serial->println(i+1);
-    // Set zero point and ask for actual value
-    if(i==0) Set_18bitDAC(b, RFAcpldCS_P1, CNTS_P1);
-    if(i==1) Set_18bitDAC(b, RFAcpldCS_P2, CNTS_P1);
+    // First point, about +300 V
+    Set_18bitDAC(b, cs, CALRFAPS_PT1);
     float V1 = UserInputFloat("Enter measured pole voltage : ", NULL);
-    SelectBoard(RFAarray[b]->rbBoard);
-    int Vadc1 = AD7994(RFAarray[b]->rbADDR, RFAarray[b]->ADCresDCCtrl[i].Chan, 20);
-    // Set mid scan and ask of actual value
-    SelectBoard(b);
-    if(i==0) Set_18bitDAC(b, RFAcpldCS_P1, CNTS_P2);
-    if(i==1) Set_18bitDAC(b, RFAcpldCS_P2, CNTS_P2);
+    int Vadc1 = calRFAreadADC(b, i);
+    // Second point, about -300 V
+    Set_18bitDAC(b, cs, CALRFAPS_PT2);
     float V2 = UserInputFloat("Enter measured pole voltage : ", NULL);
-    SelectBoard(RFAarray[b]->rbBoard);
-    int Vadc2 = AD7994(RFAarray[b]->rbADDR, RFAarray[b]->ADCresDCCtrl[i].Chan, 20);
+    int Vadc2 = calRFAreadADC(b, i);
+    if((Vadc1 == -1) || (Vadc2 == -1)) { calRFAexit(b, hvWasOn, ERR_RFARBFAIL); return; }
+    if(fabs(V2 - V1) < CALRFAPS_MINDV) { calRFAexit(b, hvWasOn, ERR_BADARG); return; }
     // Generate calibration parameters
     // count = value * m + b
     RFAarray[b]->ADCresDCCtrl[i].m = (Vadc2 - Vadc1) / (V2 - V1);
@@ -2502,28 +2718,30 @@ void calRFApoleSupplies(int module)
     serial->print("ADC m = "); serial->print(RFAarray[b]->ADCresDCCtrl[i].m);
     serial->print(" b = "); serial->println(RFAarray[b]->ADCresDCCtrl[i].b);
 
-    RFAarray[b]->DACresDCCtrl[i].m = (CNTS_P2 - CNTS_P1) / (V2 - V1);
-    RFAarray[b]->DACresDCCtrl[i].b = CNTS_P2 - V2 * RFAarray[b]->DACresDCCtrl[i].m;
+    RFAarray[b]->DACresDCCtrl[i].m = (CALRFAPS_PT2 - CALRFAPS_PT1) / (V2 - V1);
+    RFAarray[b]->DACresDCCtrl[i].b = CALRFAPS_PT2 - V2 * RFAarray[b]->DACresDCCtrl[i].m;
     serial->print("DAC m = "); serial->print(RFAarray[b]->DACresDCCtrl[i].m);
     serial->print(" b = "); serial->println(RFAarray[b]->DACresDCCtrl[i].b);
 
+    // Park the pole at 0 V with the new calibration
     SelectBoard(b);
-    if(i==0) Set_18bitDAC(b, RFAcpldCS_P1, RFAarray[b]->DACresDCCtrl[i].b);
-    if(i==1) Set_18bitDAC(b, RFAcpldCS_P2, RFAarray[b]->DACresDCCtrl[i].b);
+    Set_18bitDAC(b, cs, RFAarray[b]->DACresDCCtrl[i].b);
   }
   // Cal HV supply readbacks
   // .. Read power on voltages
-  SelectBoard(RFAarray[b]->rbBoard);
   float VP1 = UserInputFloat("Enter measured HV+ voltage : ", NULL);
-  int VP1adc = AD7994(RFAarray[b]->rbADDR, RFAarray[b]->ADCresDCCtrl[DCmonHVP].Chan, 20);
+  int VP1adc = calRFAreadADC(b, DCmonHVP);
   float VN1 = UserInputFloat("Enter measured HV- voltage : ", NULL);
-  int VN1adc = AD7994(RFAarray[b]->rbADDR, RFAarray[b]->ADCresDCCtrl[DCmonHVN].Chan, 20);
+  int VN1adc = calRFAreadADC(b, DCmonHVN);
   // .. Read power off voltages
   digitalWrite(PWR_ON,HIGH);
+  serial->println("HV supply is off, let it discharge and settle before entering the readings");
   float VP2 = UserInputFloat("Enter measured HV+ voltage : ", NULL);
-  int VP2adc = AD7994(RFAarray[b]->rbADDR, RFAarray[b]->ADCresDCCtrl[DCmonHVP].Chan, 20);
+  int VP2adc = calRFAreadADC(b, DCmonHVP);
   float VN2 = UserInputFloat("Enter measured HV- voltage : ", NULL);
-  int VN2adc = AD7994(RFAarray[b]->rbADDR, RFAarray[b]->ADCresDCCtrl[DCmonHVN].Chan, 20);
+  int VN2adc = calRFAreadADC(b, DCmonHVN);
+  if((VP1adc == -1) || (VN1adc == -1) || (VP2adc == -1) || (VN2adc == -1)) { calRFAexit(b, hvWasOn, ERR_RFARBFAIL); return; }
+  if((fabs(VP1 - VP2) < CALRFAPS_MINDV) || (fabs(VN1 - VN2) < CALRFAPS_MINDV)) { calRFAexit(b, hvWasOn, ERR_BADARG); return; }
   // Calculate the calibration parameters
   RFAarray[b]->ADCresDCCtrl[DCmonHVP].m = (VP1adc - VP2adc) / (VP1 - VP2);
   RFAarray[b]->ADCresDCCtrl[DCmonHVP].b = VP2adc - VP2 * RFAarray[b]->ADCresDCCtrl[DCmonHVP].m;
@@ -2534,11 +2752,7 @@ void calRFApoleSupplies(int module)
   RFAarray[b]->ADCresDCCtrl[DCmonHVN].b = VN2adc - VN2 * RFAarray[b]->ADCresDCCtrl[DCmonHVN].m;
   serial->print("HV- ADC m = "); serial->print(RFAarray[b]->ADCresDCCtrl[DCmonHVN].m);
   serial->print(" b = "); serial->println(RFAarray[b]->ADCresDCCtrl[DCmonHVN].b);
-
   // Restore the supply to its entry state. The procedure turns it off to read the
-  // power-off points and previously left it off.
-  digitalWrite(PWR_ON, hvWasOn ? LOW : HIGH);
-  // Force the loop to resync the poles; the DACs were left at the calibration values.
-  RFAupdate = true;
-  SendACK;
+  // power-off points.
+  calRFAexit(b, hvWasOn, 0);
 }

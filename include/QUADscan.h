@@ -51,10 +51,33 @@ typedef struct
   float    Actual[QUADcalMAX];        // True m/z
   float    Measured[QUADcalMAX];      // m/z that produced the peak at Actual
   float    Delta[QUADcalMAX];         // Resolving DC offset, volts
+  float    ResCal;                    // Resolution (SRFARES) the table was built at, the pivot for
+                                      // the resolution scaling. Default 0
+  float    ResScale;                  // Measured correction to the theoretical resolution
+                                      // sensitivity. Default 1.0
 } QUADcal;
 
+// Resolution scaling
+// ------------------
+// QUADupdate sets the resolving DC to the apex value for mass (m - Res). Near the apex of the
+// stability diagram the base peak width is about m/dm = 0.126 / (0.16784 - U/V) (Dawson), so
+// one amu of Res changes the peak width by 1/(0.126*K) amu, 1.332 amu at the theoretical
+// K = 1/0.16784 = 5.958 and 1.443 amu at K = 5.5. To make one amu of Res give one amu of
+// peak width the Res used in the calculation is
+//    Res_eff = ResCal + (Res - ResCal) / S,   S = ResScale / (QUADresWIDTH * K)
+// ResCal is the pivot: at Res = ResCal the DC is unchanged, so a table calibrated at ResCal
+// stays valid when ResScale is changed later. ResScale corrects for what the theory does not
+// include (fringing fields, ion energy, FWHM against base width), measure it on the system.
+// ResCal is only used when the table is enabled and has points, otherwise the pivot is 0.
+#define QUADresWIDTH          0.126     // Dawson's apex resolution constant
+#define QUADkTHEORY           5.958257713248639   // 1/0.16784, V0-p/U at the apex
+#define QUADresSCALEdefault   1.0
+#define QUADresSCALEmin       0.1
+#define QUADresSCALEmax       10.0
+
 // On EEPROM representation. The fields are flattened rather than nesting QUADcal so there
-// is only one round of alignment padding. Verified to be 136 bytes.
+// is only one round of alignment padding. Version 2 is 144 bytes (version 1, without ResCal
+// and ResScale, was 136 and is still accepted by QUADcalLoad).
 //
 // Module EEPROM is an AT24CS04, 512 bytes total. RFAdata occupies 0..351.
 //
@@ -65,15 +88,18 @@ typedef struct
 // The write still ACKs and returns success; the corruption only shows up as a CRC failure
 // on the next read. This cost a debugging session, hence the static_assert below.
 //
-// 368 is the highest 16 byte aligned offset that still fits the record: 368 + 136 = 504,
-// inside the 512 byte device, leaving 16 bytes of growth room for RFAdata. Chunks land at
-// 368, 384 ... 480, then a final 8 bytes at 496, all page aligned.
+// 368 leaves 16 bytes of growth room for RFAdata (352). The version 2 record ends exactly at
+// the end of the device: 368 + 144 = 512. Chunks land at 368, 384 ... 496, all page aligned.
 //
-// 368..503 also sits entirely within the upper 256 byte half, so the record never crosses
+// Version 2 uses 368..511, the whole of the remaining space; there is no room left to grow
+// the record.
+//
+// 368..511 also sits entirely within the upper 256 byte half, so the record never crosses
 // the boundary that ReadEEPROM/WriteEEPROM handle via the device address bit.
 #define QUADcalEEPROMOFFSET 368
 #define QUADcalSIG          0x51434C31UL    // "QCL1"
-#define QUADcalVERSION      1
+#define QUADcalVERSION      2
+#define QUADcalVERSION1     1
 #define QUADcalEEPROMSIZE   512
 
 typedef struct
@@ -86,12 +112,28 @@ typedef struct
   float    Actual[QUADcalMAX];
   float    Measured[QUADcalMAX];
   float    Delta[QUADcalMAX];
+  float    ResCal;
+  float    ResScale;
   uint16_t CRC;                       // CRC16 over everything above
 } QUADcalRecord;
 
+// Version 1 record, read only, so a table saved by older firmware still loads
+typedef struct
+{
+  uint32_t Signature;
+  int16_t  Size;
+  int8_t   Version;
+  int8_t   NumPoints;
+  bool     Enabled;
+  float    Actual[QUADcalMAX];
+  float    Measured[QUADcalMAX];
+  float    Delta[QUADcalMAX];
+  uint16_t CRC;
+} QUADcalRecordV1;
+
 // Allocated at init time for any present RF QUAD module; NULL otherwise. See QUADcalInit.
-// Scan parameters. RAM only, not persisted: the EEPROM record region has only 8 bytes
-// spare (368..503 used of 368..511) and these need 24, so persisting them would require
+// Scan parameters. RAM only, not persisted: the version 2 calibration record uses all of the
+// EEPROM region (368..511) and these need 24 bytes, so persisting them would require
 // relocating or shrinking the calibration record. Defaults are applied at init.
 typedef struct
 {
@@ -167,6 +209,11 @@ void QUADcalInit(int brd);
 // With the table disabled or empty, commanded = actual and delta = 0.
 void QUADcalApply(int brd, float actual, float *commanded, float *delta);
 
+// Resolution scaling, see the Resolution scaling note above. QUADresSensitivity returns S, amu
+// of peak width per amu of Res; QUADresEffective returns the Res QUADupdate should use.
+float QUADresSensitivity(int brd);
+float QUADresEffective(int brd, float res);
+
 // True if the requested scan range is close enough to the calibrated range to be trusted.
 bool QUADcalRangeOK(int brd, float startMZ, float stopMZ);
 
@@ -180,6 +227,10 @@ void QUADcalGetPoint(int Module, int index);
 void QUADcalReport(int Module);
 void QUADcalSave(int Module);
 void QUADcalRestore(int Module);
+void QUADcalSetResCal(char *Module, char *value);
+void QUADcalGetResCal(int Module);
+void QUADcalSetResScale(char *Module, char *value);
+void QUADcalGetResScale(int Module);
 
 // Scan engine
 void QUADscanSetStart(char *Module, char *value);

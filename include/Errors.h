@@ -94,4 +94,5 @@ extern int ErrorCode;
 #define ERR_QUADNOELECT             133     // QUAD scan, electrometer source selected but it did not ACK, is not in mode 1, or is not armed
 #define ERR_QUADELECTTMO            134     // QUAD scan, electrometer did not finish its acquisition before the timeout
 #define ERR_QUADLTBUSY              135     // QUAD scan, LT is in use as the DCbias profile level input and cannot drive the electrometer trigger
+#define ERR_RFARBFAIL               136     // RF amp Rev 3, the resolving DC readback ADC did not respond
 #endif

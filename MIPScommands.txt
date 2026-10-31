@@ -1051,6 +1051,13 @@ NAK with error 2 if no QUAD module is present on the selected board. Module is 1
   SAVEQCAL          Save the cal table to the module EEPROM. The table is
                     not included in the SAVE command
   RESTOREQCAL       Restore the cal table from the module EEPROM
+  SQCRES            Set the resolution the cal table was built at, module,res.
+                    -10 to 200, the pivot for resolution scaling. Saved by SAVEQCAL
+  GQCRES            Return the cal table resolution
+  SQCRSF            Set the resolution scale factor, module,scale. 0.1 to 10,
+                    default 1. Measured correction to the theoretical
+                    sensitivity 1/(0.126*K). Saved by SAVEQCAL
+  GQCRSF            Return the resolution scale factor
 
 QUAD scan commands. The scan parameters below are RAM only and are not saved by SAVE or
 SAVEQCAL; they return to their defaults on reset.
@@ -1214,6 +1221,16 @@ RF amp / quad auto tune
 Configutation commands
   SRFAREV3          Set selected module to rev 3, adjust initial calibration parameters
   CALRFAPS          Calibrates the Rev 3 pole power supplies
+  GRFAPV            Rev 3, returns a pole readback voltage, module,pole. Pole 1 or 2
+  GRFAHV            Rev 3, returns a supply readback voltage, module,POS|NEG
+  SRFARBADR         Rev 3, set the readback ADC TWI address, module,address. Decimal,
+                    default 32 (0x20). Saved with SAVEM,RFA
+  GRFARBADR         Rev 3, return the readback ADC TWI address, decimal
+  SRFARBBRD         Rev 3, set the board select (0 or 1) of the HV module that
+                    holds the readback ADC, module,board. Saved with SAVEM,RFA
+  GRFARBBRD         Rev 3, return the readback ADC board select
+  RRFAREV3          Rev 3, report the readback ADC address, board, channel numbers
+                    and calibration, the pole DAC calibration, and one raw read
 RF amp / QUAD m/z set from an ADC input and applied by a digital input strobe. Module is 1 or 2.
 Do not use while a scan (QSCAN or RFAACQ) is in progress. See RFAmzInput.cpp.
   SRFAMZADC         Set the ADC input that sets the m/z, module,adc,slope,intercept. adc 0 to 9, -1 for none. m/z = counts * slope + intercept

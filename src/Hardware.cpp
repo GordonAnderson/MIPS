@@ -1357,12 +1357,23 @@ int AD7998(int8_t adr, int8_t chan, int8_t num)
   return (val / num);
 }
 
+// Average of num reads of one channel. A failed read returns -1, which was summed into the
+// average and corrupted it; failed reads are now skipped and -1 is returned only if every read
+// fails. The first read is discarded, the AD7994 returns the previous conversion, which may be
+// from another channel (the 4 channel read above does the same).
 int AD7994(int8_t adr, int8_t chan, int8_t num)
 {
-  int i, val = 0;
+  int i, v, n = 0, val = 0;
 
-  for (i = 0; i < num; i++) val += AD7994(adr, chan);
-  return (val / num);
+  AD7994(adr, chan);
+  for (i = 0; i < num; i++)
+  {
+    if((v = AD7994(adr, chan)) == -1) continue;
+    val += v;
+    n++;
+  }
+  if(n == 0) return(-1);
+  return (val / n);
 }
 
 // Updated aug 31, 2023. 

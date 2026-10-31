@@ -1513,6 +1513,40 @@
 //
 //  1.268 is frozen at this point, October 27, 2026.
 //
+//  1.269, October 30, 2026
+//      1.) QUAD resolution scaling. The resolving DC is set to the apex value for mass (m - Res), and near the
+//          apex one amu of that offset changes the base peak width by about 1/(0.126*K) amu (Dawson), 1.33 at the
+//          theoretical K of 5.958 and 1.44 at K 5.5, so a table calibrated for 10 amu peaks at Res 10 gave much
+//          narrower peaks than 5 amu at Res 5. Res is now applied as ResCal + (Res - ResCal) / S, with
+//          S = ResScale / (0.126 * K). ResCal is the Res the calibration table was built at (the pivot, the DC at
+//          Res = ResCal is unchanged so the table stays valid), ResScale a measured correction to the theory,
+//          default 1. ResCal is used only while the table is enabled and has rows, otherwise the pivot is 0.
+//          New commands SQCRES/GQCRES and SQCRSF/GQCRSF, RQCAL shows them, the sensitivity and the applied Res.
+//          Both are kept with the calibration table and saved by SAVEQCAL. The EEPROM record is now version 2,
+//          144 bytes, 368 to 511, the whole of the remaining module EEPROM. A version 1 record still loads (ResCal
+//          set to the module's saved Res, ResScale 1); older firmware can not read a version 2 record.
+//      2.) QUAD resolution, with m/z at or below Res the full apex DC was left on (no transmission), it is now 0,
+//          RF only.
+//      3.) SRFAMZ, SRFARES, SRFAR0, SRFAK, SQCRES and SQCRSF now recalculate the RF level and resolving DC when
+//          set, an RFAQUPDATE is no longer needed. SRFAFREQ does not, an RF amp that is not driving a quad has its
+//          level set directly with SRFALEV; send RFAQUPDATE after a frequency change on a quad. These replace a
+//          level or resolving DC set directly with SRFALEV or SRFARDC.
+//      4.) Rev 3 RF amp resolving DC readbacks. The loop reads the HV module's AD7994 (pole 1, pole 2, HV+, HV-)
+//          every pass using the CALRFAPS calibration. GRFAPV,module,1|2 returns a pole voltage, GRFAHV,module,POS|NEG a supply
+//          voltages, they NAK with the new error 136 if the ADC does not answer and 17 on a module that is not
+//          Rev 3. SRFARBADR/GRFARBADR and SRFARBBRD/GRFARBBRD set and read the readback ADC address and board
+//          select, which only SRFAREV3 could set and it also resets every calibration. Saved with SAVEM,RFA.
+//          SRFAREV3 set the readback ADC address to 0x23, which is another module's device, it is 0x20. A module
+//          set up with the old address needs SRFARBADR,module,32, CALRFAPS and SAVEM,RFA. RRFAREV3,module reports the
+//          readback address, board, channel numbers and calibration, the pole DAC calibration and one raw read.
+//      5.) AD7994 averaged reads (CALRFAPS, ESI calibration, ReportAD7994) summed the -1 returned by a failed
+//          read into the average. Failed reads are skipped, -1 is returned only if all fail, and the first read
+//          (the previous conversion) is discarded.
+//      6.) CALRFAPS: the pole calibration points are about +300 and -300 V, they were about +4.6 and -310 V so the
+//          positive half of the range was extrapolated. Aborts with a NAK if the readback ADC does not answer or
+//          the two entered voltages are closer than 10 V, prompts to let the supply discharge before the supply
+//          off readings, restores the supply on every exit and reminds to save with SAVEM,RFA.
+//
 //  Next version
 //      3.) Added Command string function (not yet implemented)
 //          - Trigger from counter

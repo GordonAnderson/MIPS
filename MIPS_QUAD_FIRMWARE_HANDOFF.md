@@ -258,7 +258,8 @@ are unchanged, the settings are RAM only.
   the strobe if the flag is held.
 - **Apply:** `QUADcalApply` (a pass-through when the mass calibration table is disabled), then `RFAsetScanPoint`, the same
   primitive `QSCAN` and `RFAACQ` use, if the module is enabled; otherwise the m/z is stored and `QUADupdateFlag` set.
-  m/z must be 10 to 40000 and inside `QUADcalRangeOK`, else the strobe is ignored and counted.
+  m/z is capped at the module's m/z limits (`SRFAMZMIN` / `SRFAMZMAX`, October 27, 2026; it was 10 to 40000) and must
+  be inside `QUADcalRangeOK`, else the strobe is ignored and counted.
 - **Not with a scan.** `QSCAN` blocks the threads, so a strobe in that time is ignored, and `QUADscanGo` calls
   `RFAmzInputClear()` at its end so a strobe that arrived during the scan is not applied afterwards (a strobe older than
   500 mS when the thread runs is also dropped). A host driven `RFAACQ` scan cannot be detected and must not be run together
@@ -267,6 +268,40 @@ are unchanged, the settings are RAM only.
   `RISING`, so the edge is the physical one, before `DIinvert`. `attached()` fails if already attached, so a
   reassignment detaches first.
 - Test plan: `MIPS_QUAD_SCAN_TESTPLAN.md` Part I.
+
+### 2c. Resolution scaling, Rev 3 readbacks (October 30, 2026)
+
+Build tested only. Test plan Parts J, K and L; operating details in the data collection reference sections 9a to 9c.
+
+- **Resolution scaling.** `QUADupdate` sets the resolving DC to the apex value for mass (m − Res). Near the apex
+  m/Δm ≈ 0.126 / (0.16784 − U/V) (Dawson), so one amu of Res changes the base peak width by 1/(0.126 K) amu: 1.33 at
+  the theoretical K, 1.44 at Gordon's K of 5.5. Gordon calibrated at Res 10 and saw Res 5 give much narrower peaks
+  than 5 amu. Res is now applied as `ResCal + (Res − ResCal) / S`, `S = ResScale / (0.126 K)`, in `QUADresEffective`
+  (QUADscan.cpp). Decided with Gordon: scale by the actual K against the theory, plus a measured `ResScale` for what the
+  theory leaves out, both kept with the calibration table. `ResCal` is the pivot, so changing `ResScale` after a
+  calibration does not move the calibrated point; it is used only when the table is enabled and has rows, else the pivot
+  is 0 (the model apex). Commands `SQCRES`/`GQCRES`, `SQCRSF`/`GQCRSF`; `RQCAL` shows them.
+- **Calibration record version 2.** `ResCal` and `ResScale` take the record from 136 to 144 bytes, 368 to 511, the whole
+  of the remaining EEPROM; there is no room left to grow it. `QUADcalLoad` still accepts a version 1 record (ResCal = the
+  module's restored Res, ResScale 1). Older firmware rejects a version 2 record (size and version check), so a table saved
+  by this firmware is lost if older firmware is flashed.
+- **Res at or above m/z.** `QUADupdate` left the full apex DC when m ≤ Res (`if(delta > 0)`), no transmission. Now DC 0.
+- **Set commands recalculate.** `SRFAMZ`, `SRFARES`, `SRFAR0`, `SRFAK`, `SQCRES`, `SQCRSF` call `QUADupdate`; the loop
+  applies the changed level and resolving DC. Not `SRFAFREQ`: an RF amp used as a plain RF supply has its level set with
+  `SRFALEV`, and recalculating on a frequency change would replace it with the m/z level. `QSCAN` blocks command
+  processing, so none of these can arrive mid scan.
+- **Rev 3 readbacks.** `RFArev3Readbacks` in `RFA_loop` reads the AD7994 at `rbADDR` on board `rbBoard` every pass
+  (switching the board select and back), converts with `ADCresDCCtrl`, filters with 0.5, and keeps `RBok`. New
+  `RFAstate` fields (RAM only, no EEPROM change). Commands `GRFAPV`, `GRFAHV`, `SRFARBADR`/`GRFARBADR`,
+  `SRFARBBRD`/`GRFARBBRD` (the address and board were only settable through `SRFAREV3`, which resets every calibration).
+  New error 136, `ERR_RFARBFAIL`. The readback ADC is at 0x20; `SRFAREV3` used 0x23, another module's device, so the
+  readbacks never worked and the loop read would have been writing channel select bytes to that device. Default fixed;
+  modules already set up need `SRFARBADR,1,32`.
+- **`AD7994(adr,chan,num)`** summed the −1 of a failed read into the average. It now skips failures (−1 only if all fail)
+  and discards the first read, which is the previous conversion. Shared with ESI calibration and `ReportAD7994`.
+- **`CALRFAPS`.** Pole points about +300 and −300 V (were about +4.6 and −310 V, so the positive half was extrapolated),
+  abort with a NAK on an ADC that does not answer or two entries closer than 10 V, discharge prompt before the supply off
+  readings, supply restored on every exit, reminder to `SAVEM,RFA`.
 
 ---
 
@@ -472,7 +507,10 @@ same physical level — and has **not been done**.
 | `WriteEEPROM` silently corrupts unaligned writes | Guarded by `static_assert` in QUADscan only. A few lines in `Hardware.cpp` (`int chunk = 16 - (address % 16);` for the first chunk) would protect every caller. Touches shared code, wants its own commit. |
 | `ADCacquireWait` margin is a fixed +1 ms | 100 % margin at 200 samples, ~4 % at 5000. A proportional margin would be better. |
 | `ADCnumsamples` not persisted | Reverts to 5000 (25 ms/point) on power cycle. Visible in `QSCANSTAT`, documented in the manual, still a trap. |
-| `SRFAREV3` not persisted | Sets `Rev` in RAM only; needs Save settings. Already caused one confusing debug session. |
+| `SRFAREV3` not persisted | Sets `Rev` in RAM only; needs Save settings (`SAVEM,RFA`). Already caused one confusing debug session. It also resets every calibration of the module; use `SRFARBADR` / `SRFARBBRD` to change only the readback address and board. |
+| QUAD cal EEPROM region full | The version 2 record uses 368 to 511. Anything more needs the record relocated or shrunk (QUADcalMAX). |
+| Rev 3 readback display | `GRFAPV` / `GRFAHV` only; no front panel display of the pole and supply readbacks yet. |
+| Rev 3 pole DAC lockup | Seen October 27, 29 and 30, 2026: the pole outputs stop following commands until a power cycle. Commit f11968e (October 30) found the P2 lockup was a hardware fault, and moved the `Set_18bitDAC` SPI mode switch outside the SYNC window with 2 uS settle for the 200 ohm series resistor on SYNC. If it recurs on good hardware, note the last commands and check whether the readbacks (`RRFAREV3`) still answer while the DACs do not. `GRFAPRB` (from f11968e) and `RRFAREV3` are overlapping readback diagnostics; one could go. |
 | `SADCSAMPS` has no range check | Bare `CMDint`. The practical ceiling is `new uint16_t[ADCnumsamples]` in 96 kB. |
 | `RangeThreshold` has no host command | Front panel "Range thres" only, 0–500. |
 | B11 cold start | Explicit CPLD write at end of `RFA_init`; untested with `NormalStartup` both true and false. |

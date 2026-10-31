@@ -25,7 +25,10 @@ Run the parts in this order. Each part says what to do if it fails; none of them
 | 6 | D | `QSCAN` with the electrometer source | Electrometer wired to LT | `SQSSRC,1,ADC` or `SQSETRG,1,TWI` |
 | 7 | E | `RFAACQ` with the electrometer | Host script | `SQSSRC,1,ADC` |
 | 8 | I | ADC m/z input with a digital strobe | RF amp module, a signal source on a MIPS ADC input, a pulse source on a digital input | `SRFAMZSTB,<module>,NA` and `SRFAMZADC,<module>,-1,1,0` |
-| 9 | G | Ion test | Mass spectrometer | See handoff section 5 |
+| 9 | J | m/z limits, `SAVEM,RFA` / `RESTOREM`, set commands recalculate | RF amp module | See each item |
+| 10 | K | Rev 3 readbacks, `CALRFAPS` | Rev 3 module and ±600 V supply, a meter | `GRFAPV` / `GRFAHV` NAK 136: check `GRFARBADR` / `GRFARBBRD` |
+| 11 | L | Resolution scaling (run last, needs a calibrated spectrum) | Mass spectrometer, calibrated table | `SQCRSF,1,1` and `SQCRES,1,<Res>` give the old DC at Res = ResCal |
+| 12 | G | Ion test | Mass spectrometer | See handoff section 5 |
 
 Part F runs before D because `QUADscanAcquire` is now shared by both sources, so an ADC path that no
 longer passes F means the shared change is at fault, not the electrometer.
@@ -285,7 +288,8 @@ voltage on a MIPS ADC input and a digital input strobe applies it. Per module, R
 (requested m/z, applied m/z, applied count, rejected count, stale count, missed count).
 
 The strobe interrupt latches the ADC (4 reads averaged), because the value is only held for about 10 mS. A 10 mS
-thread then applies it: m/z must be 10 to 40000 (otherwise ignored), the mass calibration table is applied if
+thread then applies it: the m/z is capped at the module's m/z limits (`SRFAMZMIN` / `SRFAMZMAX`, default 10 and 5000, since
+October 27, 2026; it was 10 to 40000, otherwise ignored), the mass calibration table is applied if
 enabled and the m/z must be inside the range `QSCAN` allows, and a module that is enabled is updated at once with the
 same call `QSCAN` uses. Do not use it while a scan is running. Rev 1/2 modules need `SRFADCCH` set or the commands NAK.
 
@@ -302,8 +306,8 @@ same call `QSCAN` uses. Do not use it while a scan is running. Rev 1/2 modules n
       the edge to see where the latch point is. This is the point of reading the ADC in the interrupt.
 - [ ] **I.5 Rate.** Strobe at 10, 20 and 50 per second with a new voltage each time. Every strobe is applied (the applied
       count equals the number sent, `rejected`, `stale` and `missed` stay 0). Note the highest rate that keeps up.
-- [ ] **I.6 Rejections.** Request an m/z below 10 and above 40000: the strobe is ignored, the module m/z does not change, the
-      rejected count goes up. With the calibration table enabled, an m/z far outside the table (further than `QSCAN`
+- [ ] **I.6 Limits and rejections.** Request an m/z below `GRFAMZMIN` and above `GRFAMZMAX`: the m/z is capped at the limit
+      (changed October 27, 2026; it used to be ignored). With the calibration table enabled, an m/z far outside the table (further than `QSCAN`
       allows) is also rejected.
 - [ ] **I.7 Calibration table.** Enable a table (`SQCENA`, `SQCNUM`, `SQCPNT`). A strobe commands the calibrated m/z and applies
       its resolving DC offset: `GRFAMZ,1` is the commanded value, and the result matches a `QSCAN` point at the same m/z.
@@ -321,6 +325,68 @@ same call `QSCAN` uses. Do not use it while a scan is running. Rev 1/2 modules n
       strobe interrupt reads the ADC, a few tens of microseconds). Check a scan trigger, a compressor trigger or an ARB
       output on a scope if you use them.
 - [ ] **I.13 Power cycle.** The settings are gone (RAM only). They must be sent again.
+
+---
+
+## J. m/z limits, module save/restore, set commands recalculate
+
+*Result: October 30, 2026, Gordon: all of Part J tested and passed.* Commits from October 27 and 30, 2026.
+
+- [x] **J.1 Limits.** `GRFAMZMIN,1` = 10, `GRFAMZMAX,1` = 5000. `SRFAMZ,1,6000` NAKs, `SRFAMZ,1,5` NAKs, `SRFAMZ,1,500` ACKs.
+      `SRFAMZMAX,1,8000` then `SRFAMZ,1,6000` ACKs. `SRFAMZMIN,1,9000` NAKs (min not below max). The front panel m/z entry
+      stops at the limits. `QSCANSTAT,1` shows them.
+- [x] **J.2 Scans.** `SQSSTRT` / `SQSSTOP` outside the limits NAK. Set a valid range, lower `SRFAMZMAX` below the stop,
+      `QSCAN` NAKs with 129. `RFAACQ` with an m/z outside the limits NAKs.
+- [x] **J.3 Power cycle.** The limits are back at 10 and 5000.
+- [x] **J.4 `SAVEM,RFA`.** Change a setting (pole bias), `SAVEM,RFA`, power cycle: the setting is kept.
+- [x] **J.5 `RESTOREM,RFA`.** Change the setting without saving, `RESTOREM,RFA`: it returns to the saved value and the
+      hardware follows. `RESTOREM,XYZ` NAKs. `RESTOREM` of a module type that is not installed NAKs.
+- [x] **J.6 Set commands recalculate.** `SRFAMZ,1,500` alone (no `RFAQUPDATE`) changes the RF level and the resolving DC
+      within 100 ms (`GRFALEV,1`, `GRFARDC,1`). The same for `SRFARES`, `SRFAR0`, `SRFAK`. `SRFAFREQ` does **not** change
+      the level, `RFAQUPDATE,1` after it does.
+- [x] **J.7 Res above m/z.** `SRFARES,1,20`, `SRFAMZ,1,15`: `GRFARDC,1` is 0 (RF only). It used to be the full apex DC.
+
+---
+
+## K. Rev 3 resolving DC readbacks and `CALRFAPS`
+
+Build tested only, October 30, 2026. Rev 3 module with the ±600 V supply module.
+
+- [x] **K.1 Address and board.** *Result: October 30, 2026: pass with the address at 32 (0x20). The single value forms
+      `GRFAPV,1,1|2` and `GRFAHV,1,POS|NEG` tested and working.* `GRFARBADR,1` = 32 (0x20; modules set up with the old `SRFAREV3` read 35, set `SRFARBADR,1,32` and `SAVEM,RFA`), `GRFARBBRD,1` = the module's board (0 for module 1 on board A). On a
+      non Rev 3 module the commands NAK with 17.
+- [x] **K.2 Readbacks.** *Result: October 30, 2026, Gordon: pass after the address fix (0x20) and `CALRFAPS`, all readbacks
+      return the proper values.* With the supply on, `GRFAHV,1,POS` / `GRFAHV,1,NEG` read about +600 and −600 (or the
+      measured supply voltages). `GRFAPV,1,1` / `GRFAPV,1,2` follow `SRFAPB` and `SRFARDC` within a few hundred ms. Compare against a meter. Supply off: the HV
+      readings fall toward 0.
+- [ ] **K.3 Wrong address.** `SRFARBADR,1,33`: `GRFAPV,1,1` NAKs with 136 within 100 ms (if nothing else answers at 0x21). `SRFARBADR,1,32` and it reads again.
+      Do not save the wrong address.
+- [x] **K.4 `CALRFAPS,1`.** *Result: October 30, 2026: pass. Pole ADC m 49.3, b 32650; pole DAC m −218.6/−218.7; HV+ m
+      32.55; HV− m 13.88. Afterwards the poles stuck at 0 V and ignored `SRFARDC` until a power cycle, the CPLD lockup seen on
+      October 27 (see the handoff open items).* Meter on the poles and supply. Pole 1 goes to about +300 V and then −300 V (it used to be about
+      0 and −310 V); enter each reading, then pole 2. Enter HV+ and HV- with the supply on, then again after it is turned
+      off and has discharged. The supply returns to its previous state, the message says to save. Check `GRFAPV` against
+      the meter at a few `SRFARDC` values on both signs, then `SAVEM,RFA` and power cycle.
+- [ ] **K.5 Abort.** Run `CALRFAPS,1` and enter the same value twice for a pole: it NAKs, says aborted, the supply is put
+      back and the poles return to their settings.
+- [ ] **K.6 Scan timing.** The loop now reads the readback ADC every 100 ms. An `RFAACQ` scan's per point time (`GRFASPT`)
+      and a `QSCAN` are unchanged.
+
+---
+
+## L. Resolution scaling (run last)
+
+Build tested only, October 30, 2026. Needs the calibrated spectrum; the procedure is in the data collection reference,
+section 9a. With K 5.5 the theory gives S = 1.443 amu of peak width per amu of Res.
+
+- [ ] **L.1 Old table loads.** After flashing, `RQCAL,1` shows the table, cal Res equal to the module's saved Res (10),
+      scale 1, sensitivity about 1.443. If cal Res is not 10, `SQCRES,1,10`.
+- [ ] **L.2 Unchanged at the calibration point.** Res 10 gives the same 10 amu peaks as before.
+- [ ] **L.3 Scaling.** `SRFARES,1,5`: peaks about 5 amu wide (before the change they were much narrower). Measure w; if it is
+      not 5, `SQCRSF,1,<(10 − w) / 5>` and repeat. Try 7 and 15 as well, and two masses well apart; the width should follow
+      Res at both.
+- [ ] **L.4 Save.** `SAVEQCAL,1`, power cycle, `RQCAL,1` shows the same cal Res and scale.
+- [ ] **L.5 Clear.** `SQCNUM,1,0` resets cal Res to 0 and scale to 1 (then `RESTOREQCAL,1` to get the table back).
 
 ---
 

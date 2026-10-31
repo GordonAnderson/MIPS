@@ -155,6 +155,12 @@ typedef struct
   float   SWR;
   float   RFVPpp;             // Monitored RF+ Vp-p
   float   RFVNpp;             // Monitored RF- Vp-p
+  // Rev 3 resolving DC module readbacks, volts, read by RFA_loop from the AD7994 at
+  // rbADDR on board rbBoard. RBok is false until a read succeeds and after a read fails.
+  float   PoleV[2];           // Pole 1 and pole 2 voltage
+  float   HVP;                // HV positive supply
+  float   HVN;                // HV negative supply
+  bool    RBok;
 } RFAstate;
 
 extern      RFAdata  *RFAarray[2];
@@ -187,6 +193,7 @@ void RFAgetMZ(int Module);
 void RFAsetRes(char *Module, char *value);
 void RFAgetRes(int Module);
 void RFAupdateQUAD(int Module);
+void QUADupdate(int brd);
 void RFAacquire(void);
 void SaveRFA2EEPROM(void);
 void RestoreRFAfromEEPROM(void);
@@ -264,5 +271,12 @@ void setQuadATR(int module);
 void Set_18bitDAC(int brd, int DACchannel, int value);
 void setRFArev3(int module);
 void calRFApoleSupplies(int module);
+void RFAgetPoleV(int module, int pole);
+void RFAgetHV(char *Module, char *rail);
+void RFAsetRBadr(int module, int adr);
+void RFAgetRBadr(int module);
+void RFAsetRBbrd(int module, int brd);
+void RFAgetRBbrd(int module);
+void RFAreportRev3(int module);
 
 #endif

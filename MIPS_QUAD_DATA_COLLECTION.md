@@ -252,7 +252,7 @@ QSCAN,1                               the range and dwell as in section 3
 
 Your script chooses every m/z and calls `RFAACQ,module,mz,delta,dwell` once per point.
 
-- `mz` is 10 to 100000, `delta` is the resolving DC offset in volts (-10 to 10), `dwell` is the settle time in ms (0 to
+- `mz` must be within the module's m/z limits (`SRFAMZMIN` / `SRFAMZMAX`, section 9b), `delta` is the resolving DC offset in volts (-10 to 10), `dwell` is the settle time in ms (0 to
   1000).
 - **Each call returns the previous point's sum**, sets the quad to the new m/z, waits the dwell, and starts the next
   acquisition. The first call of a scan returns 0. Make one extra call at the end to read the last point.
@@ -327,17 +327,17 @@ An external system sets a voltage on a MIPS ADC input and pulses a digital input
 and applies it as the new m/z. **(not run on hardware)**
 
 ```
-SRFAMZADC,1,3,9.768,0                 m/z = ADC counts * slope + intercept. ADC channel 3 here, 0 to 9, -1 for none
+SRFAMZADC,1,3,1.221,0                 m/z = ADC counts * slope + intercept. ADC channel 3 here, 0 to 9, -1 for none
 SRFAMZSTB,1,R                         strobe digital input Q..X, rising edge. NA to turn it off
 GRFAMZSTAT,1                          requested m/z, applied m/z, applied, rejected, stale and missed counts
 ```
 
-- The ADC is 12-bit, 0 to 4095 counts for 0 to 3.3 V at the pin, so `slope = 40000 / 4095 = 9.768` and `intercept = 0`
-  gives 0 to 40000 m/z for 0 to 3.3 V. Divide a higher input voltage down yourself.
+- The ADC is 12-bit, 0 to 4095 counts for 0 to 3.3 V at the pin, so `slope = 5000 / 4095 = 1.221` and `intercept = 0`
+  gives 0 to 5000 m/z for 0 to 3.3 V. Divide a higher input voltage down yourself.
 - The voltage is **latched in the strobe interrupt** (4 reads averaged), so it must be valid when the rising edge
   arrives and stable for a few microseconds. A 10 ms thread then applies it.
-- The m/z must be 10 to 40000, otherwise the strobe is ignored and counted as rejected. If the calibration table is
-  enabled it is applied, and an m/z too far outside the table is also rejected.
+- The m/z is **capped** at the module's m/z limits (`SRFAMZMIN` / `SRFAMZMAX`, section 9b). If the calibration table is
+  enabled it is applied, and an m/z too far outside the table is rejected (ignored and counted).
 - If the module is enabled the new m/z reaches the hardware at once; if it is disabled the value is stored.
 - A strobe is skipped (counted as missed) while the MIPS ADC digitizer owns the ADC. A strobe that is more than 500 ms old
   when the thread gets to it is discarded.
@@ -367,6 +367,81 @@ QSCANSTAT,1                           shows what the table does at the scan endp
   that starts or stops more than **2 times the table span** beyond the table is refused with `GERR` 131.
 - The table is not part of the normal `SAVE`; use `SAVEQCAL`.
 - With the table disabled (the default) the commanded m/z equals the requested m/z.
+- `SQCNUM,1,0` clears the table and also resets the resolution settings below (`SQCRES` 0, `SQCRSF` 1).
+
+---
+
+## 9a. Resolution (`SRFARES`) **(not run)**
+
+`SRFARES,module,res` sets the resolution in amu. The resolving DC is set to the apex value for mass (m − Res). Near the
+apex one amu of that offset changes the peak width by about `1 / (0.126 × K)` amu (1.33 at the theoretical K 5.958, 1.44
+at K 5.5), so before this change Res 5 gave peaks much narrower than 5 amu. The firmware now scales Res so one amu of Res
+gives one amu of peak width:
+
+```
+Res applied = ResCal + (Res − ResCal) / S        S = ResScale / (0.126 × K)
+```
+
+```
+SQCRES,1,10                           ResCal: the Res the calibration table was built at (the pivot)
+SQCRSF,1,1.0                          ResScale: measured correction to the theory, 0.1 to 10, default 1
+RQCAL,1                               shows ResCal, ResScale, S and the Res actually applied
+SAVEQCAL,1                            both are saved with the table
+```
+
+- At Res = ResCal the resolving DC is unchanged, so a table calibrated at ResCal stays valid when ResScale is changed.
+- ResCal is used only while the table is enabled and has rows; otherwise the pivot is 0.
+- At or below Res (m/z ≤ Res applied) the quad runs RF only, resolving DC 0.
+- **Procedure.** Calibrate the table at one Res (say 10) and `SQCRES,1,10`. Set `SRFARES,1,5` and measure the peak width
+  w. If it is not 5, `SQCRSF,1,<ResScale × (10 − w) / 5>` and check again. `SAVEQCAL,1`.
+- A table saved by older firmware (record version 1) still loads, with ResCal set to the module's saved Res and ResScale 1.
+  After `SAVEQCAL` it is version 2, which **older firmware cannot read**.
+- `SRFAMZ`, `SRFARES`, `SRFAR0`, `SRFAK`, `SQCRES` and `SQCRSF` now recalculate the RF level and resolving DC at once; an
+  `RFAQUPDATE` is no longer needed after them. `SRFAFREQ` does not (an RF amp that is not driving a quad has its level set
+  directly), send `RFAQUPDATE` after it. Any of these replaces a level or resolving DC set directly with `SRFALEV` or
+  `SRFARDC`.
+
+---
+
+## 9b. m/z limits, saving and restoring the module
+
+```
+SRFAMZMIN,1,10                        lowest m/z allowed, default 10, RAM only
+SRFAMZMAX,1,5000                      highest m/z allowed, default 5000, RAM only (0.1 to 100000, min below max)
+SAVEM,RFA                             save every RF amp module's settings to its EEPROM
+RESTOREM,RFA                          restore them from the EEPROM and apply them
+```
+
+- `SRFAMZ`, `RFAACQ`, `SQSSTRT` / `SQSSTOP` NAK outside the limits, `QSCAN` NAKs (129) if the limits were changed after
+  the range was set, and the strobe input caps the m/z at the limits. The limits return to the defaults at power up, set
+  them from the host init.
+- `SAVEM` / `RESTOREM` do not include the calibration table, use `SAVEQCAL` / `RESTOREQCAL`.
+
+---
+
+## 9c. Rev 3 resolving DC supply **(not run)**
+
+The Rev 3 ±600 V supply module has a 4 channel readback ADC (AD7994) for the two poles and the two HV supplies.
+
+```
+GRFAPV,1,1                            pole readback, volts, module,pole (1 or 2)
+GRFAHV,1,POS                          supply readback, volts, module,POS|NEG
+SRFARBADR,1,32                        readback ADC TWI address, decimal (32 = 0x20), saved with SAVEM,RFA
+SRFARBBRD,1,0                         board select of the HV module, 0 or 1 (default the RF amp's own), saved with SAVEM,RFA
+CALRFAPS,1                            calibrate the pole DACs and all four readbacks
+RRFAREV3,1                            diagnostic: address, board, channel numbers and calibration, one raw read
+```
+
+- The readbacks are read every 100 ms; a NAK with `GERR` 136 means the ADC is not answering (check the address and board).
+  A module that is not Rev 3 NAKs with 17.
+- Before October 30, 2026 `SRFAREV3` set the address to 0x23, which is another module's device, so the readbacks and
+  any `CALRFAPS` readback calibration made before then are wrong. Set `SRFARBADR,1,32`, rerun `CALRFAPS` and `SAVEM,RFA`.
+- `SRFAREV3` also sets the address and board, but it resets **every** calibration of the module; use `SRFARBADR` /
+  `SRFARBBRD` to change them on a calibrated module.
+- **`CALRFAPS` procedure.** Have a meter on the pole and the supply test points. For each pole the firmware sets about
+  +300 V, then about −300 V; measure and enter each. Then enter HV+ and HV- with the supply on; the supply is turned off,
+  **let it discharge and settle**, then enter both again. Entering two readings closer than 10 V, or an ADC that does not
+  answer, aborts with a NAK. The supply is put back the way it was. **Save with `SAVEM,RFA`**, the calibration is in RAM.
 
 ---
 
@@ -386,6 +461,8 @@ QSCANSTAT,1                           shows what the table does at the scan endp
 | 133 | electrometer not answering, not in mode 1, or not armed (also `RFAACQ` before `SQSEINIT`) |
 | 134 | electrometer did not finish a point inside `SQSETMO` (or a point failed mid scan) |
 | 135 | LT is in use by the DC bias profile input, so the hardware trigger cannot use it |
+| 136 | Rev 3: the resolving DC readback ADC did not answer (`GRFAPV`, `GRFAHV`, `CALRFAPS`) |
+| 17 | Rev 3 command on a module that is not Rev 3 |
 
 Line-type commands (`SQCPNT`, `SRFAMZADC`, `SQSEADD`...) can report error 1 instead of 2 for a bad value, because the
 unread arguments are parsed as commands and overwrite the error code. The NAK itself is correct.
@@ -399,6 +476,8 @@ unread arguments are parsed as commands and overwrite the error code. The NAK it
 | `QSCANSTAT,1` | all the scan settings, the global ADC settings, the point count, the estimated scan time, and what the calibration table does at the ends of the range |
 | `GQSESTAT,1` | electrometer timing for the **last point**: `points,trigUs,waitUs,completeUs,polls,readUs,readMaxUs,retries,fails` (microseconds; reset at each `QSCAN` / `SQSEINIT`) |
 | `GQSESUM,1` | the same over the **whole scan**: `points,avgCompleteUs,minCompleteUs,maxCompleteUs,avgWaitUs,avgPolls x100,maxPolls,points needing more than one poll` |
+| `GRFAPV,1,1|2` / `GRFAHV,1,POS|NEG` | Rev 3 pole and HV supply readbacks (section 9c) |
+| `RQCAL,1` | the calibration table and the resolution scaling (section 9a) |
 | `GTWISPEED,1` | the Wire1 bus speed setting (it prints the variable, not the measured clock) |
 | `TWI1SCAN` | which addresses answer on Wire1; the electrometer should show at `20` |
 | `TWI1CMD,32,GTRIGST` / `GTRIGCNT` / `GTRIGMIS` | electrometer trigger state, completed bursts, and triggers that arrived mid burst |
