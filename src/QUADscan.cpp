@@ -76,12 +76,15 @@ static uint16_t QUADcalCRC(const uint8_t *data, int len)
   return crc;
 }
 
-// Clear a board's table to the defaults: no points, disabled, resolution pivot 0, scale 1.
-static void QUADcalClear(int b)
+// Clear a board's table to the defaults: no points, disabled. The resolution scale is kept
+// unless resetScale is set (init only): the host pushes the table with SQCNUM 0 before every
+// scan, and the scale describes the quad and drive, not the table.
+static void QUADcalClear(int b, bool resetScale)
 {
+  float sf = QUADcalTable[b]->ResScale;
+
   memset(QUADcalTable[b], 0, sizeof(QUADcal));
-  QUADcalTable[b]->ResCal   = 0;
-  QUADcalTable[b]->ResScale = QUADresSCALEdefault;
+  QUADcalTable[b]->ResScale = resetScale ? QUADresSCALEdefault : sf;
 }
 
 // Returns the board index for a module number, or -1 with the NAK already sent.
@@ -185,15 +188,11 @@ float QUADresSensitivity(int brd)
   return sf / (QUADresWIDTH * K);
 }
 
-// The Res QUADupdate uses: ResCal + (Res - ResCal) / S. The pivot is ResCal only when the
-// table is in use, its deltas were tuned at ResCal; otherwise it is 0, the model apex.
+// The Res QUADupdate uses: Res / S, so Res is the peak width in amu. Applied the same way with
+// or without the table so every scan path gives the same DC.
 float QUADresEffective(int brd, float res)
 {
-  float    pivot = 0;
-  QUADcal *cal   = QUADcalTable[brd];
-
-  if((cal != NULL) && cal->Enabled && (cal->NumPoints > 0)) pivot = cal->ResCal;
-  return pivot + (res - pivot) / QUADresSensitivity(brd);
+  return res / QUADresSensitivity(brd);
 }
 
 bool QUADcalRangeOK(int brd, float startMZ, float stopMZ)
@@ -234,7 +233,6 @@ void QUADcalSave(int Module)
     rec.Measured[i] = QUADcalTable[b]->Measured[i];
     rec.Delta[i]    = QUADcalTable[b]->Delta[i];
   }
-  rec.ResCal   = QUADcalTable[b]->ResCal;
   rec.ResScale = QUADcalTable[b]->ResScale;
   rec.CRC = QUADcalCRC((uint8_t *)&rec, QUADcalCRCLEN);
   // The module EEPROMs share TWI addresses between the two board slots; the hardware board
@@ -264,10 +262,9 @@ void QUADcalSave(int Module)
 // Load the record for a board. Returns true if a valid record was found. Does not send an
 // ACK or NAK; used both by the host command and by QUADcalInit.
 //
-// A version 1 record (older firmware, no resolution scaling) is accepted. Its table was
-// calibrated with the unscaled resolution, which this firmware reproduces at Res = ResCal, so
-// ResCal is set to the module's current Res, restored from RFAdata before this runs at power
-// up, and ResScale to 1. SAVEQCAL then writes it as version 2.
+// A version 1 record (older firmware, no resolution scaling) is accepted with ResScale 1;
+// SAVEQCAL then writes it as version 2. Its deltas were tuned with the unscaled resolution, so
+// the table should be recalibrated.
 static bool QUADcalLoad(int b)
 {
   union
@@ -275,7 +272,7 @@ static bool QUADcalLoad(int b)
     QUADcalRecord   v2;
     QUADcalRecordV1 v1;
   } rec;
-  float rescal, resscale;
+  float resscale;
 
   // Board select is required before any module EEPROM access, see QUADcalSave
   SelectBoard(b);
@@ -284,20 +281,17 @@ static bool QUADcalLoad(int b)
   if((rec.v2.Version == QUADcalVERSION) && (rec.v2.Size == (int16_t)sizeof(QUADcalRecord)))
   {
     if(rec.v2.CRC != QUADcalCRC((uint8_t *)&rec.v2, QUADcalCRCLEN)) return false;
-    rescal   = rec.v2.ResCal;
     resscale = rec.v2.ResScale;
   }
   else if((rec.v1.Version == QUADcalVERSION1) && (rec.v1.Size == (int16_t)sizeof(QUADcalRecordV1)))
   {
     if(rec.v1.CRC != QUADcalCRC((uint8_t *)&rec.v1, QUADcalCRCLENV1)) return false;
-    rescal   = RFAarray[b]->Res;
     resscale = QUADresSCALEdefault;
   }
   else return false;
   // Range check what came out of EEPROM before trusting it. The common fields are at the same
   // offsets in both versions.
   if((rec.v2.NumPoints < 0) || (rec.v2.NumPoints > QUADcalMAX)) return false;
-  if(isnan(rescal)) rescal = 0;
   if(isnan(resscale) || (resscale < QUADresSCALEmin) || (resscale > QUADresSCALEmax)) resscale = QUADresSCALEdefault;
   QUADcalTable[b]->NumPoints = rec.v2.NumPoints;
   QUADcalTable[b]->Enabled   = rec.v2.Enabled;
@@ -307,7 +301,6 @@ static bool QUADcalLoad(int b)
     QUADcalTable[b]->Measured[i] = rec.v2.Measured[i];
     QUADcalTable[b]->Delta[i]    = rec.v2.Delta[i];
   }
-  QUADcalTable[b]->ResCal   = rescal;
   QUADcalTable[b]->ResScale = resscale;
   return true;
 }
@@ -334,7 +327,7 @@ void QUADcalInit(int brd)
   // no dependency on which DAC hardware RFAsetScanPoint ends up driving for this module.
   if(QUADcalTable[brd] == NULL) QUADcalTable[brd] = new QUADcal;
   if(QUADcalTable[brd] == NULL) return;
-  QUADcalClear(brd);
+  QUADcalClear(brd, true);
   QUADscanParmsInit(brd);
   // A module that has never been calibrated simply has no record; that is not an error
   QUADcalLoad(brd);
@@ -375,8 +368,9 @@ void QUADcalSetNum(int Module, int num)
   if((b = QUADcalBoard(Module)) == -1) return;
   if((num < 0) || (num > QUADcalMAX)) BADARG;
   // Reducing the count leaves the higher rows in place but unused. Setting 0 clears the
-  // table outright so a stale calibration cannot be resurrected by raising the count.
-  if(num == 0) QUADcalClear(b);
+  // table outright so a stale calibration cannot be resurrected by raising the count. The
+  // resolution scale is kept.
+  if(num == 0) QUADcalClear(b, false);
   else QUADcalTable[b]->NumPoints = num;
   SendACK;
 }
@@ -452,8 +446,7 @@ void QUADcalReport(int Module)
   serial->print(", ");
   if(QUADcalTable[b]->Enabled) serial->println("enabled");
   else serial->println("disabled");
-  serial->print("  Resolution: cal Res "); serial->print(QUADcalTable[b]->ResCal,3);
-  serial->print(", scale "); serial->print(QUADcalTable[b]->ResScale,4);
+  serial->print("  Resolution: scale "); serial->print(QUADcalTable[b]->ResScale,4);
   serial->print(", sensitivity "); serial->print(QUADresSensitivity(b),4);
   serial->print(" amu/amu, Res "); serial->print(RFAarray[b]->Res,3);
   serial->print(" applied as "); serial->println(QUADresEffective(b, RFAarray[b]->Res),3);
@@ -479,31 +472,6 @@ void QUADcalReport(int Module)
 // Resolution scaling commands. Changes take effect at the next m/z update (RFAQUPDATE, a scan
 // point, the front panel Update).
 //
-// SQCRES,module,res sets ResCal, the Res the table was calibrated at
-void QUADcalSetResCal(char *Module, char *value)
-{
-  int   b;
-  float v;
-  String token = value;
-
-  if((b = QUADcalBoardStr(Module)) == -1) return;
-  v = token.toFloat();
-  if(isnan(v) || (v < -10) || (v > 200)) BADARG;
-  QUADcalTable[b]->ResCal = v;
-  QUADupdate(b);
-  SendACK;
-}
-
-void QUADcalGetResCal(int Module)
-{
-  int b;
-
-  if((b = QUADcalBoard(Module)) == -1) return;
-  SendACKonly;
-  if(SerialMute) return;
-  serial->println(QUADcalTable[b]->ResCal,3);
-}
-
 // SQCRSF,module,scale sets ResScale, the measured correction to the theoretical sensitivity
 void QUADcalSetResScale(char *Module, char *value)
 {
@@ -527,6 +495,17 @@ void QUADcalGetResScale(int Module)
   SendACKonly;
   if(SerialMute) return;
   serial->println(QUADcalTable[b]->ResScale,4);
+}
+
+// GQCRAPP,module returns the Res QUADupdate applies, Res / S, for a diagnostics display
+void QUADcalGetResApplied(int Module)
+{
+  int b;
+
+  if((b = QUADcalBoard(Module)) == -1) return;
+  SendACKonly;
+  if(SerialMute) return;
+  serial->println(QUADresEffective(b, RFAarray[b]->Res),3);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -921,13 +900,12 @@ const Commands QUADscanCmdArray[] = {
   {"SAVEQCAL",   CMDfunction, 1, (char *)QUADcalSave},        // Save the cal table to the module EEPROM. The table is
                                                              // not included in the SAVE command
   {"RESTOREQCAL",CMDfunction, 1, (char *)QUADcalRestore},     // Restore the cal table from the module EEPROM
-  {"SQCRES",  CMDfunctionStr, 2, (char *)QUADcalSetResCal},   // Set the resolution the cal table was built at, module,res.
-                                                             // -10 to 200, the pivot for resolution scaling. Saved by SAVEQCAL
-  {"GQCRES",  CMDfunction, 1, (char *)QUADcalGetResCal},      // Return the cal table resolution
   {"SQCRSF",  CMDfunctionStr, 2, (char *)QUADcalSetResScale}, // Set the resolution scale factor, module,scale. 0.1 to 10,
                                                              // default 1. Measured correction to the theoretical
-                                                             // sensitivity 1/(0.126*K). Saved by SAVEQCAL
+                                                             // sensitivity 1/(0.126*K). Saved by SAVEQCAL, not reset
+                                                             // by SQCNUM 0
   {"GQCRSF",  CMDfunction, 1, (char *)QUADcalGetResScale},    // Return the resolution scale factor
+  {"GQCRAPP", CMDfunction, 1, (char *)QUADcalGetResApplied},  // Return the resolution actually applied, Res / S, module
 //
 // QUAD scan commands. The scan parameters below are RAM only and are not saved by SAVE or
 // SAVEQCAL; they return to their defaults on reset.

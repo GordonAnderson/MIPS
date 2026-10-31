@@ -367,7 +367,7 @@ QSCANSTAT,1                           shows what the table does at the scan endp
   that starts or stops more than **2 times the table span** beyond the table is refused with `GERR` 131.
 - The table is not part of the normal `SAVE`; use `SAVEQCAL`.
 - With the table disabled (the default) the commanded m/z equals the requested m/z.
-- `SQCNUM,1,0` clears the table and also resets the resolution settings below (`SQCRES` 0, `SQCRSF` 1).
+- `SQCNUM,1,0` clears the table rows and the enable flag. It keeps the resolution scale (`SQCRSF`, below).
 
 ---
 
@@ -379,24 +379,31 @@ at K 5.5), so before this change Res 5 gave peaks much narrower than 5 amu. The 
 gives one amu of peak width:
 
 ```
-Res applied = ResCal + (Res − ResCal) / S        S = ResScale / (0.126 × K)
+Res applied = Res / S        S = ResScale / (0.126 × K)
 ```
 
+So Res is the peak width in amu from the model; the calibration table deltas then correct each mass. The scaling is the
+same with or without the table, so the host Scan (`RFAACQ`), `QSCAN` and the calibration mode all apply the same DC.
+
 ```
-SQCRES,1,10                           ResCal: the Res the calibration table was built at (the pivot)
 SQCRSF,1,1.0                          ResScale: measured correction to the theory, 0.1 to 10, default 1
-RQCAL,1                               shows ResCal, ResScale, S and the Res actually applied
-SAVEQCAL,1                            both are saved with the table
+RQCAL,1                               shows ResScale, S and the Res actually applied
+GQCRAPP,1                             returns just the Res actually applied, Res / S
+SAVEQCAL,1                            ResScale is saved with the table
 ```
 
-- At Res = ResCal the resolving DC is unchanged, so a table calibrated at ResCal stays valid when ResScale is changed.
-- ResCal is used only while the table is enabled and has rows; otherwise the pivot is 0.
+- `SQCNUM,1,0` does not reset ResScale. The UI pushes its table with `SQCNUM,1,0` and `SQCPNT` before every `QSCAN`, so
+  ResScale has to survive that. In the UI it belongs on the Calibration tab, saved in the method file and sent with
+  `SQCRSF` (Multi-MIPS.cfg has a "Res scale" field bound to `SQCRSF`/`GQCRSF`).
 - At or below Res (m/z ≤ Res applied) the quad runs RF only, resolving DC 0.
-- **Procedure.** Calibrate the table at one Res (say 10) and `SQCRES,1,10`. Set `SRFARES,1,5` and measure the peak width
-  w. If it is not 5, `SQCRSF,1,<ResScale × (10 − w) / 5>` and check again. `SAVEQCAL,1`.
-- A table saved by older firmware (record version 1) still loads, with ResCal set to the module's saved Res and ResScale 1.
-  After `SAVEQCAL` it is version 2, which **older firmware cannot read**.
-- `SRFAMZ`, `SRFARES`, `SRFAR0`, `SRFAK`, `SQCRES` and `SQCRSF` now recalculate the RF level and resolving DC at once; an
+- **Procedure.** Calibrate the table at one Res (say 10) as usual. Set `SRFARES,1,5` and measure the peak width w. If the
+  change in width is not 5 amu, set ResScale × (10 − w) / 5 and check again. Keep it in the method file (or `SAVEQCAL,1`
+  when working without the UI).
+- Tables calibrated under 1.268 or earlier were tuned with Res applied unscaled. At Res 10 this firmware applies less DC
+  (10 / 1.44 = 6.9 at K 5.5), so those peaks come out wider: **recalibrate them once**.
+- A table saved by older firmware (record version 1) still loads, with ResScale 1. After `SAVEQCAL` it is version 2, which
+  **older firmware cannot read**.
+- `SRFAMZ`, `SRFARES`, `SRFAR0`, `SRFAK` and `SQCRSF` now recalculate the RF level and resolving DC at once; an
   `RFAQUPDATE` is no longer needed after them. `SRFAFREQ` does not (an RF amp that is not driving a quad has its level set
   directly), send `RFAQUPDATE` after it. Any of these replaces a level or resolving DC set directly with `SRFALEV` or
   `SRFARDC`.
@@ -478,6 +485,7 @@ unread arguments are parsed as commands and overwrite the error code. The NAK it
 | `GQSESUM,1` | the same over the **whole scan**: `points,avgCompleteUs,minCompleteUs,maxCompleteUs,avgWaitUs,avgPolls x100,maxPolls,points needing more than one poll` |
 | `GRFAPV,1,1|2` / `GRFAHV,1,POS|NEG` | Rev 3 pole and HV supply readbacks (section 9c) |
 | `RQCAL,1` | the calibration table and the resolution scaling (section 9a) |
+| `GQCRAPP,1` | the Res actually applied, Res / S (section 9a) |
 | `GTWISPEED,1` | the Wire1 bus speed setting (it prints the variable, not the measured clock) |
 | `TWI1SCAN` | which addresses answer on Wire1; the electrometer should show at `20` |
 | `TWI1CMD,32,GTRIGST` / `GTRIGCNT` / `GTRIGMIS` | electrometer trigger state, completed bursts, and triggers that arrived mid burst |

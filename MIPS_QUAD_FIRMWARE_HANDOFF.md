@@ -276,17 +276,21 @@ Build tested only. Test plan Parts J, K and L; operating details in the data col
 - **Resolution scaling.** `QUADupdate` sets the resolving DC to the apex value for mass (m − Res). Near the apex
   m/Δm ≈ 0.126 / (0.16784 − U/V) (Dawson), so one amu of Res changes the base peak width by 1/(0.126 K) amu: 1.33 at
   the theoretical K, 1.44 at Gordon's K of 5.5. Gordon calibrated at Res 10 and saw Res 5 give much narrower peaks
-  than 5 amu. Res is now applied as `ResCal + (Res − ResCal) / S`, `S = ResScale / (0.126 K)`, in `QUADresEffective`
-  (QUADscan.cpp). Decided with Gordon: scale by the actual K against the theory, plus a measured `ResScale` for what the
-  theory leaves out, both kept with the calibration table. `ResCal` is the pivot, so changing `ResScale` after a
-  calibration does not move the calibrated point; it is used only when the table is enabled and has rows, else the pivot
-  is 0 (the model apex). Commands `SQCRES`/`GQCRES`, `SQCRSF`/`GQCRSF`; `RQCAL` shows them.
-- **Calibration record version 2.** `ResCal` and `ResScale` take the record from 136 to 144 bytes, 368 to 511, the whole
-  of the remaining EEPROM; there is no room left to grow it. `QUADcalLoad` still accepts a version 1 record (ResCal = the
-  module's restored Res, ResScale 1). Older firmware rejects a version 2 record (size and version check), so a table saved
+  than 5 amu. Res is now applied as `Res / S`, `S = ResScale / (0.126 K)`, in `QUADresEffective` (QUADscan.cpp), so Res
+  is the peak width in amu from the model. Decided with Gordon: scale by the actual K against the theory, plus a
+  measured `ResScale` for what the theory leaves out. Commands `SQCRSF`/`GQCRSF`; `RQCAL` shows it.
+- **No pivot.** A first version pivoted about `ResCal`, the Res the table was built at, used only while the firmware
+  table was enabled. It was removed the same day: the UI (Multi-MIPS.cfg) owns the table in its method file and pushes
+  it with `SQCNUM,1,0` + `SQCPNT` before every QSCAN, never `SAVEQCAL`, so `SQCNUM 0` wiped `ResCal`, and the host Scan
+  (`RFAACQ`, firmware table off) and QSCAN could apply different DC. Without a pivot every path applies the same DC and
+  the pivot's only benefit, keeping 1.268 tables valid, is lost: recalibrate them once. `SQCNUM 0` now keeps `ResScale`;
+  the UI holds it as a "Res scale" field bound to `SQCRSF`, saved in the method.
+- **Calibration record version 2.** `ResScale` and a reserved float (was `ResCal`, written 0) take the record from 136 to
+  144 bytes, 368 to 511, the whole of the remaining EEPROM; there is no room left to grow it. `QUADcalLoad` still accepts
+  a version 1 record (ResScale 1). Older firmware rejects a version 2 record (size and version check), so a table saved
   by this firmware is lost if older firmware is flashed.
 - **Res at or above m/z.** `QUADupdate` left the full apex DC when m ≤ Res (`if(delta > 0)`), no transmission. Now DC 0.
-- **Set commands recalculate.** `SRFAMZ`, `SRFARES`, `SRFAR0`, `SRFAK`, `SQCRES`, `SQCRSF` call `QUADupdate`; the loop
+- **Set commands recalculate.** `SRFAMZ`, `SRFARES`, `SRFAR0`, `SRFAK`, `SQCRSF` call `QUADupdate`; the loop
   applies the changed level and resolving DC. Not `SRFAFREQ`: an RF amp used as a plain RF supply has its level set with
   `SRFALEV`, and recalculating on a frequency change would replace it with the m/z level. `QSCAN` blocks command
   processing, so none of these can arrive mid scan.
@@ -499,8 +503,8 @@ same physical level — and has **not been done**.
 
 | Item | Notes |
 |---|---|
-| **Ion testing** | The acceptance test. `QSCAN` and host `RFAACQ` over the same range with the same cal table should overlay. Highest priority; everything else is secondary. |
-| Phase 4 never bench tested | Cal applied during scan, error codes, `QSCANSTAT`. Folded into the ion testing session. |
+| ~~Ion testing~~ | **Passed October 31, 2026** (Gordon): QScan and host `RFAACQ` over the same range overlay, uncalibrated and with the same cal table. Resolution scaling checked at the same time: a peak calibrated at 10 amu with Res 10 is 5 amu at Res 5. |
+| ~~Phase 4 never bench tested~~ | Closed October 31, 2026: the cal table applied during a scan was exercised by the calibrated overlay. |
 | Setpoint DAC ranges still meet by luck | 6a fixed the readbacks. The drive side needs one shared physical level between the two range calibrations. Procedure change, no code. |
 | Crossover step never measured | The "after" number for 6a. Closed loop, auto range on, step the setpoint through 200 V and read `GRFAVPPA`/`GRFAVPPB` against a meter; sweep down through 180 too, since 6b moved the down switch. |
 | `*live = dialogCopy` audit | The 6d pattern appears in ARB, DAC, DCbias, DMSDMSMB, ESI, FAIMSfb, Filament, HVPSinterface. Whether each is vulnerable depends on whether its calibration routine resyncs the dialog copy. **Not checked.** Worth a session only if the revert actually reproduced on the bench — that was never confirmed. |
@@ -509,7 +513,7 @@ same physical level — and has **not been done**.
 | `ADCnumsamples` not persisted | Reverts to 5000 (25 ms/point) on power cycle. Visible in `QSCANSTAT`, documented in the manual, still a trap. |
 | `SRFAREV3` not persisted | Sets `Rev` in RAM only; needs Save settings (`SAVEM,RFA`). Already caused one confusing debug session. It also resets every calibration of the module; use `SRFARBADR` / `SRFARBBRD` to change only the readback address and board. |
 | QUAD cal EEPROM region full | The version 2 record uses 368 to 511. Anything more needs the record relocated or shrunk (QUADcalMAX). |
-| Rev 3 readback display | `GRFAPV` / `GRFAHV` only; no front panel display of the pole and supply readbacks yet. |
+| Rev 3 readback display | Closed October 30, 2026. Shown on the Multi-MIPS.cfg QUAD > Diagnostics tab (pole, rail, setpoints, `GQCRAPP`, `GERR`). Gordon does not want them on the MIPS front panel. |
 | Rev 3 pole DAC lockup | Seen October 27, 29 and 30, 2026: the pole outputs stop following commands until a power cycle. Commit f11968e (October 30) found the P2 lockup was a hardware fault, and moved the `Set_18bitDAC` SPI mode switch outside the SYNC window with 2 uS settle for the 200 ohm series resistor on SYNC. If it recurs on good hardware, note the last commands and check whether the readbacks (`RRFAREV3`) still answer while the DACs do not. `GRFAPRB` (from f11968e) and `RRFAREV3` are overlapping readback diagnostics; one could go. |
 | `SADCSAMPS` has no range check | Bare `CMDint`. The practical ceiling is `new uint16_t[ADCnumsamples]` in 96 kB. |
 | `RangeThreshold` has no host command | Front panel "Range thres" only, 0–500. |
@@ -518,14 +522,14 @@ same physical level — and has **not been done**.
 | Auto tune coarse grid vs high Q | Mitigated by `SRFATSTEP` / `SRFATDLY` / range narrowing, not solved. A resonance narrower than the coarse step can fall between grid points. |
 | Lock the range for a whole scan | Raised as optional in the dual range work: `QUADscanGo` knows the range before it starts and could hold one range for the whole spectrum. 6b and 6c may have made this unnecessary — measure first. |
 | **Electrometer source, bench test** | Nothing in section 2a has run on hardware. Roadmap in the test plan. First checks: LT pulse timing against the quad settle, `GTRIGCNT` equals the point count with `GTRIGMIS` 0, and the ethernet link stays up. |
-| **Electrometer hardware (LT) trigger cannot be tested on the lab controller** | October 17, 2026: `QSCAN` with `SQSETRG HW` times out (134) and the electrometer counts no edge. Gordon found with a scope that this version of the MIPS controller does not route LT (pin 13) to the proper pin. Not a firmware fault. `SQSETRG TWI` passes everything (QSCAN, abort, timeout, 3 scans, `RFAACQ`). The HW path (D.4, D.5, D.13) still needs a correctly wired controller. |
+| **Electrometer hardware (LT) trigger cannot be tested on the lab controller** | October 17, 2026: `QSCAN` with `SQSETRG HW` times out (134) and the electrometer counts no edge. Gordon found with a scope that this version of the MIPS controller does not route LT (pin 13) to the proper pin. Not a firmware fault. `SQSETRG TWI` passes everything (QSCAN, abort, timeout, 3 scans, `RFAACQ`). The HW path (D.4, D.5, D.13) still needs a correctly wired controller. **Update October 30, 2026: Gordon is now on a new controller and has tested the LT hardware trigger; it works.** |
 | **Electrometer hangs in ACQUIRING after a reset** | October 17, 2026: after the electrometer lost power and came back it sat in `ACQUIRING` with `GTRIGCNT` 1 for several minutes, `STRIG` was refused (`?`) and the scan data was just the held value. Re-sending `SMODE,1` and `CONFIG` recovered it. Same family as the electrometer TODO about a burst on arming into mode 1. Re-arm after every reset; a host script should check the count moves. |
 | Electrometer stream is raw and inverted | October 17, 2026: `QSCAN` streamed the raw `RSUM`, and peaks appeared as dips. **October 18, 2026: the electrometer firmware now reports the magnitude** `abs(sum − n × zeroCounts / 16)` for `RSUM`, `RADC`, TWI `0xA1` and the TWI `0x8B` sum, so peaks rise in both polarities; `RCUR` keeps the physical sign. Built but not yet flashed or measured. The October 17 observation (dips in the raw sums with `RCUR` positive in NEG) is not explained by the front end analysis and needs rechecking after a `ZERO`. |
 | `TWICMD` (channel 0) on hardware | `TWICMD_FAST 1` is untested. Fallback is setting it to 0. |
 | Extra byte after the `\n` | Whether `TWIreadLine` clocks one. Scope on SDA1/SCL1. Harmless either way, but unmeasured. |
 | Wire1 users from ISRs | Never audited. `Wire` use from ISRs is protected by `AcquireTWI`/`TWIqueue`; `Wire1` is not. The scan blocks the 10 Hz loop but an ISR could still touch Wire1. |
 | `STWISPEED` is RAM only | `Wire1DefaultSpeed` defaults to 100000 at every boot. 400 kHz cuts a TWI1CMD from 3.9 to 2.5 mS but affects every Wire1 module (DCbias, DCBcurrent, FAIMSfb, level detector, ESI). Not checked on all of them. |
-| Version string not bumped | See the header. Bump before shipping so builds are distinguishable. |
+| Version string | Closed: bumped to 1.269, October 30, 2026. Bump again before the next release. |
 | Electrometer TODO items | Hardware TRIGIN edges, TRIGIN pull-down (LT drives it LOW when idle, but it floats if LT is not an output), first-sample timing after a trigger, the sample-rate and ADC-clock mismatches. In `../IsolatedElectrometer/TODO.md`. |
 | Electrometer data content | `ELECT` streams the integer burst sum; the host does not know it is not the MIPS ADC sum. The frame header has no source field. |
 | Terminal instability after binary streams | Seen twice. The most likely explanation is the host feeding the ACK and binary payload into the line oriented command parser; see the Qt handoff. Watch whether it survives the Qt work. |

@@ -1517,17 +1517,18 @@
 //      1.) QUAD resolution scaling. The resolving DC is set to the apex value for mass (m - Res), and near the
 //          apex one amu of that offset changes the base peak width by about 1/(0.126*K) amu (Dawson), 1.33 at the
 //          theoretical K of 5.958 and 1.44 at K 5.5, so a table calibrated for 10 amu peaks at Res 10 gave much
-//          narrower peaks than 5 amu at Res 5. Res is now applied as ResCal + (Res - ResCal) / S, with
-//          S = ResScale / (0.126 * K). ResCal is the Res the calibration table was built at (the pivot, the DC at
-//          Res = ResCal is unchanged so the table stays valid), ResScale a measured correction to the theory,
-//          default 1. ResCal is used only while the table is enabled and has rows, otherwise the pivot is 0.
-//          New commands SQCRES/GQCRES and SQCRSF/GQCRSF, RQCAL shows them, the sensitivity and the applied Res.
-//          Both are kept with the calibration table and saved by SAVEQCAL. The EEPROM record is now version 2,
-//          144 bytes, 368 to 511, the whole of the remaining module EEPROM. A version 1 record still loads (ResCal
-//          set to the module's saved Res, ResScale 1); older firmware can not read a version 2 record.
+//          narrower peaks than 5 amu at Res 5. Res is now applied as Res / S, with S = ResScale / (0.126 * K),
+//          so Res is the peak width in amu, the same with or without the calibration table. ResScale is a measured
+//          correction to the theory, default 1, set with SQCRSF/GQCRSF; RQCAL shows it, the sensitivity and the
+//          applied Res. SQCNUM 0 keeps ResScale (the UI clears and pushes its table before every QSCAN), and the
+//          UI keeps it in the method file. Tables calibrated with earlier versions need recalibrating once. It is
+//          saved by SAVEQCAL; the EEPROM record is now version 2, 144 bytes, 368 to 511, the whole of the remaining
+//          module EEPROM. A version 1 record still loads (ResScale 1); older firmware can not read a version 2
+//          record. A pivot (SQCRES) was tried first and removed, see the QUAD handoff. GQCRAPP,module returns
+//          the Res actually applied, Res / S.
 //      2.) QUAD resolution, with m/z at or below Res the full apex DC was left on (no transmission), it is now 0,
 //          RF only.
-//      3.) SRFAMZ, SRFARES, SRFAR0, SRFAK, SQCRES and SQCRSF now recalculate the RF level and resolving DC when
+//      3.) SRFAMZ, SRFARES, SRFAR0, SRFAK and SQCRSF now recalculate the RF level and resolving DC when
 //          set, an RFAQUPDATE is no longer needed. SRFAFREQ does not, an RF amp that is not driving a quad has its
 //          level set directly with SRFALEV; send RFAQUPDATE after a frequency change on a quad. These replace a
 //          level or resolving DC set directly with SRFALEV or SRFARDC.

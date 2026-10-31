@@ -51,8 +51,6 @@ typedef struct
   float    Actual[QUADcalMAX];        // True m/z
   float    Measured[QUADcalMAX];      // m/z that produced the peak at Actual
   float    Delta[QUADcalMAX];         // Resolving DC offset, volts
-  float    ResCal;                    // Resolution (SRFARES) the table was built at, the pivot for
-                                      // the resolution scaling. Default 0
   float    ResScale;                  // Measured correction to the theoretical resolution
                                       // sensitivity. Default 1.0
 } QUADcal;
@@ -64,11 +62,12 @@ typedef struct
 // one amu of Res changes the peak width by 1/(0.126*K) amu, 1.332 amu at the theoretical
 // K = 1/0.16784 = 5.958 and 1.443 amu at K = 5.5. To make one amu of Res give one amu of
 // peak width the Res used in the calculation is
-//    Res_eff = ResCal + (Res - ResCal) / S,   S = ResScale / (QUADresWIDTH * K)
-// ResCal is the pivot: at Res = ResCal the DC is unchanged, so a table calibrated at ResCal
-// stays valid when ResScale is changed later. ResScale corrects for what the theory does not
-// include (fringing fields, ion energy, FWHM against base width), measure it on the system.
-// ResCal is only used when the table is enabled and has points, otherwise the pivot is 0.
+//    Res_eff = Res / S,   S = ResScale / (QUADresWIDTH * K)
+// so Res is the peak width in amu from the model, before the table deltas. The scaling is the
+// same whether or not the table is in use, so the host RFAACQ scan, QSCAN and calibration all
+// apply the same DC. ResScale corrects for what the theory does not include (fringing fields,
+// ion energy, FWHM against base width), measure it on the system. The host UI keeps it in its
+// method file and sends it with SQCRSF; SQCNUM 0 does not reset it.
 #define QUADresWIDTH          0.126     // Dawson's apex resolution constant
 #define QUADkTHEORY           5.958257713248639   // 1/0.16784, V0-p/U at the apex
 #define QUADresSCALEdefault   1.0
@@ -76,8 +75,8 @@ typedef struct
 #define QUADresSCALEmax       10.0
 
 // On EEPROM representation. The fields are flattened rather than nesting QUADcal so there
-// is only one round of alignment padding. Version 2 is 144 bytes (version 1, without ResCal
-// and ResScale, was 136 and is still accepted by QUADcalLoad).
+// is only one round of alignment padding. Version 2 is 144 bytes (version 1, without
+// Reserved and ResScale, was 136 and is still accepted by QUADcalLoad).
 //
 // Module EEPROM is an AT24CS04, 512 bytes total. RFAdata occupies 0..351.
 //
@@ -112,7 +111,7 @@ typedef struct
   float    Actual[QUADcalMAX];
   float    Measured[QUADcalMAX];
   float    Delta[QUADcalMAX];
-  float    ResCal;
+  float    Reserved;                  // Was the resolution pivot (ResCal), removed. Written 0, ignored
   float    ResScale;
   uint16_t CRC;                       // CRC16 over everything above
 } QUADcalRecord;
@@ -227,10 +226,9 @@ void QUADcalGetPoint(int Module, int index);
 void QUADcalReport(int Module);
 void QUADcalSave(int Module);
 void QUADcalRestore(int Module);
-void QUADcalSetResCal(char *Module, char *value);
-void QUADcalGetResCal(int Module);
 void QUADcalSetResScale(char *Module, char *value);
 void QUADcalGetResScale(int Module);
+void QUADcalGetResApplied(int Module);
 
 // Scan engine
 void QUADscanSetStart(char *Module, char *value);

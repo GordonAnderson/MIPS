@@ -751,7 +751,7 @@ void SetUpdateFlag(void)
 // This function sets the values in the data structures that will flag the processing loops
 // to perform the updates. The hardware updates could be delayed up to 100 mS.
 //
-// Called by SRFAMZ, SRFARES, SRFAR0, SRFAK, SQCRES and SQCRSF so a change is applied without
+// Called by SRFAMZ, SRFARES, SRFAR0, SRFAK and SQCRSF so a change is applied without
 // a separate RFAQUPDATE. Not by SRFAFREQ: an RF amp that is not driving a quad has its level
 // set directly, and recalculating on a frequency change would replace it with the m/z level.
 // After SRFAFREQ on a quad send RFAQUPDATE. Any of these replaces a level or resolving DC set

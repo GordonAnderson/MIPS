@@ -27,7 +27,7 @@ Run the parts in this order. Each part says what to do if it fails; none of them
 | 8 | I | ADC m/z input with a digital strobe | RF amp module, a signal source on a MIPS ADC input, a pulse source on a digital input | `SRFAMZSTB,<module>,NA` and `SRFAMZADC,<module>,-1,1,0` |
 | 9 | J | m/z limits, `SAVEM,RFA` / `RESTOREM`, set commands recalculate | RF amp module | See each item |
 | 10 | K | Rev 3 readbacks, `CALRFAPS` | Rev 3 module and ±600 V supply, a meter | `GRFAPV` / `GRFAHV` NAK 136: check `GRFARBADR` / `GRFARBBRD` |
-| 11 | L | Resolution scaling (run last, needs a calibrated spectrum) | Mass spectrometer, calibrated table | `SQCRSF,1,1` and `SQCRES,1,<Res>` give the old DC at Res = ResCal |
+| 11 | L | Resolution scaling (run last, needs a calibrated spectrum) | Mass spectrometer, calibrated table | `SQCRSF,1,1` gives the theoretical scaling |
 | 12 | G | Ion test | Mass spectrometer | See handoff section 5 |
 
 Part F runs before D because `QUADscanAcquire` is now shared by both sources, so an ADC path that no
@@ -174,11 +174,11 @@ The default `SQSETMO` of 1000 mS covers a 5000 point burst at 10000 (500 mS). Ch
   - [ ] electrometer in mode 1 but not armed (right after `SMODE`, before it re-arms, if reproducible): 133
   - [ ] `SPROTOG` with the L input active, then `QSCAN` with `SQSETRG HW`: 135. Then `QSCAN` with
         `SQSETRG TWI` runs. Stop the profile toggle and 135 goes away.
-- [ ] **D.4 Timing on the scope** *(October 17, 2026: not possible on this controller, LT is not routed to the proper pin; see D.5. The TWI-trigger timing was not scoped.)* (LT, quad RF or `TRGOUT` with `SQSTRIG TRUE`, optionally SDA1):
+- [ ] **D.4 Timing on the scope** *(Now possible on the new controller, see D.5. October 17, 2026: not possible on the old controller, LT is not routed to the proper pin; see D.5. The TWI-trigger timing was not scoped.)* (LT, quad RF or `TRGOUT` with `SQSTRIG TRUE`, optionally SDA1):
   - [ ] one 50 µS LT pulse per point, **after** the dwell, never before the quad has settled
   - [ ] the electrometer burst falls inside the same point (the pulse starts it; nothing else does)
   - [ ] the next point's m/z change starts after the previous burst finishes, not during it
-- [ ] **D.5 Hardware trigger run.** *Result: FAILED October 17, 2026. 21 points, 5 mS dwell: header, no points, abort trailer `0xEB`, `GERR` 134. `GTRIGCNT` and `GTRIGMIS` both +0, so the electrometer saw no edge at all. The same scan with `SQSETRG,1,TWI` passes (D.7). **Cause found by Gordon with a scope, October 17, 2026: this version of the MIPS controller does not route LT (pin 13) to the proper pin, so the hardware trigger cannot work on this system.** Not a firmware fault. D.4, D.5 and D.13 need a controller with LT wired correctly; use `SQSETRG,<module>,TWI` on this one. Re-checked with the TWI trigger after the electrometer was reconnected: 2 frames of 21 points, count +42, no misses.* `SQSSTRT/STOP/STEP` for about 20 points, `QSCAN,1`. Header, N points of 4
+- [x] **D.5 Hardware trigger run.** *October 30, 2026: Gordon tested the LT hardware trigger on the new controller; it works. The October 17 result below was the old controller.* *Result: FAILED October 17, 2026. 21 points, 5 mS dwell: header, no points, abort trailer `0xEB`, `GERR` 134. `GTRIGCNT` and `GTRIGMIS` both +0, so the electrometer saw no edge at all. The same scan with `SQSETRG,1,TWI` passes (D.7). **Cause found by Gordon with a scope, October 17, 2026: this version of the MIPS controller does not route LT (pin 13) to the proper pin, so the hardware trigger cannot work on this system.** Not a firmware fault. D.4, D.5 and D.13 need a controller with LT wired correctly; use `SQSETRG,<module>,TWI` on this one. Re-checked with the TWI trigger after the electrometer was reconnected: 2 frames of 21 points, count +42, no misses.* `SQSSTRT/STOP/STEP` for about 20 points, `QSCAN,1`. Header, N points of 4
       bytes each, trailer. Point values are sensible (a steady source gives similar sums).
 - [ ] **D.6 Electrometer counters.** *Result: October 17, 2026, TWI trigger only: count +21 for 21 points, +63 for 3 scans, +301 for 301 points, `GTRIGMIS` 0 every time. Hardware trigger: see D.5.* `TWI1CMD,32,GTRIGCNT` equals the point count, `GTRIGMIS` is 0. A
       non zero `GTRIGMIS` means triggers arrived mid-burst (point time is shorter than the burst).
@@ -196,7 +196,7 @@ The default `SQSETMO` of 1000 mS covers a 5000 point burst at 10000 (500 mS). Ch
       *Result: Partly: after every scan `GRFAMZ,1` read the start m/z (200) and the RF readback returned to about 334 V. LT level not checked.*
 - [ ] **D.12 Compare with the MIPS ADC.** *Result: Partly, October 17, 2026: only the electrometer source was run over the full range, because ADC channel 0 had nothing connected. 200 to 1200 m/z, step 1, dwell 5 mS, TWI trigger, 100 sample bursts at 10 kS/s, gain 1: 1001 points in 17.6 s, count +1001, no misses. Raw sums sit near 344,800 with dips of up to about 10% (peaks appear inverted: the front end is inverting). Dips at m/z 543 to 547, 1000 to 1010 and others. A host-driven scan reading `RCUR` (electrometer polarity NEG) showed the same features as positive peaks (highest 0.82 at m/z 398, 489 to 490, 516 to 518, 543 to 546; baseline 0.27), so the sign comes right with NEG and `RCUR`. The streamed sum is raw, so sign and scale are for the host. ADC versus electrometer overlay not done.* Same dwell, same source, `SQSSRC ADC` vs `ELECT`: the peaks should
       line up in m/z. Heights differ (different front ends). Note the electrometer sum scale.
-- [ ] **D.13 Ethernet.** *(October 17, 2026: not possible on this controller, the hardware trigger does not run; see D.5.)* With the ethernet interface connected and in use, run D.5 about 20 times. **LT is the
+- [ ] **D.13 Ethernet.** *(Now possible on the new controller, see D.5. October 17, 2026: not possible on the old controller, the hardware trigger does not run; see D.5.)* With the ethernet interface connected and in use, run D.5 about 20 times. **LT is the
       ethernet config line and flashing it every 100 mS once broke the link** (RevisionHistory 1.236).
       Watch the link stays up. If it drops: use `SQSETRG,<module>,TWI` and report it.
 - [ ] **D.14 Wire1 speed.** *Result: October 17, 2026, TWI trigger, 201 points, 10 sample bursts, dwell 0: 4.98 mS per point at 100 kHz and 5.00 to 5.03 mS at 400 kHz, so the bus speed is not what sets the point time here (something else costs about 5 mS per point; not investigated). The resolving DC and pole bias read the same at 400 kHz. Restored to 100 kHz.* Repeat D.5 at 100 kHz and 400 kHz and note the per point overhead; the poll is
@@ -376,17 +376,24 @@ Build tested only, October 30, 2026. Rev 3 module with the ±600 V supply module
 
 ## L. Resolution scaling (run last)
 
-Build tested only, October 30, 2026. Needs the calibrated spectrum; the procedure is in the data collection reference,
+October 31, 2026: all of Part L passed (Gordon). Needs the calibrated spectrum; the procedure is in the data collection reference,
 section 9a. With K 5.5 the theory gives S = 1.443 amu of peak width per amu of Res.
 
-- [ ] **L.1 Old table loads.** After flashing, `RQCAL,1` shows the table, cal Res equal to the module's saved Res (10),
-      scale 1, sensitivity about 1.443. If cal Res is not 10, `SQCRES,1,10`.
-- [ ] **L.2 Unchanged at the calibration point.** Res 10 gives the same 10 amu peaks as before.
-- [ ] **L.3 Scaling.** `SRFARES,1,5`: peaks about 5 amu wide (before the change they were much narrower). Measure w; if it is
-      not 5, `SQCRSF,1,<(10 − w) / 5>` and repeat. Try 7 and 15 as well, and two masses well apart; the width should follow
-      Res at both.
-- [ ] **L.4 Save.** `SAVEQCAL,1`, power cycle, `RQCAL,1` shows the same cal Res and scale.
-- [ ] **L.5 Clear.** `SQCNUM,1,0` resets cal Res to 0 and scale to 1 (then `RESTOREQCAL,1` to get the table back).
+Res is applied as Res / S with no pivot, so Res is the peak width from the model; tables tuned under 1.268 need
+recalibrating once.
+
+- [x] **L.1 Sensitivity.** *Result: passed October 31, 2026; sensitivity 1.4404 (K about 5.51).* `RQCAL,1` shows scale 1, sensitivity about 1.443 (K 5.5), and Res 10 applied as about 6.93.
+- [x] **L.2 Recalibrate.** *Result: passed October 31, 2026; calibrated and uncalibrated Scan and QScan compare as they should.* Load the method, Res 10, run the calibration procedure as usual for 10 amu peaks, save the
+      method. Scan and QScan of the same range should overlay (same DC on both paths).
+- [x] **L.3 Scaling.** *Result: passed October 31, 2026; a peak calibrated at 10 amu with Res 10 narrowed to 5 amu at Res 5, Res scale 1.* `SRFARES,1,5`: peaks about 5 amu wide. Measure w; if it is not 5, set Res scale to (10 − w) / 5 and
+      repeat. Try 7 and 15 as well, and two masses well apart; the width should follow Res at both.
+- [x] **L.4 Survives a QScan.** *Result: passed October 31, 2026.* Set Res scale to a value other than 1, run QScan (which sends `SQCNUM,1,0`), then `GQCRSF,1`
+      still returns it.
+- [x] **L.5 Method file.** *Result: passed October 31, 2026.* Save the method, restart the UI, load it: the Res scale field and `GQCRSF,1` show the saved value.
+- [x] **L.6 Save without the UI.** *Result: passed October 31, 2026 (not used in Gordon's workflow, the UI method file holds the scale).* `SAVEQCAL,1`, power cycle, `RQCAL,1` shows the same scale.
+- [x] **L.7 UI Diagnostics tab.** *Result: passed October 31, 2026; layout to be fine tuned.* Pole 1/2 read about Pole bias ± ResDC setpoint and follow m/z; HV+/HV− read the rails;
+      Res applied matches `GQCRAPP,1` and changes with Res and Res scale; Last error shows 136 if the readback ADC
+      address is set wrong with `SRFARBADR` (put it back to 32 after).
 
 ---
 
@@ -410,10 +417,10 @@ doubles as the check that the integer sum scale and polarity are what the host e
 | C `GTWI` / `STWI` | partial | 2026-10-17 | C.3, C.4 done; C.1, C.2, C.5, C.6 need a device on the Wire channel |
 | B `TWICMD` channel 0 | not done | | `TWICMD_FAST` left at: 1 |
 | F Existing QSCAN regression | partial | 2026-10-17 | ADC path, start pin command, ADC off FRAME and NONE, ESC abort, re-enable all pass by serial, plus the full 200 to 1200 m/z scan (1001 points, 6.0 s); scope checks (timing, `TRGOUT`, start pulse) not done |
-| D `QSCAN` electrometer | partial | 2026-10-17 | TWI trigger passes (D.7 to D.10, D.15) and a full range electrometer scan was collected (D.12, partly); **hardware (LT) trigger cannot be tested: this controller does not route LT to the proper pin (D.5)**, so D.4 and D.13 are blocked; D.3 not-armed and 135 not done |
+| D `QSCAN` electrometer | partial | 2026-10-30 | TWI trigger passes (D.7 to D.10, D.15) and a full range electrometer scan was collected (D.12, partly); hardware (LT) trigger works on the new controller (D.5, Gordon, 2026-10-30; the old controller did not route LT); D.4 scope timing and D.13 ethernet not recorded; D.3 not-armed and 135 not done |
 | E `RFAACQ` electrometer | partial | 2026-10-17 | E.1 to E.6 pass on the TWI trigger; E.7 overlay needs ions; not run on the HW trigger |
 | I ADC m/z input with strobe | partial | 2026-10-17 | I.1 defaults and range checks only; I.2 onwards need a voltage source and a strobe pulse source |
-| G Ion test | started | 2026-10-17 | electrometer spectrum 200 to 1200 m/z collected (raw sum and `RCUR`); no overlay or calibrated mass check yet |
+| G Ion test | passed | 2026-10-31 | electrometer spectrum 200 to 1200 m/z collected; QScan and Scan (`RFAACQ`) overlay as they should, both uncalibrated and with the calibration table (Gordon) |
 
 Record anything unexpected in the handoff's open items table, with the commit from `git log -1`.
 
