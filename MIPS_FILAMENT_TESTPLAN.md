@@ -250,15 +250,15 @@ The minimum stored size accepted is 204 (through the TWI addresses). `WEEPROM` t
 
 Anything not touched should behave as before. Spot check on each revision you have.
 
-- [ ] Enable, ramp, steady state, disable with `GFLAI`, `GFLV`, `GFLASV`, `GFLPWR` plausible.
-- [ ] `IVctrl` mode holds the supply voltage so the drop across the current source is about 0.75 V.
-- [ ] The maximum power limit still reduces the current setpoint when exceeded.
-- [ ] `RFLPARMS,1,2` reports FIL1 every 2 s, `RFLPARMS,1,0` stops it.
-- [ ] Emission current / bias current display (Rev 3, 4, or a DCbias sense resistor) still updates.
-- [ ] The Calibration pages open and `Return` works. (Do not run the calibrations unless you intend to.)
-- [ ] `FilamentChannels` returns the right channel count.
-- [ ] Front panel: channel selection, enable, current entry, page changes, return to main menu.
-- [ ] Nothing else on the system misbehaves after a filament run: DC bias, ARB and the QUAD module still
+- [x] *(November 4, 2026: see 1.3.)* Enable, ramp, steady state, disable with `GFLAI`, `GFLV`, `GFLASV`, `GFLPWR` plausible.
+- [x] *(see 10.5)* `IVctrl` mode holds the supply voltage so the drop across the current source is about 0.75 V.
+- [x] *(see 12.4, 12.6.6)* The maximum power limit still reduces the current setpoint when exceeded.
+- [x] *(November 4, 2026: FIL1,I,V,P every 2 s, stopped by 0, both ACK.)* `RFLPARMS,1,2` reports FIL1 every 2 s, `RFLPARMS,1,0` stops it.
+- [x] *(Gordon, November 4, 2026)* Emission current / bias current display (Rev 3, 4, or a DCbias sense resistor) still updates.
+- [x] *(Gordon)* The Calibration pages open and `Return` works. (Do not run the calibrations unless you intend to.)
+- [x] *(`GCHAN,FIL` = 2 with two Rev 3 boards)* `FilamentChannels` returns the right channel count.
+- [x] *(Gordon)* Front panel: channel selection, enable, current entry, page changes, return to main menu.
+- [x] *(November 4, 2026: QUAD module answers GRFAENA/GRFAFREQ/GRFAMZ/GRFAVPPA after the filament runs, TWI failure count 0; no DC bias or ARB on this system.)* Nothing else on the system misbehaves after a filament run: DC bias, ARB and the QUAD module still
       respond (the filament thread selects boards on the TWI bus).
 
 ---
@@ -571,14 +571,14 @@ are RAM only. Use a bench supply or a potentiometer into the MIPS ADC input, wit
 
 | Part | Rev tested | Result | Date | Notes |
 |---|---|---|---|---|
-| 0 Prerequisites | | | | `git log -1`: |
-| 1 Ramp rate floor | | | | |
-| 2 Startup glitch | | | | scope capture saved? |
-| 3 Shutdown | | | | |
-| 4 Mode change | | | | |
-| 5 Cycling status | | | | |
-| 6 Rev 2+ sync | | | | |
-| 7 EEPROM restore | | | | EEPROM put back? |
+| 0 Prerequisites | Rev 3 x2 | done | 2026-11-04 | 1.269, commits 442ecd9, 2f0e0a5, 1b924f4; EEPROM not backed up and not written (calibrated system) |
+| 1 Ramp rate floor | Rev 3 | pass | 2026-11-04 | 1.1 failed (0.01 refused), fixed and verified; 1.5 not run (needs WEEPROM) |
+| 2 Startup glitch | | not run | | needs a scope |
+| 3 Shutdown | Rev 3 | partial | 2026-11-04 | switched off, not ramped, no scope; 3.5 recovery pass |
+| 4 Mode change | Rev 3 | pass | 2026-11-04 | 4.3 failed at power up, fixed and verified; 4.1 Rev 1 n/a |
+| 5 Cycling status | Rev 3 | pass | 2026-11-04 | 5.3, 5.4; 5.1/5.2 Rev 1 n/a |
+| 6 Rev 2+ sync | Rev 3 | pass | 2026-11-04 | 6.1 to 6.5; 6.6 Rev 1 n/a |
+| 7 EEPROM restore | | not run | | calibrated EEPROM must not be written |
 | 9.1 Bias current guard | | | | |
 | 9.2 Reporting threads | | | | |
 | 9.3 Emission display | | | | |
@@ -586,16 +586,16 @@ are RAM only. Use a bench supply or a potentiometer into the MIPS ADC input, wit
 | 10.1 Rev 1 channel selection | | | | two boards needed |
 | 10.2 Channel validation | | | | |
 | 10.3 Cycling after trim | | | | |
-| 10.4 `GFLENAR` | | | | |
-| 10.5 IV mode | | | | |
-| 11 Commands registered by module | none installed | partial | 2026-10-17 | 11.1 done; 11.2 to 11.6 need a filament module |
+| 10.4 `GFLENAR` | Rev 3 | pass | 2026-11-04 | NO, countdown, INF |
+| 10.5 IV mode | Rev 3 | pass | 2026-11-04 | about 0.8 V across the current source |
+| 11 Commands registered by module | none / Rev 3 x2 | pass | 2026-11-04 | 11.1 on 10-17; 11.2 to 11.5 pass (RFLPARMS ACK fixed); 11.6 not checked |
 | 12.0 Host check | n/a (host) | pass | 2026-10-17 | numbers match the handoff |
-| 12.1 Commands | none installed | partial | 2026-10-17 | no-module refusal verified; Rev 3 checks need a module |
-| 12.2 Measurement | | | | emission reading agrees with meter? |
-| 12.3 Closed loop | | | | gain / rate hold used: |
-| 12.4 Limits and late bias | | | | peak emission on late bias: |
-| 12.5 Interactions | | | | |
-| 12.6 ADC and enable inputs | | | | limiter check 12.6.6: |
-| 8 Regression | | | | |
+| 12.1 Commands | Rev 3 | pass | 2026-11-04 | Rev 1/2 NAK not checked (no module) |
+| 12.2 Measurement | Rev 3, 811A | pass | 2026-11-04 | onset 1.65 A; no meter comparison |
+| 12.3 Closed loop | Rev 3, 811A | pass | 2026-11-04 | default gain and rate hold; REG in about 100 s |
+| 12.4 Limits and late bias | Rev 3, 811A | pass | 2026-11-04 | sawtooth failed, fixed and verified; late bias peak 108.5 uA at 5 W |
+| 12.5 Interactions | Rev 3, 811A | pass | 2026-11-04 | warm start windup failed, fixed and verified; two-module regulation not run (one filament) |
+| 12.6 ADC and enable inputs | Rev 3, 811A | pass | 2026-11-04 | limiter check 12.6.6: steady at 98% of 9 W after the fix; 12 A clamp not tested |
+| 8 Regression | Rev 3 | pass | 2026-11-04 | |
 
 Record anything unexpected in the handoff's open items table with the commit from `git log -1`.
