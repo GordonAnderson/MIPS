@@ -271,7 +271,8 @@ Four independent changes. Each can be tested and reverted on its own.
 
 The bug: with a non-zero sense resistor and no DC bias module the loop dereferenced a NULL pointer.
 
-- [ ] **9.1.1 No DC bias module.** On a system with a filament board and **no** DC bias module, `SFLSRES,10000`
+- [x] **9.1.1 No DC bias module.** *Result: November 4, 2026, Rev 3: no DC bias module, `SFLSRES,10000`, filament at 0.96 A for 60 s: no reset (uptime continuous), `GFLECUR` returned numbers; put back to 200. The guard runs on every revision when iSense is non-zero (200 all day).*
+      On a system with a filament board and **no** DC bias module, `SFLSRES,10000`
       then enable the filament and leave it running for a minute. No reset, no hang. `GFLECUR` returns a
       number (0 or stale), not an error. `SFLSRES,0` afterwards.
 - [ ] **9.1.2 With a DC bias module** (Rev 1 or 2 with the sense resistor wired as designed). `SFLSRES,<value>`
@@ -288,13 +289,17 @@ current direction, so with REV selected they reported the idle channel (zeros).
 - [ ] **9.2.1 Rev 1.** `RFLPARMS,1,1` (every second). Lines look like `FIL1,<current>,<voltage>,<power>`
       and match `GFLAI,1`, `GFLV,1`, `GFLPWR,1`. Repeat for channels 2, 3, 4 on the boards present. Stop with
       `RFLPARMS,<ch>,0`.
-- [ ] **9.2.2 Rev 2 or 3, FWD.** Enable at a small current. `RFLPARMS,1,1` matches `GFLAI,1` / `GFLV,1` /
+- [x] **9.2.2 Rev 2 or 3, FWD.** *Result: November 4, 2026, Rev 3: FIL1,0.45,0.80,0.23 against GFLAI 0.45, GFLV 0.80, GFLPWR 0.23.*
+      Enable at a small current. `RFLPARMS,1,1` matches `GFLAI,1` / `GFLV,1` /
       `GFLPWR,1`.
-- [ ] **9.2.3 Rev 2 or 3, REV.** Disable, `SFLDIR,1,REV`, enable. The report is **non zero** and matches the
+- [x] **9.2.3 Rev 2 or 3, REV.** *Result: November 4, 2026, Rev 3: non zero, FIL1,0.44,0.70,0.22 against 0.44, 0.74, 0.22.*
+      Disable, `SFLDIR,1,REV`, enable. The report is **non zero** and matches the
       `G...` commands. Before the fix it printed zeros in this direction.
-- [ ] **9.2.4 Direction change while reporting.** With reporting running, disable, switch direction, enable.
+- [x] **9.2.4 Direction change while reporting.** *Result: November 4, 2026, Rev 3: reporting kept running through disable, SFLDIR REV, enable, and followed the live channel.*
+      With reporting running, disable, switch direction, enable.
       The reported values follow the live channel.
-- [ ] **9.2.5 No filament board.** A channel number above the installed count is refused by the command
+- [x] **9.2.5 No filament board.** *Result: November 4, 2026, Rev 3: `RFLPARMS,3,1` NAK with two Rev 3 boards.*
+      A channel number above the installed count is refused by the command
       (unchanged).
 
 ### 9.3 Emission current display (Rev 3 and Rev 4)
@@ -360,9 +365,9 @@ system; it could not happen there.** Save the module EEPROMs first (`SAVEMOD`).
 
 ### 10.2 Serial channel validation
 
-- [ ] `GFLI,0` and `GFLI,<one more than the channel count>` NAK. `SFLI,5,1` NAKs on a 4 channel system. No
+- [x] *(November 4, 2026, two Rev 3 boards: `GFLI,0`, `GFLI,3`, `SFLI,3,1` NAK, no reset.)* `GFLI,0` and `GFLI,<one more than the channel count>` NAK. `SFLI,5,1` NAKs on a 4 channel system. No
       reset or odd values after any of them.
-- [ ] `FilamentChannels` returns the number of channels present.
+- [x] *(`GCHAN,FIL` = 2)* `FilamentChannels` returns the number of channels present.
 
 ### 10.3 Cycling after a power trim
 
@@ -372,7 +377,8 @@ the old test (ramp equals point 2 exactly) never succeeded, so the cycle stalled
 - [x] **10.3.1 Normal cycle.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: three cycles completed, see 5.4.*
       `SFLP1,1,0.2`, `SFLP2,1,0.6`, `SFLCY,1,3`, `SFLENAR,1,YES`, enable. Three cycles
       complete, the filament returns to the saved setpoint, `GFLENAR,1` = `NO`.
-- [ ] **10.3.2 Power limited cycle.** Set the Max power on page 2 low enough that point 2 exceeds it. The
+- [x] **10.3.2 Power limited cycle.** *Result: November 4, 2026, Rev 3: `SFLMP,1,2`, cycle 1.0 to 1.6 A, 2 cycles: the limiter trimmed the top to 1.41 and 1.39 A, both cycles completed in about 22 s and the current returned to the 0.8 A setpoint.*
+      Set the Max power on page 2 low enough that point 2 exceeds it. The
       limiter trims the current and the cycles **still complete** (at the trimmed value) instead of hanging at
       point 2. Note the reported current at the top of each cycle.
 - [ ] **10.3.3 Changing the setpoint mid cycle** with `SFLI` makes the cycle advance when the ramp reaches the
@@ -579,13 +585,13 @@ are RAM only. Use a bench supply or a potentiometer into the MIPS ADC input, wit
 | 5 Cycling status | Rev 3 | pass | 2026-11-04 | 5.3, 5.4; 5.1/5.2 Rev 1 n/a |
 | 6 Rev 2+ sync | Rev 3 | pass | 2026-11-04 | 6.1 to 6.5; 6.6 Rev 1 n/a |
 | 7 EEPROM restore | | not run | | calibrated EEPROM must not be written |
-| 9.1 Bias current guard | | | | |
-| 9.2 Reporting threads | | | | |
-| 9.3 Emission display | | | | |
-| 9.4 `CALFIL` | | | | |
-| 10.1 Rev 1 channel selection | | | | two boards needed |
-| 10.2 Channel validation | | | | |
-| 10.3 Cycling after trim | | | | |
+| 9.1 Bias current guard | Rev 3 | partial | 2026-11-04 | 9.1.1 pass; 9.1.2/9.1.3 need a DC bias module |
+| 9.2 Reporting threads | Rev 3 | pass | 2026-11-04 | 9.2.2 to 9.2.5; 9.2.1 Rev 1 n/a |
+| 9.3 Emission display | Rev 3 | partial | 2026-11-04 | display updates (Gordon); meter comparison and two-board display not checked |
+| 9.4 `CALFIL` | | not run | | Rev 4 only, writes EEPROM |
+| 10.1 Rev 1 channel selection | | n/a | | Rev 1 only |
+| 10.2 Channel validation | Rev 3 x2 | pass | 2026-11-04 | |
+| 10.3 Cycling after trim | Rev 3 | pass | 2026-11-04 | 10.3.1, 10.3.2; 10.3.3 not run |
 | 10.4 `GFLENAR` | Rev 3 | pass | 2026-11-04 | NO, countdown, INF |
 | 10.5 IV mode | Rev 3 | pass | 2026-11-04 | about 0.8 V across the current source |
 | 11 Commands registered by module | none / Rev 3 x2 | pass | 2026-11-04 | 11.1 on 10-17; 11.2 to 11.5 pass (RFLPARMS ACK fixed); 11.6 not checked |
