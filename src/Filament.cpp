@@ -458,6 +458,9 @@ void SelectFilamentChannel(bool Redraw)
   FCY = FD.FCyl[idx];
   if (FCD.Mode == FmodeI) strcpy(Fmode, "Ictrl");
   else strcpy(Fmode, "IVctrl");
+  // The voltage is set by the IV loop in IVctrl, so lock its entry here too, not only in FmodeChange:
+  // a channel that came up in IVctrl had an editable Voltage until Mode was toggled.
+  FilamentEntriesPage1[3].NoEdit = (FCD.Mode != FmodeI);
   // Update the display
   if (Redraw && (ActiveDialog == &FilamentDialog)) DialogBoxDisplay(&FilamentDialog);
 }

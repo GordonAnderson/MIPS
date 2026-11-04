@@ -1566,6 +1566,8 @@
 //          steady at about 98% of the limit, no trims.
 //     11.) New SFLMP,chan,watts and GFLMP,chan set and read the filament Max power limit, 1 to 20 W as the front
 //          panel entry, RAM only (Save settings or SAVEM,FIL keeps it). It could only be set on the front panel.
+//     12.) Filament page 1 Voltage entry was editable in IVctrl until Mode was toggled: the lock was only set by
+//          FmodeChange. SelectFilamentChannel (power up, restore, channel select) now sets it from the mode.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

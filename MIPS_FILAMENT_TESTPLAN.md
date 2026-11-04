@@ -78,7 +78,8 @@ switched off because it only drops after the ramped-down setpoint reaches zero.
 - [ ] **1.1 Serial limits.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: **FAILED one point**: 0, 0.005 and 1.5 NAK, 1 ACK and reads back, but `SFLRT,1,0.01` NAKs. `fval` is a float (0.0099999998) compared with the double `MinRampRate` 0.01. Fix: `#define MinRampRate 0.01f`.*
       `SFLRT,1,0` NAK. `SFLRT,1,0.005` NAK. `SFLRT,1,0.01` ACK. `SFLRT,1,1` ACK.
       `SFLRT,1,1.5` NAK. `GFLRT,1` returns the value just set.
-- [ ] **1.2 Dialog limit.** On filament page 2 the "Ramp rate" entry cannot be turned down below 0.01.
+- [x] **1.2 Dialog limit.** *Result: November 4, 2026, Rev 3 (Gordon): the panel stops at 0.010, `GFLRT,1` read 0.01, channel 2 unchanged.*
+      On filament page 2 the "Ramp rate" entry cannot be turned down below 0.01.
 - [x] **1.3 Normal ramp.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: about 0.2 A/s up and down; held 0.96 A for a 1.0 A setpoint; the supply side voltage (`GFLASV`) dropped to 0 only after the current reached 0 (no scope, used as the enable indication).*
       `SFLRT,1,0.2`, `SFLI,1,1.0`, `SFLENA,1,ON`. `GFLAI,1` rises about 0.2 A every
       second and reaches 1.0 A in about 5 s. `SFLENA,1,OFF`: current falls at the same rate and **the
@@ -147,9 +148,11 @@ state when you re-apply power. **Run it with a safe load, not a good filament.**
 - [ ] **4.1 Rev 1, two channels.** Select channel 1, set Mode to `IVctrl`. Select channel 2: Mode is still
       `Ictrl`. Set channel 2 to `IVctrl` and channel 1 back to `Ictrl`. Each channel keeps its own value
       through channel switches and through Save and Restore.
-- [ ] **4.2 Rev 2 or 3.** Set Mode to `IVctrl`. Switch the current direction (filament off). Mode is
+- [x] **4.2 Rev 2 or 3.** *Result: November 4, 2026, Rev 3 (Gordon): Mode IVctrl, Current dir changed to REV on page 2 with the filament off, Mode still IVctrl.*
+      Set Mode to `IVctrl`. Switch the current direction (filament off). Mode is
       still `IVctrl` on the other direction. This is the 1/27/2019 behavior that must not regress.
-- [ ] **4.3 The Voltage entry** is not editable while `IVctrl` is selected and editable in `Ictrl`
+- [x] **4.3 The Voltage entry** *November 4, 2026: **FAILED at power up.** The channel came up in IVctrl with Voltage editable; after toggling Mode to Ictrl and back it was locked. The lock was only set in FmodeChange; fixed in SelectFilamentChannel (revision 1.269 item 12). Rechecked after flashing: Voltage locked at power up in IVctrl (Gordon).*
+      is not editable while `IVctrl` is selected and editable in `Ictrl`
       (existing behavior).
 
 ---
@@ -183,7 +186,8 @@ Use a Rev 2 or 3 board, filament **disabled** for the whole part.
       `GFLI,1` = 1.5, `GFLSV,1` = 3.5, `GFLRT,1` = 0.2. The dialog agrees.
 - [x] **6.2 REV to FWD.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: 0.8 / 2.5 carried to FWD.*
       `SFLI,1,0.8`, `SFLSV,1,2.5`. `SFLDIR,1,FWD`. `GFLI,1` = 0.8, `GFLSV,1` = 2.5.
-- [ ] **6.3 Dialog path.** Change the "Current dir" entry on page 2 with the filament off. Current, voltage,
+- [x] **6.3 Dialog path.** *Result: November 4, 2026, Rev 3: 0.70 A, 3.20 V, 0.05 A/s set in FWD, Current dir changed to REV on the panel: `GFLDIR` REV, 0.70 / 3.20 / 0.05 and Max power 5 W carried over, Mode IVctrl.*
+      Change the "Current dir" entry on page 2 with the filament off. Current, voltage,
       ramp rate and mode carry over, same as 6.1.
 - [x] **6.4 Enable after the change.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: after FWD to REV and `SFLI,1,0.8` it ramped to 0.75 A measured.*
       Enable on the new direction. It ramps to the values from 6.1/6.2,
