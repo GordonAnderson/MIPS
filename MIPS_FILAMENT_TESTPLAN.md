@@ -125,7 +125,8 @@ controller dies with the supply and nothing runs. The module may already be dead
 so judge pass or fail by the enable line and the output as the supply falls (scope, slow ramp), and by the
 state when you re-apply power. **Run it with a safe load, not a good filament.**
 
-- [ ] **3.1 Rev 1–3, one board.** Enable at 1 A. Lower the supply below 10 V (USB connected). The enable line
+- [ ] **3.1 Rev 1–3, one board.** *Partly, November 4, 2026, Rev 3, 811A at 0.94 A, USB connected: the bench supply could only be switched off, not ramped, and there was no scope. Within one 0.5 s sample `ISPWR` read OFF and the filament commands were refused (USB-only command set); the enable line during the decay was not observed.*
+      Enable at 1 A. Lower the supply below 10 V (USB connected). The enable line
       goes HIGH and stays there, and the filament output reads zero as the supply falls.
 - [ ] **3.2 Rev 1–3, two boards** (if available). Both boards' enable lines go off.
 - [ ] **3.3 Rev 4.** Same test. Before this fix nothing was written to the AD5593 enable or DACs (the AD5625
@@ -133,7 +134,8 @@ state when you re-apply power. **Run it with a safe load, not a good filament.**
 - [ ] **3.4 No filament module installed.** Lower the supply on a system with no filament board. It shows the
       power-off screen and resets when power returns, as before, with no hang (the function now does nothing
       when no board is present).
-- [ ] **3.5 Recovery.** Restore the supply. The system restarts, the filament comes up **off**, and a
+- [x] **3.5 Recovery.** *Result: November 4, 2026: power back on, the controller reset ("Processor reset required by the software"), USB re-enumerated, both channels came up OFF with setpoint 0, and a normal enable ramped at 0.2 A/s as usual. Max power returned to the stored 5 W (an SFLMP value is RAM only).*
+      Restore the supply. The system restarts, the filament comes up **off**, and a
       normal enable works.
 
 ---
@@ -407,7 +409,8 @@ from the generated `MIPScommands.txt`).
 - [x] **11.4 The pointer commands still work.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: `SFLSRES,1000` read back 1000 (put back to 200), `SFLSWD` TRUE/FALSE ACK.*
       `SFLSRES,1000` then `GFLSRES` returns 1000;
       `SFLSWD,TRUE` then `SFLSWD,FALSE` are accepted. These point at `FDarray[0].iSense` and `FLserialWD`.
-- [ ] **11.5 Power-off command set.** With main power off the reduced command set still answers (`GVER`,
+- [x] **11.5 Power-off command set.** *Result: November 4, 2026: with main power off on USB, `ISPWR` answered OFF and the filament commands NAKed; after power returned the system restarted and they worked.*
+      With main power off the reduced command set still answers (`GVER`,
       `ISPWR`, `GNAME`, `RESET`, `POWER`) and the filament commands are not available. After power returns the
       system restarts and the filament commands work again.
 - [ ] **11.6 Host software.** If the host application probes for a filament module by sending a filament
@@ -486,7 +489,8 @@ Defaults: setpoint 0, largest setpoint 1000 uA, lowest current 0 A, gain 0.005 A
       Set **Max power** below what the setpoint needs. Status `PLIM`, the current
       steady at about 97% of the power limit, emission below the setpoint, and **no sawtooth** of 0.1 A steps
       from the power limiter trimming (watch `GFLI` or the current on a meter). Raising Max power releases it.
-- [ ] **Late bias (option A).** Start with the bias off: enable, regulate, wait until the current has climbed to the
+- [x] **Late bias (option A).** *Result: November 4, 2026, 811A, Max power 5 W (`SFLMP`), 50 uA, operating at about 4.5 W: regulated, bias off (emission to 0), the current climbed to the ceiling (PLIM, 1.81 A, 4.95 W), bias on: peak 108.5 uA for one 2 s sample, within 10% in about 30 s, REG 46 s after the bias returned, power never above the limit. Simulation for 5 W: 244 to 298 uA, 19 to 38 s.*
+      Start with the bias off: enable, regulate, wait until the current has climbed to the
       power limit (`PLIM`). Apply bias. Record the peak emission and the time to settle, and compare with the
       simulation figures above. Repeat with Max power closer to the operating power.
 - [x] **Largest setpoint.** *(November 4, 2026: 301 NAK, 300 ACK.)* `SFLEIM,1,300`: a setpoint above 300 is refused.
@@ -506,7 +510,7 @@ Defaults: setpoint 0, largest setpoint 1000 uA, lowest current 0 A, gain 0.005 A
 - [x] **Regulation off** *(November 4, 2026: held 1.742 A until the power limiter trimmed it, see the power limit item.)* (`SFLEREG,1,OFF`) leaves the current where it is.
 - [ ] **Two modules.** Regulate channel 1 and channel 2 at different setpoints at the same time. They do not
       interact.
-- [ ] **Power loss while regulating** shuts the filament down as before.
+- [x] **Power loss while regulating** shuts the filament down as before. *Result: November 4, 2026: regulating at 49 uA (1.758 A, 4.6 W), main power switched off with USB connected: the filament commands NAKed at once (USB-only command set); power back on: the controller reset, both channels OFF, regulation OFF, emission setpoint 0, status OFF, emission back to 0.05 uA (no regulation setting survives a restart, all RAM).*
 
 ### 12.6 ADC setpoint inputs and the enable input
 
@@ -521,11 +525,13 @@ are RAM only. Use a bench supply or a potentiometer into the MIPS ADC input, wit
       Each of `SFLEADC`, `GFLEADC`, `SFLIADC`, `GFLIADC`, `SFLDIO`, `GFLDIO` answers.
       `GFLEADC,1` after `SFLEADC,1,2,0.5,10` returns `2,0.500000,10.000000,<last value>`. Defaults are `-1,1,0,0` and
       `NA`. Range checks NAK: `SFLEADC,1,10,1,0` (adc above 9), `SFLEADC,3,...` (no channel 3), `SFLDIO,1,A`.
-- [ ] **12.6.2 Emission setpoint from the ADC.** `SFLEADC,1,<adc>,<slope>,<intercept>`; vary the input. `GFLEIS,1` follows
+- [x] **12.6.2 Emission setpoint from the ADC.** *Result: November 4, 2026, ADC 0 (0 to 10 V input once the board was scaled), slope 0.02442 uA/count (10 V = 100 uA), Gordon setting a bench supply. Filament off: the setpoint followed 0 to 100 uA and back, held at 40 with `SFLEIM,1,40`, read 0 with an intercept of -200, and a manual `SFLEIS,1,10` was overwritten within a second. Regulating, bias on: 8 V gave 81.5 uA and regulated at 78 to 82 uA (1.80 A, 5.1 W); 5 V followed to about 52 uA and 3 V to 31 uA (setpoint 30.6), each back in REG about 40 s after the step.*
+      `SFLEADC,1,<adc>,<slope>,<intercept>`; vary the input. `GFLEIS,1` follows
       it within a second, clamped to 0 and the largest setpoint (`GFLEIM`). With regulation on
       (`SFLEREG,1,ON`) the emission follows the changing setpoint. `SFLEADC,1,-1,1,0` removes it and the
       setpoint stays where it was. A manual `SFLEIS` is overwritten while it is defined.
-- [ ] **12.6.3 Heater current from the ADC.** `SFLIADC,1,<adc>,<slope>,<intercept>`; vary the input with the filament
+- [x] **12.6.3 Heater current from the ADC.** *Result: November 4, 2026, ADC 0, slope 0.000366 A/count (10 V = 1.5 A), filament on, bias on but below emission: 3 V gave 0.46 A (actual 0.40), a manual `SFLI,1,0.2` was overwritten at once, an intercept of -5 clamped the setpoint at 0.00. Stepping to 8 V the command climbed 0.1 A/s just ahead of the ramped current (the FEM_AHEAD rule, it does not jump to the ADC value) to 1.22 A, actual 1.17 A. The 12 A upper clamp was not tested.*
+      `SFLIADC,1,<adc>,<slope>,<intercept>`; vary the input with the filament
       enabled into a safe load. `GFLI,1` follows it, the actual current (`GFLAI`) follows at the ramp rate, and it is
       clamped to 0 to 12 A. `SFLI` and the dialog are overwritten while it is defined.
 - [x] **12.6.4 Heater ADC disables regulation.** *Result: November 4, 2026, Rev 3, module 1, heater ADC defined with slope 0 (a fixed value, ADC 2 floating): GFLEREG went OFF, status HEATADC, SFLEREG ON NAK; removed: status OFF, SFLEREG ON accepted, no restart on its own. With the filament off the command is held at 0.1 A (FEM_AHEAD above the ramped 0).*
@@ -544,13 +550,16 @@ are RAM only. Use a bench supply or a potentiometer into the MIPS ADC input, wit
       with **no repeated 0.1 A sawtooth**. A rule that only held at 97% of the limit gave an 8.4 W peak in
       simulation (a limit cycle), which is why the command is also held to 0.1 A above the ramped current. Check
       this one carefully: it is the safety interaction. Removing the high input lets the current fall.
-- [ ] **12.6.7 Enable input.** `SFLDIO,1,Q` (any of Q to X): high on that digital input enables the filament within
+- [x] **12.6.7 Enable input.** *Result: November 4, 2026, `SFLDIO,1,T`, 1.0 A setpoint, Gordon switching T: with T low `SFLENA,1,ON` was ACKed but the filament stayed off; T high turned it on within one 0.5 s sample and it ramped to 0.95 A; T low turned it off and it ramped to 0 in about 6 s; `SFLDIO,1,NA` with T high left it on, and T low then had no effect. `GFLDIO,1` returned T, then NA. Default polarity (DIinvert): high enables.*
+      `SFLDIO,1,Q` (any of Q to X): high on that digital input enables the filament within
       about 100 mS, low disables it and the current ramps down, and **this overrides `SFLENA` and the dialog** while
       defined, as in ESI. `GFLDIO,1` returns the letter. `SFLDIO,1,NA` removes it and the filament stays as it was.
       Check the input's polarity setting (`DIinvert`) gives the expected sense.
-- [ ] **12.6.8 ADC in use.** While the MIPS ADC digitizer is running (a host driven `RFAACQ` scan with the MIPS ADC),
+- [x] **12.6.8 ADC in use.** *Result: November 4, 2026, filament off, `SFLEADC,1,0,...` at 8 V (81.4 uA), digitizer claimed with `ADCRBINIT` (no RF needed, AcquireADC is the flag): supply turned to 3 V, the value held at 81.4; after `ADCABORT` it read 30.5 at once.*
+      While the MIPS ADC digitizer is running (a host driven `RFAACQ` scan with the MIPS ADC),
       the ADC values hold their last reading instead of being read, and resume afterwards.
-- [ ] **12.6.9 Two modules.** Assign different ADC channels to channel 1 and channel 2; each follows its own input.
+- [x] **12.6.9 Two modules.** *Partly, November 4, 2026, filaments off: `SFLEADC,1,2,0,10` and `SFLEADC,2,3,0,20` gave setpoints 10 and 20 uA, removing channel 1's left channel 2 unchanged. Following a changing input on each channel needs real sources.*
+      Assign different ADC channels to channel 1 and channel 2; each follows its own input.
 
 ---
 
