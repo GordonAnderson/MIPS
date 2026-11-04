@@ -76,6 +76,7 @@ extern int             NumberOfFilamentChannels;
 #define FEM_THREAD_MS    100        // Thread period: ADC inputs and the enable input run at 10 Hz
 #define FEM_ADC_SAMPLES  10         // ADC reads averaged
 #define FEM_AHEAD        0.1f       // The heater ADC never commands more than this many amps ahead of the ramped current
+#define FEM_SETTLE_MS    20000      // Regulation does not raise the current for this long after the ramp caught up
 #define FEM_MAX_DT       2.0f       // A longer gap than this (s) is clamped, the thread was held up
 
 // An ADC input that sets a value: counts * m + b. adc is the MIPS ADC channel, or -1 if not defined
@@ -99,6 +100,8 @@ typedef struct
   float        Measured;            // Last emission measurement used, uA
   FEMcoreState Core;
   uint32_t     LastMs;              // millis() of the last control step, 0 if none
+  uint32_t     BehindMs;            // millis() when the ramped current was last more than FEM_AHEAD below the
+                                    // command, 0 if never
 } FEMdata;
 
 static FEMdata *FEMarray[2] = {NULL,NULL};   // Allocated for each Rev 3 or 4 board at init
@@ -197,7 +200,17 @@ static void FEMloop(void)
       s->Measured     = EmissionI[b];
       s->P.PowerLimit = ch->MaxPower;
       float cur = ch->CurrentSetpoint;
+      float act = CurrentSetpoints[b][idx];
       float nxt = FEMcoreStep(&s->P, &s->Core, cur, s->Measured, Fpowers[b][idx], dt, &status);
+      // No increase while the ramp is still catching up (the heater ADC rule), nor for FEM_SETTLE_MS after it
+      // has, while the filament heats to the current it already has. Until then the emission is low, so
+      // without this the command keeps rising and the filament lands on the wound up value: from a 1.76 A
+      // warm start it reached 2.14 A, 162 uA for a 50 uA setpoint and 6.5 W on a 5 W limit (bench, November
+      // 4, 2026). The catch up rule alone still overshot 90% in simulation on a steep filament (k 20/A, tau
+      // 3 s), with the settle hold 1%; see tools/FilamentEmissionSim.cpp, case 6.
+      if(cur > act + FEM_AHEAD) s->BehindMs = now;
+      bool settling = (s->BehindMs != 0) && ((now - s->BehindMs) < FEM_SETTLE_MS);
+      if((nxt > cur) && ((cur > act + FEM_AHEAD) || settling)) nxt = cur;
       if(nxt != cur) FEMsetCurrent(b, nxt);
     }
     if(status == FEMst_OFF || status == FEMst_WAIT || status == FEMst_BLOCKED || status == FEMst_HEATADC)
@@ -511,6 +524,7 @@ void FilamentEmission_init(int8_t Board)
     s->Status       = FEMst_OFF;
     s->Measured     = 0;
     s->LastMs       = 0;
+    s->BehindMs     = 0;
     FEMcoreReset(&s->Core);
   }
   // The commands and the thread are set up once, for the first board

@@ -1547,6 +1547,16 @@
 //          positive half of the range was extrapolated. Aborts with a NAK if the readback ADC does not answer or
 //          the two entered voltages are closer than 10 V, prompts to let the supply discharge before the supply
 //          off readings, restores the supply on every exit and reminds to save with SAVEM,RFA.
+//      7.) Filament emission regulation could wind up while the heater current was still ramping: each step
+//          raised the commanded current while the filament was cold, so it landed on the wound up value. From
+//          a 1.76 A warm start (the last regulated current) it reached 2.14 A, 162 uA for a 50 uA setpoint and
+//          6.5 W on a 5 W limit (bench, November 4, 2026). The regulator now does not raise the current while
+//          the command is more than 0.1 A above the ramped current (the rule the heater ADC already used), nor
+//          for 20 s after, while the filament heats to the current it already has. The host simulation has the
+//          case (6): +2400 % before, +1 % after on a steep filament; cases 1 to 5 are unchanged.
+//      8.) SFLRT refused 0.01 A/s, the lowest rate it is meant to accept: the float argument (0.0099999998)
+//          was compared with a double 0.01. MinRampRate is now a float.
+//      9.) RFLPARMS did not send an ACK.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

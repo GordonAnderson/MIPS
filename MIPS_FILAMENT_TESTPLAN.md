@@ -14,7 +14,7 @@ Bench plan for the filament fixes in two sets of commits. Written October 17, 20
   display and CalibrateFilament" (find it with `git log --oneline -- src/Filament.cpp`). Background and the reasons
 behind each change are in [`MIPS_FILAMENT_FIRMWARE_HANDOFF.md`](MIPS_FILAMENT_FIRMWARE_HANDOFF.md).
 
-**Status:** builds under PlatformIO, **not yet run on hardware.** Everything below is unverified.
+**Status:** bench testing started November 4, 2026 on a system with two Rev 3 modules (filament on module 1). Items without a result are unverified. The module EEPROM on that system is calibrated and is not written, so Part 7 is not run there. **Test setup: the filament is an 811A vacuum tube's filament, and the emission current is measured to its grid.** All Part 12 emission figures dated November 4, 2026 are from that tube.
 
 **Code:** [`src/Filament.cpp`](src/Filament.cpp), [`include/Filament.h`](include/Filament.h).
 
@@ -75,18 +75,22 @@ Revision matrix. Only some tests apply to each module revision; mark the ones yo
 The bug: a ramp rate of 0 made the ramp step 0, so the current never changed and the enable pin never
 switched off because it only drops after the ramped-down setpoint reaches zero.
 
-- [ ] **1.1 Serial limits.** `SFLRT,1,0` NAK. `SFLRT,1,0.005` NAK. `SFLRT,1,0.01` ACK. `SFLRT,1,1` ACK.
+- [ ] **1.1 Serial limits.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: **FAILED one point**: 0, 0.005 and 1.5 NAK, 1 ACK and reads back, but `SFLRT,1,0.01` NAKs. `fval` is a float (0.0099999998) compared with the double `MinRampRate` 0.01. Fix: `#define MinRampRate 0.01f`.*
+      `SFLRT,1,0` NAK. `SFLRT,1,0.005` NAK. `SFLRT,1,0.01` ACK. `SFLRT,1,1` ACK.
       `SFLRT,1,1.5` NAK. `GFLRT,1` returns the value just set.
 - [ ] **1.2 Dialog limit.** On filament page 2 the "Ramp rate" entry cannot be turned down below 0.01.
-- [ ] **1.3 Normal ramp.** `SFLRT,1,0.2`, `SFLI,1,1.0`, `SFLENA,1,ON`. `GFLAI,1` rises about 0.2 A every
+- [x] **1.3 Normal ramp.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: about 0.2 A/s up and down; held 0.96 A for a 1.0 A setpoint; the supply side voltage (`GFLASV`) dropped to 0 only after the current reached 0 (no scope, used as the enable indication).*
+      `SFLRT,1,0.2`, `SFLI,1,1.0`, `SFLENA,1,ON`. `GFLAI,1` rises about 0.2 A every
       second and reaches 1.0 A in about 5 s. `SFLENA,1,OFF`: current falls at the same rate and **the
       enable line goes HIGH (off) when it reaches zero**, a few seconds later.
-- [ ] **1.4 Slowest legal rate.** `SFLRT,1,0.01`, `SFLI,1,0.1`, enable. Reaches 0.1 A in about 10 s.
+- [x] **1.4 Slowest legal rate.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: run at 0.011 A/s (0.01 is refused, see 1.1). Turned off about 9 s after the disable, no hang. The actual current read about 0.04 A below the setpoint here and in 1.3 (offset, check with a DMM).*
+      `SFLRT,1,0.01`, `SFLI,1,0.1`, enable. Reaches 0.1 A in about 10 s.
       Disable: turns off after about 10 s. It must not hang at any current.
 - [ ] **1.5 A stored 0 is tolerated** (optional, needs an old module image that holds a ramp rate of 0, or
       write the 4 bytes of RampRate with `WEEPROM` and Restore). The current must move at 0.01 A/s, and
       disable must reach power-off.
-- [ ] **1.6 Serial watchdog path.** `SFLSWD,TRUE`, enable the filament at 0.5 A, stop all serial traffic. After
+- [x] **1.6 Serial watchdog path.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: 0.5 A at 0.2 A/s, 25 s with no traffic: filament off, current 0, supply off. The setpoint stays 0.5. "No comms, Timedout!" appeared on the display (Gordon).*
+      `SFLSWD,TRUE`, enable the filament at 0.5 A, stop all serial traffic. After
       about 10 s the "No comms, Timedout!" message appears, the setpoint ramps down and the enable line
       goes off. Record how long the whole turn-off took at the rate in use; it is the ramp time, not
       instant. (If that is too slow for your application see handoff section 5.)
@@ -158,7 +162,8 @@ selection).
 - [ ] **5.2 Other channel unaffected.** Select channel 1 in the dialog. Send `SFLENAR,2,YES`. Channel 1's
       cycle page still shows NO.
 - [ ] **5.3 Round trip.** `GFLENAR,2` returns `NO` when off, and the cycles remaining when on.
-- [ ] **5.4 Cycling still works.** `SFLP1,1,0.2`, `SFLP2,1,0.6`, `SFLCY,1,3`, `SFLENAR,1,YES`, enable. The
+- [x] **5.4 Cycling still works.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: `GFLENAR` counted 3, 2, 1 then NO and the current returned to the 0.4 A setpoint. The cycle reverses when the ramped setpoint reaches a point, with no dwell, so the measured current only swung about 0.25 to 0.43 A for 0.2 to 0.6 A points.*
+      `SFLP1,1,0.2`, `SFLP2,1,0.6`, `SFLCY,1,3`, `SFLENAR,1,YES`, enable. The
       current moves between the two points three times and then returns to the saved setpoint with
       cycling reported as `NO`.
 
@@ -171,14 +176,18 @@ update only part of that, so the other direction came up with stale values.
 
 Use a Rev 2 or 3 board, filament **disabled** for the whole part.
 
-- [ ] **6.1 Serial then FWD to REV.** `SFLDIR,1,FWD`, `SFLI,1,1.5`, `SFLSV,1,3.5`, `SFLRT,1,0.2`. `SFLDIR,1,REV`.
+- [x] **6.1 Serial then FWD to REV.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: 1.5 / 3.5 / 0.2 carried to REV (dialog not checked).*
+      `SFLDIR,1,FWD`, `SFLI,1,1.5`, `SFLSV,1,3.5`, `SFLRT,1,0.2`. `SFLDIR,1,REV`.
       `GFLI,1` = 1.5, `GFLSV,1` = 3.5, `GFLRT,1` = 0.2. The dialog agrees.
-- [ ] **6.2 REV to FWD.** `SFLI,1,0.8`, `SFLSV,1,2.5`. `SFLDIR,1,FWD`. `GFLI,1` = 0.8, `GFLSV,1` = 2.5.
+- [x] **6.2 REV to FWD.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: 0.8 / 2.5 carried to FWD.*
+      `SFLI,1,0.8`, `SFLSV,1,2.5`. `SFLDIR,1,FWD`. `GFLI,1` = 0.8, `GFLSV,1` = 2.5.
 - [ ] **6.3 Dialog path.** Change the "Current dir" entry on page 2 with the filament off. Current, voltage,
       ramp rate and mode carry over, same as 6.1.
-- [ ] **6.4 Enable after the change.** Enable on the new direction. It ramps to the values from 6.1/6.2,
+- [x] **6.4 Enable after the change.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: after FWD to REV and `SFLI,1,0.8` it ramped to 0.75 A measured.*
+      Enable on the new direction. It ramps to the values from 6.1/6.2,
       not to an older setpoint.
-- [ ] **6.5 Refusals unchanged.** With the filament enabled, `SFLDIR` and the dialog change are refused.
+- [x] **6.5 Refusals unchanged.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: `SFLDIR,1,FWD` NAK while on; accepted once off and at zero.*
+      With the filament enabled, `SFLDIR` and the dialog change are refused.
 - [ ] **6.6 Rev 1 is unaffected.** On a Rev 1 board, `SFLI` and `SFLSV` change only the addressed channel.
 
 ---
@@ -354,7 +363,8 @@ system; it could not happen there.** Save the module EEPROMs first (`SAVEMOD`).
 The bug: the maximum power limit lowers the setpoint by 0.1 A, after which the ramp stopped below point 2 and
 the old test (ramp equals point 2 exactly) never succeeded, so the cycle stalled.
 
-- [ ] **10.3.1 Normal cycle.** `SFLP1,1,0.2`, `SFLP2,1,0.6`, `SFLCY,1,3`, `SFLENAR,1,YES`, enable. Three cycles
+- [x] **10.3.1 Normal cycle.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: three cycles completed, see 5.4.*
+      `SFLP1,1,0.2`, `SFLP2,1,0.6`, `SFLCY,1,3`, `SFLENAR,1,YES`, enable. Three cycles
       complete, the filament returns to the saved setpoint, `GFLENAR,1` = `NO`.
 - [ ] **10.3.2 Power limited cycle.** Set the Max power on page 2 low enough that point 2 exceeds it. The
       limiter trims the current and the cycles **still complete** (at the trimmed value) instead of hanging at
@@ -364,13 +374,13 @@ the old test (ramp equals point 2 exactly) never succeeded, so the cycle stalled
 
 ### 10.4 `GFLENAR`
 
-- [ ] Off: `GFLENAR,1` = `NO`. With `SFLCY,1,3` and cycling on: the cycles remaining, counting down.
-- [ ] With `SFLCY,1,0` and cycling on: `INF` (previously a negative number).
+- [x] Off: `GFLENAR,1` = `NO`. *Result: November 4, 2026: NO, then 3, 2, 1, NO.* With `SFLCY,1,3` and cycling on: the cycles remaining, counting down.
+- [x] With `SFLCY,1,0` and cycling on: `INF` *(November 4, 2026: INF)* (previously a negative number).
 - [ ] `HELP` or `MIPScommands.txt` shows the new text for `GFLENAR` and `SFLENAR` (YES/NO).
 
 ### 10.5 IV mode unchanged
 
-- [ ] In `IVctrl` the voltage across the current source settles around 0.75 V and holds inside 0.7 to 0.9 V,
+- [x] *(November 4, 2026: `GFLV` held about 0.8 V at 0.96 A in 1.3.)* In `IVctrl` the voltage across the current source settles around 0.75 V and holds inside 0.7 to 0.9 V,
       the same as before. Only names changed.
 
 ---
@@ -386,13 +396,16 @@ from the generated `MIPScommands.txt`).
       report 2 (`ERR_BADARG`). Nothing else on the system changes, and the other commands you already
       tested still respond.
       *Result: Verified October 17, 2026 on a MIPS with no filament module (`GCHAN,FIL` = 0): `GFLI,1`, `GFLENA,1`, `SFLRT,1,0.1`, `GFLSRES`, `SFLSWD,TRUE`, `CALFIL`, and the emission commands `GFLEIS,1`, `SFLEREG,1,ON`, `GFLEST,1` were each refused as unknown commands with `GERR` = 1. Other commands (`GVER`, `ISPWR`, `TWI1SCAN`, `TWI1CMD`) still answered.*
-- [ ] **11.2 Filament module installed.** All of the commands in the filament section of `MIPScommands.txt`
+- [x] **11.2 Filament module installed.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: every get command answers on channels 1 and 2, the set commands used in Parts 1, 5, 6 and 10 ACK. **`RFLPARMS,1,0` sends no ACK** (missing `SendACK` at the end of `SetFilamentReporting`). `CALFIL` not sent (writes EEPROM).*
+      All of the commands in the filament section of `MIPScommands.txt`
       respond as before: `GFLENA`/`SFLENA`, `GFLI`/`SFLI`, `GFLAI`, `GFLSV`/`SFLSV`, `GFLASV`, `GFLV`, `GFLPWR`,
       `GFLRT`/`SFLRT`, `GFLDIR`/`SFLDIR`, `GFLP1`/`SFLP1`, `GFLP2`/`SFLP2`, `GFLCY`/`SFLCY`, `GFLENAR`/`SFLENAR`,
       `RFLPARMS`, `GFLSRES`/`SFLSRES`, `GFLECUR`, `SFLSWD`, `CALFIL`.
-- [ ] **11.3 Two boards.** The commands are registered once, not twice: with two filament boards installed
+- [x] **11.3 Two boards.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: two Rev 3 boards, `GFLI,2` answers, `GFLI,3` NAK.*
+      The commands are registered once, not twice: with two filament boards installed
       `GFLI,1` and `GFLI,3` both answer and nothing is duplicated or looped.
-- [ ] **11.4 The pointer commands still work.** `SFLSRES,1000` then `GFLSRES` returns 1000;
+- [x] **11.4 The pointer commands still work.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: `SFLSRES,1000` read back 1000 (put back to 200), `SFLSWD` TRUE/FALSE ACK.*
+      `SFLSRES,1000` then `GFLSRES` returns 1000;
       `SFLSWD,TRUE` then `SFLSWD,FALSE` are accepted. These point at `FDarray[0].iSense` and `FLserialWD`.
 - [ ] **11.5 Power-off command set.** With main power off the reduced command set still answers (`GVER`,
       `ISPWR`, `GNAME`, `RESET`, `POWER`) and the filament commands are not available. After power returns the
@@ -429,22 +442,23 @@ Defaults: setpoint 0, largest setpoint 1000 uA, lowest current 0 A, gain 0.005 A
 
 ### 12.1 Commands and refusals (no filament needed)
 
-- [ ] On a Rev 3 module, each of `SFLEIS`, `GFLEIS`, `SFLEREG`, `GFLEREG`, `GFLEST`, `SFLEIM`, `GFLEIM`, `SFLEIMN`,
+- [x] On a Rev 3 module, each of `SFLEIS`, `GFLEIS`, `SFLEREG`, `GFLEREG`, `GFLEST`, `SFLEIM`, `GFLEIM`, `SFLEIMN`,
       `GFLEIMN`, `SFLEGAIN`, `GFLEGAIN`, `SFLEUP`, `GFLEUP`, `SFLEDN`, `GFLEDN`, `SFLERH`, `GFLERH` answers, and a
       value read back equals the value set.
-      *Result: Not run: needs a Rev 3 filament module.*
-- [ ] `GFLEST,1` right after power up is `OFF,<measured>,<current>`. Defaults match the list above.
-- [ ] Range checks NAK: `SFLEIS,1,2000` (above the largest setpoint 1000), `SFLEIM,1,0`, `SFLEGAIN,1,1`,
+      *Result: November 4, 2026, Rev 3: each value read back as set, then restored to the defaults.*
+- [x] `GFLEST,1` right after power up is `OFF,<measured>,<current>`. Defaults match the list above.
+- [x] *(November 4, 2026: all five NAK, `GERR` 2.)* Range checks NAK: `SFLEIS,1,2000` (above the largest setpoint 1000), `SFLEIM,1,0`, `SFLEGAIN,1,1`,
       `SFLEUP,1,0`, `SFLEREG,1,MAYBE`.
-- [ ] `SFLEIM,1,100` with the setpoint at 200 lowers the setpoint to 100.
+- [x] *(November 4, 2026: setpoint went to 100.)* `SFLEIM,1,100` with the setpoint at 200 lowers the setpoint to 100.
 - [ ] On a Rev 1 or Rev 2 module the commands NAK (no on-module emission measurement). With no filament module
       they are unknown commands (`GERR` = 1).
       *Result: Partly, October 17, 2026: the no-filament-module half is verified (see 11.1: unknown commands, `GERR` = 1). The Rev 1/2 NAK needs a filament module.*
-- [ ] `SFLEREG,1,ON` is refused while filament cycling is enabled (`SFLENAR,1,YES`).
+- [x] *(November 4, 2026: NAK, `GERR` 2.)* `SFLEREG,1,ON` is refused while filament cycling is enabled (`SFLENAR,1,YES`).
 
 ### 12.2 Measurement first (vacuum tube)
 
-- [ ] Wire the tube so the filament module's emission measurement sees the emission current. Set **Max power** a
+- [x] *Result: November 4, 2026, Rev 3, module 1, 50 uA setpoint, Max power about 5 W: emission appears at about 1.65 A (measured), 3 uA at 1.67 A, 17 uA at 1.69 A, 71 uA at 1.83 A, about 20/A in ln(emission). No meter comparison.*
+      Wire the tube so the filament module's emission measurement sees the emission current. Set **Max power** a
       little above the power at the intended operating point (see above).
 - [ ] With regulation off, set the filament current by hand (`SFLI`) and compare the emission reading
       (`GFLECUR` or "Bias I, uA") with an external meter. Calibrate it first if it is off ("Cal Emission I").
@@ -454,10 +468,11 @@ Defaults: setpoint 0, largest setpoint 1000 uA, lowest current 0 A, gain 0.005 A
 
 ### 12.3 Closed loop
 
-- [ ] **Cold start.** `SFLEIS,1,200`, `SFLEREG,1,ON`, then enable the filament. Poll `GFLEST,1` every 5 s and log
+- [x] **Cold start.** *Result: November 4, 2026, Rev 3, module 1, 50 uA setpoint, Max power about 5 W: REG after about 100 s, peak 51.3 uA, held 50.0 uA mean (48.6 to 51.3) at 1.76 A, 4.75 W. A later run reached only 42 to 49 uA at the power ceiling (PLIM), the filament needed more power for the same emission.*
+      `SFLEIS,1,200`, `SFLEREG,1,ON`, then enable the filament. Poll `GFLEST,1` every 5 s and log
       status, emission and current. Expect `SEEK` rising to `REG` and a settle to within 5% in about 2 to 4
       minutes, with little overshoot. Record settle time, peak, and the steady ripple.
-- [ ] **Setpoint steps.** `SFLEIS,1` 200 to 100 to 400 to 200. Each settles in well under a minute. Record.
+- [x] **Setpoint steps.** *Result: November 4, 2026, Rev 3, module 1, 50 uA setpoint, Max power about 5 W: 50 to 25 and 25 to 50 uA each settled in about 60 s, no overshoot.* `SFLEIS,1` 200 to 100 to 400 to 200. Each settles in well under a minute. Record.
 - [ ] **Disturbance.** Change the bias or the plate voltage so the emission moves. The regulator brings it back.
 - [ ] **Tuning, if needed.** Overshoot or oscillation: lower `SFLEGAIN` (halve it) and `SFLERH`. Too slow: raise
       them. Record the values that work for the tube.
@@ -466,24 +481,28 @@ Defaults: setpoint 0, largest setpoint 1000 uA, lowest current 0 A, gain 0.005 A
 
 ### 12.4 Limits
 
-- [ ] **Power limit as the ceiling.** Set **Max power** below what the setpoint needs. Status `PLIM`, the current
+- [ ] **Power limit as the ceiling.** *Result: November 4, 2026, Rev 3, module 1, 50 uA setpoint, Max power about 5 W: **FAILED the no sawtooth check.** PLIM held the current, but at constant current the power drifted from 4.86 to 5.06 W as the filament warmed, the limiter trimmed 0.1 A and the emission fell from 49 to 20 uA, about 60 s to recover. The 97% hold only stops increases.*
+      Set **Max power** below what the setpoint needs. Status `PLIM`, the current
       steady at about 97% of the power limit, emission below the setpoint, and **no sawtooth** of 0.1 A steps
       from the power limiter trimming (watch `GFLI` or the current on a meter). Raising Max power releases it.
 - [ ] **Late bias (option A).** Start with the bias off: enable, regulate, wait until the current has climbed to the
       power limit (`PLIM`). Apply bias. Record the peak emission and the time to settle, and compare with the
       simulation figures above. Repeat with Max power closer to the operating power.
-- [ ] **Largest setpoint.** `SFLEIM,1,300`: a setpoint above 300 is refused.
+- [x] **Largest setpoint.** *(November 4, 2026: 301 NAK, 300 ACK.)* `SFLEIM,1,300`: a setpoint above 300 is refused.
 
 ### 12.5 Interactions
 
-- [ ] **Disable and enable.** `SFLENA,1,OFF`: status `WAIT`, the current ramps down at the ramp rate and the
+- [x] **Disable and enable.** *Result: November 4, 2026, Rev 3, module 1, 50 uA setpoint, Max power about 5 W: WAIT and ramp down; on enable it ramped back to the last regulated current. **Before the fix (first run) this warm start wound up to 2.14 A, 162 uA and 6.5 W**; with the fix (no raise while more than 0.1 A ahead of the ramp, nor for 20 s after) the command held at 1.722 A until 20 s after the ramp arrived, peak 44 uA.*
+      `SFLENA,1,OFF`: status `WAIT`, the current ramps down at the ramp rate and the
       enable line drops. `SFLENA,1,ON`: it ramps back to the last regulated current and regulates again.
-- [ ] **Serial watchdog.** `SFLSWD,TRUE`, stop serial traffic: after the timeout the filament turns off as before
+- [x] **Serial watchdog.** *Result: November 4, 2026, Rev 3, module 1, 50 uA setpoint, Max power about 5 W: 20 s of silence while regulating: off, status WAIT.*
+      `SFLSWD,TRUE`, stop serial traffic: after the timeout the filament turns off as before
       and the status goes to `WAIT`.
-- [ ] **Cycling excludes regulation.** With regulation on, `SFLENAR,1,YES`: status `BLOCKED`, cycling runs.
+- [x] **Cycling excludes regulation.** *Result: November 4, 2026, Rev 3, module 1, 50 uA setpoint, Max power about 5 W: BLOCKED while cycling 1.6 to 1.75 A, regulation resumed by itself when the 2 cycles ended.*
+      With regulation on, `SFLENAR,1,YES`: status `BLOCKED`, cycling runs.
       `SFLENAR,1,NO`: regulation resumes.
-- [ ] **A manual `SFLI` while regulating** is treated as a new starting point and the regulator walks back.
-- [ ] **Regulation off** (`SFLEREG,1,OFF`) leaves the current where it is.
+- [x] **A manual `SFLI` while regulating** *(November 4, 2026: `SFLI,1,1.65` from 1.71, it walked back up.)* is treated as a new starting point and the regulator walks back.
+- [x] **Regulation off** *(November 4, 2026: held 1.742 A until the power limiter trimmed it, see the power limit item.)* (`SFLEREG,1,OFF`) leaves the current where it is.
 - [ ] **Two modules.** Regulate channel 1 and channel 2 at different setpoints at the same time. They do not
       interact.
 - [ ] **Power loss while regulating** shuts the filament down as before.
@@ -497,7 +516,8 @@ counts are the 12 bit Due ADC (0 to 4095 for 0 to 3.3 V at the pin), 10 reads av
 are RAM only. Use a bench supply or a potentiometer into the MIPS ADC input, with your own divider.
 **Test with a dummy load or the tube at a safe power first. A floating ADC input reads garbage.**
 
-- [ ] **12.6.1 Commands.** Each of `SFLEADC`, `GFLEADC`, `SFLIADC`, `GFLIADC`, `SFLDIO`, `GFLDIO` answers.
+- [x] **12.6.1 Commands.** *Result: November 4, 2026, Rev 3, filament on module 1, firmware 1.269 (Oct 30 build), driven over USB: as listed; `GFLEADC,1` returned `2,0.500000,10.000000,10.350`; range checks NAK (line commands give one `?` per leftover argument, `GERR` 1).*
+      Each of `SFLEADC`, `GFLEADC`, `SFLIADC`, `GFLIADC`, `SFLDIO`, `GFLDIO` answers.
       `GFLEADC,1` after `SFLEADC,1,2,0.5,10` returns `2,0.500000,10.000000,<last value>`. Defaults are `-1,1,0,0` and
       `NA`. Range checks NAK: `SFLEADC,1,10,1,0` (adc above 9), `SFLEADC,3,...` (no channel 3), `SFLDIO,1,A`.
 - [ ] **12.6.2 Emission setpoint from the ADC.** `SFLEADC,1,<adc>,<slope>,<intercept>`; vary the input. `GFLEIS,1` follows
@@ -507,12 +527,16 @@ are RAM only. Use a bench supply or a potentiometer into the MIPS ADC input, wit
 - [ ] **12.6.3 Heater current from the ADC.** `SFLIADC,1,<adc>,<slope>,<intercept>`; vary the input with the filament
       enabled into a safe load. `GFLI,1` follows it, the actual current (`GFLAI`) follows at the ramp rate, and it is
       clamped to 0 to 12 A. `SFLI` and the dialog are overwritten while it is defined.
-- [ ] **12.6.4 Heater ADC disables regulation.** With regulation on, define the heater ADC: `GFLEREG,1` = OFF,
+- [x] **12.6.4 Heater ADC disables regulation.** *Result: November 4, 2026, Rev 3, module 1, heater ADC defined with slope 0 (a fixed value, ADC 2 floating): GFLEREG went OFF, status HEATADC, SFLEREG ON NAK; removed: status OFF, SFLEREG ON accepted, no restart on its own. With the filament off the command is held at 0.1 A (FEM_AHEAD above the ramped 0).*
+      With regulation on, define the heater ADC: `GFLEREG,1` = OFF,
       `GFLEST,1` status is `HEATADC`. `SFLEREG,1,ON` is refused (NAK). `SFLIADC,1,-1,1,0` removes it: status
       returns to `OFF`, `SFLEREG,1,ON` is accepted again, and regulation does not restart on its own.
-- [ ] **12.6.5 Cycling.** With the heater ADC defined, enable filament cycling: the ADC stands aside (the current
+- [x] **12.6.5 Cycling.** *Result: November 4, 2026, Rev 3, module 1, heater ADC defined with slope 0 (a fixed value, ADC 2 floating): 1.2 A from the ADC, cycling 1.0 to 1.4 A took over (BLOCKED), the ADC took the current back when the cycles ended.*
+      With the heater ADC defined, enable filament cycling: the ADC stands aside (the current
       follows the cycle, status `BLOCKED`). Disable cycling and the ADC takes the current again.
-- [ ] **12.6.6 The power limiter still works with the heater ADC.** Set **Max power** below the power the ADC value
+- [ ] **12.6.6 The power limiter still works with the heater ADC.** *November 4, 2026: not valid yet. Max power was raised from about 5 W to 8 W during the run, so a 2.2 A request (7.6 W) was not limited; the command did follow the ramp at 0.1 A/s and never jumped ahead. Emission to the 811A grid reached about 750 uA, aborted. Repeat with the request above the limit and the grid bias off.*
+      *Repeat, November 4, 2026, grid bias off, Max power 9 W, heater ADC fixed at 2.5 A (about 9.8 W): **FAILED the sawtooth check.** Mean power 9.05 W (good) but 8.4 to 9.8 W, peak 9.84 W, and the command swung 2.14 to 2.44 A continuously for 130 s: the limiter trims 0.1 A, the power reading lags the current, the 97% hold sees low power and the ADC raises again. Same cause as the regulation sawtooth in 12.4. Dropping the request to 1.2 A let the current fall.*
+      Set **Max power** below the power the ADC value
       would produce (e.g. a 6 W limit and an input asking for more). The power settles at about the limit, not the
       value the ADC asks for: in the host simulation 5.96 W mean and 6.18 W peak for a 6 W limit, and a steady current
       with **no repeated 0.1 A sawtooth**. A rule that only held at 97% of the limit gave an 8.4 W peak in

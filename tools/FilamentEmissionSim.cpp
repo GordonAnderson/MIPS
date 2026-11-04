@@ -10,6 +10,8 @@
 //   measurement           0.05 filter every 100 ms (as Filament_loop) of Ie with 1% noise
 //   ramp limiter          0.1 A/s on the current actually applied (CurrentSetpoints)
 //   power limiter         when P > limit, the commanded current is trimmed by 0.1 A every 1.1 s (FilamentControl)
+//   ramp catch up         no increase while the command is more than 0.1 A above the ramped current, nor for
+//                         20 s after it was (FEMloop, FEM_AHEAD and FEM_SETTLE_MS)
 //
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,13 +24,14 @@ struct Run { double peak, settle, lastI, rip; int status; double maxP; double ab
 static double gauss(){ double u=(rand()+1.0)/(RAND_MAX+2.0), v=(rand()+1.0)/(RAND_MAX+2.0); return sqrt(-2*log(u))*cos(6.283185307*v); }
 
 static Run sim(double k, double tau, double Rfil, double plimit, double bias_on, double iset, double imax,
-               double tmax, double step_t = -1, double iset2 = 0)
+               double tmax, double step_t = -1, double iset2 = 0, double cmd0 = 0.5, double cur0 = 0.5,
+               bool ahead = true)
 {
   FEMparams p = {(float)iset, 0.0f, (float)imax, FEM_DEF_KI, FEM_DEF_SLEWUP, FEM_DEF_SLEWDN, FEM_DEF_RATEHOLD, (float)plimit};
   FEMcoreState cs; FEMcoreReset(&cs);
-  double dt = 0.1, cmd = 0.5, cur = 0.5, hot = 0.5, meas = 0, nextc = 0, nextlim = 1.1, iset_now = iset;
+  double dt = 0.1, cmd = cmd0, cur = cur0, hot = cur0, meas = 0, nextc = 0, nextlim = 1.1, iset_now = iset;
   Run r = {0,0,0,0,0,0,0};
-  double lastbad = 0, tail_min = 1e9, tail_max = 0, target = iset;
+  double lastBehind = -1e9, lastbad = 0, tail_min = 1e9, tail_max = 0, target = iset;
   for(int i = 0; i < (int)(tmax/dt); i++)
   {
     double t = i*dt;
@@ -43,7 +46,10 @@ static Run sim(double k, double tau, double Rfil, double plimit, double bias_on,
     if(t >= nextc)
     {
       nextc += 0.5;
-      cmd = FEMcoreStep(&p, &cs, (float)cmd, (float)meas, (float)P, 0.5f, &r.status);
+      double nx = FEMcoreStep(&p, &cs, (float)cmd, (float)meas, (float)P, 0.5f, &r.status);
+      if(ahead && (cmd > cur + 0.1)) lastBehind = t;              // FEMloop: no wind up while the ramp catches up,
+      if(ahead && (nx > cmd) && ((cmd > cur + 0.1) || (t - lastBehind < 20))) nx = cmd;   // nor while it settles
+      cmd = nx;
     }
     if(t >= bias_on) { if(e > r.peak) r.peak = e; if(e > 1000) r.above1000 += dt; }
     if(t >= bias_on && fabs(e - target)/target > 0.05) lastbad = t - bias_on;
@@ -122,5 +128,14 @@ int main()
       heaterAdc(3.0, 6.0, 1.2, mode, &mp, &mc, &mm);
       printf("   %s: max power %5.2f W, mean power %5.2f W, mean commanded %.3f A\n", names[mode], mp, mm, mc);
     } }
+  printf("6) Warm start: enabled with the command already at the last regulated current (2.0 A for 200 uA) and the\n"
+         "   heater at 0 A, ramping at 0.1 A/s (bench, November 4, 2026: 162 uA for a 50 uA setpoint). 6.0 W limit\n");
+  for(bool ahead : {false, true})
+    for(double k : {10.0, 20.0})
+    {
+      Run r = sim(k, 3, 1.2, 6.0, 0, 200, 12, 600, -1, 0, 2.0, 0.0, ahead);
+      printf("   %s k=%2.0f: peak %5.0f uA (%+.0f %%), max power %.2f W, settles %.0f s\n",
+             ahead ? "catch up and settle hold" : "old, raise while ramping", k, r.peak, (r.peak - 200)/2, r.maxP, r.settle);
+    }
   return 0;
 }

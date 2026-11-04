@@ -170,7 +170,7 @@ float BiasCurrent;
 // so a rate of 0 froze the current setpoint where it was: a running filament could neither be ramped nor
 // turned off, because the power pin only switches off once the ramped-down setpoint reaches 0. A stored
 // rate below this value (the EEPROM may hold 0) is treated as this value.
-#define MinRampRate 0.01
+#define MinRampRate 0.01f    // float, so SFLRT,ch,0.01 (parsed as a float) is not below it
 
 // IV mode (FmodeIV) control constants, volts across the current source. See FilamentControl.
 #define IVbandCenter 0.8
@@ -1589,6 +1589,7 @@ void SetFilamentReporting(int channel, int period)
     default:
       break;
   }
+  SendACK;
 }
 
 // Sets the bias current sense resistor value. One value is used for the system (FDarray[0].iSense),
