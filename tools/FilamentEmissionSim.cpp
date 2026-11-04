@@ -19,7 +19,10 @@
 #include <initializer_list>
 #include "FilamentEmissionCore.h"
 
-struct Run { double peak, settle, lastI, rip; int status; double maxP; double above1000; };
+struct Run { double peak, settle, lastI, rip; int status; double maxP; double above1000; int trims; };
+
+static double simPowerLag = 0;    // Lag of the power reading in sim(), s. 0 = instant (cases 1 to 6)
+static double simDrift    = 0;    // Filament resistance drift in sim(), fraction per 300 s
 
 static double gauss(){ double u=(rand()+1.0)/(RAND_MAX+2.0), v=(rand()+1.0)/(RAND_MAX+2.0); return sqrt(-2*log(u))*cos(6.283185307*v); }
 
@@ -30,7 +33,8 @@ static Run sim(double k, double tau, double Rfil, double plimit, double bias_on,
   FEMparams p = {(float)iset, 0.0f, (float)imax, FEM_DEF_KI, FEM_DEF_SLEWUP, FEM_DEF_SLEWDN, FEM_DEF_RATEHOLD, (float)plimit};
   FEMcoreState cs; FEMcoreReset(&cs);
   double dt = 0.1, cmd = cmd0, cur = cur0, hot = cur0, meas = 0, nextc = 0, nextlim = 1.1, iset_now = iset;
-  Run r = {0,0,0,0,0,0,0};
+  Run r = {0,0,0,0,0,0,0,0};
+  double Pm = Rfil*cur0*cur0;
   double lastBehind = -1e9, lastbad = 0, tail_min = 1e9, tail_max = 0, target = iset;
   for(int i = 0; i < (int)(tmax/dt); i++)
   {
@@ -38,15 +42,16 @@ static Run sim(double k, double tau, double Rfil, double plimit, double bias_on,
     if(step_t >= 0 && t >= step_t) { iset_now = iset2; p.Iset = (float)iset2; target = iset2; }
     double d = cmd - cur, m = 0.1*dt; cur += (d > m) ? m : (d < -m) ? -m : d;
     hot += (cur - hot)*dt/tau;
-    double P = Rfil*cur*cur;
+    double P = Rfil*(1 + simDrift*t/300)*cur*cur;
+    Pm = (simPowerLag > 0) ? Pm + (P - Pm)*dt/simPowerLag : P;      // measured power
     double e = (t < bias_on) ? 0.0 : 200.0*exp(k*(hot - 2.0)); if(e > 5000) e = 5000;
     meas += 0.05*(e*(1 + 0.01*gauss()) - meas);
     if(P > r.maxP) r.maxP = P;
-    if(t >= nextlim) { nextlim += 1.1; if(plimit > 0 && P > plimit) cmd -= 0.1; }   // FilamentControl power limiter
+    if(t >= nextlim) { nextlim += 1.1; if(plimit > 0 && Pm > plimit) { cmd -= 0.1; if(t > 300) r.trims++; } }   // FilamentControl
     if(t >= nextc)
     {
       nextc += 0.5;
-      double nx = FEMcoreStep(&p, &cs, (float)cmd, (float)meas, (float)P, 0.5f, &r.status);
+      double nx = FEMcoreStep(&p, &cs, (float)cmd, (float)meas, (float)Pm, 0.5f, &r.status);
       if(ahead && (cmd > cur + 0.1)) lastBehind = t;              // FEMloop: no wind up while the ramp catches up,
       if(ahead && (nx > cmd) && ((cmd > cur + 0.1) || (t - lastBehind < 20))) nx = cmd;   // nor while it settles
       cmd = nx;
@@ -62,20 +67,27 @@ static Run sim(double k, double tau, double Rfil, double plimit, double bias_on,
 // Heater current ADC input: the commanded current is rewritten from the ADC value at 10 Hz. With hold = false it is
 // rewritten unconditionally, which undoes FilamentControl's trimming. With hold = true it never raises the current
 // while the power is at 97% of the limit (FilamentEmission.cpp, step 3 of FEMloop).
-static void heaterAdc(double target, double plimit, double Rfil, int mode, double *maxP, double *meanCmd, double *meanP)
+static void heaterAdc(double target, double plimit, double Rfil, int mode, double *maxP, double *meanCmd, double *meanP,
+                      double taup = 0, int *trims = NULL)
 {
   // mode 0: rewrite every pass          mode 1: + never raise at 97% of the limit
   // mode 2: + never command more than 0.1 A ahead of the ramped (actual) current
-  double dt = 0.1, cmd = 0.5, cur = 0.5, nextlim = 1.1, mp = 0, sum = 0, sp = 0; int n = 0;
+  // mode 3: + lower at 0.05 A/s above 99% of the limit, raise at no more than 0.02 A/s above 90% (FEMloop)
+  // taup: lag of the power reading, s (the supply tracking; about 1 s on the bench). 0 = instant
+  double dt = 0.1, cmd = 0.5, cur = 0.5, nextlim = 1.1, mp = 0, sum = 0, sp = 0, Pm = Rfil*0.25; int n = 0;
+  if(trims) *trims = 0;
   for(int i = 0; i < 1200; i++)
   {
     double t = i*dt;
     double d = cmd - cur, m = 0.1*dt; cur += (d > m) ? m : (d < -m) ? -m : d;     // ramp limiter
     double P = Rfil*cur*cur;
-    if(t >= nextlim) { nextlim += 1.1; if(P > plimit) cmd -= 0.1; }              // FilamentControl power limiter
+    Pm = (taup > 0) ? Pm + (P - Pm)*dt/taup : P;                                   // measured power
+    if(t >= nextlim) { nextlim += 1.1; if(Pm > plimit) { cmd -= 0.1; if(trims && t > 60) (*trims)++; } }   // FilamentControl
     double v = target;                                                             // ADC rewrite every pass
     if(mode >= 2 && v > cur + 0.1) v = cur + 0.1;
-    if(mode >= 1 && v > cmd && P >= 0.97*plimit) v = cmd;
+    if(mode >= 3 && Pm > 0.99*plimit) { if(v > cmd - 0.005) v = cmd - 0.005; }
+    else if(mode >= 1 && v > cmd && Pm >= 0.97*plimit) v = cmd;
+    else if(mode >= 3 && v > cmd + 0.002 && Pm >= 0.90*plimit) v = cmd + 0.002;
     cmd = v;
     if(t > 60) { if(P > mp) mp = P; sum += cmd; sp += P; n++; }
   }
@@ -122,8 +134,9 @@ int main()
     }
   printf("5) Heater current ADC input asking for 3.0 A with a 6.0 W power limit (Rfil 1.2 ohm: the limit is 2.236 A)\n");
   { double mp, mc, mm;
-    const char *names[] = {"rewritten every pass            ", "+ no raise at 97%% of the limit    ", "+ never more than 0.1 A ahead of ramp"};
-    for(int mode = 0; mode < 3; mode++)
+    const char *names[] = {"rewritten every pass            ", "+ no raise at 97%% of the limit    ", "+ never more than 0.1 A ahead of ramp",
+                           "+ ease off at 99%%, slow from 90%%   "};
+    for(int mode = 0; mode < 4; mode++)
     {
       heaterAdc(3.0, 6.0, 1.2, mode, &mp, &mc, &mm);
       printf("   %s: max power %5.2f W, mean power %5.2f W, mean commanded %.3f A\n", names[mode], mp, mm, mc);
@@ -136,6 +149,24 @@ int main()
       Run r = sim(k, 3, 1.2, 6.0, 0, 200, 12, 600, -1, 0, 2.0, 0.0, ahead);
       printf("   %s k=%2.0f: peak %5.0f uA (%+.0f %%), max power %.2f W, settles %.0f s\n",
              ahead ? "catch up and settle hold" : "old, raise while ramping", k, r.peak, (r.peak - 200)/2, r.maxP, r.settle);
+    }
+  printf("7) Regulating at the power ceiling: 3000 uA asked, 6 W limit (2.236 A), the power reading lagging 1 s and\n"
+         "   the resistance drifting up 15%% per 5 minutes, as the bench filament warmed (bench 12.4: 0.1 A trims,\n"
+         "   emission 49 to 20 uA). The core before the ease off (FEM_POWERBACK) gave 25 trims here\n");
+  simPowerLag = 1.0; simDrift = 0.15;
+  { Run r = sim(20, 3, 1.2, 6.0, 0, 3000, 12, 1200);
+    printf("   k=20 tau=3: max power %.2f W, limiter trims after 300 s %d, final current %.3f A, status %d (5 = PLIM)\n",
+           r.maxP, r.trims, r.lastI, r.status); }
+  simPowerLag = 0; simDrift = 0;
+  printf("8) Heater ADC asking 2.5 A, 9 W limit, Rfil 1.57 ohm (bench, November 4, 2026), power reading lagging the\n"
+         "   current (the bench swung 2.14 to 2.44 A and 8.4 to 9.8 W)\n");
+  for(double taup : {0.5, 1.0, 2.0})
+    for(int mode : {2, 3})
+    {
+      double mp, mc, mm; int tr;
+      heaterAdc(2.5, 9.0, 1.57, mode, &mp, &mc, &mm, taup, &tr);
+      printf("   lag %.1f s, %s: max power %5.2f W, mean %5.2f W, limiter trims %d\n", taup,
+             mode == 2 ? "hold at 97% only " : "ease off and slow", mp, mm, tr);
     }
   return 0;
 }

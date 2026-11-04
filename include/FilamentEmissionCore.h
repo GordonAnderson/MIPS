@@ -45,6 +45,14 @@
 #define FEM_DEF_RATEHOLD  0.05f    // 1/s of ln(emission)
 #define FEM_DEF_EMAX      1000.0f  // uA, largest emission setpoint accepted
 #define FEM_POWERHOLD     0.97f    // Fraction of the power limit at which increases stop
+// Above FEM_POWERBACK of the limit the current is eased down at FEM_BACKOFF so the power limiter's 0.1 A trim
+// (FilamentControl, every 1.1 s) does not act. The power reading lags the current by about 1 s (the supply
+// tracking), so with only the hold the trim and the next raise made a sawtooth: bench, November 4, 2026, 9 W
+// limit, heater ADC at 2.5 A, the command swung 2.14 to 2.44 A and the power 8.4 to 9.8 W.
+#define FEM_POWERBACK     0.99f    // Fraction of the power limit above which the current is lowered
+#define FEM_BACKOFF       0.05f    // A/s, rate the current is lowered at above FEM_POWERBACK
+#define FEM_POWERSLOW     0.90f    // Heater ADC: above this fraction of the limit increases are slowed
+#define FEM_SLOWUP        0.02f    // A/s, heater ADC increase rate above FEM_POWERSLOW
 
 enum FEMstatusCodes
 {
@@ -110,6 +118,11 @@ static inline float FEMcoreStep(const FEMparams *p, FEMcoreState *s, float cur, 
   if((step > 0) && (p->PowerLimit > 0) && (power >= FEM_POWERHOLD * p->PowerLimit))
   {
     step = 0;
+    *status = FEMst_PLIM;
+  }
+  if((p->PowerLimit > 0) && (power > FEM_POWERBACK * p->PowerLimit))
+  {
+    step = -FEM_BACKOFF * dt;          // Ease off before the power limiter trims 0.1 A
     *status = FEMst_PLIM;
   }
   cur += step;

@@ -482,6 +482,7 @@ Defaults: setpoint 0, largest setpoint 1000 uA, lowest current 0 A, gain 0.005 A
 ### 12.4 Limits
 
 - [ ] **Power limit as the ceiling.** *Result: November 4, 2026, Rev 3, module 1, 50 uA setpoint, Max power about 5 W: **FAILED the no sawtooth check.** PLIM held the current, but at constant current the power drifted from 4.86 to 5.06 W as the filament warmed, the limiter trimmed 0.1 A and the emission fell from 49 to 20 uA, about 60 s to recover. The 97% hold only stops increases.*
+      *Repeat after the fix, grid bias on, `SFLMP,1,4.5` (50 uA needed about 4.45 W by then): **passed.** 5.5 minutes, no 0.1 A trims, power mean 4.34 W and never above 4.50 W, emission below the setpoint at 26 to 41 uA (mean 35). The command wanders 1.68 to 1.735 A between the hold and ease off bands and the status alternates SEEK and PLIM; on this steep filament that is about 20% of emission. With a 5 W limit the same day 50 uA regulated at 49.9 uA mean (47.5 to 51.0) at 4.45 W, below the ceiling.*
       Set **Max power** below what the setpoint needs. Status `PLIM`, the current
       steady at about 97% of the power limit, emission below the setpoint, and **no sawtooth** of 0.1 A steps
       from the power limiter trimming (watch `GFLI` or the current on a meter). Raising Max power releases it.
@@ -536,6 +537,7 @@ are RAM only. Use a bench supply or a potentiometer into the MIPS ADC input, wit
       follows the cycle, status `BLOCKED`). Disable cycling and the ADC takes the current again.
 - [ ] **12.6.6 The power limiter still works with the heater ADC.** *November 4, 2026: not valid yet. Max power was raised from about 5 W to 8 W during the run, so a 2.2 A request (7.6 W) was not limited; the command did follow the ramp at 0.1 A/s and never jumped ahead. Emission to the 811A grid reached about 750 uA, aborted. Repeat with the request above the limit and the grid bias off.*
       *Repeat, November 4, 2026, grid bias off, Max power 9 W, heater ADC fixed at 2.5 A (about 9.8 W): **FAILED the sawtooth check.** Mean power 9.05 W (good) but 8.4 to 9.8 W, peak 9.84 W, and the command swung 2.14 to 2.44 A continuously for 130 s: the limiter trims 0.1 A, the power reading lags the current, the 97% hold sees low power and the ADC raises again. Same cause as the regulation sawtooth in 12.4. Dropping the request to 1.2 A let the current fall.*
+      *Repeat after the fix (ease off above 99%, slower rise above 90%), same conditions: **passed in steady state.** From 60 s on the command held 2.29 to 2.36 A and the power 8.3 to 8.9 W, mean 8.79 W (98% of the limit), no 0.1 A trims. While reaching the limit the first 30 s still had about 4 trims, peak 9.54 W (the filament resistance rises as it heats, so the power reading lags more than in the simulation).*
       Set **Max power** below the power the ADC value
       would produce (e.g. a 6 W limit and an input asking for more). The power settles at about the limit, not the
       value the ADC asks for: in the host simulation 5.96 W mean and 6.18 W peak for a 6 W limit, and a steady current

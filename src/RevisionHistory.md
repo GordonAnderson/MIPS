@@ -1557,6 +1557,15 @@
 //      8.) SFLRT refused 0.01 A/s, the lowest rate it is meant to accept: the float argument (0.0099999998)
 //          was compared with a double 0.01. MinRampRate is now a float.
 //      9.) RFLPARMS did not send an ACK.
+//     10.) Filament power limit, no more 0.1 A sawtooth at the ceiling. The power reading lags the current by about
+//          1 s (the supply tracking), so at the limit the limiter's 0.1 A trim and the next raise alternated: on the
+//          bench (811A filament, 9 W limit) a heater ADC asking 2.5 A swung 2.14 to 2.44 A and 8.4 to 9.8 W, and
+//          emission regulation at the ceiling dropped from 49 to 20 uA on each trim. Emission regulation and the
+//          heater ADC now lower the current at 0.05 A/s above 99% of Max power (and the heater ADC rises at no
+//          more than 0.02 A/s above 90%), so the limiter does not act. Host simulation with the lag, cases 7 (regulation) and 8 (heater ADC):
+//          steady at about 98% of the limit, no trims.
+//     11.) New SFLMP,chan,watts and GFLMP,chan set and read the filament Max power limit, 1 to 20 W as the front
+//          panel entry, RAM only (Save settings or SAVEM,FIL keeps it). It could only be set on the front panel.
 //
 //  Next version
 //      3.) Added Command string function (not yet implemented)

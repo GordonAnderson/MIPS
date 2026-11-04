@@ -946,6 +946,9 @@ Filament commands
   GFLPWR            Get filament power (actual)
   GFLRT             Get filament current ramp rate in amps per second
   SFLRT             Set filament current ramp rate in amps per second
+  GFLMP             Get filament Max power limit, watts
+  SFLMP             Set filament Max power limit, channel,watts. 1 to 20, RAM only,
+                    Save settings or SAVEM,FIL keeps it
   GFLDIR            Get filament current direcrtion,rev 2
   SFLDIR            Set filament current direction, rev 2
   GFLP1             Get filament cycle current 1 (setpoint)

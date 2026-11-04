@@ -633,6 +633,9 @@ const Commands FilamentCmdArray[] = {
   {"GFLPWR", CMDfunction, 1, (char *)GetFilamentPower},              // Get filament power (actual) 
   {"GFLRT", CMDfunction, 1, (char *)GetCurrentRampRate},             // Get filament current ramp rate in amps per second
   {"SFLRT", CMDfunctionStr, 2, (char *)SetCurrentRampRate},          // Set filament current ramp rate in amps per second
+  {"GFLMP", CMDfunction, 1, (char *)GetFilamentMaxPower},            // Get filament Max power limit, watts
+  {"SFLMP", CMDfunctionStr, 2, (char *)SetFilamentMaxPower},         // Set filament Max power limit, channel,watts. 1 to 20, RAM only,
+                                                                     // Save settings or SAVEM,FIL keeps it
   {"GFLDIR", CMDfunction, 1, (char *)GetCerrentDirection},           // Get filament current direcrtion,rev 2
   {"SFLDIR", CMDfunctionStr, 2, (char *)SetCurrentDirection},        // Set filament current direction, rev 2
   {"GFLP1", CMDfunction, 1, (char *)GetFilamentCycleCurrent1},       // Get filament cycle current 1 (setpoint)
@@ -1313,6 +1316,38 @@ void SetCurrentRampRate(char *chan, char *RampRate)
   FDarray[b].FCD[Channel2Index(c - 1)].RampRate = fval;
   if(FDarray[b].Rev >= 2) FDarray[b].FCD[0].RampRate = FDarray[b].FCD[1].RampRate = fval;
   if ((c - 1) == SelectedFilamentChan) FCD.RampRate = FDarray[b].FCD[Channel2Index(c - 1)].RampRate;
+  SendACK;
+}
+
+// Returns the Max power limit in watts for the filament channel number selected
+void GetFilamentMaxPower(int channel)
+{
+  int b;
+
+  if (!IsFilamentChannelValid(channel)) return;
+  b = BoardFromSelectedFilamentChannel(channel-1);
+  SendACKonly;
+  if (!SerialMute) serial->println(FDarray[b].FCD[Channel2Index(channel - 1)].MaxPower);
+}
+
+// Sets the Max power limit in watts for the filament channel number selected, 1 to 20 as the front panel
+// "Max power" entry. Held in RAM, front panel Save settings or SAVEM,FIL keeps it.
+void SetFilamentMaxPower(char *chan, char *watts)
+{
+  int b, c;
+  String res;
+  float fval;
+
+  res = chan;
+  c = res.toInt();
+  if (!IsFilamentChannelValid(c)) return;
+  b = BoardFromSelectedFilamentChannel(c-1);
+  res = watts;
+  fval = res.toFloat();
+  if ((fval < 1) || (fval > 20)) BADARG;
+  FDarray[b].FCD[Channel2Index(c - 1)].MaxPower = fval;
+  if(FDarray[b].Rev >= 2) FDarray[b].FCD[0].MaxPower = FDarray[b].FCD[1].MaxPower = fval;
+  if ((c - 1) == SelectedFilamentChan) FCD.MaxPower = FDarray[b].FCD[Channel2Index(c - 1)].MaxPower;
   SendACK;
 }
 

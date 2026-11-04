@@ -162,14 +162,18 @@ static void FEMloop(void)
       s->EmADC.value = v;
       s->P.Iset      = v;
     }
-    // 3. ADC input that sets the heater current. Stands aside while filament cycling is enabled. Two rules keep the
+    // 3. ADC input that sets the heater current. Stands aside while filament cycling is enabled. These rules keep the
     //    Max power limiter working, because rewriting CurrentSetpoint every pass would otherwise undo its trimming
     //    (FilamentControl trims 0.1 A when the measured power is over the limit):
     //      - the command is never more than FEM_AHEAD above the ramped current, so it follows the ramp and the
     //        limiter sees the real power. Without this the command jumps to the ADC value while the ramped
     //        current is still low, the measured power lags, and the limiter and the ADC fight in a limit cycle
     //        (host simulation: 8.4 W peak on a 6 W limit, against 6.2 W with this rule),
-    //      - it never raises the current while the power is at 97% of Max power.
+    //      - it never raises the current while the power is at 97% of Max power,
+    //      - above 99% it lowers the current at 0.05 A/s, and above 90% it raises it at no more than 0.02 A/s, so
+    //        the limiter's 0.1 A trim does not act. The power reading lags the current by about 1 s, and with only
+    //        the two rules above the trim and the next raise made a sawtooth on the bench (9 W limit, 2.5 A asked:
+    //        2.14 to 2.44 A, 8.4 to 9.8 W). Host simulation with the lag: steady at 98% of the limit, no trims.
     if(s->HtADC.adc >= 0)
     {
       s->On = false;                                                      // Regulation is disabled
@@ -182,7 +186,16 @@ static void FEMloop(void)
         float cur = ch->CurrentSetpoint;
         float act = CurrentSetpoints[b][idx];
         if(v > act + FEM_AHEAD) v = act + FEM_AHEAD;
-        if((v > cur) && (ch->MaxPower > 0) && (Fpowers[b][idx] >= FEM_POWERHOLD * ch->MaxPower)) v = cur;
+        if(ch->MaxPower > 0)
+        {
+          // Near the power limit: ease off above 99%, hold from 97%, rise slowly from 90% (FilamentEmissionCore.h)
+          float pw   = Fpowers[b][idx];
+          float pass = FEM_THREAD_MS / 1000.0f;
+          if(pw > FEM_POWERBACK * ch->MaxPower) { if(v > cur - FEM_BACKOFF * pass) v = cur - FEM_BACKOFF * pass; }
+          else if((v > cur) && (pw >= FEM_POWERHOLD * ch->MaxPower)) v = cur;
+          else if((v > cur + FEM_SLOWUP * pass) && (pw >= FEM_POWERSLOW * ch->MaxPower)) v = cur + FEM_SLOWUP * pass;
+        }
+        if(v < 0) v = 0;
         if(v != cur) FEMsetCurrent(b, v);
       }
     }

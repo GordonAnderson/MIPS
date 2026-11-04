@@ -84,6 +84,8 @@ void GetFilamentVoltage(int channel);
 void GetFilamentPower(int channel);
 void GetCurrentRampRate(int channel);
 void SetCurrentRampRate(char *chan, char *RampRate);
+void GetFilamentMaxPower(int channel);
+void SetFilamentMaxPower(char *chan, char *watts);
 void ResetFilamentSerialWD(void);
 
 void GetFilamentCycleCurrent1(int channel);
