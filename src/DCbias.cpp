@@ -1943,9 +1943,13 @@ void ProfileISR(void)
   else ApplyDCbiasProfile(Profile1);
 }
 
+// Level select on the Q or R input: low applies Profile1, high applies Profile2. The input pin is set
+// by SetDCbiasProfileToggle. Note: the raw pin level is read, MIPSconfigData.DIinvert is not applied.
+static int ProfileTrigPin = DI1;
+
 void ProfileTrigISR(void)
 {
-  if(digitalRead(DI1) == 0) ApplyDCbiasProfile(Profile1);
+  if(digitalRead(ProfileTrigPin) == 0) ApplyDCbiasProfile(Profile1);
   else ApplyDCbiasProfile(Profile2);
 }
 
@@ -1962,7 +1966,9 @@ void profileLevelISR(void)
 
 // Profile toggle command line argument options:
 // profile1,profile2,dwell time (mS)  // Toggle profile change
-// profile1,profile2,R                // Trigger profile change on R input
+// profile1,profile2,Q                // Q input level selects the profile, low = profile1, high = profile2
+// profile1,profile2,R                // R input level selects the profile, low = profile1, high = profile2
+//                                    // (Q and R read the raw pin level, DIinvert is not applied)
 // profile1,profile2,L                // Set profile 1 when level sensor pulse is less than 10 uS wide
                                       // Set profile 2 when level sensor pulse is grater than 10 uS wide
 void SetDCbiasProfileToggle(void)
@@ -1999,12 +2005,13 @@ void SetDCbiasProfileToggle(void)
        SendNAK;
        return;
      }
-     if(sToken == "R")
+     if((sToken == "Q") || (sToken == "R"))
      {
-       // Here if the user selected the R input to control the toggle
+       // Here if the user selected the Q or R input to control the toggle
        if(ProfileTrig == NULL) ProfileTrig = new DIhandler;
        ProfileTrig->detach();
-       ProfileTrig->attached('R', CHANGE, ProfileTrigISR);
+       ProfileTrigPin = (sToken == "Q") ? DI0 : DI1;
+       ProfileTrig->attached(sToken[0], CHANGE, ProfileTrigISR);
        ProfileTrigISR();
        SendACK;
        return;

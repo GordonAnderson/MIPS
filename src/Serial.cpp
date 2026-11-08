@@ -347,6 +347,8 @@ const Commands  CmdArray[] = 	{
   {"ADCBPRO", CMDfunction, 1, (char *)SetApplyDCbiasProfile},         // Applies the select DC bias profile
   {"CDCBPRO", CMDfunction, 1, (char *)SetDCbiasProfileFromCurrent},   // Copy the current DC bias values to the select profile
   {"TDCBPRO", CMDfunctionLine, 0, (char *)SetDCbiasProfileToggle},    // Enables toggling between two profiles with user defined dwell time, mS
+                                                                       // p1,p2,dwell mS; or p1,p2,Q or R: the input level selects the
+                                                                       // profile, low = p1, high = p2 (DIinvert not applied); or p1,p2,L
   {"TDCBSTP", CMDfunction, 0, (char *)StopProfileToggle},             // Stop the profile toggling
   {"SPROCHMSK", CMDfunctionStr, 1, (char *)SetDCbiasProfileChanMask}, // Set the profile channel mask, value in hex
   {"GPROCHMSK", CMDfunction, 0, (char *)GetDCbiasProfileChanMask},    // Returns the profile channel mask, in hex
