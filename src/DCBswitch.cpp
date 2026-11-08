@@ -77,8 +77,8 @@ const Commands  DCBSCmdArray[] = {
   {"SDCBS",CMDfunctionStr     ,2,(char *)setDCBSvoltage},              // Set DC bias switch voltage, ch, voltage
   {"GDCBS",CMDfunction        ,1,(char *)getDCBSvoltage},              // Returns DC bias switch voltage, ch
   {"GDCBSV",CMDfunction       ,1,(char *)getDCBSreadback},             // Returns actual DC bias switch voltage, ch
-  {"SDCBSPWR",CMDfunctionStr  ,2,(char *)setDCBSpwr},                  // Set DC power supply, ON or OFF
-  {"GDCBSPWR",CMDfunction     ,1,(char *)getDCBSpwr},                  // Return DC power supply status, ON or OFF
+  {"SDCBSPWR",CMDfunctionStr  ,2,(char *)setDCBSpwr},                  // Set DC power supply, ch (any channel on the module), TRUE or FALSE
+  {"GDCBSPWR",CMDfunction     ,1,(char *)getDCBSpwr},                  // Return DC power supply status, ch, TRUE or FALSE
   {"SDCBSIO",CMDfunctionLine  ,0,(char *)setDCBSdout},                 // Set digital output,A|B|C|D,0|1
   {"GDCBSIO",CMDfunctionStr   ,2,(char *)getDCBSdin},                  // Return digital input states,A|B|C|D|Q|R|S|T
   {"SDCBSSW",CMDfunctionStr   ,2,(char *)setDCBSsw},                   // Set FET state,switch#,0|1
@@ -336,7 +336,7 @@ void setDCBSeepromEnable(char *board, char *value)
 }
 void setDCBSvoltage(char *chan, char *value) {int brd = getDCBSbrd(chan,4); if(brd == -1) return; setDCBSvalue(brd,value,&DCBswitchData[brd]->DCBV[getDCBSch(chan,4)],-250.0, 250.0);}
 void getDCBSvoltage(int ch) {int brd = getDCBSbrd(ch,4); if(brd == -1) return; SendACKonly; if(!SerialMute) serial->println(DCBswitchData[brd]->DCBV[getDCBSch(ch,4)]);}
-void getDCBSreadback(int ch) {int brd = getDCBSbrd(ch,4); if(brd == -1) return; SendACKonly; if(!SerialMute) serial->println(DCBswitchrb[0]->rb[getDCBSch(ch,4)]);}
+void getDCBSreadback(int ch) {int brd = getDCBSbrd(ch,4); if(brd == -1) return; SendACKonly; if(!SerialMute) serial->println(DCBswitchrb[brd]->rb[getDCBSch(ch,4)]);}
 void setDCBSpwr(char *ch, char *value) {int brd; if((brd = getDCBSbrd(ch,4)) == -1) return; setDCBSvalue(brd,value,&DCBswitchData[brd]->pwrEnable,0x80 | SET_DCBS_PWR);}
 void getDCBSpwr(int ch) {int brd; if((brd = getDCBSbrd(ch,4)) == -1) return; getDCBSvalue(brd,&DCBswitchData[brd]->pwrEnable,0x80 | GET_DCBS_PWR);}
 
@@ -462,9 +462,10 @@ void reportLevel(int lvl)
   char *rep = NULL;
   if(lvl == 4) rep = (char*)"CHANGE";
   else if(lvl == 3) rep = (char*)"RISING";
-  else if(lvl == 2) rep = (char*)"FALING";
-  if(SerialMute) return;
+  else if(lvl == 2) rep = (char*)"FALLING";
   if(rep == NULL) BADARG;
+  SendACKonly;
+  if(SerialMute) return;
   serial->println(rep);
 }
 

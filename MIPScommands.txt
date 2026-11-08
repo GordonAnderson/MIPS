@@ -670,8 +670,8 @@ DC bias switch module commands
   SDCBS             Set DC bias switch voltage, ch, voltage
   GDCBS             Returns DC bias switch voltage, ch
   GDCBSV            Returns actual DC bias switch voltage, ch
-  SDCBSPWR          Set DC power supply, ON or OFF
-  GDCBSPWR          Return DC power supply status, ON or OFF
+  SDCBSPWR          Set DC power supply, ch (any channel on the module), TRUE or FALSE
+  GDCBSPWR          Return DC power supply status, ch, TRUE or FALSE
   SDCBSIO           Set digital output,A|B|C|D,0|1
   GDCBSIO           Return digital input states,A|B|C|D|Q|R|S|T
   SDCBSSW           Set FET state,switch#,0|1
