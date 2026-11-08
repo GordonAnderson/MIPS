@@ -354,6 +354,9 @@ const Commands  CmdArray[] = 	{
   {"GPROCHMSK", CMDfunction, 0, (char *)GetDCbiasProfileChanMask},    // Returns the profile channel mask, in hex
   {"SPROCHEN", CMDfunctionStr, 2, (char *)SetDCbiasProfileChanEnable},// Enable/disable one channel in the profile mask, TRUE or FALSE
   {"GPROCHEN", CMDfunction, 1, (char *)GetDCbiasProfileChanEnable},   // Returns TRUE or FALSE for one channel in the profile mask
+  {"SDCBPROOFF", CMDfunctionStr, 2, (char *)SetDCbiasProfileOffset},  // Set a profile's offset, applied to all boards with the profile,
+                                                                       // NA clears it, the profile then leaves the offset unchanged
+  {"GDCBPROOFF", CMDfunction, 1, (char *)GetDCbiasProfileOffset},     // Returns a profile's offset, NA if not set
 // DC bias list functions, supports DMA high speed transfer
   {"DSTATE", CMDfunctionLine, 0, (char *)DefineState},                // Define a state, name,ch,val....
   {"SSTATE", CMDfunctionStr, 1, (char *)SetState},                    // Sets the DCbias channels to the values defined in named state

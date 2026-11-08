@@ -255,6 +255,9 @@ DC bias module profile commands
   GPROCHMSK         Returns the profile channel mask, in hex
   SPROCHEN          Enable/disable one channel in the profile mask, TRUE or FALSE
   GPROCHEN          Returns TRUE or FALSE for one channel in the profile mask
+  SDCBPROOFF        Set a profile's offset, applied to all boards with the profile,
+                    NA clears it, the profile then leaves the offset unchanged
+  GDCBPROOFF        Returns a profile's offset, NA if not set
 DC bias list functions, supports DMA high speed transfer
   DSTATE            Define a state, name,ch,val....
   SSTATE            Sets the DCbias channels to the values defined in named state

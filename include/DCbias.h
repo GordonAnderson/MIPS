@@ -134,6 +134,8 @@ void SetDCbiasProfileChanMask(char *mask);
 void GetDCbiasProfileChanMask(void);
 void SetDCbiasProfileChanEnable(char *channel, char *value);
 void GetDCbiasProfileChanEnable(int ch);
+void SetDCbiasProfileOffset(char *profile, char *value);
+void GetDCbiasProfileOffset(int num);
 
 void SetDCbiasPena(char *state);
 void SetDCbiasPtrigger(char *src);

@@ -138,6 +138,14 @@ DIhandler *ProfileTrig=NULL;
 // DCbias channel, set bit = channel is updated on profile apply. Defaults to all channels
 // enabled so the default behavior, apply to every channel, is unchanged.
 uint32_t  DCbiasProfileChanMask = 0xFFFFFFFF;
+// Optional per profile offset (float) voltage, November 2026. When a profile has an offset set,
+// applying it first sets the offset on every offsetable board, then writes the channels against
+// that offset. A profile without an offset leaves the offset untouched, the original behavior.
+// See the profile offset notes above SetDCbiasProfileOffset().
+float     DCbiasProfileOffset[NumProfiles];
+bool      DCbiasProfileOffsetSet[NumProfiles] = {false,false,false,false,false,false,false,false,false,false};
+volatile bool DCbiasProfileOffsetPending = false;   // Offset DAC write queued, waiting for TWI
+void      DCbiasWriteProfileOffset(void);
 
 // Filter time constant is:
 // TC in seconds = 1/(sample rate is samples per sec * filter value) * 2 * pi
@@ -908,6 +916,13 @@ void DCbias_loop(void)
   }
   MaxDCbiasVoltage = 0;
   Verror = 0;
+  // Own the TWI interface while this loop writes the offset DACs and reads the monitor ADCs so a
+  // profile apply from an ISR (timer or Q/R/LT input) queues its offset DAC write, see
+  // ApplyDCbiasProfile, instead of starting a TWI transaction in the middle of this one. If the
+  // interface is already owned the loop runs anyway, the original behavior. ReleaseTWI below runs
+  // anything queued. A queued profile offset write that was missed is done here as a fallback.
+  bool ownTWI = AcquireTWI();
+  if(DCbiasProfileOffsetPending) DCbiasWriteProfileOffset();
   // This logic was add in version 1.150. This code will ramp the voltages back up after
   // the power supply is enabled. The goal it to stop any big voltage impluses. This code
   // requires 100mS to ramp up and this only happen when the supply state changes from off
@@ -1064,9 +1079,10 @@ void DCbias_loop(void)
           errorPercentage = (abs(filteredOffset[b] - DCbDarray[b]->DCoffset.VoltageSetpoint) / DCbDarray[b]->MaxVoltage) * 100.0;
           if(errorPercentage > Verror) { Verror = errorPercentage; VerrorCh = -(b + 1); }
         }
-      } 
+      }
     }
   }
+  if(ownTWI) ReleaseTWI();
   DCbiasProfileApplied = false;
   DCbiasUpdate = false;
   dcbd = *DCbD;
@@ -1776,6 +1792,8 @@ void ReportDCbiasSuppplies(int board)
 //  TDCBPRO,p1,p1,dwell           // Toggle between profile p1 and p2, dwell at each profile
 //                                // for dwell millisec
 //  TDCBSTP                       // Stops the toggling
+//  SDCBPROOFF,num,value          // Set the profile's offset voltage, NA clears it (Nov 2026)
+//  GDCBPROOFF,num                // Return the profile's offset voltage, NA if not set
 
 // This function is called with the parameters in the input ring buffer. The full command
 // line has been received before this function is called. The first argument is the profile
@@ -1819,11 +1837,12 @@ void SetDCbiasProfile(void)
      }
      if((Token = GetToken(true)) == NULL) break;
      if(Token[0] != '\n') break;
-     // Test the range of the parameters passed
+     // Test the range of the parameters passed, against the profile's offset if it has one
      for(ch = 0; ch < NumberOfDCChannels; ch++)
      {
        if((DCbData = GetDCbiasDataPtr((ch+1),false)) == NULL) goto SetDCbiasProfileError;
-       if(!CheckValue(DCbData, DCbiasProfiles[num][ch] - DCbData->DCoffset.VoltageSetpoint,false)) goto SetDCbiasProfileError;
+       float offset = DCbiasProfileOffsetSet[num] ? DCbiasProfileOffset[num] : DCbData->DCoffset.VoltageSetpoint;
+       if(!CheckValue(DCbData, DCbiasProfiles[num][ch] - offset,false)) goto SetDCbiasProfileError;
      }
      // Exit with no error!
      SendACK;
@@ -1871,26 +1890,164 @@ void GetDCbiasProfile(int num)
 // The system wide DCbiasProfileChanMask limits which channels are actually written
 // when the profile is applied, one bit per channel, set = update. This defaults to
 // all channels enabled so this does not change default behavior.
+//
+// Profile offset, November 2026. If the profile has an offset set (SDCBPROOFF) the offset setpoint
+// of every offsetable board is set to it first, so the channel counts below are computed against
+// the new offset. The offset DAC is on TWI, it is written here if the TWI interface is free, else
+// the write is queued with TWIqueue and runs when the current TWI user calls ReleaseTWI. The
+// channels are SPI and always change immediately, so the offset can lag the channels by the
+// remaining length of the TWI transaction in progress, a short glitch that is accepted. When the
+// offset changes, channels excluded by the channel mask are rewritten at their present setpoint so
+// their absolute output voltage holds across the offset change.
 void ApplyDCbiasProfile(int num)
 {
+   bool offsetChanged = false;
+
    // If profile pointer is NULL then exit
    if(DCbiasProfiles[num-1] == NULL) return;
    CurrentProfile = num;
    num--;
+   int sb = SelectedBoard();
+   if(DCbiasProfileOffsetSet[num])
+   {
+      float offset = DCbiasProfileOffset[num];
+      for(int b=0; b<MAXDCbiasMODULES; b++)
+      {
+         if(DCbDarray[b] == NULL) continue;
+         if(!DCbDarray[b]->Offsetable) continue;
+         if(DCbDarray[b]->DCoffset.VoltageSetpoint == offset) continue;
+         if(abs(DCbDarray[b]->DCoffset.VoltageSetpoint - offset) > 1.0) DelayMonitoring();
+         DCbDarray[b]->DCoffset.VoltageSetpoint = offset;
+         // Mark as written so DCbias_loop does not also write it, DCbiasWriteProfileOffset does
+         DCbiasStates[b]->DCbiasO = offset;
+         if(b == SelectedDCBoard) dcbd.DCoffset.VoltageSetpoint = offset;
+         offsetChanged = true;
+      }
+   }
    for(int ch = 0; ch < NumberOfDCChannels; ch++)
    {
       // Skip this channel if it is not selected in the profile channel mask
-      if((DCbiasProfileChanMask & (1UL << ch)) == 0) continue;
+      if((DCbiasProfileChanMask & (1UL << ch)) == 0)
+      {
+         // The channel is not part of the profile but if the offset moved its DAC counts must
+         // follow to hold its absolute output voltage
+         if(offsetChanged)
+         {
+            int brd = DCbiasCH2Brd(ch);
+            if(brd != -1) DCbiasDACupdate(ch, DCbiasValue2Counts(ch, DCbDarray[brd]->DCCD[ch & 7].VoltageSetpoint));
+         }
+         continue;
+      }
       // Update the DAC
       DCbiasDACupdate(ch, DCbiasValue2Counts(ch, DCbiasProfiles[num][ch]));
       // Update the display
       DCbiasSet(ch+1, DCbiasProfiles[num][ch]);
    }
+   SelectBoard(sb);
+   // Write the offset DAC(s) first, TWI is slower than the SPI channel writes, then latch
+   if(offsetChanged)
+   {
+      if(AcquireTWI())
+      {
+         DCbiasWriteProfileOffset();
+         ReleaseTWI();
+      }
+      else if(!DCbiasProfileOffsetPending)
+      {
+         // Only one queue entry is needed, it writes the latest offset setpoint when it runs
+         DCbiasProfileOffsetPending = true;
+         TWIqueue(DCbiasWriteProfileOffset);
+      }
+   }
    // Pulse LDAC to latch them all at the same time!
    LDAClow;
    LDAChigh;
    // Set flag indicating DACs updated
-   DCbiasProfileApplied = true;  
+   DCbiasProfileApplied = true;
+}
+
+// Writes the offset DAC of every offsetable board from its offset setpoint, used by the profile
+// offset logic. The caller must own the TWI interface, this is called from ApplyDCbiasProfile
+// after AcquireTWI, from the TWI queue by ReleaseTWI, or from DCbias_loop. Same scaling and
+// limits as the DCbias_loop offset update, the DAC is not written when the bias power is off,
+// DCbias_loop holds the offset at zero in that case.
+void DCbiasWriteProfileOffset(void)
+{
+   DCbiasProfileOffsetPending = false;
+   if(digitalRead(PWR_ON) != 0) return;
+   int sb = SelectedBoard();
+   for(int b=0; b<MAXDCbiasMODULES; b++)
+   {
+      if(DCbDarray[b] == NULL) continue;
+      if(!DCbDarray[b]->Offsetable) continue;
+      SelectBoard(b);
+      DCbiasStates[b]->DCbiasO = DCbDarray[b]->DCoffset.VoltageSetpoint;
+      float V = DCbDarray[b]->DCoffset.VoltageSetpoint + DCbDarray[b]->OffsetOffset;
+      if(V > DCbDarray[b]->MaxVoltage) V = DCbDarray[b]->MaxVoltage;
+      if(V < DCbDarray[b]->MinVoltage) V = DCbDarray[b]->MinVoltage;
+      if((DCbDarray[b]->DACadr & 0xFE) == 0x10) WriteOffsetDAC(DCbDarray[b]->DACadr,Value2Counts(V,&DCbDarray[b]->DCoffset.DCctrl));
+      else AD5625(DCbDarray[b]->DACadr,DCbDarray[b]->DCoffset.DCctrl.Chan,Value2Counts(V,&DCbDarray[b]->DCoffset.DCctrl),3);
+   }
+   SelectBoard(sb);
+}
+
+// Sets a profile's offset voltage, SDCBPROOFF,num,value. NA clears it, the profile then leaves the
+// offset unchanged when applied (original behavior). The offset is range checked on every
+// offsetable board, and if the profile's channels are already defined they are checked against
+// the new offset too. One offset applies to all boards.
+void SetDCbiasProfileOffset(char *profile, char *value)
+{
+   DCbiasData *DCbData;
+   String sToken;
+   int    num;
+   float  offset;
+   bool   found = false;
+
+   sToken = profile;
+   num = sToken.toInt();
+   if((num < 1)||(num > NumProfiles)) BADARG;
+   num--;
+   sToken = value;
+   sToken.trim();
+   if(sToken == "NA")
+   {
+     DCbiasProfileOffsetSet[num] = false;
+     SendACK;
+     return;
+   }
+   offset = sToken.toFloat();
+   for(int b=0; b<MAXDCbiasMODULES; b++)
+   {
+     if(DCbDarray[b] == NULL) continue;
+     if(!DCbDarray[b]->Offsetable) continue;
+     found = true;
+     if(!CheckValue(DCbDarray[b], offset)) return;
+   }
+   if(!found)
+   {
+     SetErrorCode(ERR_NOTOFFSETABLE);
+     SendNAK;
+     return;
+   }
+   if(DCbiasProfiles[num] != NULL) for(int ch = 0; ch < NumberOfDCChannels; ch++)
+   {
+     if((DCbData = GetDCbiasDataPtr((ch+1),false)) == NULL) BADARG;
+     if(!CheckValue(DCbData, DCbiasProfiles[num][ch] - offset)) return;
+   }
+   DCbiasProfileOffset[num] = offset;
+   DCbiasProfileOffsetSet[num] = true;
+   SendACK;
+}
+
+// Returns a profile's offset voltage, GDCBPROOFF,num, NA if the profile has no offset
+void GetDCbiasProfileOffset(int num)
+{
+   if((num < 1)||(num > NumProfiles)) BADARG;
+   num--;
+   SendACKonly;
+   if(SerialMute) return;
+   if(DCbiasProfileOffsetSet[num]) serial->println(DCbiasProfileOffset[num]);
+   else serial->println("NA");
 }
 
 void SetApplyDCbiasProfile(int num)
