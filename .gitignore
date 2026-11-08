@@ -15,3 +15,6 @@ firmware
 # Claude Code
 .claude
 .vscode/extensions.json
+
+# Local document output (manual drafts), not part of the firmware
+Claude outputs/
