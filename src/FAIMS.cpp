@@ -386,7 +386,7 @@ const Commands  FAIMSCmdArray[] = {
   {"SFMATSTPF",CMDint, 1, (char *)&ATFMstopF},                  // Set the auto tune stop frequency
   {"GFMATSTPF",CMDint, 0, (char *)&ATFMstopF},                  // Return the tune mode stop frequency
   {"SFMATBPC",CMDbool, 1, (char *)&ATFMbypassPC},               // Set flag to true to bypass primary capacitor tune
-  {"SFMATBPC",CMDbool, 0, (char *)&ATFMbypassPC},               // Return the bypass primary capacitor tune flag
+  {"GFMATBPC",CMDbool, 0, (char *)&ATFMbypassPC},               // Return the bypass primary capacitor tune flag
 // FAIMS DC CV and Bias commands
   {"SFMCV", CMDfunctionStr, 1, (char *)FAIMSsetCV},                // Sets FAIMS DC CV voltage setpoint
   {"GFMCV", CMDfloat, 0, (char *)&faims.DCcv.VoltageSetpoint},     // Returns FAIMS DC CV voltage setpoint

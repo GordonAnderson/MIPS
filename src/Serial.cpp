@@ -144,7 +144,7 @@ const Commands  CmdArray[] = 	{
   {"TBLTSKENA", CMDbool, 1, (char *)&TasksEnabled},            // Enables tasks in table mode, true or false
   {"LEDOVRD", CMDbool, 1, (char *)&LEDoverride},               // Override the LED operation is true, always false on startup
   {"LED",  CMDint, 1, (char *)&LEDstate},                      // Define the LEDs state you are looking for.
-  {"DSPOFF", CMDbool, 1, (char *)&DisableDisplay},             // Print the UseAnalog flag, true or false
+  {"DSPOFF", CMDbool, 1, (char *)&DisableDisplay},             // Turns the display off if TRUE, on if FALSE
   {"STRTDLY", CMDint, 1, (char *)&MIPSconfigData.StartupDelay},// Startup delay in seconds
   {"CHKIMAGE",  CMDfunctionStr, 1, (char *)CheckImage},        // Reports the image file status
   {"LOADIMAGE",  CMDfunctionStr, 1, (char *)LoadImage},        // Loads an image file to the display
@@ -299,8 +299,8 @@ const Commands  CmdArray[] = 	{
   {"GDCBV", CMDfunction, 1, (char *)DCbiasReadV},                     // Get Voltage actual voltage value
   {"SDCBOF", CMDfunctionStr, 2, (char *)DCbiasSetFloat},              // Set float voltage for selected board
   {"GDCBOF", CMDfunction, 1, (char *)DCbiasReadFloat},                // Read float voltage for selected board
-  {"GDCMIN", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasReadMin))}, // Read float voltage for selected board
-  {"GDCMAX", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasReadMax))}, // Read float voltage for selected board
+  {"GDCMIN", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasReadMin))}, // Read the channel minimum voltage
+  {"GDCMAX", CMDfunction, 1, (char *)(static_cast<void (*)(int)>(&DCbiasReadMax))}, // Read the channel maximum voltage
   {"SDCPWR", CMDfunctionStr, 1, (char *)DCbiasPowerSet},              // Sets the DC bias power, on or off
   {"GDCPWR", CMDfunction, 0, (char *)DCbiasPower},                    // Get the DC bias power, on or off
   {"SDCBALL", CMDfunctionLine, 0, (char *)SetAllDCbiasChannels},      // Sets the DCbias setpoints for all outputs
@@ -731,8 +731,8 @@ const Commands  CmdArray[] = 	{
   {"GARBADD",CMDfunction, 1, (char *)GetARBtwiADD},                  // Return the TWI address (base 10) for the ARB module.
   {"SARBDBRD",CMDfunctionStr, 2, (char *)SetARBDualBoard},           // Sets module dual board flag to true or false.
   {"GARBVER",CMDfunction, 1, (char *)GetARBversion},                 // Returns the ARB module version number
-  {"GARBPPP",CMDfunction, 1, (char *)GetARBppp},                     // Returns the ARB module points per period, 8 to 32
-  {"SARBPPP",CMDfunction, 2, (char *)SetARBppp},                     // Sets the ARB module points per period, 8 to 32
+  {"GARBPPP",CMDfunction, 1, (char *)GetARBppp},                     // Returns the ARB module points per period, 8 to 128
+  {"SARBPPP",CMDfunction, 2, (char *)SetARBppp},                     // Sets the ARB module points per period, 8 to 128
   {"SARBEXT",CMDfunctionStr, 2, (char *)SetARBext},                  // Sets the selected ARB external clock source, MIPS or EXT
 // ARB advanced setup commands
   {"SARBCPEX",CMDfunctionStr, 2, (char *)SetARBcompExt},             // Sets the ARB compress line hardware control, TRUE enables

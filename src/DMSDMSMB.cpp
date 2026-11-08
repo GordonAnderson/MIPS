@@ -216,7 +216,7 @@ const Commands DMSDMSCmdArray[] = {
   {"GCVV", CMDfunction, 1, (char *)ReturnDMSDMSCVrb},                // Return the CV readback value for the seletced module
   {"SBIAS", CMDfunctionStr,  2, (char *)SetDMSDMSBIAS},              // Set the current BIAS for the seletced module
   {"GBIAS", CMDfunction,  1, (char *)ReturnDMSDMSBIAS},              // Return the current BIAS for the seletced module
-  {"GBIASV", CMDfunction,  1, (char *)ReturnDMSDMSBIASrb},           // Set the current BIAS for the seletced module 
+  {"GBIASV", CMDfunction,  1, (char *)ReturnDMSDMSBIASrb},           // Return the BIAS readback for the seletced module 
 // DMSDMS scanning commands
   {"SDDCVSTRT",  CMDfunctionStr, 2, (char *)SetDMSDMSCVstart},       // set the CV scan start voltage for the seletced module 
   {"GDDCVSTRT",  CMDfunction, 1, (char *)ReturnDMSDMSCVstart},       // returns the CV scan start voltage for the seletced module 

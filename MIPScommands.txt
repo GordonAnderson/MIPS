@@ -48,7 +48,7 @@ General commands
   TBLTSKENA         Enables tasks in table mode, true or false
   LEDOVRD           Override the LED operation is true, always false on startup
   LED               Define the LEDs state you are looking for.
-  DSPOFF            Print the UseAnalog flag, true or false
+  DSPOFF            Turns the display off if TRUE, on if FALSE
   STRTDLY           Startup delay in seconds
   CHKIMAGE          Reports the image file status
   LOADIMAGE         Loads an image file to the display
@@ -201,8 +201,8 @@ DC bias module commands
   GDCBV             Get Voltage actual voltage value
   SDCBOF            Set float voltage for selected board
   GDCBOF            Read float voltage for selected board
-  GDCMIN            Read float voltage for selected board
-  GDCMAX            Read float voltage for selected board
+  GDCMIN            Read the channel minimum voltage
+  GDCMAX            Read the channel maximum voltage
   SDCPWR            Sets the DC bias power, on or off
   GDCPWR            Get the DC bias power, on or off
   SDCBALL           Sets the DCbias setpoints for all outputs
@@ -617,8 +617,8 @@ ARB configuration commands
   GARBADD           Return the TWI address (base 10) for the ARB module.
   SARBDBRD          Sets module dual board flag to true or false.
   GARBVER           Returns the ARB module version number
-  GARBPPP           Returns the ARB module points per period, 8 to 32
-  SARBPPP           Sets the ARB module points per period, 8 to 32
+  GARBPPP           Returns the ARB module points per period, 8 to 128
+  SARBPPP           Sets the ARB module points per period, 8 to 128
   SARBEXT           Sets the selected ARB external clock source, MIPS or EXT
 ARB advanced setup commands
   SARBCPEX          Sets the ARB compress line hardware control, TRUE enables
@@ -747,7 +747,7 @@ DMSDMS DC bias commands
   GCVV              Return the CV readback value for the seletced module
   SBIAS             Set the current BIAS for the seletced module
   GBIAS             Return the current BIAS for the seletced module
-  GBIASV            Set the current BIAS for the seletced module
+  GBIASV            Return the BIAS readback for the seletced module
 DMSDMS scanning commands
   SDDCVSTRT         set the CV scan start voltage for the seletced module
   GDDCVSTRT         returns the CV scan start voltage for the seletced module
@@ -823,7 +823,7 @@ FAIMS auto tune commands
   SFMATSTPF         Set the auto tune stop frequency
   GFMATSTPF         Return the tune mode stop frequency
   SFMATBPC          Set flag to true to bypass primary capacitor tune
-  SFMATBPC          Return the bypass primary capacitor tune flag
+  GFMATBPC          Return the bypass primary capacitor tune flag
 FAIMS DC CV and Bias commands
   SFMCV             Sets FAIMS DC CV voltage setpoint
   GFMCV             Returns FAIMS DC CV voltage setpoint
@@ -900,7 +900,7 @@ FAIMSFB DC bias commands
   GCVV              Return the CV readback value for the seletced module
   SBIAS             Set the current BIAS for the seletced module
   GBIAS             Return the current BIAS for the seletced module
-  GBIASV            Set the current BIAS for the seletced module
+  GBIASV            Return the BIAS readback for the seletced module
 FAIMSFB scanning commands
   SFBCVSTRT         set the CV scan start voltage for the seletced module
   GFBCVSTRT         returns the CV scan start voltage for the seletced module

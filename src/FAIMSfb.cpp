@@ -242,7 +242,7 @@ const Commands  FAIMSfbCmdArray[] = {
   {"GCVV", CMDfunction, 1, (char *)ReturnFAIMSfbCVrb},               // Return the CV readback value for the seletced module
   {"SBIAS", CMDfunctionStr,  2, (char *)SetFAIMSfbBIAS},             // Set the current BIAS for the seletced module
   {"GBIAS", CMDfunction,  1, (char *)ReturnFAIMSfbBIAS},             // Return the current BIAS for the seletced module
-  {"GBIASV", CMDfunction,  1, (char *)ReturnFAIMSfbBIASrb},          // Set the current BIAS for the seletced module 
+  {"GBIASV", CMDfunction,  1, (char *)ReturnFAIMSfbBIASrb},          // Return the BIAS readback for the seletced module 
 // FAIMSFB scanning commands
   {"SFBCVSTRT",  CMDfunctionStr, 2, (char *)SetFAIMSfbCVstart},      // set the CV scan start voltage for the seletced module 
   {"GFBCVSTRT",  CMDfunction, 1, (char *)ReturnFAIMSfbCVstart},      // returns the CV scan start voltage for the seletced module 
